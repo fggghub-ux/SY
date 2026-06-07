@@ -592,9 +592,28 @@ async function openChatTab(friend) {
                         attachmentSheet.style.display = 'none';
                     }
                     
-                    setTimeout(() => {
+                    // 采用高频对齐，每 16ms(约一帧) 修正一次，持续 400ms 覆盖键盘弹起动画
+                    let count = 0;
+                    const scrollInterval = setInterval(() => {
                         input.scrollIntoView(false);
-                    }, 300);
+                        count++;
+                        if (count >= 25) {
+                            clearInterval(scrollInterval);
+                        }
+                    }, 16);
+                    
+                    // 如果支持 visualViewport，监听其实时变化
+                    if (window.visualViewport) {
+                        const viewportHandler = () => {
+                            if (document.activeElement === input) {
+                                input.scrollIntoView(false);
+                            }
+                        };
+                        window.visualViewport.addEventListener('resize', viewportHandler);
+                        input.addEventListener('blur', () => {
+                            window.visualViewport.removeEventListener('resize', viewportHandler);
+                        }, { once: true });
+                    }
                 });
 
                 input.addEventListener('blur', () => {
