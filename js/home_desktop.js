@@ -767,9 +767,6 @@
         };
 
         const onKeyDown = (event) => {
-            if (event.isComposing || event.keyCode === 229) {
-                return;
-            }
             if (event.key === 'Enter') {
                 event.preventDefault();
                 element.blur();

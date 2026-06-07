@@ -658,7 +658,6 @@ class NetflixApp {
 
         if (this.homeSearchInput) {
             this.homeSearchInput.addEventListener('keydown', (event) => {
-                if (event.isComposing || event.keyCode === 229) return;
                 if (event.key === 'Enter') this.generateHomeCatalogFromSearch();
             });
         }
@@ -898,7 +897,6 @@ class NetflixApp {
 
         if (this.presetCreateNameInput) {
             this.presetCreateNameInput.addEventListener('keydown', (event) => {
-                if (event.isComposing || event.keyCode === 229) return;
                 if (event.key === 'Enter') this.createPresetFromNameSheet();
             });
         }
