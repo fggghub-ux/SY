@@ -1,0 +1,290 @@
+/* ==========================================================================
+   LOVES APP CSS
+   ========================================================================== */
+
+.loves-view {
+    display: none;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    background-color: #ffffff;
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 100;
+}
+
+#loves-view.loves-view,
+#lovers-space-view.lovers-space-view,
+#lovers-friend-phone-view.lovers-friend-phone-view,
+#friend-files-view,
+#friend-health-view,
+#friend-pay-view,
+#friend-game-view,
+#friend-phone-settings-sheet,
+#friend-imessage-view,
+#friend-reverse-chat-view,
+#friend-safari-view,
+#friend-music-view,
+#friend-phonecall-view {
+    inset: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+.loves-view.active {
+    display: flex;
+}
+
+.loves-header {
+    height: max(44px, calc(44px + var(--safe-top)));
+    padding-top: var(--safe-top);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-left: 16px;
+    padding-right: 16px;
+    background-color: transparent;
+    flex-shrink: 0;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    z-index: 10;
+    pointer-events: none;
+    box-sizing: border-box;
+}
+
+.loves-header-title {
+    display: none;
+}
+
+.loves-back-btn {
+    cursor: pointer;
+    z-index: 10;
+    pointer-events: auto;
+}
+
+.loves-content {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    background-color: #ffffff;
+}
+
+/* 留言板设计 */
+.loves-board {
+    display: flex;
+    flex-direction: column;
+    padding: max(80px, calc(60px + var(--safe-top))) 0 40px;
+    min-height: 100%;
+    background-color: #ffffff;
+}
+
+/* 列表项设计 (类似 ins 会话列表) */
+.loves-note {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    padding: 8px 16px;
+    position: relative;
+    background: #fff;
+    cursor: pointer;
+}
+
+.loves-note:active {
+    background: #fafafa;
+}
+
+.loves-note-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background-color: #fafafa;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    margin-right: 12px;
+    flex-shrink: 0;
+}
+
+.loves-note-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.loves-note-avatar i {
+    font-size: 24px;
+    color: #ccc;
+}
+
+/* 中间信息区 */
+.loves-note-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.loves-note-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #000;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+}
+
+.loves-note-sign {
+    font-size: 14px;
+    color: #737373;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* 右侧操作按钮 */
+.loves-note-action {
+    font-size: 14px;
+    font-weight: 600;
+    padding: 7px 16px;
+    border-radius: 8px;
+    margin-left: 12px;
+    flex-shrink: 0;
+}
+
+.loves-note-action-invite {
+    background: #0095f6;
+    color: #fff;
+}
+
+.loves-note-action-invite:active {
+    background: #1877f2;
+}
+
+.loves-note-action-enter {
+    background: #efefef;
+    color: #000;
+}
+
+.loves-note-action-enter:active {
+    background: #dbdbdb;
+}
+
+.loves-placeholder {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    color: #8e8e93;
+    margin-top: 50px;
+}
+
+.loves-placeholder i {
+    font-size: 48px;
+    color: #ff9bb3;
+}
+
+.loves-placeholder p {
+    font-size: 16px;
+    font-weight: 500;
+}
+
+/* 情侣空间视图 */
+.lovers-space-view {
+    display: none;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    background-color: #ffffff;
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 110;
+}
+
+.lovers-space-view.active {
+    display: flex;
+}
+
+@keyframes lovesFadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.lovers-space-panel {
+    display: none;
+    position: absolute;
+    inset: 0;
+}
+
+.lovers-space-panel.active {
+    display: flex;
+    animation: lovesFadeIn 0.3s ease-out forwards;
+}
+
+/* 好友手机全屏界面 */
+.lovers-friend-phone-view {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 120;
+    flex-direction: column;
+}
+
+.friend-imessage-view {
+    display: none;
+}
+.friend-imessage-view.active {
+    display: flex;
+}
+
+.reverse-chat-view {
+    display: none;
+}
+.reverse-chat-view.active {
+    display: flex;
+}
+
+.friend-safari-view {
+    display: none;
+}
+.friend-safari-view.active {
+    display: flex;
+}
+
+.reverse-bubble-left {
+    align-self: flex-start;
+    background: #e5e5ea;
+    color: #000;
+    padding: 10px 14px;
+    border-radius: 18px;
+    border-bottom-left-radius: 4px;
+    max-width: 75%;
+    font-size: 15px;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.reverse-bubble-right {
+    align-self: flex-end;
+    background: #34c759;
+    color: #fff;
+    padding: 10px 14px;
+    border-radius: 18px;
+    border-bottom-right-radius: 4px;
+    max-width: 75%;
+    font-size: 15px;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.lovers-friend-phone-view.active {
+    display: flex;
+}

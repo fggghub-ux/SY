@@ -1,0 +1,979 @@
+/* ==========================================
+   Settings App and UI Overlays Styles 
+   Adapted from iiso/ios_emulator.css
+   ========================================== */
+
+/* ---------------- App Views (Settings, Edit) ---------------- */
+.app-view, .settings-view, .edit-view {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: var(--settings-bg, #f2f2f7);
+    z-index: 150;
+    display: flex;
+    flex-direction: column;
+    padding-top: var(--safe-top); /* 移除写死的 44px 顶栏距离，适配主界面 */
+    transform: translateX(100%);
+    transition: transform 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
+    min-height: 0;
+}
+
+.app-view.tiktok-view,
+.app-view.shopping-view,
+.app-view.x-view {
+    padding-top: 0;
+}
+
+.edit-view {
+    z-index: 160;
+}
+
+.app-view.active, .settings-view.active, .edit-view.active {
+    transform: translateX(0);
+}
+
+/* 隐藏全局滚动条 */
+::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+}
+* {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+}
+
+/* Big Header for Main Settings */
+.big-header {
+    padding: 50px 16px 10px; 
+    display: flex;
+    flex-direction: column;
+    background-color: var(--settings-bg, #f2f2f7);
+    z-index: 10;
+    cursor: pointer;
+}
+
+.big-header .header-btn {
+    display: none;
+}
+
+.big-title {
+    font-size: 34px;
+    font-weight: 700;
+    color: #000;
+    margin: 0;
+    line-height: 1.2;
+}
+
+/* Centered Header for Edit View */
+.centered-header {
+    height: 44px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 16px;
+    background-color: var(--settings-bg, #f2f2f7);
+    z-index: 10;
+    position: relative;
+    margin-bottom: 10px;
+}
+
+.center-title {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 17px;
+    font-weight: 600;
+    color: #000;
+    margin: 0;
+}
+
+.header-btn {
+    color: var(--blue-color, #007aff);
+    font-size: 17px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    z-index: 20;
+}
+
+.settings-content {
+    flex: 1;
+    overflow-y: auto;
+    padding-bottom: 30px;
+}
+
+.settings-content.no-top-padding {
+    padding-top: 10px;
+}
+
+/* Settings Group & Lists (iOS Style) */
+.settings-group, .form-group {
+    margin: 20px 16px;
+    background-color: #fff;
+    border-radius: 12px; /* iOS standard group radius */
+    overflow: hidden;
+}
+
+.fully-rounded {
+    border-radius: var(--radius-bubble, 20px); 
+}
+
+.settings-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px; 
+    cursor: pointer;
+    background-color: #fff;
+    position: relative;
+    height: 50px;
+}
+
+/* Separator line for list items */
+.settings-item:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 60px; /* Aligned with text */
+    right: 0;
+    height: 0.5px;
+    background-color: var(--separator-color, #c6c6c8);
+}
+
+/* Special case for profile item separator */
+.profile-item:not(:last-child)::after {
+    left: 82px; 
+}
+
+.settings-item:active {
+    background-color: #e5e5ea;
+}
+
+.settings-icon {
+    width: 29px;
+    height: 29px;
+    border-radius: 7px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #fff;
+    margin-right: 12px;
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+/* Action Icons */
+.action-icon-blue {
+    color: var(--blue-color, #007aff) !important;
+    background: transparent !important;
+    width: auto;
+    height: auto;
+    font-size: 18px;
+    margin-right: 12px;
+}
+
+.settings-text {
+    flex: 1;
+    font-size: 17px;
+    color: #000;
+}
+
+.arrow {
+    color: #c7c7cc;
+    font-size: 14px;
+}
+
+/* Apple ID Profile Card */
+.profile-group {
+    margin-top: 10px;
+}
+
+.profile-item {
+    padding: 12px 16px;
+    height: auto;
+    min-height: 80px;
+}
+
+.apple-id-avatar-small {
+    width: 58px;
+    height: 58px;
+    background-color: #e5e5ea;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 28px;
+    color: #aeaeb2;
+    margin-right: 12px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.apple-id-avatar-small img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.apple-id-text-group {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.apple-id-name {
+    font-size: 20px;
+    font-weight: 400;
+    color: #000;
+    margin-bottom: 2px;
+}
+
+.apple-id-detail {
+    font-size: 13px;
+    color: #8e8e93;
+    opacity: 1;
+}
+
+/* Edit View Specifics */
+.edit-avatar-section {
+    display: flex;
+    justify-content: center;
+    margin: 20px 0 30px;
+}
+
+.edit-avatar-wrapper {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.edit-avatar-wrapper-main {
+    width: 112px;
+    height: 112px;
+    justify-content: center;
+}
+
+.edit-avatar-wrapper-main .edit-avatar {
+    margin-bottom: 0;
+}
+
+.edit-avatar-plus-btn {
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #007aff;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    
+    border: 2px solid #fff;
+    font-size: 13px;
+    pointer-events: none;
+}
+
+.edit-avatar {
+    width: 100px;
+    height: 100px;
+    background-color: #e5e5ea;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 50px;
+    color: #aeaeb2;
+    overflow: hidden;
+    margin-bottom: 8px;
+    
+}
+
+.edit-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.form-group {
+    margin: 0 16px;
+    background-color: #fff;
+    border-radius: var(--radius-bubble, 20px);
+    overflow: hidden;
+}
+
+.form-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 0.5px solid var(--separator-color, #c6c6c8);
+    height: 50px;
+}
+
+.form-item:last-child {
+    border-bottom: none;
+}
+
+.form-item label {
+    width: 100px;
+    font-size: 17px;
+    color: #000;
+    white-space: nowrap;
+}
+
+.form-item input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-size: 17px;
+    color: var(--blue-color, #007aff);
+    background: transparent;
+    text-align: right;
+    padding-right: 5px;
+}
+
+.form-item input::placeholder {
+    color: #c7c7cc;
+}
+
+/* Tall Input (Legacy) */
+.tall-input-group {
+    min-height: 100px;
+    background-color: #fff;
+    padding: 10px 16px;
+}
+
+.tall-item {
+    align-items: flex-start;
+    height: 140px;
+    padding: 0;
+    border-bottom: none;
+}
+
+.tall-input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-size: 17px;
+    color: #000;
+    resize: none;
+    width: 100%;
+    height: 100%;
+    font-family: inherit;
+    background: transparent;
+    line-height: 1.4;
+    text-align: left;
+}
+
+/* API Model Picker */
+.api-model-card {
+    width: 100%;
+    min-height: 56px;
+    background: #f2f2f7;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    position: relative;
+    transition: background-color 0.15s ease;
+}
+
+.api-model-card:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 16px;
+    right: 0;
+    height: 0.5px;
+    background-color: var(--separator-color);
+    z-index: 5;
+}
+
+.api-model-card:active {
+    background-color: #e5e5ea;
+}
+
+.api-model-card-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 16px;
+    line-height: 1.4;
+    font-weight: 500;
+    color: #000;
+    word-break: break-all;
+    white-space: normal;
+}
+
+.api-model-card-action {
+    color: var(--blue-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 14px;
+}
+
+/* Segment Controls used in Settings/API */
+.pay-segment-control {
+    display: flex;
+    background-color: rgba(255, 255, 255, 0.8);
+    border-radius: 20px;
+    padding: 3px;
+    width: 160px;
+    pointer-events: auto;
+    
+}
+
+.pay-segment-btn {
+    flex: 1;
+    text-align: center;
+    padding: 6px 0;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 18px;
+    cursor: pointer;
+    color: #666;
+    transition: all 0.2s ease;
+}
+
+.pay-segment-btn.active {
+    background-color: #000;
+    color: #fff;
+    
+}
+
+.theme-font-group-body {
+    padding: 12px 16px 16px !important;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: #f2f2f7 !important;
+}
+
+.theme-font-preview-bubble {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    padding: 12px 15px !important;
+    border-radius: 18px !important;
+    border-bottom-right-radius: 5px !important;
+    background: #111111 !important;
+    color: #ffffff !important;
+    font-size: 16px !important;
+    line-height: 1.4;
+    
+    word-break: break-word;
+}
+
+.theme-font-preview-caption {
+    font-size: 12px;
+    color: #8e8e93;
+    line-height: 1.4;
+}
+
+.theme-font-preset-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.theme-font-pill {
+    border: 1px solid #ececf0 !important;
+    background: #ffffff !important;
+    color: #111111;
+    border-radius: 999px !important;
+    padding: 0 !important;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    overflow: hidden;
+    min-height: 34px;
+}
+
+.theme-font-pill-label {
+    padding: 8px 12px;
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+}
+
+.theme-font-pill-delete {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    margin-right: 4px;
+    border-radius: 999px;
+    opacity: 0.78;
+}
+
+.theme-font-pill-delete:hover {
+    background: rgba(17, 17, 17, 0.08);
+    opacity: 1;
+}
+
+.theme-font-pill.active {
+    background: #111111 !important;
+    color: #ffffff !important;
+    border-color: #111111 !important;
+}
+
+.theme-font-pill.active .theme-font-pill-delete:hover {
+    background: rgba(255, 255, 255, 0.16);
+}
+
+.theme-font-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 10010;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.28) !important;
+    
+    
+}
+
+.theme-font-modal-overlay.active {
+    display: flex;
+}
+
+.theme-font-modal-card {
+    width: min(390px, 100%) !important;
+    max-height: min(78vh, 620px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: #f7f7fa !important;
+    border-radius: 26px !important;
+    
+}
+
+.theme-font-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 20px 14px !important;
+    background: #ffffff !important;
+    border-bottom: 1px solid #f2f2f7 !important;
+}
+
+.theme-font-modal-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #111111;
+}
+
+.theme-font-modal-icon-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.theme-font-modal-icon-btn {
+    width: 34px;
+    height: 34px;
+    border: none;
+    border-radius: 50%;
+    background: #f2f2f7;
+    color: #111111;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.theme-font-modal-icon-btn.is-danger {
+    background: #ffebee;
+    color: #ff3b30;
+}
+
+.theme-font-modal-body {
+    padding: 16px 20px 20px !important;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.theme-font-section-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #8e8e93;
+    margin-bottom: 10px;
+}
+
+.theme-font-subsection {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.theme-font-size-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #f2f2f7 !important;
+    border-radius: 16px !important;
+    padding: 13px 14px !important;
+    
+}
+
+.theme-font-size-slider {
+    flex: 1;
+    accent-color: #111111;
+}
+
+.theme-font-size-value {
+    min-width: 44px;
+    text-align: right;
+    font-size: 13px;
+    font-weight: 600;
+    color: #8e8e93;
+}
+
+/* Account List styling */
+.account-list {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 20px;
+    gap: 0;
+    background-color: #fff;
+    border-radius: var(--radius-bubble, 20px);
+    overflow: hidden;
+}
+
+.account-card {
+    background-color: #fff;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    position: relative;
+    height: 60px;
+}
+
+.account-card:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 68px;
+    right: 0;
+    height: 0.5px;
+    background-color: var(--separator-color, #c6c6c8);
+    z-index: 10;
+}
+
+.account-card:active .account-content {
+    background-color: #d1d1d6;
+}
+
+.account-content {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+    padding: 12px 16px;
+    z-index: 10;
+    position: relative;
+    cursor: pointer;
+}
+
+.account-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: #e5e5ea;
+    margin-right: 12px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    color: #aeaeb2;
+    flex-shrink: 0;
+}
+
+.account-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.account-info {
+    flex: 1;
+    overflow: hidden;
+}
+
+.account-name {
+    font-size: 17px;
+    font-weight: 500;
+    color: #000;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.account-detail {
+    font-size: 13px;
+    color: #8e8e93;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.delete-icon {
+    font-size: 16px;
+    color: #c7c7cc;
+    padding: 10px;
+    cursor: pointer;
+    margin-left: 8px;
+}
+
+.delete-icon:active {
+    color: #8e8e93;
+}
+
+/* Data Management */
+.data-management-bottom-sheet {
+    height: auto !important;
+    max-height: min(82vh, 720px) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+}
+
+.data-management-content {
+    padding: 8px 0 max(20px, env(safe-area-inset-bottom)) !important;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 0;
+}
+
+.data-import-preview {
+    background: #ffffff;
+    border-radius: 16px;
+    padding: 14px;
+    border: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.data-import-preview-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #111111;
+    margin-bottom: 6px;
+}
+
+.data-import-preview-file {
+    font-size: 13px;
+    font-weight: 600;
+    color: #3a3a3c;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 10px;
+}
+
+.data-import-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.data-import-preview-grid div {
+    min-width: 0;
+    background: #e5e5ea;
+    border-radius: 10px;
+    padding: 9px 6px;
+    text-align: center;
+}
+
+.data-import-preview-grid span {
+    display: block;
+    font-size: 14px;
+    font-weight: 700;
+    color: #111111;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.data-import-preview-grid small {
+    display: block;
+    margin-top: 2px;
+    font-size: 11px;
+    color: #8e8e93;
+}
+
+.data-management-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.data-management-action {
+    width: 100%;
+    min-height: 64px;
+    border: 0;
+    border-radius: 16px;
+    background: #f2f2f7;
+    color: #111111;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.data-management-action:active {
+    background: #ececf0;
+}
+
+.data-management-action:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
+.data-management-action-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    color: #ffffff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    font-size: 16px;
+}
+
+.data-management-action-icon.success {
+    background: #34c759;
+}
+
+.data-management-action-icon.warning {
+    background: #ff9500;
+}
+
+.data-management-action-icon.danger {
+    background: #ff3b30;
+}
+
+.data-management-action-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.data-management-action-copy strong {
+    font-size: 16px;
+    font-weight: 700;
+    color: #111111;
+    line-height: 1.2;
+}
+
+.data-management-action-copy small {
+    font-size: 12px;
+    line-height: 1.35;
+    color: #8e8e93;
+    overflow-wrap: anywhere;
+}
+
+.data-management-action.danger .data-management-action-copy strong {
+    color: #ff3b30;
+}
+
+.data-management-close-action {
+    width: 100%;
+    border: 0;
+    margin: 0 !important;
+    min-height: 48px;
+}
+
+.data-operation-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 999999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.45);
+}
+
+.data-operation-card {
+    width: min(300px, 100%);
+    border-radius: 18px;
+    background: rgba(28, 28, 30, 0.92);
+    color: #ffffff;
+    padding: 24px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+}
+
+.data-operation-spinner {
+    font-size: 34px;
+}
+
+.data-operation-text {
+    max-width: 100%;
+    font-size: 15px;
+    font-weight: 600;
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+.data-operation-progress {
+    width: 100%;
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.22);
+    overflow: hidden;
+}
+
+.data-operation-progress > div {
+    width: 0%;
+    height: 100%;
+    border-radius: inherit;
+    background: #0a84ff;
+    transition: width 0.25s ease;
+}
+
+@media (max-width: 430px) {
+    .data-management-bottom-sheet {
+        max-height: 86vh !important;
+        padding-left: 12px !important;
+        padding-right: 12px !important;
+    }
+
+    .data-import-preview-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .data-management-action {
+        min-height: 60px;
+        padding: 11px 12px;
+    }
+}

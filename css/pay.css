@@ -1,0 +1,545 @@
+/* Pay App Specific Styles - White Background with Monochrome/Camo Cards */
+.pay-view {
+    background-color: var(--screen-bg, #f2f2f7); /* Adaptive background */
+    color: #000; /* Black text */
+    display: flex;
+    flex-direction: column;
+    padding-top: 0;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    z-index: 500;
+    transform: translateY(100%);
+    visibility: hidden;
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1), visibility 0.3s;
+}
+
+.pay-view.active {
+    transform: translateY(0);
+    visibility: visible;
+}
+
+/* Floating Header without bottom white line */
+.pay-header {
+    position: absolute;
+    top: env(safe-area-inset-top, 0px);
+    left: 0;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: transparent;
+    border-bottom: none;
+    height: 44px;
+    z-index: 20;
+    pointer-events: none;
+}
+
+/* Circular Floating Buttons */
+.pay-header-left, .pay-header-right {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.8); /* Semi-transparent white */
+    
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    font-size: 16px;
+    color: #000; /* Dark icon */
+    pointer-events: auto; /* Re-enable clicks */
+    
+    border: 1px solid rgba(0,0,0,0.05);
+}
+
+.pay-header-right {
+    color: #000;
+}
+
+/* Segmented Control for Light Mode */
+.pay-segment-control {
+    display: flex;
+    background-color: rgba(255, 255, 255, 0.8);
+    
+    border-radius: 20px;
+    padding: 3px;
+    width: 160px;
+    pointer-events: auto;
+    
+}
+
+.pay-segment-btn {
+    flex: 1;
+    text-align: center;
+    padding: 6px 0;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 18px;
+    cursor: pointer;
+    color: #666;
+    transition: all 0.2s ease;
+}
+
+.pay-segment-btn.active {
+    background-color: #000;
+    color: #fff;
+    
+}
+
+.pay-content {
+    flex: 1;
+    overflow-y: auto;
+    position: relative;
+    padding-top: max(44px, calc(44px + env(safe-area-inset-top, 0px))); /* Make room for floating header */
+}
+
+.pay-tab {
+    display: none;
+    animation: payFadeIn 0.3s ease;
+    padding-bottom: max(80px, calc(60px + env(safe-area-inset-bottom)));
+}
+
+.pay-tab.active {
+    display: block;
+}
+
+@keyframes payFadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Cards & Sections - Dynamic Card Theme */
+.pay-total-card {
+    /* Default white card theme */
+    background: #ffffff;
+    margin: 16px;
+    border-radius: 20px;
+    padding: 28px 24px;
+    color: #000000;
+    
+    position: relative;
+    overflow: hidden;
+    min-height: 180px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: all 0.3s ease;
+}
+
+.pay-total-card.family-card {
+    background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%);
+    color: #ffffff;
+    box-shadow: 0 4px 15px rgba(255, 154, 158, 0.3);
+}
+.pay-total-card.family-card .pay-positive {
+    color: #ffffff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.pay-total-card.bank-card-blue {
+    background: #ffffff;
+    color: #000000;
+}
+
+.pay-card-title {
+    font-size: 16px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.pay-card-type {
+    font-size: 12px;
+    opacity: 0.8;
+    margin-top: 4px;
+}
+
+.pay-card-amount {
+    font-size: 36px;
+    font-weight: 700;
+    margin: 15px 0;
+    letter-spacing: -1px;
+}
+
+.pay-card-number {
+    font-size: 18px;
+    font-family: monospace;
+    letter-spacing: 2px;
+    margin-top: auto;
+}
+
+.pay-card-logo {
+    position: absolute;
+    bottom: 24px;
+    right: 24px;
+    font-size: 20px;
+    font-weight: bold;
+    opacity: 0.8;
+}
+
+.pay-invest-card {
+    /* Dark Obsidian/Carbon Gradient */
+    background: linear-gradient(135deg, #2c2c2e 0%, #000000 100%);
+    margin: 16px;
+    border-radius: 20px;
+    padding: 28px 24px;
+    color: #fff;
+    
+}
+
+
+/* Typography for amounts */
+.pay-positive { color: #000; font-weight: 600; } /* Black for positive income in light mode */
+.pay-total-card .pay-positive, .pay-invest-card .pay-positive { color: #fff; font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+.pay-negative { color: #8e8e93; } /* Grey for expense */
+
+.pay-quick-actions {
+    display: flex;
+    justify-content: space-around;
+    background-color: #fff; /* Keep white for light mode */
+    margin: 0 16px;
+    padding: 20px 10px;
+    border-radius: 20px;
+    
+}
+
+.pay-action-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.pay-action-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 16px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #fff;
+    font-size: 20px;
+    
+    transition: transform 0.1s;
+    /* Overriding inline colors with metallic gradients */
+    background: linear-gradient(135deg, #666, #222) !important;
+}
+
+.pay-action-btn:active .pay-action-icon {
+    transform: scale(0.9);
+}
+
+.pay-action-btn span {
+    font-size: 12px;
+    color: #333;
+    font-weight: 500;
+    margin-top: 4px;
+}
+
+.pay-section {
+    margin: 20px 16px;
+    background-color: #fff;
+    border-radius: 20px;
+    padding: 16px;
+    
+}
+
+.pay-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.pay-section-title {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0;
+    color: #000;
+}
+
+.pay-section-more {
+    font-size: 13px;
+    color: #8e8e93;
+    cursor: pointer;
+}
+
+/* Filter buttons for bills */
+.pay-bill-filters {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.pay-filter-btn {
+    padding: 6px 12px;
+    border-radius: 14px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #666;
+    background-color: #f2f2f7;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.pay-filter-btn.active {
+    background-color: #000;
+    color: #fff;
+}
+
+/* Bill List */
+.pay-bill-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.pay-bill-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid #f2f2f7;
+}
+
+.pay-bill-item:last-child {
+    border-bottom: none;
+}
+
+.pay-bill-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #fff;
+    font-size: 18px;
+    margin-right: 12px;
+    flex-shrink: 0;
+    /* Force grayscale */
+    background: linear-gradient(135deg, #888, #444) !important;
+}
+
+.pay-bill-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.pay-bill-title {
+    font-size: 15px;
+    font-weight: 500;
+    color: #000;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+.pay-bill-time {
+    font-size: 12px;
+    color: #8e8e93;
+    margin-top: 4px;
+}
+
+.pay-bill-amount {
+    font-size: 16px;
+    font-weight: 600;
+    text-align: right;
+}
+
+.pay-empty-state {
+    padding: 30px 0;
+    text-align: center;
+    color: #8e8e93;
+    font-size: 14px;
+}
+
+/* Invest Tab Products */
+.pay-product-item {
+    display: flex;
+    align-items: center;
+    padding: 16px 0;
+    border-bottom: 1px solid #f2f2f7;
+}
+
+.pay-product-item:last-child {
+    border-bottom: none;
+}
+
+.pay-product-rate {
+    font-size: 24px;
+    font-weight: 700;
+    width: 80px;
+    flex-shrink: 0;
+    color: #000;
+}
+
+.pay-product-desc {
+    font-size: 11px;
+    color: #8e8e93;
+    margin-top: 4px;
+}
+
+.pay-product-info {
+    flex: 1;
+    padding: 0 10px;
+}
+
+.pay-product-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #000;
+}
+
+.pay-product-tags {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.pay-tag {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background-color: #f2f2f7;
+    color: #666;
+}
+
+.pay-buy-btn {
+    background-color: #000;
+    color: #fff;
+    padding: 6px 16px;
+    border-radius: 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* Modals */
+.pay-modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(255, 255, 255, 0.95);
+    z-index: 600;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 60px;
+    
+}
+
+.pay-modal-overlay.active {
+    display: flex;
+    animation: ytFadeIn 0.2s ease;
+}
+
+.pay-scan-container {
+    background: #fff;
+    width: 90%;
+    border-radius: 24px;
+    
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.pay-scan-header {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 30px;
+}
+
+.pay-scan-header i {
+    font-size: 20px;
+    color: #8e8e93;
+    cursor: pointer;
+}
+
+.pay-scan-barcode {
+    width: 100%;
+    height: 60px;
+    background: repeating-linear-gradient(90deg, #000, #000 4px, transparent 4px, transparent 8px, #000 8px, #000 10px, transparent 10px, transparent 14px);
+    margin-bottom: 20px;
+    opacity: 0.8;
+}
+
+.pay-scan-qrcode {
+    width: 180px;
+    height: 180px;
+    background: #fff;
+    border: 1px solid #e5e5ea;
+    border-radius: 12px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Bank Cards */
+.pay-bank-card {
+    background: linear-gradient(135deg, #1c1c1e, #3a3a3c);
+    border-radius: 16px;
+    padding: 20px;
+    color: #fff;
+    height: 120px;
+    position: relative;
+    margin-bottom: 20px;
+}
+
+.pay-bank-card.is-current {
+    border: 2px solid #007aff;
+}
+
+.pay-bank-card.family-sheet-card {
+    background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%);
+    color: #000;
+}
+
+.pay-bank-card.bank-card-blue {
+    background: linear-gradient(135deg, #007aff, #0056b3);
+}
+
+.pay-bank-name {
+    font-size: 16px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.pay-bank-type {
+    font-size: 12px;
+    opacity: 0.8;
+    margin-top: 4px;
+}
+
+.pay-bank-number {
+    font-size: 20px;
+    font-family: monospace;
+    letter-spacing: 2px;
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+}
+
+.pay-bank-logo {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    font-size: 24px;
+    font-weight: bold;
+    opacity: 0.8;
+}

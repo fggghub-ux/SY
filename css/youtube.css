@@ -1,0 +1,1711 @@
+/* YouTube App Specific Styles */
+
+.youtube-view {
+    background-color: var(--screen-bg, #ffffff); /* Light Mode Background */
+    color: #0f0f0f;
+    display: flex;
+    flex-direction: column;
+    padding-top: 0; /* Reset default padding to handle custom header */
+}
+
+/* 1. Header (Top Bar) */
+.yt-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    /* 优化：调整 top padding，使顶栏整体下移，避开刘海屏 */
+    padding: max(10px, var(--safe-top)) 16px 10px; 
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    background-color: #ffffff;
+    z-index: 100; /* 提高整个头部的层级 */
+    /* Removed border-bottom */
+    /* 为了不影响外层布局，这里不使用 absolute */
+}
+
+/* 针对 Char 主页的特殊沉浸式 Header */
+#sub-channel-view .yt-header {
+    background-color: transparent !important;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    z-index: 20;
+    padding-top: max(10px, var(--safe-top));
+    pointer-events: none; /* 让大部分区域可穿透点击 */
+}
+
+#sub-channel-view .yt-header-left,
+#sub-channel-view .yt-header-right {
+    pointer-events: auto; /* 恢复图标的点击 */
+}
+
+.yt-header-left {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+}
+
+.yt-header-left:active {
+    opacity: 0.7;
+}
+
+.yt-logo-icon {
+    color: #ff0000;
+    font-size: 28px;
+}
+
+.yt-logo-text {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-weight: 700;
+    font-size: 20px;
+    letter-spacing: -0.5px;
+}
+
+.yt-header-right {
+    display: flex;
+    gap: 20px;
+    z-index: 100;
+}
+
+.yt-char-header-actions {
+    gap: 10px;
+    align-items: center;
+}
+
+.yt-char-header-action {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.86);
+    color: #0f0f0f;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    
+    
+    
+    transition: transform 0.2s, opacity 0.2s, background-color 0.2s;
+}
+
+.yt-char-header-action:active {
+    transform: scale(0.94);
+}
+
+.yt-char-header-action.is-loading {
+    opacity: 0.68;
+    pointer-events: none;
+}
+
+.yt-icon-btn {
+    font-size: 20px;
+    color: #0f0f0f;
+    cursor: pointer;
+    position: relative;
+    z-index: 1000; /* Force above any transparent layers */
+    pointer-events: auto;
+    /* 防止内部元素(如果有)遮挡 */
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* 创造巨大隐形点击热区，靶心无敌大 */
+.yt-icon-btn::after {
+    content: '';
+    position: absolute;
+    top: -20px;
+    bottom: -20px;
+    left: -20px;
+    right: -20px;
+    z-index: 1001;
+}
+
+.yt-icon-btn:active {
+    opacity: 0.7;
+}
+
+/* Main Content Area */
+.yt-main-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    position: relative;
+    padding-bottom: calc(90px + var(--safe-bottom)); /* Space for bottom nav */
+    padding-top: max(60px, calc(44px + var(--safe-top))); /* Make room for floating header */
+    -webkit-overflow-scrolling: touch;
+}
+
+.yt-tab-content {
+    display: none;
+    animation: ytFadeIn 0.3s ease;
+}
+
+.yt-tab-content.active {
+    display: block;
+}
+
+@keyframes ytFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* 2. Subscriptions Bar (Second Bar) */
+.yt-subscriptions-wrapper {
+    display: flex;
+    align-items: center;
+    padding: 12px 0 12px 16px;
+    /* Removed border-bottom */
+}
+
+.yt-subscriptions-scroll {
+    display: flex;
+    gap: 15px;
+    overflow-x: auto;
+    flex: 1;
+    padding-right: 15px;
+    scroll-behavior: smooth;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+.yt-subscriptions-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+.yt-sub-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    min-width: 60px;
+    cursor: pointer;
+}
+
+.yt-sub-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background-color: #f2f2f2;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    position: relative;
+    border: 2px solid transparent;
+}
+
+.yt-sub-item.has-live .yt-sub-avatar {
+    border-color: #ff0000;
+}
+
+.yt-sub-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.yt-sub-avatar i {
+    font-size: 24px;
+    color: #aaaaaa;
+}
+
+.yt-sub-name {
+    font-size: 12px;
+    color: #606060;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 60px;
+}
+
+.yt-sub-all-btn {
+    color: #065fd4;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 0 16px;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+/* 3. Filter Bubbles (Third Bar) */
+.yt-filters-bar {
+    display: flex;
+    gap: 10px;
+    padding: 12px 16px;
+    overflow-x: auto;
+    /* Removed border-bottom */
+}
+
+.yt-filter-bubble {
+    background-color: #f2f2f2;
+    color: #0f0f0f;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.yt-filter-bubble.active {
+    background-color: #0f0f0f;
+    color: #ffffff;
+}
+
+/* 4. Live Content Area (Fourth Bar) */
+.yt-live-section {
+    display: flex;
+    flex-direction: column;
+}
+
+.yt-video-card {
+    margin-bottom: 20px;
+}
+
+.yt-video-thumbnail {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background-color: #f2f2f2;
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
+
+.yt-video-thumbnail img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.yt-video-thumbnail i {
+    font-size: 40px;
+    color: #555;
+}
+
+.yt-live-badge {
+    position: absolute;
+    top: 10px; /* 改为左上角或右上角靠上 */
+    left: 10px; /* 原来是 bottom: 8px; right: 8px */
+    background-color: #cc0000;
+    color: #fff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    z-index: 10;
+}
+
+.yt-video-info {
+    display: flex;
+    padding: 12px 16px;
+    gap: 12px;
+}
+
+.yt-video-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: #f2f2f2;
+    flex-shrink: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
+
+.yt-video-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.yt-video-details {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+}
+
+.yt-video-title {
+    font-size: 15px;
+    font-weight: 500;
+    color: #0f0f0f;
+    margin-bottom: 4px;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.yt-video-meta {
+    font-size: 13px;
+    color: #606060;
+}
+
+.yt-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    color: #606060;
+    text-align: center;
+}
+
+.yt-empty-state i {
+    font-size: 48px;
+    margin-bottom: 16px;
+    color: #ccc;
+}
+
+/* 5. Profile Center */
+.yt-profile-header-bg {
+    height: 120px;
+    width: 100%;
+    background-color: #e5e5e5; /* Default gray background */
+    background-size: cover;
+    background-position: center;
+}
+
+.yt-profile-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: -40px; /* Pull up to overlap bg */
+    padding: 0 16px;
+}
+
+.yt-profile-avatar {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background-color: #f2f2f2;
+    border: 3px solid #ffffff;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 32px;
+    color: #aaaaaa;
+    overflow: hidden;
+    margin-bottom: 8px; /* Tighter spacing */
+}
+
+.yt-profile-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.yt-profile-name {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 2px; /* Tighter spacing */
+}
+
+.yt-profile-handle {
+    font-size: 14px;
+    color: #606060;
+    margin-bottom: 20px;
+}
+
+.yt-profile-actions {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    padding: 0 16px;
+    margin-top: 10px;
+}
+
+.yt-profile-action-btn {
+    flex: 1;
+    background-color: #f2f2f2;
+    color: #0f0f0f;
+    padding: 10px;
+    border-radius: 20px;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+}
+
+.yt-profile-action-btn:active {
+    background-color: #e5e5e5;
+}
+
+/* 6. Floating Bottom Navigation (Glassmorphism) */
+.yt-bottom-nav-container {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(18px + var(--safe-bottom));
+    display: flex;
+    justify-content: center;
+    z-index: 200;
+    background: transparent;
+    padding: 0 18px;
+    box-sizing: border-box;
+    height: auto !important;
+    pointer-events: none;
+    transition: bottom 0.25s ease;
+}
+
+.yt-bottom-nav {
+    pointer-events: auto;
+    position: relative;
+    display: inline-flex;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: 0;
+    width: auto;
+    min-width: min(316px, calc(100vw - 32px));
+    max-width: calc(100vw - 32px);
+    height: 49px;
+    padding: 3px;
+    border-radius: 40px;
+    background-color: rgba(255, 255, 255, 0.85);
+    
+    
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    
+}
+
+/* Animated Indicator */
+.yt-nav-indicator {
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    left: 4px;
+    background-color: rgba(0, 0, 0, 0.06);
+    border-radius: 36px;
+    
+    z-index: 0;
+    transition: left 0.3s cubic-bezier(0.25, 1, 0.5, 1), width 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.yt-nav-item {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    min-width: 68px;
+    height: 100%;
+    padding: 0 11px;
+    min-height: 0;
+    color: #8e8e93;
+    cursor: pointer;
+    transition: color 0.3s;
+}
+
+.yt-nav-item i {
+    font-size: 19px;
+    margin-bottom: 0;
+}
+
+.yt-nav-item span {
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: -0.1px;
+}
+
+/* Center item (Add button) special styling */
+.yt-nav-item-center {
+    min-width: 44px;
+    padding: 0 5px;
+}
+
+.yt-plus-icon-wrapper {
+    width: 42px;
+    height: 42px;
+    border: 1px solid rgba(255,255,255,0.7);
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(245,245,247,0.84) 100%);
+    
+}
+
+.yt-nav-item-center i {
+    font-size: 16px;
+    color: #0f0f0f;
+    -webkit-text-stroke: 0.4px #0f0f0f;
+}
+
+.yt-nav-item.active {
+    color: #0f0f0f;
+}
+
+/* Placeholder Content */
+.yt-placeholder-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #606060;
+    padding-top: 100px;
+}
+
+.yt-placeholder-content i {
+    font-size: 48px;
+    margin-bottom: 16px;
+    color: #ccc;
+}
+
+/* 7. Enhanced Profile & Stats */
+.yt-profile-stats {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #606060;
+    margin-bottom: 0px; /* adjusted to allow button to be tighter */
+}
+
+.yt-stat-separator {
+    font-size: 10px;
+}
+
+/* --- Sliding Tabs Styles --- */
+.yt-sliding-tabs-container {
+    width: 100%;
+    border-bottom: 1px solid #e5e5e5;
+    position: relative;
+    background-color: #fff; /* Ensure it covers anything behind if scrolling */
+}
+
+.yt-sliding-tabs {
+    display: flex;
+    justify-content: center;
+    position: relative;
+    padding: 0 16px;
+}
+
+.yt-sliding-tab {
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #606060;
+    cursor: pointer;
+    position: relative;
+    z-index: 1;
+    transition: color 0.3s ease;
+    white-space: nowrap;
+}
+
+.yt-sliding-tab.active {
+    color: #0f0f0f;
+}
+
+.yt-tab-indicator {
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    height: 3px;
+    background-color: #0f0f0f;
+    border-radius: 3px 3px 0 0;
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1), width 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+    z-index: 2;
+    /* Width and transform are set by JS */
+}
+
+.yt-profile-content-list {
+    padding: 16px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+/* 8. Subscriber Channel View (Popup) */
+.sub-channel-view {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: var(--screen-bg, #ffffff);
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.sub-channel-view.active {
+    transform: translateY(0) !important;
+}
+
+.yt-channel-subscribe-btn {
+    background-color: #0f0f0f;
+    color: #ffffff;
+    padding: 9px 28px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 0.2s, color 0.2s, transform 0.2s;
+    min-width: 104px;
+    text-align: center;
+}
+
+.yt-channel-subscribe-btn.subscribed {
+    background-color: rgba(0, 0, 0, 0.06);
+    color: #0f0f0f;
+}
+
+.yt-channel-subscribe-btn:active,
+.yt-char-generate-pill:active,
+.yt-char-edit-circle:active,
+.yt-char-header-action:active {
+    transform: scale(0.97);
+}
+
+.yt-channel-content {
+    display: flex;
+    flex-direction: column;
+}
+
+.yt-channel-section-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    margin-top: 8px;
+    color: #0f0f0f;
+}
+
+/* Live Pin Card */
+.yt-live-pin-card {
+    border: 1px solid #ff0000;
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 20px;
+}
+
+.yt-live-pin-card .yt-video-thumbnail {
+    border-bottom: 1px solid #f2f2f2;
+}
+
+/* History Vods List */
+.yt-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.yt-history-item {
+    display: flex;
+    gap: 12px;
+}
+
+.yt-history-thumb {
+    width: 140px;
+    aspect-ratio: 16 / 9;
+    border-radius: 8px;
+    background-color: #f2f2f2;
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.yt-history-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.yt-history-time {
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    background-color: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 500;
+}
+
+.yt-history-info {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+}
+
+.yt-history-title {
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.3;
+    margin-bottom: 4px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.yt-history-meta {
+    font-size: 11px;
+    color: #606060;
+}
+
+/* Player View Specific Light Theme Overrides */
+#yt-video-player-view {
+    background-color: #ffffff !important;
+    color: #0f0f0f !important;
+}
+
+#yt-video-player-view.active,
+#yt-user-live-view.active {
+    display: flex !important;
+}
+
+#yt-video-player-view .yt-header {
+    padding-top: max(10px, var(--safe-top));
+}
+
+#yt-video-player-view .yt-header-left {
+    background: rgba(255,255,255,0.7) !important;
+}
+
+#yt-video-player-view .yt-header-left i {
+    color: #000000 !important;
+}
+
+#yt-player-title {
+    color: #0f0f0f !important;
+}
+
+#yt-player-views {
+    color: #606060 !important;
+}
+
+#yt-player-channel-name {
+    color: #0f0f0f !important;
+}
+
+#yt-player-channel-subs {
+    color: #606060 !important;
+}
+
+/* Light Theme Chat Area */
+#yt-video-player-view > div:last-child {
+    background-color: #f9f9f9 !important; /* Chat background */
+}
+
+#yt-player-chat-title {
+    color: #0f0f0f !important;
+    border-bottom: 1px solid #f2f2f2 !important; /* 更浅的边框颜色 */
+    background-color: #ffffff;
+}
+
+#yt-player-chat-container {
+    background-color: #ffffff !important;
+}
+
+/* Chat Input Area */
+#yt-video-player-view .chat-input-area {
+    background-color: #ffffff !important;
+    border-top: 1px solid #e5e5e5;
+}
+
+#yt-player-chat-input {
+    background-color: #f2f2f2 !important;
+    color: #0f0f0f !important;
+}
+
+#yt-player-chat-input::placeholder {
+    color: #8e8e93;
+}
+
+#yt-video-player-view.yt-char-live-mode {
+    background: #000000 !important;
+}
+
+#yt-video-player-view.yt-char-live-mode .yt-header {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: auto;
+    padding-top: max(16px, env(safe-area-inset-top));
+    background: transparent !important;
+    z-index: 8;
+}
+
+#yt-video-player-view.yt-char-live-mode .yt-header-left {
+    width: 36px !important;
+    height: 36px !important;
+    border-radius: 18px !important;
+    background: rgba(0, 0, 0, 0.35) !important;
+    color: #ffffff !important;
+}
+
+#yt-video-player-view.yt-char-live-mode .yt-header-left i {
+    color: #ffffff !important;
+}
+
+#yt-video-player-view.yt-char-live-mode #yt-player-video-area {
+    flex: 1 1 auto;
+    width: 100%;
+    aspect-ratio: auto !important;
+    margin-top: 0 !important;
+    min-height: 40%;
+}
+
+#yt-video-player-view.yt-char-live-mode #yt-player-thumbnail {
+    height: 100%;
+    opacity: 0.96;
+}
+
+#yt-video-player-view.yt-char-live-mode #yt-player-live-badge {
+    display: none !important;
+}
+
+#yt-video-player-view.yt-char-live-mode .yt-player-meta-panel {
+    display: none !important;
+}
+
+#yt-video-player-view.yt-char-live-mode .yt-player-chat-shell {
+    height: 60%;
+    min-height: 360px;
+    flex: 0 0 auto !important;
+    background: #ffffff !important;
+    border-radius: 22px 22px 0 0;
+    margin-top: -14px;
+    position: relative;
+    z-index: 6;
+    overflow: hidden !important;
+}
+
+#yt-video-player-view.yt-char-live-mode #yt-player-chat-title {
+    background: #ffffff !important;
+    border-bottom: none !important;
+    padding: 14px 16px 10px !important;
+}
+
+#yt-video-player-view.yt-char-live-mode #yt-player-chat-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 16px 16px !important;
+}
+
+#yt-video-player-view.yt-char-live-mode .yt-chat-input-area {
+    padding: 10px 16px 14px !important;
+    border-top: 1px solid #f2f2f2 !important;
+}
+
+.yt-player-live-title-overlay {
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    bottom: 22px;
+    max-width: 82%;
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1.25;
+    color: #ffffff;
+    z-index: 4;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+    overflow-wrap: anywhere;
+}
+
+.yt-player-live-stats-overlay {
+    position: absolute;
+    top: max(16px, env(safe-area-inset-top));
+    right: 108px;
+    z-index: 8;
+    padding: 8px 12px;
+    border-radius: 18px;
+    background: rgba(0, 0, 0, 0.35);
+    color: #ffffff;
+    font-size: 12px;
+}
+
+.yt-player-live-actions-overlay {
+    position: absolute;
+    top: max(16px, env(safe-area-inset-top));
+    right: 16px;
+    z-index: 9;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.yt-player-live-action-btn {
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.35);
+    color: #ffffff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.yt-player-live-action-menu {
+    display: none;
+    position: absolute;
+    top: 44px;
+    right: 0;
+    min-width: 132px;
+    background: rgba(255, 255, 255, 0.96);
+    color: #0f0f0f;
+    border-radius: 14px;
+    
+    overflow: hidden;
+}
+
+.yt-player-live-action-menu.active {
+    display: block;
+}
+
+.yt-player-live-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.yt-player-live-menu-item:active {
+    background: #f2f2f2;
+}
+
+/* Player Plus Menu */
+.yt-player-menu-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.yt-player-action-menu {
+    position: absolute;
+    bottom: 50px;
+    right: 0;
+    background-color: #fff;
+    border-radius: 12px;
+    
+    padding: 8px;
+    display: none;
+    flex-direction: row; /*Changed to row for horizontal layout*/
+    flex-wrap: nowrap; /*Prevent wrapping*/
+    gap: 8px;
+    z-index: 100;
+    min-width: max-content; /*Fit content*/
+}
+
+.yt-player-action-menu.active {
+    display: flex;
+}
+
+.yt-player-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #0f0f0f;
+    transition: background 0.2s;
+    white-space: nowrap; /*Prevent text wrapping*/
+}
+
+.yt-player-menu-item:active {
+    background-color: #f2f2f2;
+}
+
+.yt-player-menu-item i {
+    font-size: 16px;
+    width: 20px;
+    text-align: center;
+}
+
+/* Summary List Styles */
+.yt-summary-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+    border: 1px solid #f2f2f2;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.yt-summary-card:active {
+    background-color: #f9f9f9;
+}
+
+.yt-summary-date {
+    font-size: 12px;
+    color: #8e8e93;
+    margin-bottom: 4px;
+}
+
+.yt-summary-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #0f0f0f;
+}
+
+.yt-summary-preview {
+    font-size: 13px;
+    color: #606060;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.4;
+}
+
+/* Char live bubble stream, aligned with user live room bubbles */
+.yt-char-live-bubbles-container {
+    position: absolute;
+    left: 16px;
+    right: 90px;
+    bottom: 64px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    z-index: 4;
+    pointer-events: none;
+}
+
+.yt-char-live-bubble {
+    align-self: flex-start;
+    width: fit-content;
+    max-width: min(72%, 280px);
+    background: rgba(255,255,255,0.85);
+    
+    
+    padding: 10px 15px;
+    border-radius: 20px;
+    color: #0f0f0f;
+    font-size: 13px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    
+    animation: slideInRight 0.3s ease forwards;
+    transition: opacity 1s ease;
+}
+
+.yt-char-live-narrative {
+    align-self: flex-start;
+    width: fit-content;
+    max-width: min(72%, 280px);
+    background: rgba(255,255,255,0.85);
+    
+    
+    padding: 10px 15px;
+    border-radius: 20px;
+    color: #606060;
+    font-size: 13px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    
+    animation: slideInRight 0.3s ease forwards;
+    transition: opacity 1s ease;
+    font-style: italic;
+}
+
+/* Light Theme Subscribe Button in Player */
+#yt-player-subscribe-btn {
+    background-color: #0f0f0f !important;
+    color: #ffffff !important;
+}
+
+/* Inside Player Live Badge */
+#yt-player-live-badge {
+    background-color: #cc0000 !important;
+    color: #fff !important;
+    top: 16px !important; /* 增加顶部边距 */
+    left: auto !important;
+    right: 16px !important; /* 增加右侧边距 */
+    padding: 4px 8px !important; /* 增加内边距 */
+    font-size: 12px !important;
+    border-radius: 4px !important;
+}
+
+/* Chat text overrides for white theme */
+.yt-chat-msg-text {
+    color: #0f0f0f !important;
+}
+
+.yt-chat-msg-name {
+    color: #606060 !important;
+}
+
+/* User bubbles in messages/group chats */
+.yt-bubble-row.right .yt-bubble-msg {
+    background: #333333;
+    color: #ffffff;
+    border-bottom-right-radius: 8px;
+}
+
+/* Community Post Styles */
+.yt-community-post {
+    padding: 16px;
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.yt-community-post-content {
+    font-size: 14px;
+    line-height: 1.5;
+    color: #0f0f0f;
+    margin-bottom: 12px;
+}
+
+.yt-community-post-actions {
+    display: flex;
+    gap: 20px;
+    color: #606060;
+    font-size: 13px;
+}
+
+.yt-community-post-action {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+.yt-community-post-meta {
+    font-size: 11px;
+    color: #606060;
+    margin-bottom: 8px;
+}
+
+/* Bottom Add Content Sheet (YouTube Create) - Redesigned */
+#yt-create-sheet .bottom-sheet {
+    padding-bottom: calc(20px + var(--safe-bottom));
+}
+
+#yt-create-sheet .yt-create-bubble-btn {
+    transition: transform 0.2s;
+    /* 新样式：横向长条 */
+    display: flex;
+    flex-direction: row !important; /* 强制横向 */
+    align-items: center !important;
+    gap: 16px !important;
+    width: 100% !important; /* 占满宽度 */
+    padding: 12px 20px;
+    background-color: #f9f9f9;
+    border-radius: 16px !important; /* 圆角矩形 */
+    margin-bottom: 10px;
+}
+
+#yt-create-sheet .yt-create-bubble-btn:active {
+    transform: scale(0.98);
+    background-color: #f0f0f0;
+}
+
+/* 图标容器样式调整 */
+#yt-create-sheet .yt-create-bubble-btn div:first-child {
+    width: 40px !important;
+    height: 40px !important;
+    font-size: 18px !important;
+     /* 去掉阴影，更扁平 */
+}
+
+/* 文字样式调整 */
+#yt-create-sheet .yt-create-bubble-btn span {
+    font-size: 16px !important;
+    font-weight: 500;
+    color: #0f0f0f;
+}
+
+/* Super Chat Styles */
+.sc-amount-btn {
+    transition: all 0.2s;
+    border: 2px solid transparent;
+}
+
+.sc-amount-btn.selected {
+    border-color: rgba(255,255,255,0.5);
+    
+}
+
+.sc-amount-btn:active {
+    transform: scale(0.95);
+}
+
+/* SC Custom Input Fix */
+#yt-sc-custom-amount {
+    box-sizing: border-box;
+    min-width: 0; /* Prevents flex item from overflowing */
+}
+
+/* --- Community Detail View --- */
+.yt-community-detail-view {
+    position: absolute;
+    top: 0;
+    left: 0;
+    background-color: var(--screen-bg, #ffffff);
+    z-index: 300; /* Higher than sub-channel-view */
+    display: flex;
+    flex-direction: column;
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.yt-community-detail-view.active {
+    transform: translateY(0);
+}
+
+.yt-community-detail-header {
+    display: flex;
+    align-items: center;
+    height: calc(52px + env(safe-area-inset-top, 0px));
+    padding: env(safe-area-inset-top, 0px) 16px 0;
+    box-sizing: border-box;
+    border-bottom: 1px solid #f2f2f2;
+    background: #fff;
+    flex-shrink: 0;
+}
+
+.yt-community-detail-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+}
+
+/* Card Rounded Styles */
+.yt-community-post {
+    padding: 16px;
+    border-bottom: 1px solid #f2f2f2;
+    background: #fff;
+    border-radius: 24px; /* Larger radius */
+    margin: 10px 16px;
+    
+    border: none !important;
+}
+
+.yt-community-comments-section {
+    margin-top: 20px;
+    border-top: 1px solid #f2f2f2;
+    padding-top: 16px;
+}
+
+.yt-community-comment-item {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+/* --- Bubble Chat View (Fan Group - Ins Style) --- */
+.yt-bubble-chat-view {
+    position: absolute;
+    top: 0;
+    left: 0;
+    background-color: var(--screen-bg, #ffffff); /* White background for Ins style */
+    z-index: 300;
+    display: flex;
+    flex-direction: column;
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.yt-bubble-chat-view.active {
+    transform: translateY(0);
+}
+
+.yt-bubble-chat-header {
+    background-color: #ffffff;
+    padding: calc(10px + var(--safe-top)) 16px 10px; /* Safe area top */
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #f2f2f2;
+    z-index: 10;
+}
+
+.yt-bubble-chat-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: #000;
+}
+
+.yt-bubble-chat-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background-color: #ffffff;
+}
+
+.yt-bubble-row {
+    display: flex;
+    margin-bottom: 4px;
+    align-items: flex-end; /* Avatar at bottom */
+    max-width: 80%;
+}
+
+.yt-bubble-row.left {
+    align-self: flex-start;
+}
+
+.yt-bubble-row.right {
+    align-self: flex-end;
+    flex-direction: row-reverse;
+}
+
+.yt-bubble-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%; /* Circle avatar */
+    overflow: hidden;
+    flex-shrink: 0;
+    background: #f2f2f2;
+    margin-bottom: 2px;
+}
+
+.yt-bubble-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.yt-bubble-content {
+    margin: 0 8px;
+    display: flex;
+    flex-direction: column;
+}
+
+.yt-bubble-name {
+    font-size: 11px;
+    color: #8e8e93;
+    margin-bottom: 4px;
+    margin-left: 4px;
+}
+
+.yt-bubble-row.right .yt-bubble-name {
+    display: none;
+}
+
+.yt-bubble-msg {
+    padding: 12px 18px;
+    font-size: 15px;
+    line-height: 1.4;
+    word-break: break-word;
+    position: relative;
+    max-width: 100%;
+    /* 移除阴影保证干净高级 */
+    
+}
+
+.yt-bubble-row.left .yt-bubble-msg {
+    background-color: #f2f2f7; /* 高级浅灰 */
+    color: #000;
+    /* 左侧发言气泡异形圆角，更显扁平高级感 */
+    border-radius: 18px 18px 18px 4px;
+}
+
+/* Remove CSS arrows */
+.yt-bubble-row.left .yt-bubble-msg::before,
+.yt-bubble-row.left .yt-bubble-msg::after,
+.yt-bubble-row.right .yt-bubble-msg::before,
+.yt-bubble-row.right .yt-bubble-msg::after {
+    display: none;
+}
+
+.yt-bubble-row.right .yt-bubble-msg {
+    background-color: #007aff; /* Apple Blue 高级对比色 */
+    color: #fff;
+    /* 右侧发言气泡异形圆角 */
+    border-radius: 18px 18px 4px 18px;
+}
+
+.yt-bubble-input-area {
+    background-color: #ffffff;
+    border-top: 1px solid #f2f2f2;
+    padding: 8px 16px calc(8px + var(--safe-bottom)); /* Safe area */
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.yt-bubble-input {
+    flex: 1;
+    background: #f2f2f2;
+    border: none;
+    border-radius: 22px;
+    padding: 10px 16px;
+    font-size: 15px;
+    outline: none;
+}
+
+.yt-bubble-send-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: transparent;
+    color: #3797f0; /* Blue icon */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    font-size: 20px;
+    transition: transform 0.2s;
+}
+
+.yt-bubble-send-btn:active {
+    transform: scale(0.9);
+}
+
+/* Trending and User Live Styles */
+.yt-trending-list-item { display: flex; align-items: center; gap: 15px; padding: 12px 0; border-bottom: 1px solid #e5e5e5; cursor: pointer; transition: background-color 0.2s; }
+.yt-trending-list-item:active { background-color: #f9f9f9; }
+.yt-trending-rank { font-size: 20px; font-weight: bold; color: #8e8e93; width: 30px; text-align: center; flex-shrink: 0; }
+.yt-trending-rank.top-1 { color: #cc0000; font-size: 24px; }
+.yt-trending-rank.top-2 { color: #e65100; font-size: 22px; }
+.yt-trending-rank.top-3 { color: #ff9500; font-size: 22px; }
+
+.yt-user-live-bubble { align-self:flex-start; width:fit-content; max-width:min(72%, 280px); background: rgba(255,255,255,0.85);   padding: 10px 15px; border-radius: 20px; color: #0f0f0f; font-size: 13px; line-height: 1.4; overflow-wrap:anywhere; word-break:break-word;  animation: slideInRight 0.3s ease forwards; }
+.yt-user-live-alert { background: rgba(204, 0, 0, 0.8); color: white; padding: 6px 12px; border-radius: 16px; font-size: 12px; font-weight: 600; position: absolute; right: -100%; white-space: nowrap; animation: slideAcrossScreen 5s linear forwards; }
+
+@keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes slideAcrossScreen { 0% { right: -100%; opacity: 1; } 15% { right: 20px; opacity: 1; } 85% { right: 20px; opacity: 1; transform: translateY(0); } 100% { right: 20px; opacity: 0; transform: translateY(-30px); } }
+@keyframes liveChatSlideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+.yt-live-chat-row-anim {
+    animation: liveChatSlideUp 0.3s ease-out forwards;
+}
+
+/* --- Sub Channel View Refined Styles --- */
+.yt-sub-channel-info-box {
+    padding: 0 20px 18px;
+    margin-top: -48px;
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.yt-sub-channel-avatar {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    border: 4px solid #fff;
+    object-fit: cover;
+    background: #f2f2f2;
+    display: block;
+    
+}
+
+.yt-sub-channel-meta-row {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+}
+
+.yt-sub-channel-text-col {
+    flex: none;
+    min-width: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.yt-sub-channel-name {
+    font-size: 24px;
+    font-weight: 700;
+    color: #0f0f0f;
+    line-height: 1.2;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+.yt-sub-channel-handle {
+    font-size: 14px;
+    color: #606060;
+    margin-top: 4px;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.yt-sub-channel-stats-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 8px;
+    color: #606060;
+    font-size: 13px;
+}
+
+.yt-sub-channel-action-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+}
+
+.yt-char-generate-pill {
+    min-width: 148px;
+    height: 40px;
+    padding: 0 18px;
+    border-radius: 999px;
+    background: #0f0f0f;
+    color: #ffffff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    
+    transition: opacity 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+
+.yt-char-generate-pill.is-loading {
+    opacity: 0.68;
+    pointer-events: none;
+    
+}
+
+.yt-char-edit-circle {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.06);
+    color: #0f0f0f;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.2s;
+}
+
+/* --- Data Center Refined Styles --- */
+.yt-dc-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    padding: 16px;
+    padding-bottom: 0;
+}
+
+.yt-dc-card {
+    background: #f8f8f8;
+    border-radius: 16px;
+    padding: 14px;
+    border: 1px solid #f2f2f2;
+}
+
+.yt-dc-card-title {
+    font-size: 12px;
+    color: #8e8e93;
+}
+
+.yt-dc-card-value {
+    font-size: 20px;
+    font-weight: 700;
+    margin-top: 6px;
+    color: #0f0f0f;
+}
+
+.yt-dc-revenue-card {
+    background: #111;
+    color: #fff;
+    border-radius: 18px;
+    padding: 20px 16px;
+    margin: 14px 16px 0;
+    
+}
+
+.yt-dc-revenue-title {
+    font-size: 12px;
+    opacity: 0.72;
+}
+
+.yt-dc-revenue-value {
+    font-size: 28px;
+    font-weight: 800;
+    margin-top: 6px;
+}
+
+.yt-dc-withdraw-btn {
+    margin-top: 14px;
+    background: #fff;
+    color: #111;
+    padding: 10px 14px;
+    border-radius: 14px;
+    text-align: center;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.yt-dc-withdraw-btn:active {
+    transform: scale(0.98);
+}
+
+.yt-dc-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 24px 16px 10px;
+}
+
+.yt-dc-section-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #0f0f0f;
+}
+
+.yt-dc-offers-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 0 16px 20px;
+}
+
+#yt-video-player-view,
+#yt-user-live-view,
+#yt-community-detail-view,
+#yt-bubble-chat-view {
+    inset: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
