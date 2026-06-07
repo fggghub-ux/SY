@@ -591,6 +591,16 @@ async function openChatTab(friend) {
                         if (content) content.style.transform = 'translateY(100%)';
                         attachmentSheet.style.display = 'none';
                     }
+                    
+                    setTimeout(() => {
+                        input.scrollIntoView(false);
+                    }, 300);
+                });
+
+                input.addEventListener('blur', () => {
+                    setTimeout(() => {
+                        window.scrollTo(0, 0);
+                    }, 100);
                 });
             }
 
