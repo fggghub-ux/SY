@@ -1732,3 +1732,627 @@
         height: 54px !important;
     }
 }
+
+
+/* ==========================================
+   Fullscreen iOS Files-style World Book
+   ========================================== */
+.world-book-files-view {
+    background: #f2f2f7 !important;
+    padding-top: 0 !important;
+    overflow: hidden;
+}
+
+.world-book-files-view.active {
+    display: flex;
+    transform: translateX(0);
+}
+
+.wb-files-page {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    min-height: 0;
+    background: #f2f2f7;
+    padding-top: max(var(--safe-top, 0px), env(safe-area-inset-top, 0px));
+}
+
+.wb-files-page.active {
+    display: flex;
+}
+
+.wb-files-nav {
+    height: 50px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    background: rgba(242, 242, 247, 0.92);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    position: relative;
+    z-index: 5;
+}
+
+.wb-files-nav-title {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 52%;
+    color: #111;
+    font-size: 17px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.wb-files-nav-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.wb-nav-btn {
+    min-width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: 17px;
+    background: transparent;
+    color: #007aff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    font: inherit;
+    font-size: 17px;
+    cursor: pointer;
+    padding: 0 8px;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.wb-nav-btn:active {
+    background: rgba(0, 122, 255, 0.12);
+}
+
+.wb-group-delete-nav-btn {
+    color: #ff3b30;
+}
+
+.wb-files-content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 18px max(28px, env(safe-area-inset-bottom, 0px));
+}
+
+.wb-files-large-title {
+    margin: 8px 0 14px;
+    font-size: 34px;
+    line-height: 1.1;
+    font-weight: 800;
+    color: #111;
+    letter-spacing: -0.6px;
+}
+
+.world-book-files-view .world-book-popup-tabs {
+    position: static !important;
+    width: 100% !important;
+    transform: none !important;
+    margin: 0 0 18px;
+    z-index: auto !important;
+}
+
+.world-book-files-view .wb-segment-control {
+    display: flex;
+    width: 100%;
+    background: #e5e5ea;
+    border-radius: 12px;
+    padding: 3px;
+    box-sizing: border-box;
+}
+
+.world-book-files-view .wb-segment-btn {
+    flex: 1;
+    min-height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9px;
+    color: #3a3a3c;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.world-book-files-view .wb-segment-btn.active {
+    background: #ffffff;
+    color: #111;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.world-book-files-view .wb-tab-content {
+    height: auto;
+}
+
+.wb-files-folder-grid,
+#wb-all-list.wb-files-folder-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 14px;
+    padding: 0 0 18px !important;
+    align-items: start;
+}
+
+.world-book-files-view .wb-group-container {
+    position: relative;
+    min-width: 0;
+    margin: 0;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.world-book-files-view .wb-group-header {
+    position: relative;
+    min-height: 122px;
+    padding: 8px 6px 10px !important;
+    background: transparent !important;
+    border: 0 !important;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.world-book-files-view .wb-group-container:active .wb-folder-visual {
+    transform: scale(0.96);
+    opacity: 0.75;
+}
+
+.world-book-files-view .wb-folder-visual {
+    position: relative;
+    width: 104px !important;
+    height: 74px !important;
+    margin: 0 auto 9px !important;
+    transition: transform 0.12s ease, opacity 0.12s ease;
+}
+
+.world-book-files-view .wb-folder-tab,
+.world-book-files-view .wb-folder-body {
+    position: absolute;
+    display: block;
+    background: #dcdce1 !important;
+    border: 1px solid #c7c7cc !important;
+    box-shadow: none !important;
+}
+
+.world-book-files-view .wb-folder-tab {
+    left: 8px !important;
+    top: 2px !important;
+    width: 42px !important;
+    height: 15px !important;
+    border-bottom: 0 !important;
+    border-radius: 8px 8px 0 0 !important;
+}
+
+.world-book-files-view .wb-folder-body {
+    inset: 15px 0 0 !important;
+    border-radius: 14px !important;
+}
+
+.world-book-files-view .wb-folder-body::before {
+    content: "";
+    position: absolute;
+    left: -1px;
+    right: -1px;
+    top: 0;
+    height: 15px;
+    background: #efeff3;
+    border: 1px solid #d1d1d6;
+    border-top: 0;
+    border-radius: 0 0 11px 11px;
+}
+
+.world-book-files-view .wb-group-folder-icon {
+    display: none !important;
+}
+
+.world-book-files-view .wb-group-title {
+    width: 100%;
+    color: #111 !important;
+    text-align: center !important;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.world-book-files-view .wb-group-count {
+    margin-top: 3px;
+    color: #8e8e93;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.world-book-files-view .wb-group-delete-btn {
+    position: absolute;
+    top: 0;
+    right: 2px;
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 14px;
+    background: rgba(255, 59, 48, 0.12);
+    color: #ff3b30;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    cursor: pointer;
+}
+
+.wb-add-menu {
+    position: absolute;
+    top: calc(max(var(--safe-top, 0px), env(safe-area-inset-top, 0px)) + 48px);
+    right: 14px;
+    width: 178px;
+    overflow: hidden;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.96);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    z-index: 30;
+}
+
+.wb-add-menu .wb-menu-item {
+    min-height: 48px;
+    padding: 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    color: #111;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.wb-add-menu .wb-menu-item:not(:last-child) {
+    border-bottom: 0.5px solid #d1d1d6;
+}
+
+.wb-add-menu .wb-menu-item i {
+    width: 22px;
+    text-align: center;
+    color: #007aff;
+}
+
+.wb-files-list .wb-flat-book-list,
+.wb-group-book-list,
+#wb-global-list,
+#wb-local-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.world-book-files-view .wb-book-item,
+.world-book-files-view .wb-group-content .wb-book-item {
+    min-height: 62px;
+    background: #fff !important;
+    border: 0 !important;
+    border-radius: 16px !important;
+    padding: 12px 14px !important;
+    box-shadow: none !important;
+    transform: none !important;
+}
+
+.world-book-files-view .wb-book-info {
+    min-width: 0;
+    flex: 1;
+}
+
+.world-book-files-view .wb-book-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 700;
+}
+
+.world-book-files-view .wb-book-icon {
+    background: #ff9500;
+}
+
+.wb-files-empty-state,
+.world-book-files-view .wb-empty-state {
+    min-height: 180px;
+    border-radius: 20px;
+    color: #8e8e93;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+}
+
+.wb-files-empty-state i,
+.world-book-files-view .wb-empty-state i {
+    font-size: 30px;
+    color: #c7c7cc;
+}
+
+@media (min-width: 520px) {
+    .wb-files-folder-grid,
+    #wb-all-list.wb-files-folder-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+/* ==========================================
+   World Book final overrides: bottom sheet editor + iOS Files folders
+   ========================================== */
+
+/* Add/Edit world book as a real bottom sheet */
+.wb-book-sheet-overlay {
+    justify-content: flex-end !important;
+    align-items: stretch !important;
+    padding: 0 !important;
+}
+
+.wb-book-sheet-overlay .wb-book-bottom-sheet,
+.wb-book-sheet-overlay .wb-book-modal-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: min(90%, 820px) !important;
+    max-height: min(90%, 820px) !important;
+    min-height: 58% !important;
+    margin: 0 !important;
+    border-radius: 24px 24px 0 0 !important;
+    background: #f7f7f9 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    border: 0 !important;
+    box-shadow: 0 -18px 42px rgba(0, 0, 0, 0.18) !important;
+}
+
+.wb-book-sheet-overlay .wb-book-sheet-header {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 42px;
+    padding: 0 20px 12px;
+    background: transparent;
+}
+
+.wb-book-sheet-overlay .sheet-title,
+.wb-book-sheet-overlay .wb-centered-modal-title {
+    margin: 0;
+    padding: 0;
+    color: #111;
+    font-size: 17px;
+    font-weight: 700;
+    text-align: center;
+}
+
+.wb-book-sheet-overlay .wb-book-sheet-content,
+.wb-book-sheet-overlay .wb-book-modal-body {
+    flex: 1 !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    padding: 0 16px max(18px, env(safe-area-inset-bottom, 0px) + 12px) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    background: transparent !important;
+}
+
+.wb-book-sheet-overlay .wb-modal-form {
+    background: #fff;
+    border-radius: 16px !important;
+    overflow: hidden;
+    box-shadow: none;
+}
+
+.wb-book-sheet-overlay .wb-modal-form .form-item {
+    min-height: 50px;
+}
+
+.wb-book-sheet-overlay #wb-entries-list-container {
+    background: #fff;
+    border-radius: 16px;
+    padding: 0 !important;
+    margin: 8px 0 10px !important;
+    gap: 0 !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+}
+
+.wb-book-sheet-overlay .wb-entry-item {
+    border-radius: 0 !important;
+}
+
+.wb-book-sheet-overlay .wb-primary-action,
+.wb-book-sheet-overlay .wb-danger-action {
+    border-radius: 16px !important;
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+}
+
+.wb-book-sheet-overlay .wb-primary-action {
+    background: #111 !important;
+    color: #fff !important;
+}
+
+.wb-book-sheet-overlay .wb-danger-action {
+    background: #fff1f0 !important;
+    color: #ff3b30 !important;
+}
+
+.wb-book-sheet-overlay #add-book-entry-btn {
+    background: #111 !important;
+}
+
+/* iOS Files-like folder grid */
+.world-book-files-view .wb-files-folder-grid,
+.world-book-files-view #wb-all-list.wb-files-folder-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 22px 16px !important;
+    padding: 2px 2px 24px !important;
+}
+
+.world-book-files-view .wb-group-container {
+    border-radius: 18px;
+    outline: none;
+}
+
+.world-book-files-view .wb-group-header {
+    min-height: 132px !important;
+    padding: 8px 6px 10px !important;
+    border-radius: 18px !important;
+    transition: transform 0.14s ease, background-color 0.14s ease !important;
+}
+
+.world-book-files-view .wb-group-container:active .wb-group-header {
+    background: rgba(0, 0, 0, 0.035) !important;
+}
+
+.world-book-files-view .wb-group-container:active .wb-folder-visual {
+    transform: scale(0.955) translateY(1px) !important;
+    opacity: 0.92 !important;
+}
+
+.world-book-files-view .wb-folder-visual {
+    position: relative !important;
+    width: 112px !important;
+    height: 82px !important;
+    margin: 0 auto 10px !important;
+    filter: drop-shadow(0 10px 14px rgba(0, 122, 255, 0.18));
+    transition: transform 0.14s ease, opacity 0.14s ease !important;
+}
+
+.world-book-files-view .wb-folder-tab,
+.world-book-files-view .wb-folder-body {
+    position: absolute !important;
+    display: block !important;
+    border: 0 !important;
+    box-shadow: none !important;
+}
+
+.world-book-files-view .wb-folder-tab {
+    left: 8px !important;
+    top: 2px !important;
+    width: 48px !important;
+    height: 19px !important;
+    border-radius: 10px 10px 0 0 !important;
+    background: linear-gradient(180deg, #78bdff 0%, #5caeff 100%) !important;
+    z-index: 1;
+}
+
+.world-book-files-view .wb-folder-body {
+    left: 0 !important;
+    right: 0 !important;
+    top: 17px !important;
+    bottom: 0 !important;
+    border-radius: 14px 14px 16px 16px !important;
+    background: linear-gradient(180deg, #66b7ff 0%, #1687f7 100%) !important;
+    overflow: hidden;
+    z-index: 2;
+}
+
+.world-book-files-view .wb-folder-body::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 18px;
+    border: 0;
+    border-radius: 0 0 13px 13px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.36) 0%, rgba(255,255,255,0.08) 100%);
+    pointer-events: none;
+}
+
+.world-book-files-view .wb-folder-body::after {
+    content: "";
+    position: absolute;
+    inset: 1px 1px auto 1px;
+    height: 36px;
+    border-radius: 13px 13px 12px 12px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.24), rgba(255,255,255,0));
+    pointer-events: none;
+}
+
+.world-book-files-view .wb-group-folder-icon {
+    display: none !important;
+}
+
+.world-book-files-view .wb-group-title {
+    max-width: 138px;
+    margin: 0 auto;
+    color: #111 !important;
+    font-size: 15px !important;
+    font-weight: 650 !important;
+    letter-spacing: -0.2px;
+}
+
+.world-book-files-view .wb-group-count {
+    margin-top: 4px !important;
+    color: #8e8e93 !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+}
+
+.world-book-files-view .wb-group-delete-btn {
+    top: 2px !important;
+    right: 6px !important;
+    width: 26px !important;
+    height: 26px !important;
+    border-radius: 50% !important;
+    background: rgba(255, 59, 48, 0.14) !important;
+    color: #ff3b30 !important;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.world-book-files-view .wb-group-delete-btn:active {
+    background: rgba(255, 59, 48, 0.24) !important;
+    transform: scale(0.94);
+}
+
+@media (min-width: 520px) {
+    .world-book-files-view .wb-files-folder-grid,
+    .world-book-files-view #wb-all-list.wb-files-folder-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    }
+}
+
+@media (max-width: 380px) {
+    .world-book-files-view .wb-folder-visual {
+        width: 100px !important;
+        height: 74px !important;
+    }
+
+    .world-book-files-view .wb-folder-tab {
+        width: 42px !important;
+        height: 17px !important;
+    }
+
+    .world-book-files-view .wb-folder-body {
+        top: 15px !important;
+    }
+}

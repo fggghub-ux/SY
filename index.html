@@ -1807,65 +1807,83 @@
             </div>
         </div>
 
-        <!-- World Book View (Popup) -->
-        <div class="bottom-sheet-overlay detail-sheet-overlay world-book-popup-overlay" id="world-book-view" style="z-index: 520;">
-            <div class="bottom-sheet world-book-popup-sheet" style="height: 82%; max-height: 82%; background: #ffffff; padding: 0; overflow: hidden;">
-                <div class="sheet-handle" style="margin-top: 10px; margin-bottom: 8px;"></div>
+        <!-- World Book View (Fullscreen Files App Style) -->
+        <div class="app-view world-book-files-view" id="world-book-view" style="z-index: 520;">
+            <input type="file" id="wb-import-file" accept=".txt,.json,.docx,.md,.text,application/json,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display: none;">
 
-                <!-- Header -->
-                <div class="centered-header world-book-popup-header" style="height: 44px; padding: 0 16px; margin-bottom: 0; background: #fff; flex-shrink: 0;">
-                    <div class="header-btn" id="world-book-back-btn">
+            <div class="wb-files-page wb-files-main-page active" id="wb-files-main-page">
+                <div class="wb-files-nav">
+                    <button class="wb-nav-btn" id="world-book-back-btn" type="button" aria-label="返回">
                         <i class="fas fa-chevron-left"></i>
-                    </div>
-                    <h2 class="center-title">世界书</h2>
-                    <div class="header-btn" id="world-book-add-btn">
-                        <i class="fas fa-plus"></i>
+                    </button>
+                    <div class="wb-files-nav-title">世界书</div>
+                    <div class="wb-files-nav-actions">
+                        <button class="wb-nav-btn" id="world-book-add-btn" type="button" aria-label="新增">
+                            <i class="fas fa-plus"></i>
+                        </button>
                     </div>
                 </div>
 
-                <!-- Main Content Area -->
-                <div class="settings-content no-top-padding world-book-popup-content" style="position: relative; flex: 1; overflow-y: auto; padding-bottom: 88px; background: #fff;">
-                    <!-- Tab: All -->
+                <div class="wb-files-content">
+                    <div class="wb-files-large-title">浏览</div>
+
+                    <div class="world-book-popup-tabs">
+                        <div class="wb-segment-control">
+                            <div class="wb-segment-btn active" data-tab="all">全部</div>
+                            <div class="wb-segment-btn" data-tab="global">全局</div>
+                            <div class="wb-segment-btn" data-tab="local">局部</div>
+                        </div>
+                    </div>
+
                     <div class="wb-tab-content active" id="wb-tab-all">
-                        <div id="wb-all-list">
-                            <!-- Injected by JS -->
-                        </div>
+                        <div id="wb-all-list" class="wb-files-folder-grid"></div>
                     </div>
 
-                    <!-- Tab: Global -->
                     <div class="wb-tab-content" id="wb-tab-global" style="display: none;">
-                        <div id="wb-global-list">
-                            <!-- Injected by JS -->
-                        </div>
+                        <div id="wb-global-list" class="wb-files-list"></div>
                     </div>
 
-                    <!-- Tab: Local -->
                     <div class="wb-tab-content" id="wb-tab-local" style="display: none;">
-                        <div id="wb-local-list">
-                            <!-- Injected by JS -->
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Bottom Sliding Tabs -->
-                <div class="world-book-popup-tabs" style="position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%); width: 280px; z-index: 30;">
-                    <div class="wb-segment-control" style="display: flex; background: #f2f2f7; border-radius: 20px; padding: 4px; ">
-                        <div class="wb-segment-btn active" data-tab="all" style="flex:1; text-align:center; padding: 8px 0; font-size: 13px; font-weight: 500; border-radius: 16px; cursor: pointer; color: #000; transition: all 0.2s;">全部</div>
-                        <div class="wb-segment-btn" data-tab="global" style="flex:1; text-align:center; padding: 8px 0; font-size: 13px; font-weight: 500; border-radius: 16px; cursor: pointer; color: #000; transition: all 0.2s;">全局</div>
-                        <div class="wb-segment-btn" data-tab="local" style="flex:1; text-align:center; padding: 8px 0; font-size: 13px; font-weight: 500; border-radius: 16px; cursor: pointer; color: #000; transition: all 0.2s;">局部</div>
+                        <div id="wb-local-list" class="wb-files-list"></div>
                     </div>
                 </div>
 
-                <!-- Add Menu Bubble (Floating) -->
-                <div id="wb-add-menu" style="display: none; position: absolute; top: 68px; right: 16px; background: #fff; border-radius: 12px;  z-index: 100; width: 140px; overflow: hidden;">
-                    <div class="wb-menu-item" id="wb-add-group-btn" style="padding: 12px 16px; border-bottom: 0.5px solid var(--separator-color); display: flex; align-items: center; gap: 10px; cursor: pointer;">
-                        <i class="fas fa-folder-plus" style="width: 20px; text-align: center;"></i>
-                        <span style="font-size: 15px;">添加分组</span>
+                <div id="wb-add-menu" class="wb-add-menu" style="display: none;">
+                    <div class="wb-menu-item" id="wb-add-group-btn">
+                        <i class="fas fa-folder-plus"></i>
+                        <span>添加分组</span>
                     </div>
-                    <div class="wb-menu-item" id="wb-add-book-btn" style="padding: 12px 16px; display: flex; align-items: center; gap: 10px; cursor: pointer;">
-                        <i class="fas fa-book-medical" style="width: 20px; text-align: center;"></i>
-                        <span style="font-size: 15px;">添加世界书</span>
+                    <div class="wb-menu-item" id="wb-add-book-btn">
+                        <i class="fas fa-book-medical"></i>
+                        <span>添加世界书</span>
                     </div>
+                    <div class="wb-menu-item" id="wb-import-menu-btn">
+                        <i class="fas fa-file-import"></i>
+                        <span>导入世界书</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="wb-files-page wb-files-group-page" id="wb-files-group-page">
+                <div class="wb-files-nav">
+                    <button class="wb-nav-btn" id="wb-group-back-btn" type="button" aria-label="返回世界书">
+                        <i class="fas fa-chevron-left"></i>
+                        <span>浏览</span>
+                    </button>
+                    <div class="wb-files-nav-title" id="wb-group-page-title">分组</div>
+                    <div class="wb-files-nav-actions">
+                        <button class="wb-nav-btn wb-group-delete-nav-btn" id="wb-group-delete-current-btn" type="button" aria-label="删除分组">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                        <button class="wb-nav-btn" id="wb-group-add-book-btn" type="button" aria-label="添加世界书">
+                            <i class="fas fa-plus"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="wb-files-content">
+                    <div class="wb-files-large-title" id="wb-group-large-title">分组</div>
+                    <div id="wb-group-book-list" class="wb-files-list wb-group-book-list"></div>
                 </div>
             </div>
         </div>
@@ -1892,19 +1910,18 @@
             </div>
         </div>
 
-        <!-- Add Book Modal (Centered) -->
-        <div class="bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay" id="add-book-overlay" style="z-index: 630;">
-            <div class="wb-centered-modal-card wb-book-modal-card">
-                <div class="wb-centered-modal-header wb-book-modal-header">
-                    <div class="wb-centered-modal-title">添加世界书</div>
+        <!-- Add / Edit Book Bottom Sheet -->
+        <div class="bottom-sheet-overlay detail-sheet-overlay wb-book-sheet-overlay" id="add-book-overlay" style="z-index: 630;">
+            <div class="bottom-sheet wb-book-bottom-sheet wb-book-modal-card">
+                <div class="sheet-handle"></div>
+                <div class="wb-book-sheet-header wb-book-modal-header">
+                    <div class="sheet-title wb-centered-modal-title">添加世界书</div>
                     <div id="wb-edit-actions" style="display: none; justify-content: flex-end; gap: 20px; padding: 0;">
-                        <i class="fas fa-file-import" id="wb-import-btn" style="font-size: 18px; cursor: pointer;" title="导入 JSON"></i>
-                        <i class="fas fa-file-export" id="wb-export-btn" style="font-size: 18px; cursor: pointer;" title="导出 JSON"></i>
-                        <input type="file" id="wb-import-file" accept=".json" style="display: none;">
+                        <input type="file" id="wb-import-file-legacy" accept=".json" style="display: none;">
                     </div>
                 </div>
                 
-                <div class="wb-centered-modal-body wb-book-modal-body">
+                <div class="detail-sheet-content wb-book-sheet-content wb-centered-modal-body wb-book-modal-body">
                     <div class="form-group fully-rounded wb-modal-form" style="flex-shrink: 0; margin: 0;">
                         <div class="form-item">
                             <label style="width: 84px;">世界书名字</label>
@@ -6405,6 +6422,7 @@
     <script src="js/bstage.js"></script>
     <!-- 引入世界书核心模块脚本 -->
     <script src="js/builtin_worldbook.js"></script>
+    <script src="https://unpkg.com/mammoth@1.8.0/mammoth.browser.min.js"></script>
     <script src="js/worldbook.js"></script>
     <!-- 引入核心 UI 管理与设置模块脚本 -->
     <script src="js/ui.js"></script>

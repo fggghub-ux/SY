@@ -1,4 +1,4 @@
-// ==========================================
+﻿// ==========================================
 // IMESSAGE: 5. SETTINGS & EDITING
 // ==========================================
 
@@ -2606,7 +2606,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!page) return;
 
         page.classList.toggle('show-timestamps', !!friend.showTimestamp);
-        page.classList.toggle('timestamp-outside', friend.showTimestamp && friend.timestampPosition === 'outside');
+        page.classList.toggle('timestamp-outside', !!friend.showTimestamp && friend.timestampPosition === 'outside');
     }
 
     function initNpcChatSettingsForFriend(friend) {
@@ -2673,7 +2673,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const tsPositionBody = document.getElementById('timestamp-position-body');
     const tsPositionSelect = document.getElementById('timestamp-position-select');
 
-    if (tsToggle) {
+    if (tsToggle && tsToggle.dataset.bound !== 'true') {
+        tsToggle.dataset.bound = 'true';
         tsToggle.addEventListener('change', async (e) => {
             if (window.imData.currentSettingsFriend) {
                 const previousValue = !!window.imData.currentSettingsFriend.showTimestamp;
@@ -2694,7 +2695,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    if (tsPositionSelect) {
+    if (tsPositionSelect && tsPositionSelect.dataset.bound !== 'true') {
+        tsPositionSelect.dataset.bound = 'true';
         tsPositionSelect.addEventListener('change', async (e) => {
             if (window.imData.currentSettingsFriend) {
                 const previousValue = window.imData.currentSettingsFriend.timestampPosition || 'inside';
@@ -2718,7 +2720,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const npcTsPositionBody = document.getElementById('npc-timestamp-position-body');
     const npcTsPositionSelect = document.getElementById('npc-timestamp-position-select');
     
-    if (npcTsPositionSelect) {
+    if (npcTsToggle && npcTsToggle.dataset.bound !== 'true') {
+        npcTsToggle.dataset.bound = 'true';
+        npcTsToggle.addEventListener('change', async (e) => {
+            if (window.imData.currentSettingsFriend) {
+                const previousValue = !!window.imData.currentSettingsFriend.showTimestamp;
+                const nextValue = e.target.checked;
+                const saved = await commitSettingsFriendChange((targetFriend) => {
+                    targetFriend.showTimestamp = nextValue;
+                }, { silent: true });
+
+                if (!saved) {
+                    e.target.checked = previousValue;
+                    showToast('时间戳设置保存失败');
+                    return;
+                }
+                
+                updateCurrentSettingsChatPageState(window.imData.currentSettingsFriend);
+            }
+        });
+    }
+
+    if (npcTsPositionSelect && npcTsPositionSelect.dataset.bound !== 'true') {
+        npcTsPositionSelect.dataset.bound = 'true';
         npcTsPositionSelect.addEventListener('change', async (e) => {
             if (window.imData.currentSettingsFriend) {
                 const previousValue = window.imData.currentSettingsFriend.timestampPosition || 'inside';
@@ -3112,3 +3136,6 @@ document.addEventListener('DOMContentLoaded', () => {
     window.imApp.showChatMemoryModal = showChatMemoryModal;
     window.imApp.hideChatMemoryModal = hideChatMemoryModal;
 });
+
+
+

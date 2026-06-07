@@ -1,4 +1,4 @@
-// ==========================================
+﻿// ==========================================
 // IMESSAGE: DATA, STATE, CORE SYSTEM & NAVIGATION
 // ==========================================
 
@@ -393,6 +393,7 @@ window.imApp.normalizeFriendData = function(friend) {
     normalized.isPinned = !!normalized.isPinned;
     normalized.unreadCount = Math.max(0, Number(normalized.unreadCount) || 0);
     normalized.showTimestamp = !!normalized.showTimestamp;
+    normalized.timestampPosition = normalized.timestampPosition === 'outside' ? 'outside' : 'inside';
     normalized.boundBooks = Array.isArray(normalized.boundBooks) ? normalized.boundBooks : [];
     normalized.momentsCover = normalized.momentsCover || null;
     normalized.momentsCoverAssetId = normalized.momentsCoverAssetId || null;
@@ -4406,3 +4407,4 @@ document.addEventListener('DOMContentLoaded', () => {
         if (window.imApp.applyAllSavedCss) window.imApp.applyAllSavedCss();
     }, 100);
 });
+

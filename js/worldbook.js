@@ -6,6 +6,7 @@ let wbGroups = [];
 let editingBookId = null;
 let activeEntryId = null;
 let tempEntries = [];
+let activeWbGroupName = null;
 
 function getWbElement(id) {
     return document.getElementById(id);
@@ -184,6 +185,47 @@ const deleteWorldBookBtn = document.getElementById('delete-world-book-btn');
 
 // 导入导出按钮已被移除，不再获取其DOM节点
 
+const wbImportFileInput = document.getElementById('wb-import-file');
+const wbImportMainBtn = document.getElementById('world-book-import-btn');
+const wbImportMenuBtn = document.getElementById('wb-import-menu-btn');
+const wbGroupBackBtn = document.getElementById('wb-group-back-btn');
+const wbGroupAddBookBtn = document.getElementById('wb-group-add-book-btn');
+const wbGroupDeleteCurrentBtn = document.getElementById('wb-group-delete-current-btn');
+
+if (btnAddBook) {
+    btnAddBook.addEventListener('click', () => {
+        if (wbAddMenu) wbAddMenu.style.display = 'none';
+        openBookModal(); // Open in create mode
+    });
+}
+
+function triggerWorldBookImport() {
+    if (wbAddMenu) wbAddMenu.style.display = 'none';
+    if (wbImportFileInput) wbImportFileInput.click();
+}
+
+if (wbImportMainBtn) wbImportMainBtn.addEventListener('click', triggerWorldBookImport);
+if (wbImportMenuBtn) wbImportMenuBtn.addEventListener('click', triggerWorldBookImport);
+
+if (wbGroupBackBtn) {
+    wbGroupBackBtn.addEventListener('click', () => {
+        showWbMainPage();
+    });
+}
+
+if (wbGroupAddBookBtn) {
+    wbGroupAddBookBtn.addEventListener('click', () => {
+        openBookModal(null, activeWbGroupName);
+    });
+}
+
+if (wbGroupDeleteCurrentBtn) {
+    wbGroupDeleteCurrentBtn.addEventListener('click', () => {
+        if (!activeWbGroupName || activeWbGroupName === '未分组') return;
+        deleteGroupByName(activeWbGroupName, true);
+    });
+}
+
 if (btnAddBook) {
     btnAddBook.addEventListener('click', () => {
         if (wbAddMenu) wbAddMenu.style.display = 'none';
@@ -305,7 +347,7 @@ function renderAddBookGroupSelect() {
     ).join('');
 }
 
-function openBookModal(book = null) {
+function openBookModal(book = null, preferredGroup = null) {
     const modalTitle = document.querySelector('#add-book-overlay .wb-centered-modal-title, #add-book-overlay .sheet-title');
     const nameInput = document.getElementById('add-book-name-input');
     const groupInput = document.getElementById('add-book-group-input');
@@ -612,6 +654,147 @@ if (confirmAddBookBtn) {
     });
 }
 
+
+function sanitizeImportedWorldBook(rawBook, fallbackName = '导入的世界书') {
+    const source = rawBook && typeof rawBook === 'object' ? rawBook : {};
+    const rawEntries = Array.isArray(source.entries)
+        ? source.entries
+        : (source.content ? [{ title: source.name || fallbackName, content: source.content }] : []);
+
+    const entries = rawEntries.map((entry, idx) => {
+        const normalized = normalizeEntryForEditor(entry || {}, idx);
+        return {
+            title: normalized.title || `词条${idx + 1}`,
+            keyword: normalized.triggerMode === 'keyword' ? (normalized.keyword || '') : '',
+            content: normalized.content || '',
+            triggerMode: normalized.triggerMode === 'keyword' ? 'keyword' : 'permanent',
+            injectionPosition: ['before_role', 'after_role', 'system_depth'].includes(normalized.injectionPosition)
+                ? normalized.injectionPosition
+                : 'before_role',
+            systemDepth: Number.isFinite(Number(normalized.systemDepth)) ? Number(normalized.systemDepth) : 4,
+            order: Number.isFinite(Number(normalized.order)) ? Number(normalized.order) : 100,
+            recursive: false,
+            enabled: normalized.enabled !== false
+        };
+    }).filter(entry => (entry.content || '').trim());
+
+    return {
+        id: Date.now() + Math.floor(Math.random() * 10000),
+        name: String(source.name || source.title || fallbackName || '导入的世界书').trim() || '导入的世界书',
+        group: normalizeGroupName(source.group || activeWbGroupName || '未分组'),
+        entries: entries.length ? entries : [{
+            title: '正文',
+            keyword: '',
+            content: String(source.content || fallbackName || '').trim() || '空白内容',
+            triggerMode: 'permanent',
+            injectionPosition: 'before_role',
+            systemDepth: 4,
+            order: 100,
+            recursive: false,
+            enabled: true
+        }],
+        isGlobal: !!source.isGlobal,
+        attachedRoles: Array.isArray(source.attachedRoles) ? source.attachedRoles : []
+    };
+}
+
+function getFileBaseName(fileName = '') {
+    return String(fileName || '导入的世界书').replace(/\.[^/.]+$/, '') || '导入的世界书';
+}
+
+async function readWorldBookImportText(file) {
+    const fileName = file?.name || '';
+    const lowerName = fileName.toLowerCase();
+
+    if (lowerName.endsWith('.docx')) {
+        if (!window.mammoth || typeof window.mammoth.extractRawText !== 'function') {
+            showToast('docx 解析库加载失败，请检查网络或先另存为 txt 后导入');
+            return null;
+        }
+
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await window.mammoth.extractRawText({ arrayBuffer });
+        const text = result?.value || '';
+        if (!text.trim()) {
+            throw new Error('docx 文件内容为空');
+        }
+        return text;
+    }
+
+    return await file.text();
+}
+
+function parseImportedWorldBooks(text, file) {
+    const fileName = file?.name || '';
+    const fallbackName = getFileBaseName(fileName);
+    const lowerName = fileName.toLowerCase();
+    const trimmed = String(text || '').trim();
+
+    if (!trimmed) {
+        throw new Error('文件内容为空');
+    }
+
+    if (lowerName.endsWith('.json') || trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        const parsed = JSON.parse(trimmed);
+        const list = Array.isArray(parsed)
+            ? parsed
+            : (Array.isArray(parsed.worldBooks) ? parsed.worldBooks : [parsed]);
+        return list.map((book, idx) => sanitizeImportedWorldBook(book, idx === 0 ? fallbackName : `${fallbackName}-${idx + 1}`));
+    }
+
+    return [sanitizeImportedWorldBook({
+        name: fallbackName,
+        group: activeWbGroupName || '未分组',
+        entries: [{
+            title: fallbackName,
+            content: trimmed,
+            triggerMode: 'permanent',
+            injectionPosition: 'before_role',
+            systemDepth: 4,
+            order: 100,
+            recursive: false,
+            enabled: true
+        }]
+    }, fallbackName)];
+}
+
+async function importWorldBookFile(file) {
+    if (!file) return;
+
+    try {
+        const text = await readWorldBookImportText(file);
+        if (text === null) return;
+
+        const importedBooks = parseImportedWorldBooks(text, file);
+        if (!importedBooks.length) {
+            showToast('没有可导入的世界书');
+            return;
+        }
+
+        worldBooks.push(...importedBooks);
+        importedBooks.forEach(book => {
+            const group = normalizeGroupName(book.group);
+            if (group !== '未分组' && !wbGroups.includes(group)) wbGroups.push(group);
+        });
+
+        saveWorldBooksData();
+        renderWorldBooks();
+        if (activeWbGroupName) renderGroupBookList(activeWbGroupName);
+        showToast(`已导入 ${importedBooks.length} 本世界书`);
+    } catch (error) {
+        console.error('Failed to import world book:', error);
+        showToast('导入失败：请检查文件格式');
+    }
+}
+
+if (wbImportFileInput) {
+    wbImportFileInput.addEventListener('change', async (event) => {
+        const file = event.target.files && event.target.files[0];
+        await importWorldBookFile(file);
+        event.target.value = '';
+    });
+}
+
 // Render World Books Helper
 function calculateTokens(entries) {
     // Very rough mock token calculation
@@ -658,92 +841,131 @@ function createBookHtml(book, type) {
     `;
 }
 
+function getBooksInGroup(groupName) {
+    return worldBooks.filter(b => normalizeGroupName(b.group) === normalizeGroupName(groupName));
+}
+
+function createBookListItemElement(book, type = 'all') {
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = createBookHtml(book, type).trim();
+    const item = wrapper.firstElementChild;
+    if (!item) return document.createElement('div');
+
+    item.addEventListener('click', (event) => {
+        if (event.target.closest('.toggle-switch') || event.target.closest('.wb-global-toggle')) return;
+        openBookModal(book);
+    });
+
+    return item;
+}
+
+function deleteGroupByName(groupName, returnToMain = false) {
+    const normalized = normalizeGroupName(groupName);
+    if (normalized === '未分组') return;
+
+    showCenteredConfirm({
+        title: '删除分组',
+        message: `确定要删除分组 "${normalized}" 吗？该分组下的世界书将被移动到"未分组"。`,
+        isDestructive: true,
+        confirmText: '删除',
+        onConfirm: () => {
+            wbGroups = wbGroups.filter(g => g !== normalized);
+            worldBooks.forEach(b => {
+                if (normalizeGroupName(b.group) === normalized) {
+                    b.group = '未分组';
+                }
+            });
+            if (returnToMain) activeWbGroupName = null;
+            saveWorldBooksData();
+            renderWorldBooks();
+            if (returnToMain) showWbMainPage();
+            showToast('分组已删除');
+        }
+    });
+}
+
+function renderGroupBookList(groupName) {
+    const groupTitle = document.getElementById('wb-group-page-title');
+    const largeTitle = document.getElementById('wb-group-large-title');
+    const list = document.getElementById('wb-group-book-list');
+    const deleteBtn = document.getElementById('wb-group-delete-current-btn');
+    if (!list) return;
+
+    const normalized = normalizeGroupName(groupName);
+    const booksInGroup = getBooksInGroup(normalized);
+    if (groupTitle) groupTitle.textContent = normalized;
+    if (largeTitle) largeTitle.textContent = normalized;
+    if (deleteBtn) deleteBtn.style.display = normalized === '未分组' ? 'none' : 'inline-flex';
+
+    list.innerHTML = '';
+    if (!booksInGroup.length) {
+        list.innerHTML = '<div class="wb-files-empty-state"><i class="fas fa-folder-open"></i><span>这个分组还没有世界书</span></div>';
+        return;
+    }
+
+    booksInGroup.forEach(book => {
+        list.appendChild(createBookListItemElement(book, 'all'));
+    });
+}
+
+function showWbMainPage() {
+    activeWbGroupName = null;
+    const mainPage = document.getElementById('wb-files-main-page');
+    const groupPage = document.getElementById('wb-files-group-page');
+    if (mainPage) mainPage.classList.add('active');
+    if (groupPage) groupPage.classList.remove('active');
+}
+
+function openWbGroupPage(groupName) {
+    activeWbGroupName = normalizeGroupName(groupName);
+    const mainPage = document.getElementById('wb-files-main-page');
+    const groupPage = document.getElementById('wb-files-group-page');
+    if (mainPage) mainPage.classList.remove('active');
+    if (groupPage) groupPage.classList.add('active');
+    renderGroupBookList(activeWbGroupName);
+}
+
 function createGroupFolderElement(groupName) {
-    const booksInGroup = worldBooks.filter(b => normalizeGroupName(b.group) === groupName);
+    const normalized = normalizeGroupName(groupName);
+    const booksInGroup = getBooksInGroup(normalized);
     const groupDiv = document.createElement('div');
     groupDiv.className = 'wb-group-container';
+    groupDiv.setAttribute('role', 'button');
+    groupDiv.setAttribute('tabindex', '0');
 
-    const booksHtml = booksInGroup.length
-        ? booksInGroup.map(b => createBookHtml(b, 'all')).join('')
-        : '<div class="wb-empty-folder-note">这个分组还没有世界书</div>';
-
-    const deleteBtnHtml = groupName !== '未分组' 
-        ? `<div class="wb-group-delete-btn" style="margin-right: 10px; cursor: pointer; color: #ff3b30; display: none; padding: 5px;"><i class="fas fa-xmark"></i></div>` 
+    const deleteBtnHtml = normalized !== '未分组'
+        ? '<button type="button" class="wb-group-delete-btn" aria-label="删除分组"><i class="fas fa-xmark"></i></button>'
         : '';
 
     groupDiv.innerHTML = `
-        <div class="wb-group-header" role="button" tabindex="0" aria-expanded="false">
+        <div class="wb-group-header">
+            ${deleteBtnHtml}
             <div class="wb-folder-visual" aria-hidden="true">
                 <span class="wb-folder-tab"></span>
                 <span class="wb-folder-body"><i class="fas fa-folder wb-group-folder-icon"></i></span>
             </div>
-            <div class="wb-group-title" style="flex: 1;">${escapeHtml(groupName)} <span class="wb-group-count">(${booksInGroup.length})</span></div>
-            ${deleteBtnHtml}
-            <i class="fas fa-chevron-down toggle-icon"></i>
-        </div>
-        <div class="wb-group-content">
-            ${booksHtml}
+            <div class="wb-group-title">${escapeHtml(normalized)}</div>
+            <div class="wb-group-count">${booksInGroup.length} 项</div>
         </div>
     `;
 
-    const header = groupDiv.querySelector('.wb-group-header');
-    const content = groupDiv.querySelector('.wb-group-content');
     const deleteBtn = groupDiv.querySelector('.wb-group-delete-btn');
-
-    const toggleGroup = () => {
-        const isCurrentlyOpen = content.classList.contains('open');
-
-        document.querySelectorAll('.wb-group-container').forEach(container => {
-            container.classList.remove('is-open');
-            const otherHeader = container.querySelector('.wb-group-header');
-            const otherContent = container.querySelector('.wb-group-content');
-            const otherDeleteBtn = container.querySelector('.wb-group-delete-btn');
-            if (otherHeader) otherHeader.setAttribute('aria-expanded', 'false');
-            if (otherContent) otherContent.classList.remove('open');
-            if (otherDeleteBtn) otherDeleteBtn.style.display = 'none';
-        });
-
-        if (!isCurrentlyOpen) {
-            content.classList.add('open');
-            groupDiv.classList.add('is-open');
-            header.setAttribute('aria-expanded', 'true');
-            if (deleteBtn) deleteBtn.style.display = 'block';
-        }
-    };
-
     if (deleteBtn) {
         deleteBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            showCenteredConfirm({
-                title: '删除分组',
-                message: `确定要删除分组 "${groupName}" 吗？该分组下的世界书将被移动到"未分组"。`,
-                isDestructive: true,
-                confirmText: '删除',
-                onConfirm: () => {
-                    wbGroups = wbGroups.filter(g => g !== groupName);
-                    worldBooks.forEach(b => {
-                        if (normalizeGroupName(b.group) === groupName) {
-                            b.group = '未分组';
-                        }
-                    });
-                    saveWorldBooksData();
-                    renderWorldBooks();
-                    showToast('分组已删除');
-                }
-            });
+            deleteGroupByName(normalized);
         });
     }
 
-    header.addEventListener('click', (e) => {
-        if (!deleteBtn || !deleteBtn.contains(e.target)) {
-            toggleGroup();
-        }
+    const openGroup = () => openWbGroupPage(normalized);
+    groupDiv.addEventListener('click', (e) => {
+        if (!deleteBtn || !deleteBtn.contains(e.target)) openGroup();
     });
-    header.addEventListener('keydown', (event) => {
+    groupDiv.addEventListener('keydown', (event) => {
         if (event.isComposing || event.keyCode === 229) return;
         if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
-            toggleGroup();
+            openGroup();
         }
     });
 
@@ -760,59 +982,56 @@ function renderWorldBooks() {
         allList.appendChild(createGroupFolderElement(groupName));
     });
 
+    if (activeWbGroupName) {
+        renderGroupBookList(activeWbGroupName);
+    }
+
     // Render Global Tab
     const globalList = document.getElementById('wb-global-list');
     if (globalList) {
         const globalBooks = worldBooks.filter(b => b.isGlobal);
-        globalList.innerHTML = globalBooks.length
-            ? `<div class="wb-flat-book-list">${globalBooks.map(b => createBookHtml(b, 'global')).join('')}</div>`
-            : `<div class="wb-empty-state">暂无全局世界书</div>`;
+        globalList.innerHTML = '';
+        if (globalBooks.length) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'wb-flat-book-list';
+            globalBooks.forEach(book => wrapper.appendChild(createBookListItemElement(book, 'global')));
+            globalList.appendChild(wrapper);
+        } else {
+            globalList.innerHTML = `<div class="wb-empty-state">暂无全局世界书</div>`;
+        }
     }
 
     // Render Local Tab
     const localList = document.getElementById('wb-local-list');
     if (localList) {
-        let localItemsHtml = '';
-        
-        // Get friends from imessage.js via global export if available
+        localList.innerHTML = '';
+
         const friends = window.getImFriends ? window.getImFriends() : [];
-        
+        const wrapper = document.createElement('div');
+        wrapper.className = 'wb-flat-book-list';
+
         worldBooks.forEach(book => {
-            // Find all friends that have bound this book
             const boundFriends = friends.filter(f => Array.isArray(f.boundBooks) && f.boundBooks.map(String).includes(String(book.id)));
-            
+
             boundFriends.forEach(friend => {
-                const tokens = window.calculateTokens(book.entries);
+                const item = createBookListItemElement(book, 'local');
                 const avatarSrc = friend.avatarUrl || '';
-                const avatarInner = avatarSrc ? `<img src="${escapeAttr(avatarSrc)}">` : `<i class="fas fa-user"></i>`;
-                
-                const rightElementHtml = `
-                    <div class="wb-book-meta">
-                        <span class="wb-token-count">+${tokens} Tokens</span>
-                        <div class="wb-char-avatar">${avatarInner}</div>
-                    </div>
-                `;
-                
-                localItemsHtml += `
-                    <div class="wb-book-item" data-id="${escapeAttr(book.id)}">
-                        <div class="wb-book-info">
-                            <div class="wb-book-icon"><i class="fas fa-book"></i></div>
-                            <div class="wb-book-name">${escapeHtml(book.name || '未命名世界书')}</div>
-                        </div>
-                        ${rightElementHtml}
-                    </div>
-                `;
+                const avatar = item.querySelector('.wb-char-avatar');
+                if (avatar) {
+                    avatar.innerHTML = avatarSrc ? `<img src="${escapeAttr(avatarSrc)}">` : `<i class="fas fa-user"></i>`;
+                }
+                wrapper.appendChild(item);
             });
         });
-        
-        if (localItemsHtml === '') {
+
+        if (wrapper.children.length === 0) {
             localList.innerHTML = `<div class="wb-empty-state">暂无绑定</div>`;
         } else {
-            localList.innerHTML = `<div class="wb-flat-book-list">${localItemsHtml}</div>`;
+            localList.appendChild(wrapper);
         }
     }
-
 }
+
 window.renderWorldBooks = renderWorldBooks; // Export for update
 window.getWorldBooks = function() {
     return Array.isArray(worldBooks) ? worldBooks : [];

@@ -44,13 +44,55 @@
         { rank: 10, name: 'Sykkuno', handle: 'sykkuno', desc: 'Just playing games for fun.', subs: '290万', videos: '600', isLive: false }
     ];
 
+    function normalizeTrendingArray(trendingArray, type = currentTrendingType) {
+        if (!Array.isArray(trendingArray)) return [];
+        return trendingArray
+            .filter(item => item && typeof item === 'object')
+            .map((item, index) => {
+                const rank = Number(item.rank) || index + 1;
+                const name = String(item.name || item.nickname || `频道${rank}`).trim();
+                const handle = String(item.handle || name || `channel${rank}`).replace(/^@/, '').replace(/\s+/g, '').trim() || `channel${rank}`;
+                const id = item.id || (typeof createStableYtChannelId === 'function'
+                    ? createStableYtChannelId(`${type}_${handle}`, 'char_trend')
+                    : `char_trend_${type}_${handle}`);
+                const avatar = item.avatar || item.avatarUrl || `https://picsum.photos/seed/${encodeURIComponent(handle)}/80/80`;
+
+                return {
+                    ...item,
+                    id,
+                    rank,
+                    name,
+                    handle,
+                    avatar,
+                    banner: item.banner || null,
+                    desc: item.desc || item.persona || '',
+                    subs: item.subs || '0',
+                    videos: item.videos || '10',
+                    isLive: type === 'live' ? true : !!item.isLive
+                };
+            });
+    }
+
+    function persistTrendingCache(type, trendingArray) {
+        const normalized = normalizeTrendingArray(trendingArray, type);
+        if (type === 'live') {
+            channelState.cachedTrendingLive = normalized;
+        } else {
+            channelState.cachedTrendingSub = normalized;
+        }
+        if (typeof saveYoutubeData === 'function') saveYoutubeData();
+        return normalized;
+    }
+
     function renderTrendingData(trendingArray) {
         if (!trendList) return;
         trendList.innerHTML = '';
+
+        const normalizedTrending = normalizeTrendingArray(trendingArray);
         
-        if (trendingArray && Array.isArray(trendingArray)) {
-            trendingArray.forEach(item => {
-                const avatarUrl = 'https://picsum.photos/seed/' + item.handle + '/80/80';
+        if (normalizedTrending.length > 0) {
+            normalizedTrending.forEach((item, index) => {
+                const avatarUrl = item.avatar || `https://picsum.photos/seed/${encodeURIComponent(item.handle)}/80/80`;
                 
                 const el = document.createElement('div');
                 el.className = 'yt-trending-list-item';
@@ -73,24 +115,42 @@
                     ${item.isLive ? '<div class="yt-live-badge" style="position:static; margin-left:10px;"><i class="fas fa-broadcast-tower"></i></div>' : ''}
                 `;
 
-                        const newCharData = {
-                            id: 'char_trend_' + Date.now() + '_' + item.rank,
-                            name: item.name,
-                            handle: item.handle,
+                el.addEventListener('click', () => {
+                    let channelData = typeof buildYtChannelFromTrendingItem === 'function'
+                        ? buildYtChannelFromTrendingItem(item, currentTrendingType, index)
+                        : {
+                            ...item,
                             avatar: avatarUrl,
-                            banner: null,
-                            isLive: item.isLive,
-                            desc: item.desc,
-                            subs: item.subs,
-                            videos: item.videos || '10'
+                            isSubscribed: false
                         };
 
-                        el.addEventListener('click', () => {
-                            openSubChannelView(newCharData);
-                        });
+                    if (typeof mergeYtChannelIntoSubscriptions === 'function') {
+                        channelData = mergeYtChannelIntoSubscriptions(channelData, { save: true, preferExistingSubscription: true }) || channelData;
+                    } else if (typeof saveYoutubeData === 'function') {
+                        saveYoutubeData();
+                    }
+
+                    openSubChannelView(channelData);
+                });
 
                 trendList.appendChild(el);
             });
+        } else {
+            trendList.innerHTML = '<div style="text-align: center; color: #8e8e93; margin-top: 40px;">点击右上角魔法棒生成最新榜单</div>';
+        }
+    }
+
+    if (trendList) {
+        const initialTrending = channelState.cachedTrendingLive || channelState.cachedTrendingSub;
+        if (Array.isArray(initialTrending) && initialTrending.length > 0) {
+            if (!channelState.cachedTrendingLive && channelState.cachedTrendingSub) {
+                currentTrendingType = 'sub';
+                if (trendFilterSub && trendFilterLive) {
+                    trendFilterSub.classList.add('active');
+                    trendFilterLive.classList.remove('active');
+                }
+            }
+            renderTrendingData(initialTrending);
         }
     }
 
@@ -101,7 +161,8 @@
             
             if (!window.apiConfig || !window.apiConfig.endpoint || !window.apiConfig.apiKey) {
                 if(window.showToast) window.showToast('请先配置 API，当前显示默认榜单');
-                renderTrendingData(mockTrendingData);
+                const fallbackTrending = persistTrendingCache(currentTrendingType, mockTrendingData);
+                renderTrendingData(fallbackTrending);
                 return;
             }
 
@@ -224,54 +285,10 @@ ${wbContext}
                 }
 
                 if (trendingArray.length > 0) {
-                    if (currentTrendingType === 'live') {
-                        channelState.cachedTrendingLive = trendingArray;
-                    } else {
-                        channelState.cachedTrendingSub = trendingArray;
-                    }
-                    saveYoutubeData();
-                    trendingArray.forEach(item => {
-                        const avatarUrl = 'https://picsum.photos/seed/' + item.handle + '/80/80';
-                        
-                        const el = document.createElement('div');
-                        el.className = 'yt-trending-list-item';
-                        
-                        let rankClass = '';
-                        if (item.rank === 1) rankClass = 'top-1';
-                        if (item.rank === 2) rankClass = 'top-2';
-                        if (item.rank === 3) rankClass = 'top-3';
-
-                        el.innerHTML = `
-                            <div class="yt-trending-rank ${rankClass}">${item.rank}</div>
-                            <div class="yt-video-avatar" style="width: 50px; height: 50px; flex-shrink: 0;">
-                                <img src="${avatarUrl}">
-                            </div>
-                            <div style="flex: 1; overflow: hidden;">
-                                <div style="font-size: 16px; font-weight: 500; color: #0f0f0f; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">${item.name}</div>
-                                <div style="font-size: 12px; color: #606060; margin-top: 2px;">@${item.handle} • ${item.subs} 订阅</div>
-                                <div style="font-size: 12px; color: #8e8e93; margin-top: 2px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">${item.desc}</div>
-                            </div>
-                            ${item.isLive ? '<div class="yt-live-badge" style="position:static; margin-left:10px;"><i class="fas fa-broadcast-tower"></i></div>' : ''}
-                        `;
-
-                        const newCharData = {
-                            id: 'char_trend_' + Date.now() + '_' + item.rank,
-                            name: item.name,
-                            handle: item.handle,
-                            avatar: avatarUrl,
-                            banner: null,
-                            isLive: item.isLive,
-                            desc: item.desc,
-                            subs: item.subs,
-                            videos: item.videos || '10'
-                        };
-
-                        el.addEventListener('click', () => {
-                            openSubChannelView(newCharData);
-                        });
-
-                        trendList.appendChild(el);
-                    });
+                    const normalizedTrending = persistTrendingCache(currentTrendingType, trendingArray);
+                    renderTrendingData(normalizedTrending);
+                } else {
+                    trendList.innerHTML = '<div style="text-align:center; padding: 40px; color:#8e8e93;">没有生成到有效榜单，请重试</div>';
                 }
 
             } catch(e) {

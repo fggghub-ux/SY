@@ -1,4 +1,4 @@
-
+﻿
 // ==========================================
 // IMESSAGE: 4_chat_interface.js
 // ==========================================
@@ -803,8 +803,8 @@ async function openChatTab(friend) {
         if(window.imApp.initTimestampSetting) window.imApp.initTimestampSetting(friend);
         
         if(page) {
-            if(friend.showTimestamp) page.classList.add('show-timestamps');
-            else page.classList.remove('show-timestamps');
+            page.classList.toggle('show-timestamps', !!friend.showTimestamp);
+            page.classList.toggle('timestamp-outside', !!friend.showTimestamp && friend.timestampPosition === 'outside');
             
             if(friend.isPinned) page.classList.add('pinned-chat');
             else page.classList.remove('pinned-chat');
@@ -1090,3 +1090,5 @@ function closeContextMenu() {
     window.imChat.showGroupMemberProfileCard = showGroupMemberProfileCard;
 
 });
+
+

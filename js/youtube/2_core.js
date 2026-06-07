@@ -328,6 +328,83 @@
             .filter(Boolean);
     }
 
+    function createStableYtChannelId(value, prefix = 'yt_channel') {
+        const source = String(value || prefix)
+            .trim()
+            .toLowerCase()
+            .replace(/^@/, '')
+            .replace(/\s+/g, '-')
+            .replace(/[^\w\u4e00-\u9fa5.-]/g, '')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '') || prefix;
+        return `${prefix}_${source}`;
+    }
+
+    function buildYtChannelFromTrendingItem(item, type = 'trend', index = 0) {
+        const safeItem = item && typeof item === 'object' ? item : {};
+        const resolvedName = String(safeItem.name || safeItem.nickname || `频道${index + 1}`).trim();
+        const resolvedHandle = String(safeItem.handle || resolvedName || `channel${index + 1}`)
+            .replace(/^@/, '')
+            .replace(/\s+/g, '')
+            .trim() || `channel${index + 1}`;
+        const stableId = safeItem.id || createStableYtChannelId(`${type}_${resolvedHandle}`, 'char_trend');
+        const avatarSeed = encodeURIComponent(resolvedHandle || stableId);
+
+        return normalizeYtSubscription({
+            id: stableId,
+            name: resolvedName,
+            handle: resolvedHandle,
+            avatar: safeItem.avatar || safeItem.avatarUrl || `https://picsum.photos/seed/${avatarSeed}/80/80`,
+            banner: safeItem.banner || null,
+            isLive: !!safeItem.isLive,
+            desc: safeItem.desc || safeItem.persona || '',
+            subs: safeItem.subs || '0',
+            videos: safeItem.videos || '10',
+            isFriend: !!safeItem.isFriend,
+            isBusiness: !!safeItem.isBusiness,
+            isSubscribed: safeItem.isSubscribed === true,
+            generatedContent: safeItem.generatedContent || null,
+            groupChatHistory: Array.isArray(safeItem.groupChatHistory) ? safeItem.groupChatHistory : [],
+            dmHistory: Array.isArray(safeItem.dmHistory) ? safeItem.dmHistory : []
+        }, index);
+    }
+
+    function mergeYtChannelIntoSubscriptions(channel, options = {}) {
+        if (!channel || typeof channel !== 'object') return null;
+        const { save = true, preferExistingSubscription = true } = options;
+        const normalized = normalizeYtSubscription(channel, mockSubscriptions.length) || buildYtChannelFromTrendingItem(channel, 'manual', mockSubscriptions.length);
+        if (!normalized) return null;
+
+        const lookupHandle = normalizeYtLookupText(normalized.handle);
+        const existingIndex = mockSubscriptions.findIndex(sub => {
+            if (!sub) return false;
+            if (String(sub.id) === String(normalized.id)) return true;
+            return lookupHandle && normalizeYtLookupText(sub.handle) === lookupHandle;
+        });
+
+        if (existingIndex > -1) {
+            const existing = mockSubscriptions[existingIndex];
+            const merged = normalizeYtSubscription({
+                ...existing,
+                ...normalized,
+                id: existing.id || normalized.id,
+                isSubscribed: preferExistingSubscription ? (existing.isSubscribed !== false) : normalized.isSubscribed,
+                generatedContent: normalized.generatedContent || existing.generatedContent || null,
+                groupChatHistory: Array.isArray(normalized.groupChatHistory) && normalized.groupChatHistory.length > 0 ? normalized.groupChatHistory : (existing.groupChatHistory || []),
+                dmHistory: Array.isArray(normalized.dmHistory) && normalized.dmHistory.length > 0 ? normalized.dmHistory : (existing.dmHistory || [])
+            }, existingIndex);
+            mockSubscriptions[existingIndex] = merged;
+            hasSubscriptions = mockSubscriptions.some(sub => sub && sub.isSubscribed !== false);
+            if (save) saveYoutubeData();
+            return mockSubscriptions[existingIndex];
+        }
+
+        mockSubscriptions.push(normalized);
+        hasSubscriptions = mockSubscriptions.some(sub => sub && sub.isSubscribed !== false);
+        if (save) saveYoutubeData();
+        return mockSubscriptions[mockSubscriptions.length - 1];
+    }
+
     function rebuildYoutubeMockVideos() {
         mockVideos = [];
         if (channelState.activeUserLive) {
@@ -412,7 +489,13 @@
 
             channelState = normalizeYtChannelState(channelState);
             mockSubscriptions = normalizeYtSubscriptions(mockSubscriptions);
-            hasSubscriptions = mockSubscriptions.length > 0;
+            hasSubscriptions = mockSubscriptions.some(sub => sub && sub.isSubscribed !== false);
+
+            if (typeof currentSubChannelData !== 'undefined' && currentSubChannelData && currentSubChannelData.id) {
+                const syncedCurrentSub = mockSubscriptions.find(sub => String(sub.id) === String(currentSubChannelData.id));
+                if (syncedCurrentSub) currentSubChannelData = syncedCurrentSub;
+            }
+
             ytUserState = ytUserState ? normalizeYtUserState(ytUserState) : null;
 
             const nextState = normalizeYoutubeState({
@@ -451,6 +534,9 @@
     window.normalizeYtSubscriptions = normalizeYtSubscriptions;
     window.normalizeYtChannelState = normalizeYtChannelState;
     window.normalizeYoutubeState = normalizeYoutubeState;
+    window.createStableYtChannelId = createStableYtChannelId;
+    window.buildYtChannelFromTrendingItem = buildYtChannelFromTrendingItem;
+    window.mergeYtChannelIntoSubscriptions = mergeYtChannelIntoSubscriptions;
     window.saveYoutubeData = saveYoutubeData;
 
     // 2. DOM Elements

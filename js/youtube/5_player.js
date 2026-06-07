@@ -1507,6 +1507,10 @@
                 return;
             }
 
+            if (typeof mergeYtChannelIntoSubscriptions === 'function') {
+                currentSubChannelData = mergeYtChannelIntoSubscriptions(currentSubChannelData, { save: true, preferExistingSubscription: true }) || currentSubChannelData;
+            }
+
             setCharGenerateLoading(true);
             if(subChannelContent) subChannelContent.innerHTML = '';
             if (loadingEl) loadingEl.style.display = 'block';
@@ -1580,16 +1584,30 @@
                     });
                 }
                 
+                if (parsedData.currentLive) {
+                    parsedData.currentLive.thumbnail = parsedData.currentLive.thumbnail || `https://picsum.photos/seed/${encodeURIComponent(currentSubChannelData.id + '_live_' + Date.now())}/320/180?grayscale`;
+                    parsedData.currentLive.comments = Array.isArray(parsedData.currentLive.comments) ? parsedData.currentLive.comments : [];
+                    parsedData.currentLive.initialBubbles = Array.isArray(parsedData.currentLive.initialBubbles) ? parsedData.currentLive.initialBubbles : [];
+                }
                 oldGen.currentLive = parsedData.currentLive;
                 
                 if (parsedData.pastVideos) {
                     if (!oldGen.pastVideos) oldGen.pastVideos = [];
-                    oldGen.pastVideos = parsedData.pastVideos.concat(oldGen.pastVideos);
+                    const normalizedPastVideos = parsedData.pastVideos.map((video, index) => ({
+                        ...video,
+                        thumbnail: video.thumbnail || `https://picsum.photos/seed/${encodeURIComponent(currentSubChannelData.id + '_past_' + Date.now() + '_' + index)}/320/180?grayscale`,
+                        comments: Array.isArray(video.comments) ? video.comments : []
+                    }));
+                    oldGen.pastVideos = normalizedPastVideos.concat(oldGen.pastVideos);
                 }
                 
                 if (parsedData.communityPosts) {
                     if (!oldGen.communityPosts) oldGen.communityPosts = [];
-                    oldGen.communityPosts = parsedData.communityPosts.concat(oldGen.communityPosts);
+                    const normalizedCommunityPosts = parsedData.communityPosts.map(post => ({
+                        ...post,
+                        comments: Array.isArray(post.comments) ? post.comments : []
+                    }));
+                    oldGen.communityPosts = normalizedCommunityPosts.concat(oldGen.communityPosts);
                 }
                 
                 if (parsedData.fanGroup) {
@@ -1603,6 +1621,9 @@
                     oldGen.fanGroup = parsedData.fanGroup;
                 }
                 
+                if (typeof mergeYtChannelIntoSubscriptions === 'function') {
+                    currentSubChannelData = mergeYtChannelIntoSubscriptions(currentSubChannelData, { save: false, preferExistingSubscription: true }) || currentSubChannelData;
+                }
                 saveYoutubeData();
                 
                 if(parsedData.currentLive) {
@@ -1610,7 +1631,7 @@
                         title: parsedData.currentLive.title,
                         views: parsedData.currentLive.views,
                         time: 'LIVE',
-                        thumbnail: 'https://picsum.photos/seed/' + Math.random() + '/320/180?grayscale',
+                        thumbnail: parsedData.currentLive.thumbnail || 'https://picsum.photos/seed/' + Math.random() + '/320/180?grayscale',
                         isLive: true,
                         comments: parsedData.currentLive.comments,
                         initialBubbles: parsedData.currentLive.initialBubbles || [], 

@@ -107,25 +107,76 @@
             }
         }
 
+        getAvailableWorldBooks() {
+            if (typeof window.getWorldBooks === 'function') {
+                return window.getWorldBooks() || [];
+            }
+
+            const globalDataStr = localStorage.getItem('app_global_data');
+            if (globalDataStr) {
+                try {
+                    const globalData = JSON.parse(globalDataStr);
+                    return globalData?.worldBooks?.books || [];
+                } catch (e) {}
+            }
+
+            return [];
+        }
+
+        getBoundWorldBookIds() {
+            let ids = [];
+            const savedIds = localStorage.getItem('shopping_bound_wb_ids');
+            if (savedIds) {
+                try {
+                    const parsedIds = JSON.parse(savedIds);
+                    if (Array.isArray(parsedIds)) ids = parsedIds;
+                } catch (e) {}
+            }
+
+            const legacyId = localStorage.getItem('shopping_bound_wb_id');
+            if (legacyId && !ids.map(String).includes(String(legacyId))) {
+                ids.unshift(legacyId);
+            }
+
+            return ids
+                .map(id => String(id))
+                .filter((id, index, allIds) => id && allIds.indexOf(id) === index);
+        }
+
+        saveBoundWorldBookIds(ids = []) {
+            const nextIds = (Array.isArray(ids) ? ids : [])
+                .map(id => String(id))
+                .filter((id, index, allIds) => id && allIds.indexOf(id) === index);
+
+            if (nextIds.length > 0) {
+                localStorage.setItem('shopping_bound_wb_ids', JSON.stringify(nextIds));
+                localStorage.setItem('shopping_bound_wb_id', nextIds[0]);
+            } else {
+                localStorage.removeItem('shopping_bound_wb_ids');
+                localStorage.removeItem('shopping_bound_wb_id');
+            }
+        }
+
         updateBoundWbDisplay() {
             if (!this.boundWbName) return;
-            const boundId = localStorage.getItem('shopping_bound_wb_id');
-            if (boundId) {
-                const globalDataStr = localStorage.getItem('app_global_data');
-                if (globalDataStr) {
-                    try {
-                        const globalData = JSON.parse(globalDataStr);
-                        if (globalData.worldBooks && globalData.worldBooks.books) {
-                            const wb = globalData.worldBooks.books.find(b => String(b.id) === boundId);
-                            if (wb) {
-                                this.boundWbName.textContent = wb.name;
-                                return;
-                            }
-                        }
-                    } catch(e) {}
-                }
+            const boundIds = this.getBoundWorldBookIds();
+            if (boundIds.length === 0) {
+                this.boundWbName.textContent = '未绑定';
+                return;
             }
-            this.boundWbName.textContent = '未绑定';
+
+            const books = this.getAvailableWorldBooks();
+            const boundBooks = boundIds
+                .map(id => books.find(book => String(book.id) === String(id)))
+                .filter(Boolean);
+
+            if (boundBooks.length === 1) {
+                this.boundWbName.textContent = boundBooks[0].name || '未命名世界书';
+            } else if (boundBooks.length > 1) {
+                this.boundWbName.textContent = `已挂载 ${boundBooks.length} 本`;
+            } else {
+                this.boundWbName.textContent = '未绑定';
+            }
         }
 
         bindEvents() {
@@ -142,13 +193,14 @@
 
             if (this.bindWbBtn) {
                 this.bindWbBtn.addEventListener('click', () => {
-                    if (window.wbManager && window.wbManager.showWorldBookPicker) {
+                    if (typeof window.renderWorldBookSelector === 'function') {
+                        window.renderWorldBookSelector(this.getBoundWorldBookIds(), (selectedIds) => {
+                            this.saveBoundWorldBookIds(selectedIds);
+                            this.updateBoundWbDisplay();
+                        });
+                    } else if (window.wbManager && window.wbManager.showWorldBookPicker) {
                         window.wbManager.showWorldBookPicker((selectedBook) => {
-                            if (selectedBook) {
-                                localStorage.setItem('shopping_bound_wb_id', selectedBook.id);
-                            } else {
-                                localStorage.removeItem('shopping_bound_wb_id');
-                            }
+                            this.saveBoundWorldBookIds(selectedBook ? [selectedBook.id] : []);
                             this.updateBoundWbDisplay();
                         });
                     }
@@ -354,11 +406,15 @@
 \n\n`;
 
             // Append World Book context if bound
-            const boundId = localStorage.getItem('shopping_bound_wb_id');
-            if (boundId && window.wbManager) {
-                const bookCtx = await window.wbManager.getBookContextString(boundId);
-                if (bookCtx) {
-                    systemPrompt += `[当前挂载的世界书上下文]\n${bookCtx}\n\n参考以上世界书设定生成契合世界观的商品，评价和问答也可以带入世界观中的梗。\n\n`;
+            const boundIds = this.getBoundWorldBookIds();
+            if (boundIds.length > 0 && window.wbManager) {
+                const bookContexts = [];
+                for (const boundId of boundIds) {
+                    const bookCtx = await window.wbManager.getBookContextString(boundId);
+                    if (bookCtx) bookContexts.push(bookCtx);
+                }
+                if (bookContexts.length > 0) {
+                    systemPrompt += `[当前挂载的世界书上下文]\n${bookContexts.join('\n\n')}\n\n参考以上世界书设定生成契合世界观的商品，评价和问答也可以带入世界观中的梗。\n\n`;
                 }
             }
 
