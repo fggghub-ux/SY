@@ -239,7 +239,6 @@
         const settingsBtn = document.getElementById('dock-icon-settings');
         if (settingsBtn) {
             settingsBtn.addEventListener('click', (e) => {
-                if (window.isJiggleMode || window.preventAppClick) { e.preventDefault(); e.stopPropagation(); return; }
                 syncUIs();
                 openView(UI.views.settings);
             });
@@ -738,7 +737,7 @@
                 openDesktopThemeConfig();
             });
         }
-        
+
         if (imessageThemesBtn && themeConfigSheet) {
             imessageThemesBtn.addEventListener('click', (e) => {
                 e.stopPropagation();

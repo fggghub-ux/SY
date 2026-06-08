@@ -288,3 +288,517 @@
 .lovers-friend-phone-view.active {
     display: flex;
 }
+
+.lovers-savings-view {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 80;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    padding-top: 0;
+    padding-bottom: 0;
+    background: #f7f7f8;
+    color: #111;
+}
+
+.lovers-savings-view.active {
+    display: flex;
+}
+
+.lovers-savings-header {
+    height: max(56px, calc(56px + var(--safe-top)));
+    padding: var(--safe-top) 16px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    background: rgba(247, 247, 248, 0.92);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+}
+
+.lovers-savings-title {
+    font-size: 17px;
+    font-weight: 800;
+}
+
+.lovers-savings-icon-btn {
+    width: 34px;
+    height: 34px;
+    border: none;
+    border-radius: 50%;
+    background: #fff;
+    color: #111;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.06);
+}
+
+.lovers-savings-content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 14px 16px max(100px, calc(88px + var(--safe-bottom)));
+}
+
+.lovers-savings-hero {
+    background: linear-gradient(135deg, #ff7b9b, #ffb166);
+    border-radius: 22px;
+    padding: 20px;
+    color: #fff;
+    box-shadow: 0 18px 40px rgba(255, 123, 155, 0.25);
+}
+
+.lovers-savings-hero-top,
+.lovers-savings-goal-row,
+.lovers-savings-day-header,
+.lovers-savings-record-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.lovers-savings-kicker {
+    font-size: 13px;
+    font-weight: 700;
+    opacity: 0.82;
+}
+
+.lovers-savings-total {
+    font-size: 38px;
+    line-height: 1.1;
+    font-weight: 900;
+    margin-top: 8px;
+    letter-spacing: 0;
+}
+
+.lovers-savings-jar {
+    width: 62px;
+    height: 62px;
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.24);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    flex-shrink: 0;
+}
+
+.lovers-savings-goal-row {
+    margin-top: 22px;
+    font-size: 13px;
+    font-weight: 700;
+    opacity: 0.94;
+}
+
+.lovers-savings-progress-track {
+    height: 10px;
+    margin-top: 10px;
+    background: rgba(255, 255, 255, 0.28);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.lovers-savings-progress-fill {
+    width: 0%;
+    height: 100%;
+    border-radius: inherit;
+    background: #fff;
+    transition: width 0.25s ease;
+}
+
+.lovers-savings-left {
+    margin-top: 10px;
+    font-size: 12px;
+    font-weight: 700;
+    opacity: 0.9;
+}
+
+.lovers-savings-split {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.lovers-savings-person {
+    background: #fff;
+    border-radius: 18px;
+    padding: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.lovers-savings-person-dot {
+    width: 12px;
+    height: 36px;
+    border-radius: 999px;
+    flex-shrink: 0;
+}
+
+.lovers-savings-person-dot.is-user,
+.lovers-savings-record-icon.is-user {
+    background: #34c759;
+}
+
+.lovers-savings-person-dot.is-char,
+.lovers-savings-record-icon.is-char {
+    background: #ff7b9b;
+}
+
+.lovers-savings-record.is-withdrawal .lovers-savings-record-icon {
+    background: #8e8e93;
+}
+
+.lovers-savings-record.is-withdrawal .lovers-savings-record-top strong {
+    color: #8e8e93;
+}
+
+.lovers-savings-person-name {
+    font-size: 13px;
+    color: #8e8e93;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.lovers-savings-person-amount {
+    font-size: 18px;
+    font-weight: 800;
+    margin-top: 3px;
+    white-space: nowrap;
+}
+
+.lovers-savings-day {
+    margin-top: 18px;
+}
+
+.lovers-savings-section-title {
+    font-size: 20px;
+    font-weight: 900;
+}
+
+.lovers-savings-day-subtitle {
+    margin-top: 4px;
+    font-size: 13px;
+    color: #8e8e93;
+    font-weight: 700;
+}
+
+.lovers-savings-date-filter {
+    border: none;
+    outline: none;
+    background: #fff;
+    border-radius: 14px;
+    padding: 9px 10px;
+    color: #111;
+    font-size: 13px;
+    font-weight: 700;
+    max-width: 142px;
+}
+
+.lovers-savings-day-totals {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin: 12px 0;
+}
+
+.lovers-savings-day-totals div {
+    background: #fff;
+    border-radius: 16px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.lovers-savings-day-totals span {
+    color: #8e8e93;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.lovers-savings-day-totals strong {
+    font-size: 17px;
+}
+
+.lovers-savings-records {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.lovers-savings-record {
+    background: #fff;
+    border-radius: 18px;
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.lovers-savings-record-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.lovers-savings-record-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.lovers-savings-record-top span {
+    font-size: 15px;
+    font-weight: 800;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lovers-savings-record-top strong {
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+.lovers-savings-record-meta {
+    margin-top: 4px;
+    display: flex;
+    gap: 8px;
+    color: #8e8e93;
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 0;
+}
+
+.lovers-savings-record-meta span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lovers-savings-empty {
+    padding: 42px 16px;
+    color: #8e8e93;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.lovers-savings-empty i {
+    font-size: 28px;
+    color: #d1d1d6;
+}
+
+.lovers-savings-deposit-sheet {
+    height: auto;
+    padding-bottom: max(20px, calc(12px + var(--safe-bottom)));
+    background: #fff;
+}
+
+.lovers-savings-deposit-header {
+    padding: 0 16px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 17px;
+    font-weight: 800;
+}
+
+.lovers-savings-deposit-header button {
+    border: none;
+    background: transparent;
+    color: #ff7b9b;
+    font-size: 16px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.lovers-savings-form {
+    padding: 0 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.lovers-savings-form label {
+    background: #f6f6f7;
+    border-radius: 16px;
+    padding: 13px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.lovers-savings-form span {
+    color: #111;
+    font-size: 15px;
+    font-weight: 800;
+    flex-shrink: 0;
+}
+
+.lovers-savings-form input,
+.lovers-savings-form select,
+.lovers-savings-form textarea {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: #111;
+    font-size: 15px;
+    text-align: right;
+}
+
+.lovers-savings-form textarea {
+    min-height: 74px;
+    resize: none;
+    line-height: 1.45;
+    text-align: left;
+}
+
+.lovers-savings-textarea-label {
+    align-items: flex-start !important;
+}
+
+.lovers-savings-withdraw-btn {
+    width: 100%;
+    border: 1px solid #ececef;
+    border-radius: 16px;
+    background: #fff;
+    color: #111;
+    padding: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    font-size: 15px;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 8px 20px rgba(17, 17, 17, 0.05);
+}
+
+.lovers-savings-result-modal-overlay {
+    justify-content: center;
+    align-items: center;
+    padding: 22px;
+}
+
+.lovers-savings-result-modal {
+    width: min(100%, 332px);
+    background: #fff;
+    border-radius: 26px;
+    padding: 26px 20px 18px;
+    box-sizing: border-box;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 18px 50px rgba(17, 17, 17, 0.18);
+    transform: scale(0.94);
+    transition: transform 0.25s ease;
+}
+
+.lovers-savings-result-modal-overlay.active .lovers-savings-result-modal {
+    transform: scale(1);
+}
+
+.lovers-savings-result-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 50%;
+    background: #f2f2f7;
+    color: #8e8e93;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.lovers-savings-result-icon {
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    background: #34c759;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+}
+
+.lovers-savings-result-modal-overlay.is-rejected .lovers-savings-result-icon {
+    background: #ff3b30;
+}
+
+.lovers-savings-result-title {
+    font-size: 20px;
+    font-weight: 900;
+    color: #111;
+}
+
+.lovers-savings-result-amount {
+    font-size: 30px;
+    line-height: 1.05;
+    font-weight: 900;
+    color: #111;
+}
+
+.lovers-savings-result-reason-card {
+    width: 100%;
+    background: #f6f6f7;
+    border-radius: 18px;
+    padding: 13px 14px;
+    box-sizing: border-box;
+}
+
+.lovers-savings-result-reason-card span {
+    display: block;
+    font-size: 12px;
+    font-weight: 800;
+    color: #8e8e93;
+    margin-bottom: 6px;
+}
+
+.lovers-savings-result-reason-card p {
+    margin: 0;
+    color: #111;
+    font-size: 15px;
+    line-height: 1.45;
+    word-break: break-word;
+}
+
+.lovers-savings-result-ok {
+    width: 100%;
+    border: none;
+    border-radius: 16px;
+    background: #ff9bb3;
+    color: #fff;
+    height: 46px;
+    font-size: 16px;
+    font-weight: 900;
+    cursor: pointer;
+}

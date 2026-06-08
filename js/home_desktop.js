@@ -1,6 +1,4 @@
-(function () {
-    const LONG_PRESS_MS = 650;
-    const MOVE_CANCEL_PX = 14;
+﻿(function () {
     const PAGE_EDGE_PX = 44;
     const GRID_CAPACITY = 24;
     const DOCK_CAPACITY = 4;
@@ -45,11 +43,11 @@
         petText: 'oxo',
         musicTitle: 'happytwogether',
         musicArtist: '- Maximillian',
-        musicLyric1: '我喜欢淡淡的生活',
-        musicLyric2: '淡淡的情绪，淡淡的心情和简略的语言',
-        musicLyric3: '就像雨滴落在地面没有任何痕迹',
-        coupleLeft: 'ㅠㅠ',
-        coupleRight: 'ㅎㅎ',
+        musicLyric1: '鎴戝枩娆㈡贰娣＄殑鐢熸椿',
+        musicLyric2: '娣℃贰鐨勬儏缁紝娣℃贰鐨勫績鎯呭拰绠€鐣ョ殑璇█',
+        musicLyric3: '灏卞儚闆ㄦ淮钀藉湪鍦伴潰娌℃湁浠讳綍鐥曡抗',
+        coupleLeft: '銋犮厾',
+        coupleRight: '銋庛厧',
         photoTitle: 'iisonyoung',
         photoBody: '',
         notificationTitle: 'u2phone',
@@ -59,9 +57,6 @@
     let appEl;
     let pagesContainer;
     let dockEl;
-    let controlsEl;
-    let addBtn;
-    let doneBtn;
     let sheetEl;
 
     let desktopState;
@@ -69,10 +64,10 @@
     let widgetNodeCache = new Map();
     let inlineTextEdit = null;
     let inlineImageInput = null;
-    let longPress = null;
     let drag = null;
     let libraryDrag = null;
     let autoPageTimer = null;
+    let lastWidgetSheetOpenedAt = 0;
 
     document.addEventListener('DOMContentLoaded', initHomeDesktopEditor);
 
@@ -88,25 +83,15 @@
         desktopState = normalizeDesktopState(loadDesktopState(), buildDefaultDesktopState());
         renderDesktop();
         bindChrome();
-        bindDesktopPointers();
 
-        window.enterDesktopEditMode = enterEditMode;
-        window.exitDesktopEditMode = exitEditMode;
+        window.openHomeWidgetEditor = openHomeWidgetEditor;
+        window.openHomeWidgetPanelFromSettings = openHomeWidgetPanelFromSettings;
+        window.updateHomeWidgetConfigFromPanel = updateHomeWidgetConfigFromPanel;
         window.renderHomeDesktop = renderDesktop;
     }
 
     function ensureChrome() {
-        controlsEl = document.getElementById('home-edit-controls');
-        if (!controlsEl) {
-            controlsEl = document.createElement('div');
-            controlsEl.id = 'home-edit-controls';
-            controlsEl.className = 'home-edit-controls';
-            controlsEl.innerHTML = `
-                <button class="home-edit-fab home-edit-add-btn" id="home-edit-add-btn" type="button" aria-label="Add widget"><i class="fas fa-plus"></i></button>
-                <button class="home-edit-fab home-edit-done-btn" id="home-edit-done-btn" type="button" aria-label="Exit edit mode"><i class="fas fa-times"></i></button>
-            `;
-            appEl.appendChild(controlsEl);
-        }
+        document.getElementById('home-edit-controls')?.remove();
 
         sheetEl = document.getElementById('home-widget-sheet');
         if (!sheetEl) {
@@ -119,15 +104,13 @@
         sheetEl.innerHTML = `
             <div class="bottom-sheet home-widget-bottom-sheet">
                 <div class="sheet-handle"></div>
-                <div class="sheet-title" id="home-widget-sheet-title">Add Widget</div>
+                <div class="sheet-title" id="home-widget-sheet-title">小组件</div>
                 <div class="detail-sheet-content home-widget-form">
                     <div class="home-widget-library" id="home-widget-library"></div>
                 </div>
             </div>
         `;
 
-        addBtn = document.getElementById('home-edit-add-btn');
-        doneBtn = document.getElementById('home-edit-done-btn');
     }
 
     function collectAppCatalog() {
@@ -245,6 +228,7 @@
         const defaultPhotoWidgetAdded = !!safe.defaultPhotoWidgetAdded;
         if (!defaultPhotoWidgetAdded) ensureDefaultPhotoWidget(pages, widgets);
         ensureCatalogWidgetConfigs(widgets);
+        ensurePermanentCatalogWidgets(pages, widgets);
 
         return {
             schemaVersion: DESKTOP_SCHEMA_VERSION,
@@ -278,6 +262,47 @@
             };
             if (entry.type === 'photo') normalizePhotoTextDefaults(widgets[entry.id]);
         });
+    }
+
+    function ensurePermanentCatalogWidgets(pages, widgets) {
+        WIDGET_CATALOG.forEach((entry) => {
+            const alreadyPlaced = pages.some((page) => page.some((item) => item.kind === 'widget' && item.id === entry.id));
+            if (alreadyPlaced) return;
+
+            const targetIndex = findPermanentWidgetPageIndex(pages, widgets, entry);
+            pages[targetIndex] = pages[targetIndex] || [];
+            pages[targetIndex].push({ kind: 'widget', id: entry.id });
+        });
+    }
+
+    function findPermanentWidgetPageIndex(pages, widgets, entry) {
+        const preferred = Math.max(0, Math.min(entry.defaultPage || 0, pages.length - 1));
+        const candidates = [preferred, ...pages.map((_, index) => index)];
+        const item = { kind: 'widget', id: entry.id };
+
+        for (const index of candidates) {
+            if (index >= 0 && index < pages.length && getPageUsedSpanForPages(pages, widgets, index, entry.id) + getItemSpanForWidgets(widgets, item) <= GRID_CAPACITY) {
+                return index;
+            }
+        }
+
+        pages.push([]);
+        return pages.length - 1;
+    }
+
+    function getPageUsedSpanForPages(pages, widgets, pageIndex, excludingId = '') {
+        return (pages[pageIndex] || []).reduce((sum, item) => {
+            if (item.id === excludingId) return sum;
+            return sum + getItemSpanForWidgets(widgets, item);
+        }, 0);
+    }
+
+    function getItemSpanForWidgets(widgets, item) {
+        if (!item || item.kind === 'app') return 1;
+        const config = widgets[item.id];
+        const entry = getWidgetCatalogEntry(item.id);
+        const type = config?.type || entry?.type;
+        return WIDGET_TYPES[type]?.span || 1;
     }
 
     function normalizePhotoTextDefaults(config) {
@@ -383,21 +408,22 @@
     }
 
     function bindChrome() {
-        addBtn?.addEventListener('click', openWidgetSheet);
-        doneBtn?.addEventListener('click', exitEditMode);
         renderWidgetLibrary();
 
         sheetEl?.addEventListener('click', (event) => {
-            if (event.target === sheetEl) closeWidgetSheet();
+            if (event.target !== sheetEl) return;
+
+            // 绉诲姩绔笂锛屽鏋滈€氳繃 touchend 鎵撳紑闈㈡澘锛岄殢鍚庣敓鎴愮殑鍏煎 click
+            if (Date.now() - lastWidgetSheetOpenedAt < 400) {
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+
+            closeWidgetSheet();
         });
         sheetEl?.addEventListener('pointerdown', onWidgetLibraryPointerDown, true);
     }
-
-    function bindDesktopPointers() {
-        appEl.addEventListener('pointerdown', onPointerDown, { capture: true });
-        appEl.addEventListener('click', onCapturedClick, { capture: true });
-    }
-
 
     function getWidgetLibraryHint(type) {
         if (type === 'profile') return '4 x 3';
@@ -411,13 +437,13 @@
         library.innerHTML = '';
 
         WIDGET_CATALOG.forEach((entry) => {
-            const placed = !!findItemLocation(entry.id);
-            const card = document.createElement('button');
-            card.type = 'button';
+            const placed = true;
+            const card = document.createElement('div');
             card.className = 'home-widget-library-card';
             card.dataset.widgetId = entry.id;
             card.dataset.widgetType = entry.type;
-            card.disabled = placed;
+            card.tabIndex = 0;
+            card.setAttribute('role', 'button');
             card.classList.toggle('is-added', placed);
             card.innerHTML = `
                 <div class="home-widget-library-preview-shell"></div>
@@ -425,11 +451,13 @@
                     <strong>${entry.label}</strong>
                     <span>${getWidgetLibraryHint(entry.type)}</span>
                 </div>
-                <em>${placed ? '已添加' : '添加'}</em>
+                <em>设置</em>
             `;
             card.querySelector('.home-widget-library-preview-shell')?.appendChild(createWidgetLibraryPreview(entry));
-            card.addEventListener('click', () => {
-                if (!findItemLocation(entry.id)) addCatalogWidgetToDesktop(entry.id);
+            card.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                card.click();
             });
             library.appendChild(card);
         });
@@ -553,118 +581,6 @@
                 if (libraryDrag.placeholder.parentElement !== container || libraryDrag.placeholder.nextElementSibling !== null) container.appendChild(libraryDrag.placeholder);
             }
         }
-    }
-
-    function onPointerDown(event) {
-        if (event.button && event.button !== 0) return;
-        if (!isHomeDesktopEvent(event)) return;
-        if (event.target.closest('.bottom-sheet-overlay, .home-edit-fab, input, textarea, select, button')) return;
-
-        const target = event.target.closest('.desktop-draggable, .app-item:not(.empty-slot), .ins-profile-widget, .pet-widget, .custom-music-widget, .couple-widget, .photo-widget, .notification-widget');
-        if (!target || target.classList.contains('empty-slot')) return;
-
-        const item = describeNode(target);
-        if (!item) return;
-
-        if (window.isJiggleMode) {
-            if (item.kind === 'widget' && (
-                event.target.closest('.delete-widget-btn') ||
-                getInlineTextInfo(event.target, target) ||
-                getInlineImageInfo(event.target, target)
-            )) {
-                return;
-            }
-            event.preventDefault();
-            return;
-        }
-
-        const startX = event.clientX;
-        const startY = event.clientY;
-        let cancelled = false;
-
-        clearLongPress();
-        longPress = {
-            pointerId: event.pointerId,
-            target,
-            item,
-            startX,
-            startY,
-            timer: setTimeout(() => {
-                if (cancelled) return;
-                enterEditMode();
-            }, LONG_PRESS_MS)
-        };
-
-        let longPressRAF = null;
-        const moveHandler = (moveEvent) => {
-            if (!longPress || moveEvent.pointerId !== longPress.pointerId) return;
-            if (longPressRAF) return;
-            longPressRAF = requestAnimationFrame(() => {
-                const dx = moveEvent.clientX - startX;
-                const dy = moveEvent.clientY - startY;
-                if (Math.hypot(dx, dy) > MOVE_CANCEL_PX && !window.isJiggleMode) {
-                    cancelled = true;
-                    clearLongPress();
-                    removeHandlers();
-                }
-                longPressRAF = null;
-            });
-        };
-
-        const upHandler = (upEvent) => {
-            if (longPress && upEvent.pointerId === longPress.pointerId) {
-                clearLongPress();
-            }
-            removeHandlers();
-        };
-
-        const removeHandlers = () => {
-            window.removeEventListener('pointermove', moveHandler, { capture: true, passive: true });
-            window.removeEventListener('pointerup', upHandler, { capture: true, passive: true });
-            window.removeEventListener('pointercancel', upHandler, { capture: true, passive: true });
-        };
-
-        window.addEventListener('pointermove', moveHandler, { capture: true, passive: true });
-        window.addEventListener('pointerup', upHandler, { capture: true, passive: true });
-        window.addEventListener('pointercancel', upHandler, { capture: true, passive: true });
-    }
-
-    function clearLongPress() {
-        if (longPress?.timer) clearTimeout(longPress.timer);
-        longPress = null;
-    }
-
-    function onCapturedClick(event) {
-        if (!isHomeDesktopEvent(event)) return;
-        if (!window.isJiggleMode) return;
-        const target = event.target.closest('.desktop-draggable, .app-item:not(.empty-slot), .ins-profile-widget, .pet-widget, .custom-music-widget, .couple-widget, .photo-widget, .notification-widget');
-        if (!target || event.target.closest('.home-edit-fab, .bottom-sheet-overlay')) return;
-        const item = describeNode(target);
-        event.preventDefault();
-        event.stopPropagation();
-        if (item?.kind === 'widget' && event.target.closest('.delete-widget-btn')) {
-            removeWidgetFromDesktop(item.id);
-            return;
-        }
-        // 拖拽已禁用，所以直接允许点击编辑文本和图片
-        if (item?.kind === 'widget') {
-            const textInfo = getInlineTextInfo(event.target, target);
-            if (textInfo) {
-                startInlineTextEdit(item.id, target, textInfo);
-                return;
-            }
-            const imageInfo = getInlineImageInfo(event.target, target);
-            if (imageInfo) {
-                pickInlineWidgetImage(item.id, target, imageInfo);
-            }
-        }
-    }
-
-    function isHomeDesktopEvent(event) {
-        const target = event?.target;
-        if (!target || typeof target.closest !== 'function') return false;
-        if (target.closest('.app-view.active, .settings-view.active, .bottom-sheet-overlay')) return false;
-        return !!target.closest('#pages-container, #dock, .home-edit-controls');
     }
 
     function getInlineTextInfo(source, widgetNode) {
@@ -832,23 +748,6 @@
             text: { ...DEFAULT_WIDGET_TEXT, ...(current.text || {}) },
             images: mergeWidgetImagesWithDefaults(type, current.images)
         };
-    }
-
-    function enterEditMode() {
-        window.isJiggleMode = true;
-        window.preventAppClick = true;
-        document.body.classList.add('home-edit-mode');
-    }
-
-    function exitEditMode() {
-        clearLongPress();
-        inlineTextEdit?.element?.blur();
-        endDrag(null, { save: true });
-        window.isJiggleMode = false;
-        window.preventAppClick = false;
-        document.body.classList.remove('home-edit-mode');
-        closeWidgetSheet();
-        saveDesktopState({ silent: true });
     }
 
     function startDrag(event, target, item) {
@@ -1091,18 +990,6 @@
         return WIDGET_CATALOG.find((entry) => entry.id === id) || null;
     }
 
-    function addCatalogWidgetToDesktop(widgetId) {
-        const entry = getWidgetCatalogEntry(widgetId);
-        if (!entry || findItemLocation(widgetId)) return;
-        desktopState.widgets[widgetId] = desktopState.widgets[widgetId] || createDefaultWidgetConfig(entry.type);
-        const pageIndex = findAvailablePageIndex({ kind: 'widget', id: widgetId }, getCurrentPageIndex(), entry.defaultPage);
-        desktopState.pages[pageIndex] = desktopState.pages[pageIndex] || [];
-        desktopState.pages[pageIndex].push({ kind: 'widget', id: widgetId });
-        closeWidgetSheet();
-        renderDesktop();
-        saveDesktopState();
-    }
-
     function findAvailablePageIndex(item, preferredIndex, fallbackIndex = 0) {
         const candidates = [preferredIndex, fallbackIndex, ...desktopState.pages.map((_, index) => index)];
         for (const index of candidates) {
@@ -1136,11 +1023,21 @@
         return WIDGET_TYPES[type]?.span || 1;
     }
 
+    function openHomeWidgetEditor() {
+        openWidgetSheet();
+    }
+
+    function openHomeWidgetPanelFromSettings() {
+        const settingsView = document.getElementById('settings-view');
+        if (settingsView) closeViewSafe(settingsView);
+        openWidgetSheet();
+    }
+
     function openWidgetSheet() {
-        if (!window.isJiggleMode) return;
+        lastWidgetSheetOpenedAt = Date.now();
         renderWidgetLibrary();
         const title = document.getElementById('home-widget-sheet-title');
-        if (title) title.textContent = 'Add Widget';
+        if (title) title.textContent = '小组件';
         openViewSafe(sheetEl);
     }
 
@@ -1175,12 +1072,37 @@
         saveDesktopState();
     }
 
-    function removeWidgetFromDesktop(widgetId) {
-        if (!widgetId) return;
-        removeItemFromState(widgetId);
-        closeWidgetSheet();
-        renderDesktop();
-        saveDesktopState();
+    function updateHomeWidgetConfigFromPanel(widgetId, patch = {}) {
+        if (!widgetId || !desktopState?.widgets) return null;
+
+        const entry = getWidgetCatalogEntry(widgetId);
+        const current = desktopState.widgets[widgetId] || createDefaultWidgetConfig(entry?.type || patch.type || 'photo');
+        const type = current.type || entry?.type || patch.type || 'photo';
+        const next = {
+            ...createDefaultWidgetConfig(type),
+            ...current,
+            ...patch,
+            type,
+            text: { ...DEFAULT_WIDGET_TEXT, ...(current.text || {}), ...(patch.text || {}) },
+            images: mergeWidgetImagesWithDefaults(type, { ...(current.images || {}), ...(patch.images || {}) })
+        };
+
+        desktopState.widgets[widgetId] = next;
+
+        const node = widgetNodeCache.get(widgetId) || document.getElementById(widgetId);
+        if (node) applyWidgetConfig(node, next);
+
+        const previewCard = [...document.querySelectorAll('.home-widget-library-card')]
+            .find((card) => card.dataset.widgetId === widgetId);
+        const preview = previewCard?.querySelector('.home-widget-library-preview');
+        if (preview) {
+            applyWidgetConfig(preview, next);
+            preview.querySelector('.delete-widget-btn')?.remove();
+            preview.querySelectorAll('[id]').forEach((child) => child.removeAttribute('id'));
+        }
+
+        saveDesktopState({ silent: true });
+        return next;
     }
 
     function createDefaultWidgetConfig(type) {
@@ -1310,7 +1232,7 @@
 
     function getStoredImageSrc(img) {
         const src = img?.getAttribute('src') || '';
-        return src.startsWith('data:') ? src : '';
+        return isAllowedWidgetImageSrc(src) ? src.trim() : '';
     }
 
     function getWidgetType(node) {
@@ -1513,7 +1435,7 @@
     }
 
     function setImage(img, icon, src) {
-        const value = isAllowedWidgetImageSrc(src) ? src : '';
+        const value = isAllowedWidgetImageSrc(src) ? String(src).trim() : '';
         if (img) {
             img.src = value;
             img.style.display = value ? 'block' : 'none';
@@ -1523,8 +1445,12 @@
     }
 
     function isAllowedWidgetImageSrc(src) {
-        return typeof src === 'string'
-            && (src.startsWith('data:') || DEFAULT_PHOTO_IMAGE_SRCS.includes(src) || src === DEFAULT_PET_IMAGE_SRC);
+        if (typeof src !== 'string') return false;
+        const value = src.trim();
+        return value.startsWith('data:')
+            || /^https?:\/\//i.test(value)
+            || DEFAULT_PHOTO_IMAGE_SRCS.includes(value)
+            || value === DEFAULT_PET_IMAGE_SRC;
     }
 
     function getPrimaryWidgetText(config) {
@@ -1567,9 +1493,9 @@
     function renderImagePreview(src) {
         if (!imagePreview) return;
         imagePreview.innerHTML = '';
-        if (src && src.startsWith('data:')) {
+        if (isAllowedWidgetImageSrc(src)) {
             const img = document.createElement('img');
-            img.src = src;
+            img.src = String(src).trim();
             imagePreview.appendChild(img);
         } else {
             imagePreview.innerHTML = '<i class="fas fa-image"></i>';

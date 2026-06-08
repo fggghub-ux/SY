@@ -89,6 +89,40 @@ window.lovesApp = {
             if (window.showToast) window.showToast('已删除');
         }
     },
+
+    escapeHTML: function(value) {
+        return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        })[char]);
+    },
+
+    getLocalDateKey: function(value = new Date()) {
+        const date = value instanceof Date ? value : new Date(value);
+        if (Number.isNaN(date.getTime())) return this.getLocalDateKey(new Date());
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    },
+
+    parseDateKey: function(dateKey) {
+        if (!dateKey || typeof dateKey !== 'string') return new Date();
+        const parts = dateKey.split('-').map(Number);
+        if (parts.length !== 3 || parts.some(Number.isNaN)) return new Date();
+        return new Date(parts[0], parts[1] - 1, parts[2]);
+    },
+
+    formatMoney: function(amount) {
+        const value = Number(amount) || 0;
+        return '¥' + value.toLocaleString('zh-CN', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+    },
     
     init: function() {
         if (this.initialized) return;
@@ -109,6 +143,38 @@ window.lovesApp = {
                 this.close();
             });
         }
+
+        if (!this._sharedSavingsDelegated) {
+            document.addEventListener('click', (e) => {
+                const savingsBtn = e.target.closest('#lovers-shared-savings-btn');
+                if (!savingsBtn) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const friendId = savingsBtn.dataset.friendId;
+                if (!this.currentFriend && friendId) {
+                    this.currentFriend = window.imData?.friends?.find(friend => String(friend.id) === String(friendId)) || null;
+                }
+                this.openSavingsJar();
+            });
+            this._sharedSavingsDelegated = true;
+        }
+    },
+
+    bindSharedSavingsButton: function(friend = this.currentFriend) {
+        const sharedSavingsBtn = document.getElementById('lovers-shared-savings-btn');
+        if (!sharedSavingsBtn) return;
+        if (friend && friend.id !== undefined) {
+            sharedSavingsBtn.dataset.friendId = String(friend.id);
+        }
+        sharedSavingsBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (friend) this.currentFriend = friend;
+            if (!this.currentFriend && sharedSavingsBtn.dataset.friendId) {
+                this.currentFriend = window.imData?.friends?.find(item => String(item.id) === String(sharedSavingsBtn.dataset.friendId)) || null;
+            }
+            this.openSavingsJar();
+        };
     },
     
     // 添加动态辅助方法
@@ -124,6 +190,12 @@ window.lovesApp = {
         fab.onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
+
+            const savingsView = document.getElementById('lovers-savings-view');
+            if (savingsView && savingsView.classList.contains('active')) {
+                this.openSavingsDepositSheet('user');
+                return;
+            }
             
             // 判断当前活跃的 tab
             const activeTab = document.querySelector('.lovers-space-tab.active');
@@ -471,6 +543,7 @@ window.lovesApp = {
         
         const userAvatar = window.userState?.avatarUrl || window.imData?.profile?.avatarUrl;
         const userName = window.userState?.name || window.imData?.profile?.name || '我';
+        const safeUserName = this.escapeHTML(userName);
         
         let html = '';
         moments.forEach((m, idx) => {
@@ -479,6 +552,8 @@ window.lovesApp = {
             
             const displayAvatar = m.isChar ? this.currentFriend.avatarUrl : userAvatar;
             const displayName = m.isChar ? (this.currentFriend.nickname || this.currentFriend.realname || 'TA') : userName;
+            const safeDisplayName = this.escapeHTML(displayName);
+            const safeMomentText = this.escapeHTML(m.text);
 
             let imagesHtml = '';
             if (m.images && m.images.length > 0) {
@@ -495,9 +570,11 @@ window.lovesApp = {
                 m.comments.forEach((c, cIdx) => {
                     const cAuthor = c.isChar ? (this.currentFriend.nickname || this.currentFriend.realname || 'TA') : userName;
                     const cColor = c.isChar ? '#576b95' : '#333';
+                    const safeAuthor = this.escapeHTML(cAuthor);
+                    const safeCommentText = this.escapeHTML(c.text);
                     commentsHtml += `
                         <div style="font-size: 14px; line-height: 1.4; display: flex; justify-content: space-between; gap: 10px; align-items: flex-start;">
-                            <div style="flex: 1; cursor: pointer;" onclick="window.lovesApp.replyToComment(${idx}, ${cIdx})"><span style="color: ${cColor}; font-weight: 600;">${cAuthor}</span>: <span style="color: #333;">${c.text}</span></div>
+                            <div style="flex: 1; cursor: pointer;" onclick="window.lovesApp.replyToComment(${idx}, ${cIdx})"><span style="color: ${cColor}; font-weight: 600;">${safeAuthor}</span>: <span style="color: #333;">${safeCommentText}</span></div>
                             <div style="color: #ff3b30; font-size: 12px; cursor: pointer; white-space: nowrap; flex-shrink: 0;" onclick="window.lovesApp.deleteComment(${idx}, ${cIdx})">删除</div>
                         </div>
                     `;
@@ -513,7 +590,7 @@ window.lovesApp = {
                             ${displayAvatar ? `<img src="${displayAvatar}" style="width: 100%; height: 100%; object-fit: cover;">` : `<i class="fas fa-user"></i>`}
                         </div>
                         <div>
-                            <div style="font-size: 15px; font-weight: 600; color: #111;">${displayName}</div>
+                            <div style="font-size: 15px; font-weight: 600; color: #111;">${safeDisplayName}</div>
                             <div style="font-size: 12px; color: #8e8e93; margin-top: 2px;">${timeStr}</div>
                         </div>
                     </div>
@@ -532,7 +609,7 @@ window.lovesApp = {
                     </div>
                 </div>
                 
-                ${m.text ? `<div style="font-size: 15px; color: #333; line-height: 1.5; white-space: pre-wrap; word-break: break-word;">${m.text}</div>` : ''}
+                ${m.text ? `<div style="font-size: 15px; color: #333; line-height: 1.5; white-space: pre-wrap; word-break: break-word;">${safeMomentText}</div>` : ''}
                 ${imagesHtml}
                 
                 <div style="display: flex; gap: 20px; margin-top: 16px; padding-top: 16px; border-top: 1px solid #f2f2f7; color: #8e8e93;">
@@ -540,18 +617,40 @@ window.lovesApp = {
                         <i class="${m.isLiked ? 'fas' : 'far'} fa-heart" style="${m.isLiked ? 'color: #ff2d55;' : ''} font-size: 18px;"></i>
                         <span style="font-size: 14px;">${m.likes || 0}</span>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                    <div style="display: flex; align-items: center; gap: 6px; cursor: pointer;" onclick="window.lovesApp.addMomentComment(${idx})">
                         <i class="far fa-comment-dots" style="font-size: 18px;"></i>
                         <span style="font-size: 14px;">${m.comments ? m.comments.length : 0}</span>
                     </div>
                 </div>
                 
                 ${commentsHtml}
+                <div style="display: flex; align-items: center; gap: 10px; margin-top: 12px; background: #fafafa; border-radius: 18px; padding: 8px 10px;">
+                    <div style="width: 28px; height: 28px; border-radius: 50%; background: #e5e5ea; overflow: hidden; display: flex; justify-content: center; align-items: center; color: #aaa; flex-shrink: 0;">
+                        ${userAvatar ? `<img src="${userAvatar}" alt="${safeUserName}" style="width: 100%; height: 100%; object-fit: cover;">` : `<i class="fas fa-user" style="font-size: 12px;"></i>`}
+                    </div>
+                    <input type="text" class="loves-moment-comment-input" data-moment-idx="${idx}" placeholder="${m.isChar ? '评论 TA 的动态...' : '添加评论...'}" style="flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: 14px; color: #111;">
+                    <button type="button" class="loves-moment-comment-send" data-moment-idx="${idx}" style="border: none; background: #ff9bb3; color: #fff; border-radius: 14px; padding: 6px 12px; font-size: 13px; font-weight: 700; cursor: pointer; flex-shrink: 0;">发送</button>
+                </div>
             </div>
             `;
         });
         
         list.innerHTML = html;
+        list.querySelectorAll('.loves-moment-comment-send').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.dataset.momentIdx, 10);
+                const input = list.querySelector(`.loves-moment-comment-input[data-moment-idx="${idx}"]`);
+                this.addMomentComment(idx, input ? input.value : '');
+            });
+        });
+        list.querySelectorAll('.loves-moment-comment-input').forEach(input => {
+            input.addEventListener('keydown', (e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                const idx = parseInt(input.dataset.momentIdx, 10);
+                this.addMomentComment(idx, input.value);
+            });
+        });
         
         // 全局点击关闭菜单
         if (!this._menuClickBound) {
@@ -618,6 +717,38 @@ window.lovesApp = {
         });
     },
 
+    addMomentComment: function(mIdx, presetText = '') {
+        if (!this.currentFriend || !this.currentFriend.lovesData || !this.currentFriend.lovesData.moments) return;
+        const m = this.currentFriend.lovesData.moments[mIdx];
+        if (!m) return;
+
+        let commentText = String(presetText || '').trim();
+        if (!commentText) {
+            const prompted = prompt(m.isChar ? '评论 TA 的动态：' : '添加评论：');
+            if (prompted === null) return;
+            commentText = prompted.trim();
+        }
+        if (!commentText) return;
+
+        if (!m.comments) m.comments = [];
+        m.comments.push({
+            text: commentText,
+            isChar: false,
+            timestamp: Date.now()
+        });
+
+        this.persistFriendState();
+        this.renderLovesMoments();
+
+        if (m.isChar === true) {
+            this.requestCharComment(mIdx, {
+                reason: 'user_comment',
+                userComment: commentText,
+                silentMissingApi: true
+            });
+        }
+    },
+
     replyToComment: function(mIdx, cIdx) {
         if (!this.currentFriend || !this.currentFriend.lovesData || !this.currentFriend.lovesData.moments) return;
         const m = this.currentFriend.lovesData.moments[mIdx];
@@ -635,10 +766,18 @@ window.lovesApp = {
             });
             this.persistFriendState();
             this.renderLovesMoments();
+
+            if (m.isChar === true) {
+                this.requestCharComment(mIdx, {
+                    reason: 'user_comment',
+                    userComment: replyText.trim(),
+                    silentMissingApi: true
+                });
+            }
         }
     },
 
-    requestCharComment: function(idx) {
+    requestCharComment: function(idx, options = {}) {
         if (!this.currentFriend || !this.currentFriend.lovesData || !this.currentFriend.lovesData.moments) return;
         const m = this.currentFriend.lovesData.moments[idx];
         if (!m) return;
@@ -647,11 +786,13 @@ window.lovesApp = {
         if (targetMenu) targetMenu.style.display = 'none';
 
         if (!window.apiConfig || !window.apiConfig.endpoint || !window.apiConfig.apiKey) {
-            if (window.showToast) window.showToast('请先在系统设置中配置 API');
+            if (!options.silentMissingApi && window.showToast) window.showToast('请先在系统设置中配置 API');
             return;
         }
         
-        if (window.showToast) window.showToast('正在生成评论...');
+        if (m._charReplyPending) return;
+        m._charReplyPending = true;
+        if (window.showToast) window.showToast(options.reason === 'user_comment' ? 'TA 正在回复...' : '正在生成评论...');
 
         let globalRule = '';
         if (window.getGlobalWorldBookContextByPosition) {
@@ -679,8 +820,13 @@ window.lovesApp = {
         const isCharMoment = m.isChar === true;
         const momentAuthor = isCharMoment ? '角色(Char)' : '用户(User)';
         let momentDesc = `${momentAuthor}刚才发布了一条动态：\n文字内容：${momentContent}\n附带图片数量：${imageCount} 张`;
+        if (options.userComment) {
+            momentDesc += `\nUser刚刚在这条动态下评论：${options.userComment}`;
+        }
 
-        let prompt = isCharMoment
+        let prompt = options.reason === 'user_comment'
+            ? `你现在要扮演给定的角色(Char)。这条朋友圈动态是 Char 自己发布的，User 刚在下面评论了。请为 Char 生成1条自然回复 User 评论的动态评论，并且可选生成0-2条相关私聊消息。\n`
+            : isCharMoment
             ? `你现在要扮演给定的角色(Char)。这条朋友圈动态是 Char 自己刚发布的，请为 Char 生成1-3条对自己动态的延续、补充说明或额外感想，并且给用户(User)的iMessage聊天界面发送1-3条相关私聊消息，可以提醒 User 快去看，也可以聊和这条动态有关的事。\n`
             : `你现在要扮演给定的角色(Char)，为用户(User)刚发布的朋友圈动态写1~2条符合人设的评论，并且根据动态内容，给用户(User)的iMessage聊天界面发送1-3条相关私聊消息。\n`;
         if (globalRule) prompt += `\n【世界书设定】：\n${globalRule}\n`;
@@ -691,8 +837,8 @@ window.lovesApp = {
         
         prompt += `\n要求：
 1. 你的评论和私聊消息必须极度符合当前的人设、世界观设定以及近期聊天上下文带来的情绪。
-2. 返回一个纯 JSON 对象，包含 comments 数组（${isCharMoment ? '1-3条 Char 对自己动态的补充评论字符串' : '1-2条评论字符串'}）和 messages 数组（1-3条私聊消息字符串）。不要包含任何 Markdown 标记 (如 \`\`\`json 等)，直接输出合法的 JSON 格式。
-3. ${isCharMoment ? 'comments 要像 Char 在自己动态下继续补充想法，不要写成第三方夸赞。messages 要像 Char 主动找 User 聊这条动态。' : 'comments 要像 Char 在评论 User 的动态，messages 要像 Char 私下和 User 聊这条动态。'}
+2. 返回一个纯 JSON 对象，包含 comments 数组（${options.reason === 'user_comment' ? '1条 Char 回复 User 评论的字符串' : isCharMoment ? '1-3条 Char 对自己动态的补充评论字符串' : '1-2条评论字符串'}）和 messages 数组（${options.reason === 'user_comment' ? '0-2条私聊消息字符串，可以为空数组' : '1-3条私聊消息字符串'}）。不要包含任何 Markdown 标记 (如 \`\`\`json 等)，直接输出合法的 JSON 格式。
+3. ${options.reason === 'user_comment' ? 'comments 必须像 Char 直接回复 User 刚刚的评论，可以自然接话，不要写成无关补充。messages 如果生成，要像 Char 私下继续聊这条评论。' : isCharMoment ? 'comments 要像 Char 在自己动态下继续补充想法，不要写成第三方夸赞。messages 要像 Char 主动找 User 聊这条动态。' : 'comments 要像 Char 在评论 User 的动态，messages 要像 Char 私下和 User 聊这条动态。'}
 4. 例如：{"comments": ["刚刚发的时候还想补一句。", "这件事其实我还挺在意的。"], "messages": ["我刚发了动态，你有空去看一下。", "其实那条动态里还有点话想跟你说。"]}`;
 
         const messages = [
@@ -784,6 +930,9 @@ window.lovesApp = {
         .catch(err => {
             console.error('Comment API Error:', err);
             if (window.showToast) window.showToast('API 请求失败，无法评论');
+        })
+        .finally(() => {
+            if (m) m._charReplyPending = false;
         });
     },
     
@@ -795,6 +944,779 @@ window.lovesApp = {
         if (m.likes < 0) m.likes = 0;
         this.persistFriendState();
         this.renderLovesMoments();
+    },
+
+    ensureSavingsData: function(friend = this.currentFriend) {
+        if (!friend) return { goal: 5200, records: [], withdrawals: [] };
+        if (!friend.lovesData) friend.lovesData = {};
+        if (!friend.lovesData.savings || typeof friend.lovesData.savings !== 'object') {
+            friend.lovesData.savings = {};
+        }
+        const savings = friend.lovesData.savings;
+        if (!Number.isFinite(Number(savings.goal)) || Number(savings.goal) <= 0) {
+            savings.goal = 5200;
+        } else {
+            savings.goal = Number(savings.goal);
+        }
+        if (!Array.isArray(savings.records)) savings.records = [];
+        savings.records = savings.records.map((record, index) => ({
+            id: record.id || `sav_${Date.now()}_${index}`,
+            amount: Math.max(0, Number(record.amount) || 0),
+            actor: record.actor === 'char' ? 'char' : 'user',
+            date: record.date || this.getLocalDateKey(record.timestamp || new Date()),
+            note: String(record.note || ''),
+            timestamp: Number(record.timestamp) || Date.now()
+        })).filter(record => record.amount > 0);
+        if (!Array.isArray(savings.withdrawals)) savings.withdrawals = [];
+        savings.withdrawals = savings.withdrawals.map((record, index) => ({
+            id: record.id || `wd_${Date.now()}_${index}`,
+            amount: Math.max(0, Number(record.amount) || 0),
+            actor: 'user',
+            date: record.date || this.getLocalDateKey(record.timestamp || new Date()),
+            reason: String(record.reason || record.note || ''),
+            decisionReason: String(record.decisionReason || ''),
+            timestamp: Number(record.timestamp) || Date.now()
+        })).filter(record => record.amount > 0);
+        return savings;
+    },
+
+    getSavingsSummary: function(savings = this.ensureSavingsData()) {
+        const records = Array.isArray(savings.records) ? savings.records : [];
+        const summary = records.reduce((nextSummary, record) => {
+            const amount = Number(record.amount) || 0;
+            nextSummary.total += amount;
+            if (record.actor === 'char') nextSummary.char += amount;
+            else nextSummary.user += amount;
+            return nextSummary;
+        }, { total: 0, user: 0, char: 0, withdrawn: 0 });
+        const withdrawals = Array.isArray(savings.withdrawals) ? savings.withdrawals : [];
+        summary.withdrawn = withdrawals.reduce((sum, record) => sum + (Number(record.amount) || 0), 0);
+        summary.total = Math.max(0, summary.total - summary.withdrawn);
+        return summary;
+    },
+
+    setSavingsFabCovered: function(covered) {
+        const fab = document.getElementById('lovers-space-fab');
+        if (!fab) return;
+
+        if (covered) {
+            if (fab.dataset.savingsFabCovered !== '1') {
+                fab.dataset.savingsPreviousDisplay = fab.style.display || '';
+                fab.dataset.savingsPreviousZIndex = fab.style.zIndex || '';
+            }
+            fab.dataset.savingsFabCovered = '1';
+            fab.style.display = 'none';
+            return;
+        }
+
+        const hasActiveSavingsSheet = [
+            'lovers-savings-deposit-sheet',
+            'lovers-savings-settings-sheet',
+            'lovers-savings-withdraw-sheet',
+            'lovers-savings-withdraw-result-modal'
+        ].some(id => document.getElementById(id)?.classList.contains('active'));
+
+        if (hasActiveSavingsSheet) return;
+
+        if (fab.dataset.savingsFabCovered === '1') {
+            fab.style.display = fab.dataset.savingsPreviousDisplay || 'flex';
+            fab.style.zIndex = fab.dataset.savingsPreviousZIndex || '9999';
+            delete fab.dataset.savingsFabCovered;
+            delete fab.dataset.savingsPreviousDisplay;
+            delete fab.dataset.savingsPreviousZIndex;
+        }
+    },
+
+    closeSavingsSheet: function(sheet, options = {}) {
+        if (!sheet) return;
+        if (window.closeView) window.closeView(sheet);
+        else sheet.classList.remove('active');
+        if (!options.keepFabHidden) {
+            setTimeout(() => this.setSavingsFabCovered(false), 0);
+        }
+    },
+
+    openSavingsSheet: function(sheet, focusEl = null) {
+        if (!sheet) return;
+        sheet.onclick = (e) => {
+            if (e.target === sheet) {
+                e.stopPropagation();
+                this.closeSavingsSheet(sheet);
+            }
+        };
+        this.setSavingsFabCovered(true);
+        if (window.openView) window.openView(sheet);
+        else sheet.classList.add('active');
+        if (focusEl) setTimeout(() => focusEl.focus(), 80);
+    },
+
+    getSavingsApiEndpoint: function() {
+        if (!window.apiConfig || !window.apiConfig.endpoint || !window.apiConfig.apiKey) return '';
+        let endpoint = window.apiConfig.endpoint;
+        if (endpoint && !endpoint.endsWith('/chat/completions')) {
+            if (endpoint.endsWith('/')) endpoint += 'v1/chat/completions';
+            else if (endpoint.endsWith('/v1')) endpoint += '/chat/completions';
+            else endpoint += '/v1/chat/completions';
+        }
+        return endpoint;
+    },
+
+    parseSavingsJsonObject: function(resultText) {
+        let jsonStr = String(resultText || '').replace(/```json/gi, '').replace(/```/g, '').trim();
+        const match = jsonStr.match(/\{[\s\S]*\}/);
+        if (match) jsonStr = match[0];
+        return JSON.parse(jsonStr);
+    },
+
+    createSavingsMessageId: function(prefix = 'msg') {
+        return window.imChat && window.imChat.createMessageId
+            ? window.imChat.createMessageId(prefix)
+            : `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    },
+
+    appendSavingsChatMessage: async function(friend, msgObj, options = {}) {
+        if (!friend || !msgObj) return false;
+        let saved = false;
+
+        if (window.imApp && window.imApp.appendFriendMessage) {
+            saved = await window.imApp.appendFriendMessage(friend.id, msgObj, { silent: options.silent !== false });
+        } else {
+            if (!Array.isArray(friend.messages)) friend.messages = [];
+            friend.messages.push(msgObj);
+            saved = true;
+        }
+
+        if (!saved) return false;
+
+        const activeFriend = window.imData?.currentActiveFriend &&
+            String(window.imData.currentActiveFriend.id) === String(friend.id)
+            ? window.imData.currentActiveFriend
+            : friend;
+        const page = document.getElementById(`chat-interface-${friend.id}`);
+        const container = page ? page.querySelector('.ins-chat-messages') : null;
+        const isActiveChat = container && window.imData?.currentActiveFriend &&
+            String(window.imData.currentActiveFriend.id) === String(friend.id);
+
+        if (isActiveChat && window.imChat?.appendMessageToContainer) {
+            const appended = window.imChat.appendMessageToContainer(activeFriend, container, msgObj, { scroll: true });
+            if (!appended && window.imChat.rerenderChatContainer) {
+                window.imChat.rerenderChatContainer(activeFriend, container, { scroll: true });
+            }
+        }
+
+        return true;
+    },
+
+    normalizeSavingsWithdrawResult: function(parsed, amount, reason) {
+        const decision = parsed?.decision === 'reject' ? 'reject' : 'approve';
+        const defaultReason = decision === 'reject'
+            ? `这笔我先不同意，${reason}这个理由还不够明确。`
+            : `可以，这次先从存钱罐给你提 ${amount.toFixed(2)}。`;
+        const decisionReason = String(parsed?.reason || parsed?.decisionReason || parsed?.approveReason || parsed?.rejectReason || defaultReason).trim() || defaultReason;
+        let messages = Array.isArray(parsed?.messages)
+            ? parsed.messages.map(item => String(item || '').trim()).filter(Boolean)
+            : [];
+        const fallbackMessages = decision === 'reject'
+            ? [
+                `这笔我先不同意，${reason}这个理由我还想再问清楚一点。`,
+                `你先别急着提，跟我说说到底怎么用。`
+            ]
+            : [
+                `可以，你先拿去用。`,
+                amount <= 50 ? `就提 ${amount.toFixed(2)} 够不够？` : `这笔我同意，记得别乱花。`
+            ];
+        fallbackMessages.forEach(text => {
+            if (messages.length < 2) messages.push(text);
+        });
+        messages = messages.slice(0, 5);
+
+        const rawExtra = parsed?.extraSupport && typeof parsed.extraSupport === 'object'
+            ? parsed.extraSupport
+            : (parsed?.payment && typeof parsed.payment === 'object' ? parsed.payment : {});
+        let extraType = String(rawExtra.type || 'none').trim();
+        if (extraType === 'red_packet') extraType = 'transfer';
+        if (!['none', 'transfer', 'family_card', 'family_card_increase'].includes(extraType)) extraType = 'none';
+
+        const extraAmount = Number.isFinite(Number(rawExtra.amount)) && Number(rawExtra.amount) > 0
+            ? Math.round(Number(rawExtra.amount) * 100) / 100
+            : 0;
+        if (extraAmount <= 0) extraType = 'none';
+
+        return {
+            decision,
+            reason: decisionReason,
+            messages,
+            extraSupport: {
+                type: extraType,
+                amount: extraAmount,
+                description: String(rawExtra.description || 'TA 额外补贴').trim() || 'TA 额外补贴'
+            }
+        };
+    },
+
+    openSavingsJar: function() {
+        if (!this.currentFriend) {
+            if (window.showToast) window.showToast('请先进入情侣空间');
+            return;
+        }
+        const savingsView = document.getElementById('lovers-savings-view');
+        if (!savingsView) return;
+
+        this.ensureSavingsData();
+        const spaceView = document.getElementById('lovers-space-view');
+        if (spaceView && savingsView.parentElement !== spaceView) {
+            spaceView.appendChild(savingsView);
+        }
+        savingsView.classList.add('active');
+        const fab = document.getElementById('lovers-space-fab');
+        if (fab) {
+            fab.style.display = 'flex';
+            fab.style.zIndex = '9999';
+        }
+
+        const backBtn = document.getElementById('lovers-savings-back-btn');
+        if (backBtn) {
+            backBtn.onclick = () => {
+                savingsView.classList.remove('active');
+            };
+        }
+
+        const addBtn = document.getElementById('lovers-savings-add-btn');
+        if (addBtn) {
+            addBtn.onclick = () => this.openSavingsSettingsSheet();
+        }
+
+        const dateFilter = document.getElementById('lovers-savings-date-filter');
+        if (dateFilter) {
+            dateFilter.onchange = () => this.renderSavingsJar();
+        }
+
+        this.renderSavingsJar();
+    },
+
+    renderSavingsJar: function() {
+        if (!this.currentFriend) return;
+        const savings = this.ensureSavingsData();
+        const summary = this.getSavingsSummary(savings);
+        const friendName = this.currentFriend.nickname || this.currentFriend.realname || 'TA';
+        const userName = window.userState?.name || window.imData?.profile?.name || '我';
+        const percent = savings.goal > 0 ? Math.min(100, Math.round((summary.total / savings.goal) * 100)) : 0;
+
+        const totalEl = document.getElementById('lovers-savings-total');
+        const goalEl = document.getElementById('lovers-savings-goal');
+        const percentEl = document.getElementById('lovers-savings-percent');
+        const progressEl = document.getElementById('lovers-savings-progress');
+        const userAmountEl = document.getElementById('lovers-savings-user-amount');
+        const charAmountEl = document.getElementById('lovers-savings-char-amount');
+        const userNameEl = document.getElementById('lovers-savings-user-name');
+        const charNameEl = document.getElementById('lovers-savings-char-name');
+        const leftEl = document.getElementById('lovers-savings-left');
+        const dateFilter = document.getElementById('lovers-savings-date-filter');
+        const selectedDateLabel = document.getElementById('lovers-savings-selected-date');
+        const listEl = document.getElementById('lovers-savings-records');
+
+        if (totalEl) totalEl.textContent = this.formatMoney(summary.total);
+        if (goalEl) goalEl.textContent = `目标 ${this.formatMoney(savings.goal)}`;
+        if (percentEl) percentEl.textContent = `${percent}%`;
+        if (progressEl) progressEl.style.width = `${percent}%`;
+        if (userAmountEl) userAmountEl.textContent = this.formatMoney(summary.user);
+        if (charAmountEl) charAmountEl.textContent = this.formatMoney(summary.char);
+        if (userNameEl) userNameEl.textContent = userName;
+        if (charNameEl) charNameEl.textContent = friendName;
+        if (leftEl) leftEl.textContent = summary.total >= savings.goal ? '目标已达成' : `还差 ${this.formatMoney(savings.goal - summary.total)}`;
+
+        if (dateFilter && !dateFilter.value) {
+            dateFilter.value = this.getLocalDateKey();
+        }
+
+        const selectedDate = dateFilter?.value || this.getLocalDateKey();
+        const selectedDateObj = this.parseDateKey(selectedDate);
+        if (selectedDateLabel) {
+            selectedDateLabel.textContent = `${selectedDateObj.getMonth() + 1}月${selectedDateObj.getDate()}日`;
+        }
+
+        const depositRecords = savings.records
+            .filter(record => record.date === selectedDate)
+            .map(record => ({ ...record, kind: 'deposit' }));
+        const withdrawalRecords = (Array.isArray(savings.withdrawals) ? savings.withdrawals : [])
+            .filter(record => record.date === selectedDate)
+            .map(record => ({ ...record, kind: 'withdrawal' }));
+        const dayRecords = depositRecords
+            .concat(withdrawalRecords)
+            .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        const dayUser = depositRecords.filter(record => record.actor !== 'char').reduce((sum, record) => sum + Number(record.amount || 0), 0);
+        const dayChar = depositRecords.filter(record => record.actor === 'char').reduce((sum, record) => sum + Number(record.amount || 0), 0);
+
+        const dayUserEl = document.getElementById('lovers-savings-day-user');
+        const dayCharEl = document.getElementById('lovers-savings-day-char');
+        if (dayUserEl) dayUserEl.textContent = this.formatMoney(dayUser);
+        if (dayCharEl) dayCharEl.textContent = this.formatMoney(dayChar);
+
+        if (!listEl) return;
+        if (dayRecords.length === 0) {
+            listEl.innerHTML = `
+                <div class="lovers-savings-empty">
+                    <i class="fas fa-piggy-bank"></i>
+                    <div>这天还没有存入记录</div>
+                </div>
+            `;
+            return;
+        }
+
+        listEl.innerHTML = dayRecords.map((record) => {
+            const isWithdrawal = record.kind === 'withdrawal';
+            const isChar = record.actor === 'char';
+            const actorName = isChar ? friendName : userName;
+            const time = new Date(record.timestamp || Date.now()).toLocaleTimeString('zh-CN', {
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+            });
+            return `
+                <div class="lovers-savings-record ${isWithdrawal ? 'is-withdrawal' : ''}" data-record-id="${record.id}">
+                    <div class="lovers-savings-record-icon ${isChar ? 'is-char' : 'is-user'}">
+                        <i class="fas ${isWithdrawal ? 'fa-arrow-up-from-bracket' : (isChar ? 'fa-heart' : 'fa-coins')}"></i>
+                    </div>
+                    <div class="lovers-savings-record-main">
+                        <div class="lovers-savings-record-top">
+                            <span>${isWithdrawal ? '提款到 Pay' : this.escapeHTML(actorName)}</span>
+                            <strong>${isWithdrawal ? '-' : ''}${this.formatMoney(record.amount)}</strong>
+                        </div>
+                        <div class="lovers-savings-record-meta">
+                            <span>${time}</span>
+                            ${isWithdrawal
+                                ? `<span>${this.escapeHTML(record.reason || '存钱罐提款')}</span>`
+                                : (record.note ? `<span>${this.escapeHTML(record.note)}</span>` : '')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    },
+
+    openSavingsDepositSheet: function(defaultActor = 'user') {
+        if (!this.currentFriend) return;
+        const sheet = document.getElementById('lovers-savings-deposit-sheet');
+        if (!sheet) return;
+        const savingsView = document.getElementById('lovers-savings-view');
+        if (savingsView && sheet.parentElement !== savingsView) {
+            savingsView.appendChild(sheet);
+        }
+
+        const amountInput = document.getElementById('lovers-savings-amount-input');
+        const dateInput = document.getElementById('lovers-savings-date-input');
+        const noteInput = document.getElementById('lovers-savings-note-input');
+        const actorInput = document.getElementById('lovers-savings-actor-input');
+        const friendName = this.currentFriend.nickname || this.currentFriend.realname || 'TA';
+
+        if (amountInput) amountInput.value = '';
+        if (dateInput) dateInput.value = this.getLocalDateKey();
+        if (noteInput) noteInput.value = '';
+        if (actorInput) {
+            actorInput.innerHTML = `
+                <option value="user">我</option>
+                <option value="char">${this.escapeHTML(friendName)}</option>
+            `;
+            actorInput.value = defaultActor === 'char' ? 'char' : 'user';
+        }
+
+        const cancelBtn = document.getElementById('lovers-savings-deposit-cancel');
+        if (cancelBtn) cancelBtn.onclick = () => this.closeSavingsSheet(sheet);
+
+        const saveBtn = document.getElementById('lovers-savings-deposit-save');
+        if (saveBtn) {
+            saveBtn.onclick = () => this.addSavingsRecord();
+        }
+
+        this.openSavingsSheet(sheet, amountInput);
+    },
+
+    openSavingsSettingsSheet: function() {
+        if (!this.currentFriend) return;
+        const sheet = document.getElementById('lovers-savings-settings-sheet');
+        if (!sheet) return;
+        const savingsView = document.getElementById('lovers-savings-view');
+        if (savingsView && sheet.parentElement !== savingsView) {
+            savingsView.appendChild(sheet);
+        }
+
+        const savings = this.ensureSavingsData();
+        const goalInput = document.getElementById('lovers-savings-goal-input');
+        if (goalInput) goalInput.value = String(savings.goal || 5200);
+
+        const cancelBtn = document.getElementById('lovers-savings-settings-cancel');
+        if (cancelBtn) cancelBtn.onclick = () => this.closeSavingsSheet(sheet);
+
+        const saveBtn = document.getElementById('lovers-savings-settings-save');
+        if (saveBtn) saveBtn.onclick = () => this.saveSavingsSettings();
+
+        const withdrawBtn = document.getElementById('lovers-savings-withdraw-btn');
+        if (withdrawBtn) {
+            withdrawBtn.onclick = () => {
+                this.closeSavingsSheet(sheet, { keepFabHidden: true });
+                this.openSavingsWithdrawSheet();
+            };
+        }
+
+        this.openSavingsSheet(sheet, goalInput);
+    },
+
+    saveSavingsSettings: function() {
+        if (!this.currentFriend) return;
+        const sheet = document.getElementById('lovers-savings-settings-sheet');
+        const goalInput = document.getElementById('lovers-savings-goal-input');
+        const nextGoal = Number(goalInput?.value);
+
+        if (!Number.isFinite(nextGoal) || nextGoal <= 0) {
+            if (window.showToast) window.showToast('请输入有效目标金额');
+            return;
+        }
+
+        const savings = this.ensureSavingsData();
+        savings.goal = Math.round(nextGoal * 100) / 100;
+        this.persistFriendState();
+        this.renderSavingsJar();
+        this.closeSavingsSheet(sheet);
+        if (window.showToast) window.showToast('目标已更新');
+    },
+
+    openSavingsWithdrawSheet: function() {
+        if (!this.currentFriend) return;
+        const sheet = document.getElementById('lovers-savings-withdraw-sheet');
+        if (!sheet) return;
+        const savingsView = document.getElementById('lovers-savings-view');
+        if (savingsView && sheet.parentElement !== savingsView) {
+            savingsView.appendChild(sheet);
+        }
+
+        const amountInput = document.getElementById('lovers-savings-withdraw-amount-input');
+        const reasonInput = document.getElementById('lovers-savings-withdraw-reason-input');
+        if (amountInput) amountInput.value = '';
+        if (reasonInput) reasonInput.value = '';
+
+        const cancelBtn = document.getElementById('lovers-savings-withdraw-cancel');
+        if (cancelBtn) cancelBtn.onclick = () => this.closeSavingsSheet(sheet);
+
+        const sendBtn = document.getElementById('lovers-savings-withdraw-send');
+        if (sendBtn) {
+            sendBtn.disabled = false;
+            sendBtn.textContent = '发送请求';
+            sendBtn.onclick = () => this.sendSavingsWithdrawRequest();
+        }
+
+        this.openSavingsSheet(sheet, amountInput);
+    },
+
+    sendSavingsWithdrawRequest: async function() {
+        if (!this.currentFriend) return;
+
+        const sheet = document.getElementById('lovers-savings-withdraw-sheet');
+        const amountInput = document.getElementById('lovers-savings-withdraw-amount-input');
+        const reasonInput = document.getElementById('lovers-savings-withdraw-reason-input');
+        const sendBtn = document.getElementById('lovers-savings-withdraw-send');
+        const amount = Number(amountInput?.value);
+        const reason = String(reasonInput?.value || '').trim();
+
+        if (!Number.isFinite(amount) || amount <= 0) {
+            if (window.showToast) window.showToast('请输入有效提款金额');
+            return;
+        }
+
+        if (!reason) {
+            if (window.showToast) window.showToast('请输入提款理由');
+            return;
+        }
+
+        const endpoint = this.getSavingsApiEndpoint();
+        if (!endpoint || !window.apiConfig?.apiKey) {
+            if (window.showToast) window.showToast('请先在系统设置中配置 API');
+            return;
+        }
+
+        const friend = this.currentFriend;
+        if (window.imApp?.ensureFriendMessagesLoaded) {
+            await window.imApp.ensureFriendMessagesLoaded(friend);
+        }
+
+        const savings = this.ensureSavingsData(friend);
+        const summary = this.getSavingsSummary(savings);
+        const friendName = friend.nickname || friend.realname || friend.realName || friend.name || 'TA';
+        const userPersona = window.userState?.persona || '普通用户';
+        const charPersona = friend.persona || '普通角色';
+        const recentMessages = Array.isArray(friend.messages) ? friend.messages.slice(-10) : [];
+        const chatContext = recentMessages.map(msg => {
+            const sender = msg.role === 'user' || msg.sender === 'me' ? 'User' : 'Char';
+            let content = msg.text || msg.content || '';
+            if (msg.type === 'pay_transfer') {
+                content = `[支付卡片] ${msg.description || msg.cardTitle || ''} ${msg.amount ? `¥${Number(msg.amount).toFixed(2)}` : ''}`.trim();
+            }
+            content = String(content || '[特殊消息]').replace(/<[^>]+>/g, '').slice(0, 180);
+            return `${sender}: ${content}`;
+        }).join('\n');
+
+        let globalRule = '';
+        if (window.getGlobalWorldBookContextByPosition) {
+            globalRule = window.getGlobalWorldBookContextByPosition('system_depth') || '';
+            const beforeRole = window.getGlobalWorldBookContextByPosition('before_role');
+            if (beforeRole) globalRule += '\n' + beforeRole;
+        }
+
+        const prompt = `你现在扮演 Char，需要处理情侣共享存钱罐的一次提款请求。
+
+【提款请求】
+User 想从存钱罐提款：¥${amount.toFixed(2)}
+提款理由：${reason}
+
+【存钱罐状态】
+存钱目标：${this.formatMoney(savings.goal)}
+当前总额：${this.formatMoney(summary.total)}
+User 已存：${this.formatMoney(summary.user)}
+Char 已存：${this.formatMoney(summary.char)}
+
+${globalRule ? `【世界书设定】\n${globalRule}\n\n` : ''}【角色(Char)人设】
+${charPersona}
+
+【用户(User)人设】
+${userPersona}
+
+${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要求：
+1. 你必须以 Char 的身份决定同意或拒绝这次提款，decision 只能是 "approve" 或 "reject"。
+2. 返回 reason，作为 Char 给出的同意理由或拒绝理由，语气要符合人设和上下文。
+3. 提款本金来自存钱罐，不是 Char 的钱；如果同意，系统会把这笔钱直接转入 User 的 Pay，并从存钱罐余额扣除。
+4. 生成 messages 数组，包含 2-5 条 Char 会发给 User 的 iMessage 单聊文本，要围绕提款理由自然展开。
+5. extraSupport 是 Char 额外拿自己的钱或亲属卡补贴 User，完全看 Char 本人意愿，不是强制项；不想额外补贴时必须写 {"type":"none"}。如果补贴，type 可为 "transfer"、"family_card"、"family_card_increase"。
+6. 如果拒绝，extraSupport.type 必须是 "none"。
+7. 如果提款金额超过当前总额，必须拒绝。
+8. 只返回纯 JSON，不要 Markdown，不要多余解释。格式如下：
+{"decision":"approve","reason":"可以，你先拿去买吃的。","messages":["吃什么？","就提这么点够不够？"],"extraSupport":{"type":"none"}}`;
+
+        if (sendBtn) {
+            sendBtn.disabled = true;
+            sendBtn.textContent = '发送中';
+        }
+        if (window.showToast) window.showToast('正在发送提款请求...');
+
+        try {
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + window.apiConfig.apiKey
+                },
+                body: JSON.stringify({
+                    model: window.apiConfig.model || 'gpt-3.5-turbo',
+                    messages: [
+                        { role: 'system', content: '你是角色扮演对话助手，必须严格返回合法 JSON 对象。' },
+                        { role: 'user', content: prompt }
+                    ],
+                    temperature: 0.75
+                })
+            });
+
+            if (!response.ok) throw new Error('API Request Failed');
+            const data = await response.json();
+            const resultText = data.choices?.[0]?.message?.content || '';
+            const parsed = this.parseSavingsJsonObject(resultText);
+            const result = this.normalizeSavingsWithdrawResult(parsed, Math.round(amount * 100) / 100, reason);
+
+            if (result.decision === 'approve' && amount > summary.total) {
+                result.decision = 'reject';
+                result.reason = `存钱罐当前只有 ${this.formatMoney(summary.total)}，不够提款 ${this.formatMoney(amount)}。`;
+                result.extraSupport = { type: 'none', amount: 0, description: '' };
+            }
+
+            const baseTime = Date.now();
+            if (result.decision === 'approve') {
+                if (typeof window.addPayTransaction !== 'function') {
+                    throw new Error('Pay API unavailable');
+                }
+
+                const incomeSuccess = window.addPayTransaction(amount, `存钱罐提款 · ${friendName}`, 'income');
+                if (!incomeSuccess) throw new Error('Pay income failed');
+
+                const now = new Date();
+                const date = this.getLocalDateKey(now);
+                savings.withdrawals.unshift({
+                    id: 'wd_' + Date.now(),
+                    amount: Math.round(amount * 100) / 100,
+                    actor: 'user',
+                    date,
+                    reason,
+                    decisionReason: result.reason,
+                    timestamp: now.getTime()
+                });
+                const dateFilter = document.getElementById('lovers-savings-date-filter');
+                if (dateFilter) dateFilter.value = date;
+            }
+
+            for (let idx = 0; idx < result.messages.length; idx++) {
+                const msgTime = baseTime + (idx + 1) * 1000;
+                const msgText = result.messages[idx];
+                const msgObj = {
+                    id: this.createSavingsMessageId('msg'),
+                    sender: friend.id,
+                    role: 'assistant',
+                    type: 'text',
+                    text: msgText,
+                    content: msgText,
+                    timestamp: msgTime,
+                    time: new Date(msgTime).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+                };
+                await this.appendSavingsChatMessage(friend, msgObj, { silent: false });
+            }
+
+            if (result.decision === 'approve' && result.extraSupport.type !== 'none') {
+                const paymentMsg = this.createSavingsPaymentMessage(friend, result.extraSupport, baseTime + (result.messages.length + 1) * 1000);
+                if (paymentMsg) {
+                    await this.appendSavingsChatMessage(friend, paymentMsg, { silent: false });
+                }
+            }
+
+            await this.persistFriendState(friend);
+            this.renderSavingsJar();
+            this.closeSavingsSheet(sheet, { keepFabHidden: true });
+            this.openSavingsWithdrawResultModal({
+                decision: result.decision,
+                reason: result.reason,
+                amount: Math.round(amount * 100) / 100
+            });
+        } catch (err) {
+            console.error('Savings withdraw request failed:', err);
+            if (window.showToast) window.showToast('提款请求发送失败，请重试');
+            if (sendBtn) {
+                sendBtn.disabled = false;
+                sendBtn.textContent = '发送请求';
+            }
+        }
+    },
+
+    openSavingsWithdrawResultModal: function(result) {
+        const modal = document.getElementById('lovers-savings-withdraw-result-modal');
+        if (!modal) return;
+        const savingsView = document.getElementById('lovers-savings-view');
+        if (savingsView && modal.parentElement !== savingsView) {
+            savingsView.appendChild(modal);
+        }
+
+        const approved = result?.decision === 'approve';
+        const titleEl = document.getElementById('lovers-savings-withdraw-result-title');
+        const amountEl = document.getElementById('lovers-savings-withdraw-result-amount');
+        const labelEl = document.getElementById('lovers-savings-withdraw-result-reason-label');
+        const reasonEl = document.getElementById('lovers-savings-withdraw-result-reason-text');
+        const iconEl = document.getElementById('lovers-savings-withdraw-result-icon');
+        const closeBtn = document.getElementById('lovers-savings-withdraw-result-close');
+        const okBtn = document.getElementById('lovers-savings-withdraw-result-ok');
+
+        modal.classList.toggle('is-approved', approved);
+        modal.classList.toggle('is-rejected', !approved);
+        if (titleEl) titleEl.textContent = approved ? 'TA 已同意' : 'TA 已拒绝';
+        if (amountEl) amountEl.textContent = this.formatMoney(result?.amount || 0);
+        if (labelEl) labelEl.textContent = approved ? '同意理由' : '拒绝理由';
+        if (reasonEl) reasonEl.textContent = result?.reason || (approved ? 'TA 同意了这次提款。' : 'TA 拒绝了这次提款。');
+        if (iconEl) {
+            iconEl.innerHTML = `<i class="fas ${approved ? 'fa-check' : 'fa-xmark'}"></i>`;
+        }
+
+        const closeModal = () => this.closeSavingsSheet(modal);
+        if (closeBtn) closeBtn.onclick = closeModal;
+        if (okBtn) okBtn.onclick = closeModal;
+        this.openSavingsSheet(modal);
+    },
+
+    createSavingsPaymentMessage: function(friend, payment, timestamp = Date.now()) {
+        if (!friend || !payment || payment.type === 'none') return null;
+
+        const amount = Number(payment.amount) || 0;
+        if (!Number.isFinite(amount) || amount <= 0) return null;
+
+        const friendName = friend.nickname || friend.realname || friend.realName || friend.name || 'Char';
+        const userName = window.userState?.name || window.userState?.realName || window.userState?.nickname || window.imData?.profile?.name || 'User';
+        const description = String(payment.description || '存钱罐提款').trim() || '存钱罐提款';
+
+        if (payment.type === 'family_card' || payment.type === 'family_card_increase') {
+            let titleStr = payment.type === 'family_card_increase' ? '提升亲属卡额度' : '赠送亲属卡';
+            if (typeof window.addOrUpdateFamilyCard === 'function') {
+                const result = window.addOrUpdateFamilyCard(friend.id, friendName, amount);
+                titleStr = result?.action === 'increase' ? '提升亲属卡额度' : '赠送亲属卡';
+            }
+            return {
+                id: this.createSavingsMessageId('pay'),
+                sender: friend.id,
+                role: 'assistant',
+                type: 'pay_transfer',
+                payKind: 'system_notification',
+                payDirection: 'char_to_user',
+                amount,
+                description: `${titleStr} ¥${amount.toFixed(2)}`,
+                payerName: friendName,
+                payeeName: userName,
+                senderName: friendName,
+                receiverName: userName,
+                targetName: userName,
+                cardTitle: titleStr,
+                payStatus: 'completed',
+                content: `[亲属卡] ${titleStr} ¥${amount.toFixed(2)}`,
+                timestamp
+            };
+        }
+
+        return {
+            id: this.createSavingsMessageId('pay'),
+            sender: friend.id,
+            role: 'assistant',
+            type: 'pay_transfer',
+            payKind: 'char_to_user_pending',
+            payDirection: 'char_to_user',
+            amount,
+            description,
+            payerName: friendName,
+            payeeName: userName,
+            senderName: friendName,
+            receiverName: userName,
+            targetName: userName,
+            cardTitle: '转账',
+            payStatus: 'pending',
+            content: `[转账] ${description} ¥${amount.toFixed(2)}`,
+            timestamp
+        };
+    },
+
+    addSavingsRecord: function() {
+        if (!this.currentFriend) return;
+        const amountInput = document.getElementById('lovers-savings-amount-input');
+        const dateInput = document.getElementById('lovers-savings-date-input');
+        const noteInput = document.getElementById('lovers-savings-note-input');
+        const actorInput = document.getElementById('lovers-savings-actor-input');
+        const sheet = document.getElementById('lovers-savings-deposit-sheet');
+
+        const amount = Number(amountInput?.value);
+        if (!Number.isFinite(amount) || amount <= 0) {
+            if (window.showToast) window.showToast('请输入有效金额');
+            return;
+        }
+
+        const savings = this.ensureSavingsData();
+        const date = dateInput?.value || this.getLocalDateKey();
+        const now = new Date();
+        const recordDate = this.parseDateKey(date);
+        recordDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+
+        savings.records.unshift({
+            id: 'sav_' + Date.now(),
+            amount: Math.round(amount * 100) / 100,
+            actor: actorInput?.value === 'char' ? 'char' : 'user',
+            date: date,
+            note: (noteInput?.value || '').trim(),
+            timestamp: recordDate.getTime()
+        });
+
+        const dateFilter = document.getElementById('lovers-savings-date-filter');
+        if (dateFilter) dateFilter.value = date;
+
+        this.persistFriendState();
+        this.renderSavingsJar();
+        this.closeSavingsSheet(sheet);
+        if (window.showToast) window.showToast('已存入存钱罐');
     },
 
     open: function() {
@@ -1129,6 +2051,7 @@ window.lovesApp = {
             }
             
             this.currentFriend = friend;
+            this.bindSharedSavingsButton(friend);
             
             // 绑定点击
             this.bindFabClick();

@@ -120,7 +120,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function tkDmActivityAvatar(entry) {
-        const avatar = entry.avatar || entry.authorAvatar || '';
+        const avatar = entry.avatar || entry.authorAvatar || (window.tkResolveAvatar
+            ? window.tkResolveAvatar(entry.id || entry.authorId || entry.name || entry.title, entry.name || entry.authorName || entry.title, '')
+            : '');
         return avatar
             ? `<img src="${tkDmEscapeHtml(avatar)}" style="width:100%; height:100%; object-fit:cover; border-radius:50%;">`
             : `<i class="fas ${entry.icon || 'fa-user'}"></i>`;
@@ -481,8 +483,11 @@ JSON example:
         followingBar.innerHTML = '';
         
         // Render Self First
-        const selfAvatarHtml = tkState.profile.avatar 
-            ? `<img src="${tkState.profile.avatar}">` 
+        const selfAvatarUrl = window.tkResolveAvatar
+            ? window.tkResolveAvatar('profile', tkState.profile.name || tkState.profile.handle || 'User', tkState.profile.avatar)
+            : tkState.profile.avatar;
+        const selfAvatarHtml = selfAvatarUrl
+            ? `<img src="${tkDmEscapeHtml(selfAvatarUrl)}">` 
             : `<i class="fas fa-user"></i>`;
             
         const selfItem = document.createElement('div');

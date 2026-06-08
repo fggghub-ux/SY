@@ -1,4 +1,4 @@
-﻿// ==========================================
+// ==========================================
 // IMESSAGE: DATA, STATE, CORE SYSTEM & NAVIGATION
 // ==========================================
 
@@ -220,7 +220,9 @@ window.imApp.createDefaultMemory = function() {
         cherishedEntries: [],
         relationships: [],
         socialAccounts: [],
-        schedule: { enabled: false, sleepTime: '23:00', wakeTime: '07:00' }
+        schedule: { enabled: false, sleepTime: '23:00', wakeTime: '07:00' },
+        mountSettings: {},
+        mountLimits: {}
     };
 };
 
@@ -393,6 +395,7 @@ window.imApp.normalizeFriendData = function(friend) {
     normalized.isPinned = !!normalized.isPinned;
     normalized.unreadCount = Math.max(0, Number(normalized.unreadCount) || 0);
     normalized.showTimestamp = !!normalized.showTimestamp;
+    normalized.timeAware = normalized.timeAware !== false;
     normalized.timestampPosition = normalized.timestampPosition === 'outside' ? 'outside' : 'inside';
     normalized.boundBooks = Array.isArray(normalized.boundBooks) ? normalized.boundBooks : [];
     normalized.momentsCover = normalized.momentsCover || null;
@@ -479,7 +482,16 @@ window.imApp.normalizeFriendData = function(friend) {
                 }))
                 .filter(account => account.platform || account.handle || account.url)
             : defaultMemory.socialAccounts,
-        userOverride: memory.userOverride || null
+        userOverride: memory.userOverride || null,
+        mountSettings: (memory.mountSettings && typeof memory.mountSettings === 'object' && !Array.isArray(memory.mountSettings))
+            ? { ...memory.mountSettings }
+            : defaultMemory.mountSettings,
+        mountLimits: (memory.mountLimits && typeof memory.mountLimits === 'object' && !Array.isArray(memory.mountLimits))
+            ? Object.fromEntries(Object.entries(memory.mountLimits).map(([key, value]) => {
+                const limit = Number(value);
+                return [key, Number.isFinite(limit) && limit > 0 ? Math.max(1, Math.floor(limit)) : 20];
+            }))
+            : defaultMemory.mountLimits
     };
 
     return normalized;

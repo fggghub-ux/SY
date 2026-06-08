@@ -1096,9 +1096,25 @@ ${sections}`;
             const groupMembers = window.imChat.getGroupMemberFriends(friend);
             const allowedSpeakerNames = groupMembers.map(member => member.nickname).filter(Boolean);
             
-            // 处理成员的挂载单聊记忆
+            // 处理成员的挂载单聊记忆：先确保开启挂载的成员单聊历史已从持久化存储加载
             const groupMemorySettings = friend.memory?.mountSettings || {};
             const groupMemoryLimits = friend.memory?.mountLimits || {};
+            const isMemberMemoryMounted = (memberId) => {
+                const key = String(memberId);
+                return !!(groupMemorySettings[key] || groupMemorySettings[memberId]);
+            };
+            const getMountedMemoryLimit = (memberId) => {
+                const key = String(memberId);
+                const rawLimit = groupMemoryLimits[key] || groupMemoryLimits[memberId] || 20;
+                const limit = Number(rawLimit);
+                return Number.isFinite(limit) && limit > 0 ? Math.max(1, Math.floor(limit)) : 20;
+            };
+
+            const mountedMembers = groupMembers.filter(member => member && isMemberMemoryMounted(member.id));
+            if (mountedMembers.length > 0 && window.imApp.ensureFriendMessagesLoaded) {
+                await Promise.all(mountedMembers.map(member => window.imApp.ensureFriendMessagesLoaded(member)));
+            }
+
             const membersInfo = groupMembers.length > 0
                 ? groupMembers.map(member => {
                     let infoStr = `Name: ${member.nickname}\nPersona: ${member.persona || 'None'}\nOverview: ${member.memory?.overview || 'None'}`;
@@ -1108,21 +1124,35 @@ ${sections}`;
                     }
                     
                     // 如果开启了挂载单聊记忆，并且有单聊上下文
-                    if (groupMemorySettings[member.id]) {
-                        const limit = groupMemoryLimits[member.id] || 20;
-                        let contextMessages = member.messages || [];
-                        if (window.imApp.getRecentContextMessages && contextMessages.length === 0) {
-                            contextMessages = window.imApp.getRecentContextMessages(member) || [];
-                        }
-                        if (contextMessages.length > limit) {
-                            contextMessages = contextMessages.slice(-limit);
-                        }
+                    if (isMemberMemoryMounted(member.id)) {
+                        const limit = getMountedMemoryLimit(member.id);
+                        const contextMessages = Array.isArray(member.messages)
+                            ? member.messages
+                                .filter(msg => msg && (msg.content || msg.text || msg.transcript || msg.description))
+                                .slice(-limit)
+                            : [];
+
                         if (contextMessages.length > 0) {
                             const formattedContext = contextMessages.map(msg => {
-                            const role = msg.role === 'user' ? (currentUserState.name || 'User') : member.nickname;
-                                return `${role}: ${msg.content || msg.text || ''}`;
+                                const role = msg.role === 'user' ? (currentUserState.name || 'User') : member.nickname;
+                                let text = msg.content || msg.text || msg.transcript || msg.description || '';
+
+                                if (msg.type === 'voice_message') {
+                                    text = `[语音消息] ${msg.transcript || msg.text || text}`;
+                                } else if (msg.type === 'sticker') {
+                                    text = `[表情包] ${msg.stickerCategory ? `${msg.stickerCategory} / ` : ''}${msg.stickerName || msg.text || '表情包'}`;
+                                } else if (msg.type === 'image') {
+                                    text = `[图片] ${msg.description || msg.text || msg.fileName || '图片'}`;
+                                } else if (msg.type === 'pay_transfer') {
+                                    text = `[转账相关消息] ${msg.description || ''}`;
+                                }
+
+                                return `${role}: ${text}`;
                             }).join('\n');
-                            infoStr += `\n该成员当前的单聊上下文(仅 ${member.nickname} 可见并可参考，其他成员不可知):\n${formattedContext}`;
+
+                            infoStr += `\n\n【挂载单聊记忆｜${member.nickname} 与 ${currentUserState.name || 'User'}】\n以下内容是 char「${member.nickname}」和 user「${currentUserState.name || 'User'}」的单聊记忆/私聊上下文，不是当前群聊内公开发生的消息。你必须把它当作该 char 与 user 之间已经存在的私人关系、经历、称呼和语气参考；只有 ${member.nickname} 本人可以自然参考这些记忆，其他群成员默认不知道这些私聊内容，除非 ${member.nickname} 在群里主动说出。\n${formattedContext}`;
+                        } else {
+                            infoStr += `\n\n【挂载单聊记忆｜${member.nickname} 与 ${currentUserState.name || 'User'}】\n已开启挂载，但暂未找到可注入的单聊上下文。`;
                         }
                     }
                     
@@ -1160,8 +1190,13 @@ ${allowedSpeakerNames.length > 0 ? allowedSpeakerNames.join('、') : 'None'}${af
 ${commonMemorySections || 'None'}${offlineMeetRequirement}`;
 
         } else {
-            const currentTime = new Date();
-            const timeString = `${currentTime.getFullYear()}年${currentTime.getMonth() + 1}月${currentTime.getDate()}日 ${currentTime.getHours()}:${currentTime.getMinutes().toString().padStart(2, '0')}`;
+            const timeAware = friend.timeAware !== false;
+            let timeRequirement = '';
+            if (timeAware) {
+                const currentTime = new Date();
+                const timeString = `${currentTime.getFullYear()}年${currentTime.getMonth() + 1}月${currentTime.getDate()}日 ${currentTime.getHours()}:${currentTime.getMinutes().toString().padStart(2, '0')}`;
+                timeRequirement = `\n当前系统时间是：${timeString}。请在对话和心声中自然地感知并体现出对当前时间（如早晚、日期）的认知。`;
+            }
             
             const sleepPrompt = isSleeping ? `\n【作息限制】：角色当前正在睡觉。如果用户发来消息，你必须强制保持离线状态并在所有回复内容（text 字段）的开头添加 "[自动回复] " 前缀，模拟已睡着或离线时的自动响应。心声和面板状态也要符合睡着的情境。` : '';
 
@@ -1169,8 +1204,7 @@ ${commonMemorySections || 'None'}${offlineMeetRequirement}`;
 【核心设定/Core Persona】：${friend.persona || 'No specific persona'}。
 You are talking to ${currentUserState.name || 'User'}, whose persona is: ${effectiveUserPersona || 'A normal user'}。
 【强制要求】：你必须在接下来的每一句对话、动作和心声中，深刻且精准地体现出你自己的【核心设定】，同时充分关注并根据用户的设定做出互动，绝对不能偏离人设！
-【记忆关联强制要求】：Character Memory中标记为【我的iPhone - 核心记忆总结/短期记忆】的内容是你的核心主要记忆。在每次回复User时，你必须主动检索并从中调取相关记忆，将User说的话与这些记忆深度关联起来，并在你的心声（thought字段）和对话中真实体现出这些过去的记忆累积。
-当前系统时间是：${timeString}。请在对话和心声中自然地感知并体现出对当前时间（如早晚、日期）的认知。${afterRoleWorldBookContext ? `\n\nAfter Role Rules:\n${afterRoleWorldBookContext}` : ''}${sleepPrompt}${busyPrompt}
+【记忆关联强制要求】：Character Memory中标记为【我的iPhone - 核心记忆总结/短期记忆】的内容是你的核心主要记忆。在每次回复User时，你必须主动检索并从中调取相关记忆，将User说的话与这些记忆深度关联起来，并在你的心声（thought字段）和对话中真实体现出这些过去的记忆累积。${timeRequirement}${afterRoleWorldBookContext ? `\n\nAfter Role Rules:\n${afterRoleWorldBookContext}` : ''}${sleepPrompt}${busyPrompt}
 Reply naturally as your character in a chat app.
 请根据上下文，记忆，人设进行回复，一次按需求回复2-8条气泡。
 1. 【重要限制】：如果用户仅仅是口头提到“转账”，但系统并没有提示“[用户刚刚向你转账...]”，绝对禁止输出收下转账或退回转账的指令。

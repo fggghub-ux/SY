@@ -1134,16 +1134,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     if (avatarText) avatarText.style.display = 'none';
 
-                    const chatAvatarImg = document.querySelector(`#chat-interface-${currentViewingGroup.id} .ins-chat-avatar img`);
-                    if (chatAvatarImg) chatAvatarImg.src = newUrl;
-                    const groupHeaderRightImg = document.querySelector(`#active-chat-right-avatar-container img`);
-                    if (groupHeaderRightImg) {
-                        groupHeaderRightImg.src = newUrl;
-                        groupHeaderRightImg.style.display = 'block';
-                        groupHeaderRightImg.parentElement.innerHTML = `<img src="${newUrl}" style="display: block;">`;
+                    const latestGroup = (window.imData.friends || []).find(item => String(item.id) === String(currentViewingGroup.id)) || currentViewingGroup;
+                    currentViewingGroup = latestGroup;
+
+                    if (window.imData.currentActiveFriend && String(window.imData.currentActiveFriend.id) === String(currentViewingGroup.id)) {
+                        window.imData.currentActiveFriend = latestGroup;
+                    }
+
+                    if (window.imChat && window.imChat.refreshGroupHeaderAvatar) {
+                        window.imChat.refreshGroupHeaderAvatar(latestGroup);
                     }
 
                     renderGroupsList();
+                    if (window.imChat && window.imChat.renderChatsList) {
+                        window.imChat.renderChatsList();
+                    }
+                    if (window.showToast) window.showToast('群头像已更新');
                 } catch (error) {
                     console.error('Failed to process group details avatar', error);
                     if (showToast) showToast('群头像处理失败');

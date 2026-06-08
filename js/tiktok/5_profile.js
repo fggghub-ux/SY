@@ -72,12 +72,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function tkProfileEscape(value) {
         return String(value ?? '').replace(/[&<>"']/g, (char) => ({
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
-            "'": '&#39;'
+            '&': '\u0026amp;',
+            '<': '\u0026lt;',
+            '>': '\u0026gt;',
+            '"': '\u0026quot;',
+            "'": '\u0026#39;'
         }[char]));
+    }
+
+    function tkProfileToNumber(value) {
+        const num = Number(value);
+        return Number.isFinite(num) ? num : 0;
+    }
+
+    function tkApplyLocalUserPostStatBoost(post) {
+        const followerDelta = Math.floor(Math.random() * 9) + 1;
+        const likeDelta = Math.floor(Math.random() * 220) + 20;
+        tkState.profile.followers = tkProfileToNumber(tkState.profile.followers) + followerDelta;
+        tkState.profile.likes = tkProfileToNumber(tkState.profile.likes) + likeDelta;
+        if (post) {
+            post.likes = tkProfileToNumber(post.likes) + likeDelta;
+        }
+        return { followerDelta, likeDelta };
     }
 
     function tkProfileGetBoundWorldBookIds() {
@@ -622,6 +638,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const charContextText = `${char.name || ''} ${char.handle || ''} ${char.persona || ''} ${char.bio || ''}`;
         const modernWbContext = window.tkBuildWorldBookContext ? window.tkBuildWorldBookContext(charContextText) : '';
+        const worldActorPrompt = window.tkBuildWorldActorPrompt
+            ? window.tkBuildWorldActorPrompt({
+                includeUserIdentity: false,
+                purpose: '角色 TikTok 主页视频与评论区生成',
+                triggerText: charContextText
+            })
+            : '你是这个世界观中的任何非 user 角色/路人/创作者；只有必要时才提到 user，禁止扮演 user。';
         if (modernWbContext) {
             wbContext = modernWbContext + (char.memories && char.memories.length > 0
                 ? `\n\n角色记忆:\n${char.memories.map(m => `- ${m.text || m}`).join('\n')}\n`
@@ -712,6 +735,9 @@ ${wbContext}
 
             normalizedPrompt = `
 You are generating a TikTok character profile. Return strict valid JSON only.
+You may write as any non-user account/person inside this world view. Do not impersonate user.
+
+${worldActorPrompt}
 
 Character:
 ${JSON.stringify({
@@ -736,7 +762,8 @@ Hard requirements:
 6. opening, middle, and ending are each 30-50 characters and should read like immersive bubble-flow text. They may use any language that fits the character and world.
 7. comments must contain 2-5 items. Each comment must include authorName, authorAvatar, text, likes, and replies. replies is always an array with 0-3 items.
 8. The content must match the character persona and world book. Avoid generic influencer wording. 禁止扮演user的身份发抖音和评论，你只能是除了user以外的人。
-9. International translation rule: opening/middle/ending may use any language that fits the character and world. If a bubble field is not Chinese, fill openingTranslationZh/middleTranslationZh/endingTranslationZh with a natural Chinese translation. If it is Chinese, the matching translation field must be an empty string. If any comment or reply text is not Chinese, fill translationZh with a natural Chinese translation; if it is Chinese, translationZh must be an empty string.
+9. 如果评论或 replies 中出现本角色本人，请使用 Character.id 作为 authorId，并让 authorName 与 Character.name 一致，以便头像与主页视频头像同步。
+10. International translation rule: opening/middle/ending may use any language that fits the character and world. If a bubble field is not Chinese, fill openingTranslationZh/middleTranslationZh/endingTranslationZh with a natural Chinese translation. If it is Chinese, the matching translation field must be an empty string. If any comment or reply text is not Chinese, fill translationZh with a natural Chinese translation; if it is Chinese, translationZh must be an empty string.
 
 JSON shape:
 {
@@ -923,9 +950,12 @@ JSON shape:
         statFollowers.textContent = tkProfileFormatCount(p.followers || 0);
         statLikes.textContent = tkProfileFormatCount(p.likes || 0);
 
-        // Render Avatar
-        if (p.avatar) {
-            avatarImg.src = p.avatar;
+        // Render Avatar：头像为空/删除时也统一显示随机图片，而不是默认人形图标。
+        const resolvedProfileAvatar = window.tkResolveAvatar
+            ? window.tkResolveAvatar('profile', p.name || p.handle || 'User', p.avatar)
+            : p.avatar;
+        if (resolvedProfileAvatar) {
+            avatarImg.src = resolvedProfileAvatar;
             avatarImg.style.display = 'block';
             avatarIcon.style.display = 'none';
         } else {
@@ -1152,12 +1182,13 @@ JSON shape:
                     comments: []
                 };
                 
+                const statBoost = tkApplyLocalUserPostStatBoost(newPost);
                 tkState.profile.posts.unshift(newPost);
                 if (window.tkPersistState) window.tkPersistState();
                 window.tkRenderProfile();
                 const sheet = document.getElementById('tk-upload-video-sheet');
                 if(sheet) window.closeView(sheet);
-                window.showToast('视频已发布');
+                window.showToast(`视频已发布，粉丝 +${statBoost.followerDelta}，获赞 +${statBoost.likeDelta}`);
                 if (window.tkGenerateVideoInteractions) {
                     window.tkGenerateVideoInteractions(newPost.id, { isAuto: true });
                 }

@@ -104,23 +104,34 @@ document.addEventListener('DOMContentLoaded', () => {
         return String(Math.round(num));
     };
 
+    window.tkGetRandomAvatarUrl = function(seed = '') {
+        const rawSeed = String(seed || `tk_avatar_${Math.floor(Math.random() * 1000000)}`).trim() || 'tk_avatar';
+        return `https://picsum.photos/seed/${encodeURIComponent(rawSeed)}/150/150`;
+    };
+
     window.tkResolveAvatar = function(id, name, originalAvatar) {
+        const stableSeed = id || name || `tk_avatar_${Math.floor(Math.random() * 1000000)}`;
+        const tkChar = id && window.tkGetChar ? window.tkGetChar(id) : null;
+
+        // 角色存在但头像为空/删除时，统一使用随机图片，避免继续沿用旧视频/旧评论头像或人形图标。
+        if (tkChar) {
+            if (tkChar.avatar) return tkChar.avatar;
+            return window.tkGetRandomAvatarUrl(`${tkChar.id || id || name}_deleted_or_empty_avatar`);
+        }
+
+        if (originalAvatar) return originalAvatar;
+
         if (window.resolveYtLinkedImChar) {
-            const tkChar = window.tkGetChar ? window.tkGetChar(id) : null;
             const imChar = window.resolveYtLinkedImChar({
                 id,
-                imCharId: tkChar?.imCharId || id,
-                handle: tkChar?.handle || id,
-                name: name || tkChar?.name
+                imCharId: id,
+                handle: id,
+                name
             });
             if (imChar && imChar.avatarUrl) return imChar.avatarUrl;
         }
-        const tkChar = window.tkGetChar(id);
-        if (tkChar && tkChar.avatar) return tkChar.avatar;
-        if (originalAvatar) return originalAvatar;
-        if (id && id.startsWith('user_') && id.length < 15) return `https://picsum.photos/seed/${encodeURIComponent(id)}/150/150`;
-        const seed = encodeURIComponent(id || name || 'user');
-        return `https://picsum.photos/seed/${seed}/150/150`;
+
+        return window.tkGetRandomAvatarUrl(stableSeed);
     };
 
     function tkStableImageUrl(video = {}) {
@@ -343,6 +354,36 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         return chunks.join('\n\n').trim();
+    };
+
+    window.tkBuildWorldActorPrompt = function(options = {}) {
+        const includeUserIdentity = Boolean(options.includeUserIdentity);
+        const purpose = options.purpose || 'TikTok 内容生成';
+        const triggerText = String(options.triggerText || '').trim();
+        const userProfile = {
+            name: tkState.profile?.name || window.userState?.name || '',
+            handle: tkState.profile?.handle || '',
+            tiktokPersona: tkState.profile?.persona || '',
+            tiktokBio: tkState.profile?.bio || '',
+            basePersona: window.userState?.persona || ''
+        };
+        const hasUserPersona = Object.values(userProfile).some(Boolean);
+        const userBlock = hasUserPersona
+            ? (includeUserIdentity
+                ? `必要时才可提到的 user 身份（只作为上下文，不得扮演）：${JSON.stringify(userProfile, null, 2)}`
+                : `user 人设关键词触发文本（只用于世界书/语境触发，不代表内容必须围绕 user；除非主题明确需要，否则不要提到 user）：${JSON.stringify(userProfile, null, 2)}`)
+            : '没有显式 user 人设；不要自行编造 user 身份。';
+
+        return `
+世界观与 user 扮演规则（适用于 ${purpose}）：
+- 你是这个世界观中的任何一个非 user 的真实账号/路人/粉丝/创作者/评论者，而不是旁白机器。
+- 可以使用世界书、主题、角色人设和 user 人设关键词触发世界观信息，但不要强行让所有内容围绕 user。
+- 只有当主题、评论语境或世界书明确需要提到 user 时，才把 user 当作被提及对象；否则不要提到 user。
+- 即使必须提到 user，也只能从外部视角提及，禁止用第一人称替 user 说话，禁止让 user 发视频、发评论、点赞、关注或回复。
+- 所有作者、评论者、回复者、访客和互动者都必须是 user 以外的人。
+${triggerText ? `当前触发文本：${triggerText}` : ''}
+${userBlock}
+`.trim();
     };
 
     function tkResolveApiEndpoint() {
@@ -628,6 +669,13 @@ document.addEventListener('DOMContentLoaded', () => {
             window.userState?.persona || ''
         ].filter(Boolean).join('\n');
         const wbContext = window.tkBuildWorldBookContext ? window.tkBuildWorldBookContext(contextText) : '';
+        const worldActorPrompt = window.tkBuildWorldActorPrompt
+            ? window.tkBuildWorldActorPrompt({
+                includeUserIdentity: isUserPost,
+                purpose: '视频发布后的评论、关注、点赞、收藏和主页访客互动',
+                triggerText: contextText
+            })
+            : '';
 
         const prompt = `
 Creator identity rule:
@@ -637,6 +685,8 @@ ${isUserPost
 The world book context was mounted with the video plus the user TikTok persona as trigger text.
 
 你是 TikTok 视频互动模拟器。请根据视频、博主人设、已关注好友和世界书，生成这条视频发布后的真实互动。
+
+${worldActorPrompt}
 
 硬性规则：
 1. 只返回严格 JSON 对象，不要 markdown，不要解释，不要尾逗号。
@@ -823,8 +873,17 @@ ${wbContext || '无'}
         const wbContext = window.tkBuildWorldBookContext
             ? window.tkBuildWorldBookContext(`${video.desc || ''}\n${userText}\n${parentContext ? parentContext.text : ''}\n${userPersonaContext}`)
             : '';
+        const worldActorPrompt = window.tkBuildWorldActorPrompt
+            ? window.tkBuildWorldActorPrompt({
+                includeUserIdentity: true,
+                purpose: 'user 发出评论后的楼中楼回复和主页访客',
+                triggerText: `${video.desc || ''}\n${userText}`
+            })
+            : '';
         const prompt = `
 你是 TikTok 评论区和主页访客模拟器。请根据当前视频、用户刚发出的评论，以及可选楼主评论，生成真实、有网感、符合上下文的互动。
+
+${worldActorPrompt}
 
 硬性规则：
 1. 只能返回严格 JSON，不要 markdown，不要解释文字，不要尾逗号，不要单引号。
@@ -1767,6 +1826,53 @@ ${wbContext}
         }
     };
 
+    function tkResolveCommentAuthorForVideo(entry = {}, video = {}) {
+        const rawId = String(entry.authorId || entry.id || '').trim();
+        const rawName = String(entry.authorName || entry.name || '').trim();
+        const normalize = value => String(value || '').trim().replace(/^@/, '').toLowerCase();
+        const videoAuthorId = String(video.authorId || '').trim();
+        const videoAuthorName = String(video.authorName || '').trim();
+        const matchesVideoAuthor = videoAuthorId && (
+            String(rawId) === videoAuthorId
+            || (rawName && normalize(rawName) === normalize(videoAuthorName))
+        );
+
+        if (matchesVideoAuthor) {
+            const char = window.tkGetChar ? window.tkGetChar(videoAuthorId) : null;
+            const authorName = char?.name || videoAuthorName || rawName || 'User';
+            const authorAvatar = window.tkResolveAvatar
+                ? window.tkResolveAvatar(videoAuthorId, authorName, char?.avatar || video.authorAvatar || entry.authorAvatar || '')
+                : (char?.avatar || video.authorAvatar || entry.authorAvatar || '');
+            return { authorId: videoAuthorId, authorName, authorAvatar };
+        }
+
+        const linkedChar = (tkState.chars || []).find(char => {
+            if (!char) return false;
+            return (rawId && String(char.id) === rawId)
+                || (rawId && String(char.imCharId || '') === rawId)
+                || (rawName && normalize(char.name) === normalize(rawName))
+                || (rawName && normalize(char.handle) === normalize(rawName));
+        });
+
+        if (linkedChar) {
+            const authorName = linkedChar.name || linkedChar.handle || rawName || 'User';
+            const authorAvatar = window.tkResolveAvatar
+                ? window.tkResolveAvatar(linkedChar.id, authorName, linkedChar.avatar || entry.authorAvatar || '')
+                : (linkedChar.avatar || entry.authorAvatar || '');
+            return { authorId: linkedChar.id, authorName, authorAvatar };
+        }
+
+        const fallbackId = rawId || `commenter_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+        const fallbackName = rawName || 'User';
+        return {
+            authorId: fallbackId,
+            authorName: fallbackName,
+            authorAvatar: window.tkResolveAvatar
+                ? window.tkResolveAvatar(fallbackId, fallbackName, entry.authorAvatar || '')
+                : (entry.authorAvatar || '')
+        };
+    }
+
     let currentCommentVideoId = null;
     let currentReplyToCommentId = null; // Store parent comment ID if replying
 
@@ -1790,10 +1896,13 @@ ${wbContext}
             video.comments.forEach((c, index) => {
                 // Ensure ID exists
                 if(!c.id) c.id = 'cmt_' + Date.now() + '_' + index;
-                if (!c.authorId) c.authorId = `commenter_${Date.now()}_${index}_${Math.floor(Math.random()*1000)}`;
-                const authorId = c.authorId;
-                const authorName = c.authorName || 'User';
-                const authorAvatar = window.tkResolveAvatar(authorId, authorName, c.authorAvatar);
+                const commentIdentity = tkResolveCommentAuthorForVideo(c, video);
+                c.authorId = commentIdentity.authorId;
+                c.authorName = commentIdentity.authorName;
+                c.authorAvatar = commentIdentity.authorAvatar;
+                const authorId = commentIdentity.authorId;
+                const authorName = commentIdentity.authorName;
+                const authorAvatar = commentIdentity.authorAvatar;
                 const commentTranslationId = `tk-comment-translation-${c.id}`;
                 const commentTranslateButton = tkCleanTranslation(c.translationZh)
                     ? `<span class="tk-comment-translate-btn" data-translation-target="${tkEscapeAttr(commentTranslationId)}">翻译</span>`
@@ -1856,8 +1965,12 @@ ${wbContext}
                         rItem.style.gap = '10px';
                         rItem.style.marginBottom = '12px';
                         
-                        const rName = reply.authorName || 'User';
-                        const rAvatarUrl = window.tkResolveAvatar(reply.authorId, rName, reply.authorAvatar);
+                        const replyIdentity = tkResolveCommentAuthorForVideo(reply, video);
+                        reply.authorId = replyIdentity.authorId;
+                        reply.authorName = replyIdentity.authorName;
+                        reply.authorAvatar = replyIdentity.authorAvatar;
+                        const rName = replyIdentity.authorName || 'User';
+                        const rAvatarUrl = replyIdentity.authorAvatar;
                         const rAvatarHtml = rAvatarUrl 
                             ? `<img src="${tkEscapeAttr(rAvatarUrl)}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">` 
                             : `<i class="fas fa-user"></i>`;
@@ -2485,12 +2598,17 @@ ${wbContext}
         const topic = String(query || '').trim();
         const contextText = topic || '随机 TikTok 视频流';
         const wbContext = window.tkBuildWorldBookContext ? window.tkBuildWorldBookContext(contextText) : '';
-        const userPersonaContext = window.userState && window.userState.persona
-            ? `当前浏览者人设：${window.userState.persona}`
+        const userPersonaContext = window.tkBuildWorldActorPrompt
+            ? window.tkBuildWorldActorPrompt({
+                includeUserIdentity: false,
+                purpose: 'TikTok For You 主页内容流',
+                triggerText: topic || contextText
+            })
             : '';
 
         const prompt = `
-你是 TikTok For You 内容流 JSON 生成器。根据用户想看的主题、世界书和用户人设，一次生成 2-5 条完整 TikTok 内容，内容可以是短视频，也可以是图片帖。
+你是 TikTok For You 内容流 JSON 生成器。根据用户想看的主题、世界书和 user 人设关键词触发信息，一次生成 2-5 条完整 TikTok 内容，内容可以是短视频，也可以是图片帖。
+你可以是这个世界观里的任何非 user 创作者/路人/账号；只有主题确实需要时才提到 user，且永远不能扮演 user。
 
 用户主题：${topic || '留空，随机生成但要具体、有生活感'}
 
@@ -2676,14 +2794,18 @@ ${userPersonaContext}
 
         // 3. (首页随机流暂不需要特定角色记忆，但可以预留)
 
-        // Setup User Persona context
-        let userPersonaContext = '';
-        if (window.userState && window.userState.persona) {
-            userPersonaContext = `用户(当前浏览者)人设: ${window.userState.persona}\n`;
-        }
+        // user 人设只作为世界观/关键词触发，不强制内容围绕 user。
+        const userPersonaContext = window.tkBuildWorldActorPrompt
+            ? window.tkBuildWorldActorPrompt({
+                includeUserIdentity: false,
+                purpose: 'TikTok 首页随机内容流',
+                triggerText: '随机 TikTok 视频流'
+            })
+            : '';
 
         const prompt = `
-你现在是一个 TikTok 视频内容生成器。请根据挂载的世界书与user人设，生成 3-5 条 TikTok 视频数据。
+你现在是一个 TikTok 视频内容生成器。请根据挂载的世界书与 user 人设关键词触发信息，生成 3-5 条 TikTok 视频数据。
+你可以是这个世界观中的任何非 user 账号；没有必要时不要提到 user，禁止扮演 user。
 要求：
 1. 整体风格符合世界观，仿真实tk网络视频，内容多样化，文案具有网感。
 2. 视频内容由 opening、middle、ending 三个气泡字段组成，必须以第三人称视角描述环境氛围、动作和语言；每个气泡不少于 40 个字符，建议 40-80 字。原文可以使用符合作者国籍、世界观和内容语境的任意语言。

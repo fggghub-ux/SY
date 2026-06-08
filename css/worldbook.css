@@ -2241,7 +2241,7 @@
     width: 112px !important;
     height: 82px !important;
     margin: 0 auto 10px !important;
-    filter: drop-shadow(0 10px 14px rgba(0, 122, 255, 0.18));
+    filter: none !important;
     transition: transform 0.14s ease, opacity 0.14s ease !important;
 }
 
@@ -2350,6 +2350,91 @@
     .world-book-files-view .wb-folder-tab {
         width: 42px !important;
         height: 17px !important;
+    }
+
+    .world-book-files-view .wb-folder-body {
+        top: 15px !important;
+    }
+}
+
+/* Flat iOS-blue folder polish */
+.world-book-files-view .wb-folder-visual {
+    width: 112px !important;
+    height: 80px !important;
+    margin: 0 auto 10px !important;
+    filter: none !important;
+    box-shadow: none !important;
+}
+
+.world-book-files-view .wb-folder-tab,
+.world-book-files-view .wb-folder-body,
+.world-book-files-view .wb-folder-body::before,
+.world-book-files-view .wb-folder-body::after {
+    box-shadow: none !important;
+}
+
+.world-book-files-view .wb-folder-tab {
+    left: 8px !important;
+    top: 3px !important;
+    width: 50px !important;
+    height: 18px !important;
+    border: 0 !important;
+    border-radius: 10px 10px 0 0 !important;
+    background: #64b5ff !important;
+    z-index: 1 !important;
+}
+
+.world-book-files-view .wb-folder-body {
+    left: 0 !important;
+    right: 0 !important;
+    top: 17px !important;
+    bottom: 0 !important;
+    border: 0 !important;
+    border-radius: 14px 14px 16px 16px !important;
+    background: #0a84ff !important;
+    overflow: hidden !important;
+    z-index: 2 !important;
+}
+
+.world-book-files-view .wb-folder-body::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 18px;
+    border: 0 !important;
+    border-radius: 0 0 13px 13px;
+    background: #47a8ff;
+    pointer-events: none;
+}
+
+.world-book-files-view .wb-folder-body::after {
+    content: "";
+    position: absolute;
+    left: 9px;
+    right: 9px;
+    bottom: 8px;
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.18);
+    pointer-events: none;
+}
+
+.world-book-files-view .wb-group-container:active .wb-folder-visual {
+    transform: scale(0.96) translateY(1px) !important;
+    opacity: 0.9 !important;
+}
+
+@media (max-width: 380px) {
+    .world-book-files-view .wb-folder-visual {
+        width: 100px !important;
+        height: 72px !important;
+    }
+
+    .world-book-files-view .wb-folder-tab {
+        width: 44px !important;
+        height: 16px !important;
     }
 
     .world-book-files-view .wb-folder-body {

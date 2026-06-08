@@ -1,4 +1,4 @@
-﻿
+
 // ==========================================
 // IMESSAGE: 4_chat_interface.js
 // ==========================================
@@ -6,6 +6,37 @@ document.addEventListener('DOMContentLoaded', () => {
     const { apiConfig, userState } = window;
     window.imChat = window.imChat || {};
     const imChat = window.imChat;
+
+    function getGroupAvatarInitial(friend) {
+        return String(friend?.nickname || friend?.realName || 'G').charAt(0).toUpperCase();
+    }
+
+    function renderGroupHeaderAvatarInnerHtml(friend) {
+        const avatarUrl = friend?.avatarUrl || '';
+        if (avatarUrl) {
+            return `<img class="im-group-header-avatar-img" src="${avatarUrl}" alt="">`;
+        }
+
+        return `<div class="im-group-header-avatar-fallback">${getGroupAvatarInitial(friend)}</div>`;
+    }
+
+    imChat.refreshGroupHeaderAvatar = function(groupOrId) {
+        const groupId = groupOrId && typeof groupOrId === 'object' ? groupOrId.id : groupOrId;
+        if (groupId == null) return false;
+
+        const latestGroup = (window.imData?.friends || []).find(item => String(item.id) === String(groupId))
+            || (groupOrId && typeof groupOrId === 'object' ? groupOrId : null);
+        if (!latestGroup || latestGroup.type !== 'group') return false;
+
+        const page = document.getElementById(`chat-interface-${latestGroup.id}`);
+        if (!page) return false;
+
+        const inner = page.querySelector('.group-header-right-avatar-inner');
+        if (!inner) return false;
+
+        inner.innerHTML = renderGroupHeaderAvatarInnerHtml(latestGroup);
+        return true;
+    };
 
 async function openChatTab(friend) {
         const chatsContent = document.getElementById('chats-content');
@@ -55,9 +86,7 @@ async function openChatTab(friend) {
             
             let avatarHtml;
             if (isGroupChat) {
-                avatarHtml = friend.avatarUrl 
-                    ? `<img src="${friend.avatarUrl}" style="display: block;">` 
-                    : `<div style="width: 100%; height: 100%; background: linear-gradient(135deg, #ff9a9e, #fecfef); color: white; display: flex; justify-content: center; align-items: center; font-weight: bold; font-size: 20px;">${friend.nickname.charAt(0).toUpperCase()}</div>`;
+                avatarHtml = renderGroupHeaderAvatarInnerHtml(friend);
             } else {
                 avatarHtml = friend.avatarUrl 
                     ? `<img src="${friend.avatarUrl}" style="display: block;">` 
@@ -108,8 +137,8 @@ async function openChatTab(friend) {
             // Make the right avatar a floating bubble as well
             let groupRightAvatarHtml = '';
             if (isGroupChat) {
-                groupRightAvatarHtml = `<div class="group-header-right-avatar" style="width: 36px; height: 36px; border-radius: 50%; background: rgba(242, 242, 247, 0.85);    display: flex; justify-content: center; align-items: center; overflow: hidden; flex-shrink: 0; pointer-events: auto; cursor: pointer;">
-                        <div style="width: 32px; height: 32px; border-radius: 50%; overflow: hidden; display: flex; justify-content: center; align-items: center; background: #e5e5ea;">${avatarHtml}</div>
+                groupRightAvatarHtml = `<div class="group-header-right-avatar">
+                        <div class="group-header-right-avatar-inner">${avatarHtml}</div>
                    </div>`;
             } else if (friend.type === 'official') {
                 groupRightAvatarHtml = `<div class="chat-menu-btn im-chat-icon-btn"><i class="fas fa-bars"></i></div>
@@ -790,8 +819,11 @@ async function openChatTab(friend) {
              // 不过通常这种 SPA 是在元素上保留原本监听器的，所以先看看原先的逻辑。
              window.imChat.ensureTransferDetailOverlayForExistingPage(page, friend);
              window.imChat.ensureRedPacketDetailOverlayForExistingPage(page, friend);
-             const msgContainer = page.querySelector('.ins-chat-messages');
-             window.imChat.renderChatHistory(friend, msgContainer, { resetWindow: true });
+              if (isGroupChat && window.imChat.refreshGroupHeaderAvatar) {
+                  window.imChat.refreshGroupHeaderAvatar(friend);
+              }
+              const msgContainer = page.querySelector('.ins-chat-messages');
+              window.imChat.renderChatHistory(friend, msgContainer, { resetWindow: true });
 
              // 确保在已存在页面下，麦克风按钮也能绑定点击事件，或者原先的事件中的闭包上下文能够更新
              // 更好的做法是将最新 friend 更新给全局上下文。上面已经做了:

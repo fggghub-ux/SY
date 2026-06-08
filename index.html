@@ -330,11 +330,6 @@
             </div>
         </div>
 
-        <div class="home-edit-controls" id="home-edit-controls">
-            <button class="home-edit-fab home-edit-add-btn" id="home-edit-add-btn" type="button" aria-label="Add widget"><i class="fas fa-plus"></i></button>
-            <button class="home-edit-fab home-edit-done-btn" id="home-edit-done-btn" type="button" aria-label="Exit edit mode"><i class="fas fa-times"></i></button>
-        </div>
-
         <div class="bottom-sheet-overlay detail-sheet-overlay home-widget-sheet" id="home-widget-sheet" style="z-index: 720;">
             <div class="bottom-sheet home-widget-bottom-sheet">
                 <div class="sheet-handle"></div>
@@ -1769,6 +1764,11 @@
                     <div class="settings-item" id="theme-config-btn">
                         <div class="settings-icon" style="background-color: #ff2d55;"><i class="fas fa-paint-brush"></i></div>
                         <div class="settings-text">主题美化</div>
+                        <i class="fas fa-chevron-right arrow"></i>
+                    </div>
+                    <div class="settings-item" id="home-widget-config-btn" onclick="window.openHomeWidgetPanelFromSettings && window.openHomeWidgetPanelFromSettings()">
+                        <div class="settings-icon" style="background-color: #5ac8fa;"><i class="fas fa-layer-group"></i></div>
+                        <div class="settings-text">小组件</div>
                         <i class="fas fa-chevron-right arrow"></i>
                     </div>
                 </div>
@@ -3385,6 +3385,14 @@
                                         <option value="fr">法语</option>
                                     </select>
                                     <i class="fas fa-chevron-right arrow"></i>
+                                </div>
+                                <div class="settings-item" style="justify-content: space-between; cursor: default;">
+                                    <div class="settings-icon" style="background-color: #32ade6;"><i class="fas fa-clock"></i></div>
+                                    <div class="settings-text">时间感知</div>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="chat-time-aware-toggle">
+                                        <span class="slider"></span>
+                                    </label>
                                 </div>
                             </div>
 
@@ -5694,6 +5702,171 @@
 
             </div>
 
+            <!-- 情侣共享存钱罐 -->
+            <div class="lovers-savings-view" id="lovers-savings-view">
+                <div class="lovers-savings-header">
+                    <button type="button" id="lovers-savings-back-btn" class="lovers-savings-icon-btn" aria-label="返回">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    <div class="lovers-savings-title">存钱罐</div>
+                    <button type="button" id="lovers-savings-add-btn" class="lovers-savings-icon-btn" aria-label="设置">
+                        <i class="fas fa-gear"></i>
+                    </button>
+                </div>
+
+                <div class="lovers-savings-content">
+                    <section class="lovers-savings-hero">
+                        <div class="lovers-savings-hero-top">
+                            <div>
+                                <div class="lovers-savings-kicker">共享目标</div>
+                                <div id="lovers-savings-total" class="lovers-savings-total">¥0.00</div>
+                            </div>
+                            <div class="lovers-savings-jar">
+                                <i class="fas fa-piggy-bank"></i>
+                            </div>
+                        </div>
+                        <div class="lovers-savings-goal-row">
+                            <span id="lovers-savings-goal">目标 ¥5,200.00</span>
+                            <span id="lovers-savings-percent">0%</span>
+                        </div>
+                        <div class="lovers-savings-progress-track">
+                            <div id="lovers-savings-progress" class="lovers-savings-progress-fill"></div>
+                        </div>
+                        <div id="lovers-savings-left" class="lovers-savings-left">还差 ¥5,200.00</div>
+                    </section>
+
+                    <section class="lovers-savings-split">
+                        <div class="lovers-savings-person">
+                            <div class="lovers-savings-person-dot is-user"></div>
+                            <div>
+                                <div id="lovers-savings-user-name" class="lovers-savings-person-name">我</div>
+                                <div id="lovers-savings-user-amount" class="lovers-savings-person-amount">¥0.00</div>
+                            </div>
+                        </div>
+                        <div class="lovers-savings-person">
+                            <div class="lovers-savings-person-dot is-char"></div>
+                            <div>
+                                <div id="lovers-savings-char-name" class="lovers-savings-person-name">TA</div>
+                                <div id="lovers-savings-char-amount" class="lovers-savings-person-amount">¥0.00</div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="lovers-savings-day">
+                        <div class="lovers-savings-day-header">
+                            <div>
+                                <div class="lovers-savings-section-title">每日明细</div>
+                                <div id="lovers-savings-selected-date" class="lovers-savings-day-subtitle">今天</div>
+                            </div>
+                            <input type="date" id="lovers-savings-date-filter" class="lovers-savings-date-filter">
+                        </div>
+                        <div class="lovers-savings-day-totals">
+                            <div>
+                                <span>我</span>
+                                <strong id="lovers-savings-day-user">¥0.00</strong>
+                            </div>
+                            <div>
+                                <span>TA</span>
+                                <strong id="lovers-savings-day-char">¥0.00</strong>
+                            </div>
+                        </div>
+                        <div id="lovers-savings-records" class="lovers-savings-records"></div>
+                    </section>
+                </div>
+            </div>
+
+            <div class="bottom-sheet-overlay detail-sheet-overlay" id="lovers-savings-settings-sheet" style="z-index: 1030;">
+                <div class="bottom-sheet lovers-savings-deposit-sheet">
+                    <div class="sheet-handle"></div>
+                    <div class="lovers-savings-deposit-header">
+                        <button type="button" id="lovers-savings-settings-cancel">取消</button>
+                        <div>存钱罐设置</div>
+                        <button type="button" id="lovers-savings-settings-save">保存</button>
+                    </div>
+                    <div class="lovers-savings-form">
+                        <label>
+                            <span>存钱目标</span>
+                            <input type="number" id="lovers-savings-goal-input" min="1" step="1" inputmode="decimal" placeholder="5200">
+                        </label>
+                        <button type="button" id="lovers-savings-withdraw-btn" class="lovers-savings-withdraw-btn">
+                            <i class="fas fa-hand-holding-dollar"></i>
+                            <span>请求提款</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bottom-sheet-overlay detail-sheet-overlay" id="lovers-savings-deposit-sheet" style="z-index: 1030;">
+                <div class="bottom-sheet lovers-savings-deposit-sheet">
+                    <div class="sheet-handle"></div>
+                    <div class="lovers-savings-deposit-header">
+                        <button type="button" id="lovers-savings-deposit-cancel">取消</button>
+                        <div>存入存钱罐</div>
+                        <button type="button" id="lovers-savings-deposit-save">存入</button>
+                    </div>
+                    <div class="lovers-savings-form">
+                        <label>
+                            <span>金额</span>
+                            <input type="number" id="lovers-savings-amount-input" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00">
+                        </label>
+                        <label>
+                            <span>日期</span>
+                            <input type="date" id="lovers-savings-date-input">
+                        </label>
+                        <label>
+                            <span>成员</span>
+                            <select id="lovers-savings-actor-input">
+                                <option value="user">我</option>
+                                <option value="char">TA</option>
+                            </select>
+                        </label>
+                        <label>
+                            <span>备注</span>
+                            <input type="text" id="lovers-savings-note-input" placeholder="例如：旅行基金、纪念日">
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bottom-sheet-overlay detail-sheet-overlay" id="lovers-savings-withdraw-sheet" style="z-index: 1030;">
+                <div class="bottom-sheet lovers-savings-deposit-sheet">
+                    <div class="sheet-handle"></div>
+                    <div class="lovers-savings-deposit-header">
+                        <button type="button" id="lovers-savings-withdraw-cancel">取消</button>
+                        <div>请求提款</div>
+                        <button type="button" id="lovers-savings-withdraw-send">发送请求</button>
+                    </div>
+                    <div class="lovers-savings-form">
+                        <label>
+                            <span>提款金额</span>
+                            <input type="number" id="lovers-savings-withdraw-amount-input" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00">
+                        </label>
+                        <label class="lovers-savings-textarea-label">
+                            <span>提款理由</span>
+                            <textarea id="lovers-savings-withdraw-reason-input" rows="3" placeholder="例如：想买点吃的"></textarea>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bottom-sheet-overlay detail-sheet-overlay lovers-savings-result-modal-overlay" id="lovers-savings-withdraw-result-modal" style="z-index: 1040;">
+                <div class="lovers-savings-result-modal">
+                    <button type="button" id="lovers-savings-withdraw-result-close" class="lovers-savings-result-close" aria-label="关闭">
+                        <i class="fas fa-times"></i>
+                    </button>
+                    <div id="lovers-savings-withdraw-result-icon" class="lovers-savings-result-icon">
+                        <i class="fas fa-check"></i>
+                    </div>
+                    <div id="lovers-savings-withdraw-result-title" class="lovers-savings-result-title">TA 已同意</div>
+                    <div id="lovers-savings-withdraw-result-amount" class="lovers-savings-result-amount">¥0.00</div>
+                    <div class="lovers-savings-result-reason-card">
+                        <span id="lovers-savings-withdraw-result-reason-label">同意理由</span>
+                        <p id="lovers-savings-withdraw-result-reason-text"></p>
+                    </div>
+                    <button type="button" id="lovers-savings-withdraw-result-ok" class="lovers-savings-result-ok">知道了</button>
+                </div>
+            </div>
+
             <!-- 发布动态弹窗 (底部抽屉) -->
             <div class="bottom-sheet-overlay detail-sheet-overlay" id="lovers-publish-view" style="z-index: 1000;">
                 <div class="bottom-sheet" style="height: 85%; display: flex; flex-direction: column; background: #ffffff;">
@@ -6443,6 +6616,7 @@
     <script src="js/shopping.js"></script>
     <script src="js/xapp.js"></script>
     <script src="js/home_desktop.js"></script>
+    <script src="js/home_widget_panel_enhance.js"></script>
     <!-- 引入主逻辑脚本 -->
     <script src="script.js"></script>
 </body>

@@ -1,4 +1,4 @@
-﻿// ==========================================
+// ==========================================
 // IMESSAGE: 5. SETTINGS & EDITING
 // ==========================================
 
@@ -2551,6 +2551,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const tsPositionSelect = document.getElementById('timestamp-position-select');
         const chatAvatarToggle = document.getElementById('chat-avatar-toggle');
         const chatLanguageSelect = document.getElementById('chat-language-select');
+        const chatTimeAwareToggle = document.getElementById('chat-time-aware-toggle');
         
         if (chatAvatarToggle) {
             chatAvatarToggle.checked = !!friend.showAvatar;
@@ -2558,6 +2559,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (chatLanguageSelect) {
             chatLanguageSelect.value = friend.language || 'zh';
+        }
+
+        if (chatTimeAwareToggle) {
+            chatTimeAwareToggle.checked = friend.timeAware !== false;
         }
 
         if (tsToggle) {
@@ -2776,6 +2781,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!saved) {
                     e.target.value = previousValue;
                     showToast('语言设置保存失败');
+                }
+            }
+        });
+    }
+
+    const chatTimeAwareToggle = document.getElementById('chat-time-aware-toggle');
+    if (chatTimeAwareToggle && chatTimeAwareToggle.dataset.bound !== 'true') {
+        chatTimeAwareToggle.dataset.bound = 'true';
+        chatTimeAwareToggle.addEventListener('change', async (e) => {
+            if (window.imData.currentSettingsFriend) {
+                const previousValue = window.imData.currentSettingsFriend.timeAware !== false;
+                const nextValue = e.target.checked;
+                
+                const saved = await commitSettingsFriendChange((targetFriend) => {
+                    targetFriend.timeAware = nextValue;
+                }, { silent: true });
+
+                if (!saved) {
+                    e.target.checked = previousValue;
+                    showToast('时间感知设置保存失败');
                 }
             }
         });
