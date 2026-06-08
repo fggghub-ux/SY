@@ -937,6 +937,19 @@ window.imApp.syncSettingsFriendReference = function(friend) {
     }
 };
 
+window.imApp.clearFriendRuntimeMessageContext = function(friend) {
+    if (!friend) return;
+    if (friend.pendingRegenerateContext) delete friend.pendingRegenerateContext;
+    if (window.imData.currentReplyText) window.imData.currentReplyText = null;
+    const page = document.getElementById(`chat-interface-${friend.id}`);
+    const replyPreview = page ? page.querySelector('.reply-preview-container') : null;
+    if (replyPreview) replyPreview.style.display = 'none';
+    if (window.imData.currentActiveRow) {
+        window.imData.currentActiveRow.classList?.remove('message-active');
+        window.imData.currentActiveRow = null;
+    }
+};
+
 window.imApp.resolveFriendId = function(friendOrId) {
     if (friendOrId && typeof friendOrId === 'object') {
         return friendOrId.id;
@@ -1198,6 +1211,12 @@ window.imApp.appendFriendMessage = async function(friendId, message, options = {
         window.imApp.saveState.lastError = null;
         if (window.imChat?.renderChatsList) window.imChat.renderChatsList();
         if (window.imApp.updateChatsUnreadBadges) window.imApp.updateChatsUnreadBadges();
+        if (isIncomingMessage && window.u2SystemNotifications?.notifyIncomingMessage) {
+            window.u2SystemNotifications.notifyIncomingMessage({
+                friend: targetFriend,
+                message: targetMessage
+            });
+        }
         return true;
     } catch (e) {
         console.error('Failed to append friend message', e);
@@ -1309,7 +1328,9 @@ window.imApp.removeFriendMessages = async function(friendId, descriptors, option
     targetFriend.messages = targetFriend.messages.filter((_, index) => !removalIndexes.has(index));
     window.imApp.reindexFriendMessages(targetFriend);
     window.imApp.syncFriendMessageSummary(targetFriend);
+    window.imApp.clearFriendRuntimeMessageContext(targetFriend);
     window.imApp.syncActiveFriendReference(targetFriend);
+    window.imApp.syncSettingsFriendReference(targetFriend);
 
     try {
         if (window.imApp.ensureDataReady) await window.imApp.ensureDataReady();
@@ -1346,6 +1367,7 @@ window.imApp.removeFriendMessages = async function(friendId, descriptors, option
         window.imApp.reindexFriendMessages(targetFriend);
         window.imApp.syncFriendMessageSummary(targetFriend);
         window.imApp.syncActiveFriendReference(targetFriend);
+        window.imApp.syncSettingsFriendReference(targetFriend);
         window.imApp.saveState.lastError = e;
         if (!options.silent && window.showToast) {
             window.showToast('删除消息失败');
@@ -1368,7 +1390,9 @@ window.imApp.resetFriendMessages = async function(friendId, options = {}) {
     const previousMessages = window.imApp.cloneDataSnapshot(Array.isArray(targetFriend.messages) ? targetFriend.messages : []);
     targetFriend.messages = [];
     window.imApp.syncFriendMessageSummary(targetFriend);
+    window.imApp.clearFriendRuntimeMessageContext(targetFriend);
     window.imApp.syncActiveFriendReference(targetFriend);
+    window.imApp.syncSettingsFriendReference(targetFriend);
 
     try {
         if (window.imApp.ensureDataReady) await window.imApp.ensureDataReady();
@@ -1390,6 +1414,7 @@ window.imApp.resetFriendMessages = async function(friendId, options = {}) {
         window.imApp.reindexFriendMessages(targetFriend);
         window.imApp.syncFriendMessageSummary(targetFriend);
         window.imApp.syncActiveFriendReference(targetFriend);
+        window.imApp.syncSettingsFriendReference(targetFriend);
         window.imApp.saveState.lastError = e;
         if (!options.silent && window.showToast) {
             window.showToast('聊天记录清空失败');

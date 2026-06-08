@@ -533,28 +533,7 @@ function renderMessageBubble(msg, friend, container, timestamp = Date.now()) {
 
     function replaceMessageInContainer(friend, container, msg, descriptor, options = {}) {
         if (!friend || !container || !msg) return false;
-
-        const targetRow = findMessageRow(container, descriptor || msg);
-        if (!targetRow) return false;
-
-        const replaceHost = document.createElement('div');
-        const prevSibling = targetRow.previousElementSibling;
-        if (prevSibling) {
-            replaceHost.appendChild(prevSibling.cloneNode(true));
-        }
-
-        const rendered = renderMessageBubble(msg, friend, replaceHost, msg.timestamp || Date.now());
-        if (!rendered) return false;
-
-        const newRow = replaceHost.lastElementChild;
-        if (!newRow) return false;
-
-        targetRow.replaceWith(newRow);
-
-        if (options.scroll) {
-            window.imChat.scrollToBottom(container);
-        }
-        return true;
+        return rerenderChatContainer(friend, container, options);
     }
 
     function removeMessageFromContainer(container, descriptor, options = {}) {
@@ -662,7 +641,8 @@ function normalizeOfflineActionText(value) {
     }
 
 function renderUserBubble(text, container, timestamp = Date.now(), replyTo = null, translation = null, showTranslation = false, messageId = null, friend = null) {
-        const lastRow = container.lastElementChild;
+        const rows = Array.from(container.children).filter(el => el.classList.contains('chat-row') && !el.classList.contains('typing-row'));
+        const lastRow = rows.length > 0 ? rows[rows.length - 1] : null;
         let hasPrev = false;
         if (lastRow && lastRow.classList.contains('user-row')) {
             hasPrev = true;
@@ -974,6 +954,10 @@ function renderPayTransferBubble(msg, friend, container, timestamp = Date.now())
         const { payKind, status, payerName, payeeName } = parties;
 
         const isOfficialReceipt = msg.targetName === 'Payment' || msg.cardTitle === '收款通知' || msg.cardTitle === '支付凭证';
+        const familyCardText = `${msg.paymentAction || ''} ${msg.cardTitle || ''} ${msg.description || ''} ${msg.content || ''}`;
+        const isFamilyCard = msg.paymentAction === 'family_card'
+            || msg.paymentAction === 'family_card_increase'
+            || familyCardText.includes('亲属卡');
         let cardTitle = msg.cardTitle || 'Payment';
         let subtitle = `${payerName} 向 ${payeeName} 转账`;
         let extraClass = '';
@@ -1025,7 +1009,7 @@ function renderPayTransferBubble(msg, friend, container, timestamp = Date.now())
                         <div class="pay-transfer-card-icon"><i class="fas fa-wallet"></i></div>
                         <div class="pay-transfer-card-meta">
                             <div class="pay-transfer-card-title">${cardTitle}</div>
-                            <div class="pay-transfer-card-subtitle">${subtitle}</div>
+                            ${isFamilyCard ? '' : `<div class="pay-transfer-card-subtitle">${subtitle}</div>`}
                         </div>
                     </div>
                     <div class="pay-transfer-card-amount">${amountText}</div>

@@ -15,7 +15,7 @@
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
-    touch-action: pan-x;
+    touch-action: pan-x pan-y;
     padding-bottom: 0 !important;
     -webkit-transform: translateZ(0);
     transform: translateZ(0);
@@ -653,7 +653,23 @@
     color: #111;
     font: inherit;
     cursor: pointer;
-    touch-action: none;
+    touch-action: pan-y;
+}
+
+.home-widget-form,
+.home-widget-library,
+.home-widget-library-card,
+.home-widget-card-controls {
+    touch-action: pan-y;
+}
+
+.home-widget-library-card button,
+.home-widget-library-card input,
+.home-widget-library-card textarea,
+.home-widget-library-card select,
+.home-widget-image-btn,
+.home-widget-reset-btn {
+    touch-action: manipulation;
 }
 
 .home-widget-library-card:active {

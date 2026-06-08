@@ -1,5 +1,6 @@
 // U2 background activity manager.
-// This is a best-effort PWA heartbeat. Mobile browsers may pause it while hidden.
+// Best-effort PWA heartbeat. When enabled, it keeps a tiny looping audio session alive
+// because mobile browsers usually preserve active audio more aggressively than timers.
 (function () {
     const STORAGE_KEY = 'u2_backgroundActivitySettings';
     const MIN_INTERVAL_SECONDS = 1;
@@ -14,6 +15,9 @@
     let settings = normalize(loadSettings());
     let timerId = null;
     let wakeLock = null;
+    let keepAliveAudio = null;
+    let keepAliveAudioUrl = '';
+    let audioUnlockBound = false;
 
     function clampInterval(value) {
         const number = Number.parseInt(value, 10);
@@ -78,6 +82,142 @@
         }
     }
 
+    function createKeepAliveAudioUrl() {
+        if (keepAliveAudioUrl) return keepAliveAudioUrl;
+
+        const sampleRate = 8000;
+        const durationSeconds = 1;
+        const sampleCount = sampleRate * durationSeconds;
+        const bytesPerSample = 2;
+        const dataSize = sampleCount * bytesPerSample;
+        const buffer = new ArrayBuffer(44 + dataSize);
+        const view = new DataView(buffer);
+        let offset = 0;
+
+        const writeString = (value) => {
+            for (let index = 0; index < value.length; index += 1) {
+                view.setUint8(offset + index, value.charCodeAt(index));
+            }
+            offset += value.length;
+        };
+
+        writeString('RIFF');
+        view.setUint32(offset, 36 + dataSize, true); offset += 4;
+        writeString('WAVE');
+        writeString('fmt ');
+        view.setUint32(offset, 16, true); offset += 4;
+        view.setUint16(offset, 1, true); offset += 2;
+        view.setUint16(offset, 1, true); offset += 2;
+        view.setUint32(offset, sampleRate, true); offset += 4;
+        view.setUint32(offset, sampleRate * bytesPerSample, true); offset += 4;
+        view.setUint16(offset, bytesPerSample, true); offset += 2;
+        view.setUint16(offset, 8 * bytesPerSample, true); offset += 2;
+        writeString('data');
+        view.setUint32(offset, dataSize, true); offset += 4;
+
+        for (let index = 0; index < sampleCount; index += 1) {
+            const sample = Math.sin((2 * Math.PI * 18 * index) / sampleRate) * 6;
+            view.setInt16(offset, sample, true);
+            offset += bytesPerSample;
+        }
+
+        keepAliveAudioUrl = URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+        return keepAliveAudioUrl;
+    }
+
+    function ensureKeepAliveAudio() {
+        if (keepAliveAudio) return keepAliveAudio;
+
+        keepAliveAudio = document.createElement('audio');
+        keepAliveAudio.loop = true;
+        keepAliveAudio.preload = 'auto';
+        keepAliveAudio.playsInline = true;
+        keepAliveAudio.volume = 1;
+        keepAliveAudio.src = createKeepAliveAudioUrl();
+        keepAliveAudio.setAttribute('aria-hidden', 'true');
+        keepAliveAudio.setAttribute('webkit-playsinline', 'true');
+        keepAliveAudio.style.position = 'fixed';
+        keepAliveAudio.style.width = '1px';
+        keepAliveAudio.style.height = '1px';
+        keepAliveAudio.style.opacity = '0';
+        keepAliveAudio.style.pointerEvents = 'none';
+        keepAliveAudio.style.left = '-9999px';
+        keepAliveAudio.style.top = '-9999px';
+
+        const mount = () => {
+            if (document.body && !keepAliveAudio.isConnected) {
+                document.body.appendChild(keepAliveAudio);
+            }
+        };
+
+        if (document.body) {
+            mount();
+        } else {
+            document.addEventListener('DOMContentLoaded', mount, { once: true });
+        }
+
+        return keepAliveAudio;
+    }
+
+    function bindAudioUnlock() {
+        if (audioUnlockBound) return;
+        audioUnlockBound = true;
+
+        ['pointerdown', 'touchstart', 'click', 'keydown'].forEach((eventName) => {
+            document.addEventListener(eventName, handleAudioUnlock, {
+                capture: true,
+                passive: true
+            });
+        });
+    }
+
+    function unbindAudioUnlock() {
+        if (!audioUnlockBound) return;
+        audioUnlockBound = false;
+
+        ['pointerdown', 'touchstart', 'click', 'keydown'].forEach((eventName) => {
+            document.removeEventListener(eventName, handleAudioUnlock, true);
+        });
+    }
+
+    function handleAudioUnlock() {
+        if (settings.enabled) {
+            startKeepAliveAudio('user-gesture');
+        } else {
+            unbindAudioUnlock();
+        }
+    }
+
+    async function startKeepAliveAudio(reason = 'audio') {
+        if (!settings.enabled) return false;
+
+        const audio = ensureKeepAliveAudio();
+
+        try {
+            if (audio.paused || audio.ended) {
+                await audio.play();
+            }
+            unbindAudioUnlock();
+            window.dispatchEvent(new CustomEvent('u2:background-audio-active', {
+                detail: { reason, activeAt: Date.now() }
+            }));
+            return true;
+        } catch (error) {
+            bindAudioUnlock();
+            console.info('[background_activity] Audio keep-alive is waiting for a user gesture:', error);
+            return false;
+        }
+    }
+
+    function stopKeepAliveAudio() {
+        unbindAudioUnlock();
+
+        if (!keepAliveAudio) return;
+
+        keepAliveAudio.pause();
+        keepAliveAudio.currentTime = 0;
+    }
+
     async function requestWakeLock() {
         if (!settings.enabled || document.hidden || wakeLock || !navigator.wakeLock?.request) {
             return;
@@ -124,7 +264,7 @@
     function schedule() {
         clearTimer();
 
-        if (!settings.enabled || document.hidden) {
+        if (!settings.enabled) {
             return;
         }
 
@@ -147,11 +287,13 @@
 
         schedule();
         requestWakeLock();
+        startKeepAliveAudio(reason);
     }
 
     function stop() {
         clearTimer();
         releaseWakeLock();
+        stopKeepAliveAudio();
     }
 
     function updateSettings(nextSettings = {}) {
@@ -176,8 +318,9 @@
 
     document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
-            clearTimer();
             releaseWakeLock();
+            schedule();
+            startKeepAliveAudio('hidden');
             return;
         }
 
@@ -187,6 +330,7 @@
     window.addEventListener('pagehide', () => {
         clearTimer();
         releaseWakeLock();
+        stopKeepAliveAudio();
     });
 
     window.addEventListener('pageshow', () => {

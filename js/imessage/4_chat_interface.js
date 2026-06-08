@@ -342,28 +342,41 @@ async function openChatTab(friend) {
             if (batchDeleteBtn) {
                 batchDeleteBtn.addEventListener('click', () => {
                     const selectedIcons = page.querySelectorAll('.chat-checkbox-wrapper i.fa-check-circle');
-                    const selected = Array.from(selectedIcons).map(icon => icon.getAttribute('data-timestamp'));
-                    if (selected.length === 0) {
+                    const selectedDescriptors = Array.from(selectedIcons)
+                        .map((icon) => {
+                            const row = icon.closest('.chat-row');
+                            return {
+                                id: row?.getAttribute('data-message-id') || null,
+                                timestamp: icon.getAttribute('data-timestamp') || row?.getAttribute('data-timestamp') || null
+                            };
+                        })
+                        .filter((descriptor) => descriptor.id || descriptor.timestamp);
+                    if (selectedDescriptors.length === 0) {
                         if(window.showToast) window.showToast('请选择要删除的消息');
                         return;
                     }
                     if (window.showCustomModal) {
                         window.showCustomModal({
                             title: '删除消息',
-                            message: `确定要删除选中的 ${selected.length} 条消息吗？`,
+                            message: `确定要删除选中的 ${selectedDescriptors.length} 条消息吗？`,
                             confirmText: '删除',
                             cancelText: '取消',
                             onConfirm: async () => {
                                 const saved = window.imApp.removeFriendMessages
                                     ? await window.imApp.removeFriendMessages(
                                         friend.id,
-                                        selected.map((timestamp) => ({ timestamp })),
+                                        selectedDescriptors,
                                         { silent: true }
                                     )
                                     : (window.imApp.commitFriendChange
                                         ? await window.imApp.commitFriendChange(friend.id, (targetFriend) => {
                                             if (!targetFriend || !Array.isArray(targetFriend.messages)) return;
-                                            targetFriend.messages = targetFriend.messages.filter((m) => !selected.includes(String(m.timestamp)));
+                                            targetFriend.messages = targetFriend.messages.filter((m) => !selectedDescriptors.some((descriptor) => {
+                                                if (!m) return true;
+                                                if (descriptor.id && String(m.id) === String(descriptor.id)) return true;
+                                                if (descriptor.timestamp && String(m.timestamp) === String(descriptor.timestamp)) return true;
+                                                return false;
+                                            }));
                                         }, { silent: true })
                                         : false);
 
@@ -372,7 +385,8 @@ async function openChatTab(friend) {
                                     const failedContainer = page.querySelector('.ins-chat-messages');
                                     if (failedContainer) {
                                         failedContainer.innerHTML = '';
-                                        window.imChat.renderChatHistory(friend, failedContainer);
+                                        const failedFriend = window.imApp.getFriendById ? (window.imApp.getFriendById(friend.id) || friend) : friend;
+                                        window.imChat.renderChatHistory(failedFriend, failedContainer);
                                         window.imChat.scrollToBottom(failedContainer);
                                     }
                                     return;
@@ -381,7 +395,8 @@ async function openChatTab(friend) {
                                 const container = page.querySelector('.ins-chat-messages');
                                 if(container) {
                                     container.innerHTML = '';
-                                    window.imChat.renderChatHistory(friend, container);
+                                    const latestFriend = window.imApp.getFriendById ? (window.imApp.getFriendById(friend.id) || friend) : friend;
+                                    window.imChat.renderChatHistory(latestFriend, container);
                                     window.imChat.scrollToBottom(container);
                                 }
                                 exitBatchSelectMode();
@@ -609,8 +624,41 @@ async function openChatTab(friend) {
                 plusBtn.addEventListener('touchstart', onPlusClick, { passive: false });
             }
 
+            let keyboardScrollInterval = null;
+            let keyboardViewportHandler = null;
+
+            const clearKeyboardFocusScroll = () => {
+                if (keyboardScrollInterval) {
+                    clearInterval(keyboardScrollInterval);
+                    keyboardScrollInterval = null;
+                }
+
+                if (keyboardViewportHandler && window.visualViewport) {
+                    window.visualViewport.removeEventListener('resize', keyboardViewportHandler);
+                    keyboardViewportHandler = null;
+                }
+            };
+
+            const resetKeyboardScroll = () => {
+                clearKeyboardFocusScroll();
+
+                const runReset = () => {
+                    window.scrollTo(0, 0);
+                    page.scrollTop = 0;
+                };
+
+                if (typeof requestAnimationFrame === 'function') {
+                    requestAnimationFrame(runReset);
+                } else {
+                    runReset();
+                }
+                setTimeout(runReset, 120);
+                setTimeout(runReset, 320);
+            };
+
             if (input) {
                 input.addEventListener('focus', () => {
+                    clearKeyboardFocusScroll();
                     const inputContainer = page.querySelector('.ins-chat-input-container');
                     const attachmentSheet = document.getElementById('chat-attachment-sheet');
                     if (attachmentSheet) {
@@ -623,32 +671,31 @@ async function openChatTab(friend) {
                     
                     // 采用高频对齐，每 16ms(约一帧) 修正一次，持续 400ms 覆盖键盘弹起动画
                     let count = 0;
-                    const scrollInterval = setInterval(() => {
+                    keyboardScrollInterval = setInterval(() => {
+                        if (document.activeElement !== input) {
+                            clearKeyboardFocusScroll();
+                            return;
+                        }
                         input.scrollIntoView(false);
                         count++;
                         if (count >= 25) {
-                            clearInterval(scrollInterval);
+                            clearKeyboardFocusScroll();
                         }
                     }, 16);
                     
                     // 如果支持 visualViewport，监听其实时变化
                     if (window.visualViewport) {
-                        const viewportHandler = () => {
+                        keyboardViewportHandler = () => {
                             if (document.activeElement === input) {
                                 input.scrollIntoView(false);
                             }
                         };
-                        window.visualViewport.addEventListener('resize', viewportHandler);
-                        input.addEventListener('blur', () => {
-                            window.visualViewport.removeEventListener('resize', viewportHandler);
-                        }, { once: true });
+                        window.visualViewport.addEventListener('resize', keyboardViewportHandler);
                     }
                 });
 
                 input.addEventListener('blur', () => {
-                    setTimeout(() => {
-                        window.scrollTo(0, 0);
-                    }, 100);
+                    resetKeyboardScroll();
                 });
             }
 
@@ -769,6 +816,7 @@ async function openChatTab(friend) {
                     e.preventDefault();
                     const currentFriend = window.imData.currentActiveFriend || friend;
                     window.imChat.handleSend(currentFriend, input, msgContainer);
+                    resetKeyboardScroll();
                     const listContainer = page.querySelector('.at-mention-list');
                     if (listContainer) listContainer.style.display = 'none';
                     if (input) input.blur(); // 自动收起键盘
@@ -779,6 +827,7 @@ async function openChatTab(friend) {
                 if (e && typeof e.preventDefault === 'function') e.preventDefault();
                 const currentFriend = window.imData.currentActiveFriend || friend;
                 window.imChat.handleSend(currentFriend, input, msgContainer);
+                resetKeyboardScroll();
                 const listContainer = page.querySelector('.at-mention-list');
                 if (listContainer) listContainer.style.display = 'none';
                 if (input) input.blur(); // 自动收起键盘

@@ -310,9 +310,40 @@
         libraryObserver = new MutationObserver(enhanceLibraryCards);
         libraryObserver.observe(library, { childList: true });
 
+        bindScrollFriendlyLibraryTouch(library);
         library.addEventListener('click', onLibraryClick, true);
         library.addEventListener('input', onLibraryInput, true);
         library.addEventListener('change', onLibraryChange, true);
+    }
+
+    function bindScrollFriendlyLibraryTouch(library) {
+        if (library.dataset.scrollFriendlyTouchBound === '1') return;
+        library.dataset.scrollFriendlyTouchBound = '1';
+
+        let startX = 0;
+        let startY = 0;
+        let moved = false;
+
+        library.addEventListener('pointerdown', function (event) {
+            if (event.pointerType !== 'touch') return;
+            startX = event.clientX;
+            startY = event.clientY;
+            moved = false;
+        }, { passive: true });
+
+        library.addEventListener('pointermove', function (event) {
+            if (event.pointerType !== 'touch') return;
+            const dx = Math.abs(event.clientX - startX);
+            const dy = Math.abs(event.clientY - startY);
+            if (dx > 8 || dy > 8) moved = true;
+        }, { passive: true });
+
+        library.addEventListener('click', function (event) {
+            if (!moved) return;
+            event.preventDefault();
+            event.stopPropagation();
+            moved = false;
+        }, true);
     }
 
     function enhanceLibraryCards() {

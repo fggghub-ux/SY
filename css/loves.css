@@ -25,6 +25,7 @@
 #friend-imessage-view,
 #friend-reverse-chat-view,
 #friend-safari-view,
+#friend-weibo-view,
 #friend-music-view,
 #friend-phonecall-view {
     inset: 0;
@@ -257,6 +258,52 @@
 }
 .friend-safari-view.active {
     display: flex;
+}
+
+.gen-mini-toggle {
+    position: relative;
+    width: 50px;
+    height: 30px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.gen-mini-toggle input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.gen-mini-slider {
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: #d1d1d6;
+    transition: background 0.2s ease;
+}
+
+.gen-mini-slider::before {
+    content: "";
+    position: absolute;
+    width: 26px;
+    height: 26px;
+    left: 2px;
+    top: 2px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.24);
+    transition: transform 0.2s ease;
+}
+
+.gen-mini-toggle input:checked + .gen-mini-slider {
+    background: #34c759;
+}
+
+.gen-mini-toggle input:checked + .gen-mini-slider::before {
+    transform: translateX(20px);
 }
 
 .reverse-bubble-left {

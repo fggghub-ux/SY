@@ -822,15 +822,21 @@ function ensureTransferDetailOverlayForExistingPage(page, friend) {
             
             const amount = Number(targetMsg.amount) || 0;
             const description = targetMsg.description || '转账';
+            const familyCardText = `${targetMsg.paymentAction || ''} ${targetMsg.cardTitle || ''} ${targetMsg.description || ''} ${targetMsg.content || ''}`;
+            const isFamilyCard = targetMsg.paymentAction === 'family_card'
+                || targetMsg.paymentAction === 'family_card_increase'
+                || familyCardText.includes('亲属卡');
 
             if (transferDetailName) transferDetailName.textContent = payerName;
             if (transferDetailAmount) transferDetailAmount.textContent = `¥${amount.toFixed(2)}`;
             if (transferDetailDesc) transferDetailDesc.textContent = description;
-            if (transferDetailSummary) transferDetailSummary.textContent = `${payerName} 向 ${payeeName} 转账，备注：${description}`;
+            if (transferDetailSummary) transferDetailSummary.textContent = isFamilyCard ? `备注：${description}` : `${payerName} 向 ${payeeName} 转账，备注：${description}`;
 
             const transferDetailActionText = page.querySelector('.pay-transfer-detail-action-text');
             if (transferDetailActionText) {
-                if (status === 'claimed') {
+                if (isFamilyCard) {
+                    transferDetailActionText.textContent = '';
+                } else if (status === 'claimed') {
                     transferDetailActionText.textContent = `${payeeName}已收款`;
                 } else if (status === 'rejected') {
                     transferDetailActionText.textContent = '已退还';

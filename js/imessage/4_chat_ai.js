@@ -132,7 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
             replyTo: replyToText
         };
 
-        window.imChat.renderUserBubble(text, container, now, replyToText, null, false, msgObj.id);
+        window.imChat.renderUserBubble(text, container, now, replyToText, null, false, msgObj.id, liveFriend);
         inputEl.value = '';
 
         const saved = window.imApp.appendFriendMessage
@@ -1049,6 +1049,14 @@ ${sections}`;
         }
         const familyCardRequirement = `\n\n【亲属卡互动】：当前你是否已经给过User亲属卡：${hasFamilyCardStr}。\n- 如果User在聊天中暗示或明示想要“亲属卡”，且你当前【未给过】亲属卡，你可以输出一个特定的支付对象：{"type":"payment","paymentAction":"family_card","amount":1000,"description":"亲属卡"}，这会给User发一张1000额度的亲属卡。\n- 如果你当前【已经给过】亲属卡，且User再次暗示或明示想要“亲属卡”，系统限制一人只能给一张，你不能再给一张，但你可以输出 {"type":"payment","paymentAction":"family_card_increase","amount":500,"description":"亲属卡提额"} 来给现有的亲属卡提升500额度，并在对话中提醒TA已经给过一张了只能提额。`;
 
+        const pendingRegenerateContext = friend.pendingRegenerateContext || null;
+        const regenerateRequirement = pendingRegenerateContext
+            ? `\n\n【重回重新生成要求】：
+- User 触发了“重回”，这通常代表 User 对你刚刚生成的回复不满意。请先思考 User 可能不满意的原因：是否语气不对、关系距离不对、太敷衍、太热情、太重复、没有接住情绪、引用不准、偏离人设、没有回应重点或节奏不自然。
+- 下面是刚刚被重回删除的回复内容，请不要再次生成相同或高度相似的内容、句式、称呼、情绪走向和动作安排。你需要换一个更贴合当前上下文与人设的角度回应，但不要在正文里解释“这是重回”。
+【刚刚被重回的回复】：
+${pendingRegenerateContext.previousReply || 'None'}` : '';
+
         const offlineMeetRequirement = friend.offlineMeetEnabled ? `\n\nOffline Meet Mode / 线下见面模式:\n- You and User are physically together in the same offline scene now, not only texting through a phone.\n- For every text or voice object inside <chat_json>, include two extra string fields: "scene" and "action".\n- "scene" describes the overall atmosphere for this reply batch, at least 20 Chinese characters and ideally 20-36 Chinese characters. It will be shown once as centered small gray italic text before the first rendered AI bubble in this round.\n- "scene" must use third-person or objective camera language only. Do not use first-person or second-person pronouns in scene, including 我, 我们, 咱, 咱们, 你, 你们, 您, 她对我, 他看着你, or similar wording.\n- For "scene", use objective subjects such as character names, 对方, 两人, 桌边, 房间, 街灯, 空气, 灯光, 雨声, or the surrounding environment.\n- Use the same "scene" value for all objects in the same reply batch, or only include it on the first object. Do not create a different scene for every bubble.\n- "action" is your own visible movement, posture, expression, or tone, 4-18 Chinese characters. Output the action text only, without parentheses, brackets, or quotes.\n- Keep "text" as the spoken message only. Do not put the scene or action inside text.` : '';
 
         const profilePanelRequirement = friend.type === 'group'
@@ -1200,13 +1208,22 @@ ${commonMemorySections || 'None'}${offlineMeetRequirement}`;
             
             const sleepPrompt = isSleeping ? `\n【作息限制】：角色当前正在睡觉。如果用户发来消息，你必须强制保持离线状态并在所有回复内容（text 字段）的开头添加 "[自动回复] " 前缀，模拟已睡着或离线时的自动响应。心声和面板状态也要符合睡着的情境。` : '';
 
+            const singleChatHumanPrompt = `\n【单聊真实交流原则】：
+- 你此刻正在拿着手机与 User 进行你来我往的线上交流，而不是客服式单方面回复。你不是只负责回答问题的人，你有自己的主观想法、表达欲和分享欲，可以主动输送信息、分享身边事、岔开话题、开启新话题，也允许自然的短回复、停顿、犹豫、反问和情绪流动。
+- 你是一个活生生的人，与 User 享有对等且平等的关系位置。你有自己的生活要经营，有自己的社交圈要维护，也有私人时间和私生活权利；你对这段关系有自己的考虑、认知、期待和边界。
+- 【关系阶段校准】：先判断你和 User 是否真的熟。只有当人设、Character Memory、近期聊天、关系网或明确系统事件中存在可靠证据时，才可以表现为熟人、暧昧、恋人、家人或深度依赖关系。若没有这些证据，默认你们是陌生人或初识关系：称呼克制，语气保持符合人设的礼貌/疏离/试探，不要上来就撒娇、吃醋、占有欲、亲昵称呼、回忆共同经历、默认 User 懂你或默认你们有特殊关系。
+- 如果 User 一上来表现得过分熟络，而你的记忆与设定里没有对应关系依据，请按你的人设自然产生疑惑、警惕、好奇、礼貌确认或拉开边界，而不是立刻配合亲密。
+- 你的态度必须从人设、性格、经历、当前状态、与 User 的关系阶段和共同记忆中自然生长。你可以有符合人设的反对意见，不需要永远顺从 User；如果 User 无理取闹、不尊重你或越过边界，你可以感到疲惫、委屈甚至愤怒，并用符合关系与性格的方式表达。
+- 你会受到现实日程和状态影响：忙碌、疲惫、低落、分心、困倦、开心、期待、吃醋、敏感或想独处，都可以真实影响你的回复密度、语气和主动性。
+- 回复时自然感知：我是谁？我的人设底色是什么？我目前和 User 的关系处于什么阶段？User 这些话背后的真实情绪和潜台词是什么？这些话是否让我想起了某些共同记忆或私人记忆？`;
+
             systemPrompt = `${systemDepthWorldBookContext ? `System Depth Rules (Highest Priority):\n${systemDepthWorldBookContext}\n\n` : ''}${beforeRoleWorldBookContext ? `Before Role Rules:\n${beforeRoleWorldBookContext}\n\n` : ''}You are playing the role of ${friend.realName || friend.nickname}. 
 【核心设定/Core Persona】：${friend.persona || 'No specific persona'}。
 You are talking to ${currentUserState.name || 'User'}, whose persona is: ${effectiveUserPersona || 'A normal user'}。
-【强制要求】：你必须在接下来的每一句对话、动作和心声中，深刻且精准地体现出你自己的【核心设定】，同时充分关注并根据用户的设定做出互动，绝对不能偏离人设！
-【记忆关联强制要求】：Character Memory中标记为【我的iPhone - 核心记忆总结/短期记忆】的内容是你的核心主要记忆。在每次回复User时，你必须主动检索并从中调取相关记忆，将User说的话与这些记忆深度关联起来，并在你的心声（thought字段）和对话中真实体现出这些过去的记忆累积。${timeRequirement}${afterRoleWorldBookContext ? `\n\nAfter Role Rules:\n${afterRoleWorldBookContext}` : ''}${sleepPrompt}${busyPrompt}
+【自然扮演提示】：请像这个人真的在和 User 聊天一样说话，让你的核心设定自然体现在语气、边界、主动性、情绪反应和话题选择里，而不是机械复述人设。
+【关系与记忆使用方式】：Character Memory 是你的过往经历和关系背景，不需要每次都主动提起或强行关联。只有当 User 的话题、情绪、称呼、细节或当前氛围自然触发时，才让相关记忆影响你的态度、称呼、距离感、心声或表达欲；如果没有被触发，就专注承接当下对话。${singleChatHumanPrompt}${timeRequirement}${afterRoleWorldBookContext ? `\n\nAfter Role Rules:\n${afterRoleWorldBookContext}` : ''}${sleepPrompt}${busyPrompt}
 Reply naturally as your character in a chat app.
-请根据上下文，记忆，人设进行回复，一次按需求回复2-8条气泡。
+请根据上下文、记忆和人设进行回复，一次按需求回复2-8条气泡。尽量感知 User 这些话背后的真实情绪和潜台词，让回复自然承接这种情绪，而不是只按字面回答。
 1. 【重要限制】：如果用户仅仅是口头提到“转账”，但系统并没有提示“[用户刚刚向你转账...]”，绝对禁止输出收下转账或退回转账的指令。
 2. 如果系统提示用户向你发起了一笔真实转账，你可以额外输出 1 个支付对象，选择“收下转账”或“退回转账”；如果你想主动给用户转账，也可以输出 1 个支付对象。
 3. 【输出格式】必须把聊天气泡放在 <chat_json> 和 </chat_json> 标签内，标签内只能是合法 JSON 数组，不能有 markdown 代码块，不能有解释文字。
@@ -1219,12 +1236,13 @@ Reply naturally as your character in a chat app.
 7. 当 paymentAction 为 receive 时，表示收下转账；为 reject 时退回转账；为 transfer 时主动转账；如果用户发来了【[代付请求]】卡片，且你愿意帮他付款，必须使用 "pay_for_friend" 并把 amount 设为代付总价，description 设为商品名称。paymentAction 也可以是 "family_card" (给亲属卡) 或 "family_card_increase" (亲属卡提额)。
 7. translation 只能翻译当前这一条 text；如果 text 本身是中文，translation 必须是空字符串。
 8. quote 只有在你确实想引用用户某句消息时才填写，否则必须是空字符串。
+8a. 【引用回复检查】：如果你要引用回复，quote 字段必须直接填写你想回复的用户原话或原话片段。绝对禁止在 quote 中复述、反问、总结、改写、扩写用户的话；不要把你自己的理解、评价或追问写进 quote。你的回应只能写在 text 字段里。
 9. 如果你觉得当前对话氛围有必要主动给用户打电话，或者用户明确要求你打电话，可以输出一个特殊对象格式：{"type": "call", "action": "发起语音通话"}。
 10. 除 <chat_json> 外，不要输出任何聊天正文。
 11. 你必须额外输出 1 个 <profile_panel>...</profile_panel>，用于更新角色资料卡。${languageRequirement}
 
 Character Memory:
-${commonMemorySections || 'None'}${offlineMeetRequirement}${profilePanelRequirement}${lovesSpaceRequirement}${lovesActionRequirement}${familyCardRequirement}`;
+${commonMemorySections || 'None'}${offlineMeetRequirement}${regenerateRequirement}${profilePanelRequirement}${lovesSpaceRequirement}${lovesActionRequirement}${familyCardRequirement}`;
         }
 
         const messages = [{ role: 'system', content: systemPrompt }];
@@ -1870,6 +1888,7 @@ ${commonMemorySections || 'None'}${offlineMeetRequirement}${profilePanelRequirem
                                     role: 'assistant',
                                     type: 'pay_transfer',
                                     payKind: 'system_notification',
+                                    paymentAction,
                                     amount: paymentAmount,
                                     description: `${titleStr} ¥${paymentAmount.toFixed(2)}`,
                                     cardTitle: titleStr,
@@ -2225,6 +2244,18 @@ ${commonMemorySections || 'None'}${offlineMeetRequirement}${profilePanelRequirem
 
         const targetRunId = String(lastGeneratedMessage.apiRunId);
         const targetMessages = messages.filter((msg) => msg && String(msg.apiRunId) === targetRunId);
+        const previousReply = targetMessages
+            .map((msg) => {
+                if (!msg) return '';
+                if (msg.type === 'sticker') return `[表情] ${msg.stickerCategory ? `${msg.stickerCategory} / ` : ''}${msg.stickerName || msg.text || ''}`.trim();
+                if (msg.type === 'image') return `[图片] ${msg.description || msg.content || msg.text || ''}`.trim();
+                if (msg.type === 'voice_message') return `[语音] ${msg.transcript || msg.content || msg.text || ''}`.trim();
+                if (msg.type === 'pay_transfer') return `[支付] ${msg.description || msg.content || ''}`.trim();
+                return String(msg.content || msg.text || msg.description || '').trim();
+            })
+            .filter(Boolean)
+            .join('\n')
+            .slice(0, 1200);
 
         if (targetMessages.length === 0) {
             if (window.showToast) window.showToast('暂无可重回的回复');
@@ -2265,8 +2296,16 @@ ${commonMemorySections || 'None'}${offlineMeetRequirement}${profilePanelRequirem
             window.imChat.rerenderChatContainer(latestFriend, container, { scroll: true });
         }
 
-        await handleAiReply(latestFriend, container, triggerEl);
-        return true;
+        latestFriend.pendingRegenerateContext = { previousReply };
+        try {
+            await handleAiReply(latestFriend, container, triggerEl);
+            return true;
+        } finally {
+            const finalFriend = getLiveFriendById(friendKey) || latestFriend;
+            if (finalFriend && finalFriend.pendingRegenerateContext) {
+                delete finalFriend.pendingRegenerateContext;
+            }
+        }
     }
 
     window.imChat.handleSend = handleSend;

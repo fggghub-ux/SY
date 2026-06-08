@@ -267,6 +267,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             return;
                         }
 
+                        const latestFriend = window.imApp.getFriendById
+                            ? (window.imApp.getFriendById(window.imData.currentActiveFriend.id) || window.imData.currentActiveFriend)
+                            : window.imData.currentActiveFriend;
                         const container = row.closest('.ins-chat-messages');
                         if (container) {
                             const removed = window.imChat.removeMessageFromContainer
@@ -277,7 +280,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 : false;
 
                             if (!removed && window.imChat.rerenderChatContainer) {
-                                window.imChat.rerenderChatContainer(window.imData.currentActiveFriend, container, { scroll: true });
+                                window.imChat.rerenderChatContainer(latestFriend, container, { scroll: true });
                             }
                         }
                         if(window.showToast) window.showToast('已删除该消息');
@@ -417,32 +420,9 @@ document.addEventListener('DOMContentLoaded', () => {
                                                 }
                                                 
                                                 const container = row.closest('.ins-chat-messages');
-                                                if (container) {
+                                                if (container && window.imChat.rerenderChatContainer) {
                                                     const updatedFriend = (window.imData.friends || []).find(f => String(f.id) === String(friendId)) || liveFriend;
-                                                    const updatedMsg = updatedFriend && Array.isArray(updatedFriend.messages)
-                                                        ? updatedFriend.messages.find((item) => {
-                                                            if (!item) return false;
-                                                            if (msg.id && item.id && String(item.id) === String(msg.id)) return true;
-                                                            return String(item.timestamp) === String(ts);
-                                                        })
-                                                        : null;
-
-                                                    const replaced = updatedMsg && window.imChat.replaceMessageInContainer
-                                                        ? window.imChat.replaceMessageInContainer(
-                                                            updatedFriend,
-                                                            container,
-                                                            updatedMsg,
-                                                            {
-                                                                id: msg.id || null,
-                                                                timestamp: ts || null
-                                                            },
-                                                            { scroll: true }
-                                                        )
-                                                        : false;
-
-                                                    if (!replaced && window.imChat.rerenderChatContainer) {
-                                                        window.imChat.rerenderChatContainer(updatedFriend, container, { scroll: true });
-                                                    }
+                                                    window.imChat.rerenderChatContainer(updatedFriend, container, { scroll: true });
                                                 }
                                             }
                                         }

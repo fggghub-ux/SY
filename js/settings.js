@@ -222,6 +222,7 @@
             apiModel: document.getElementById('api-model-select'),
             apiTemp: document.getElementById('api-temp-input'),
             bgActivityToggle: document.getElementById('bg-activity-toggle'),
+            systemNotificationToggle: document.getElementById('system-notification-toggle'),
             presetName: document.getElementById('preset-name-input')
         };
 
@@ -2018,6 +2019,49 @@
             });
         }
 
+        function syncSystemNotificationControls() {
+            if (!UI.inputs.systemNotificationToggle) return;
+
+            const settings = window.u2SystemNotifications?.getSettings
+                ? window.u2SystemNotifications.getSettings()
+                : { enabled: false };
+
+            UI.inputs.systemNotificationToggle.checked = !!settings.enabled;
+        }
+
+        async function applySystemNotificationControls(showFeedback = false) {
+            if (!UI.inputs.systemNotificationToggle) return;
+
+            const enabled = !!UI.inputs.systemNotificationToggle.checked;
+
+            if (window.u2SystemNotifications?.updateSettings) {
+                const result = await window.u2SystemNotifications.updateSettings({ enabled });
+                UI.inputs.systemNotificationToggle.checked = !!result.enabled;
+
+                if (showFeedback && typeof showToast === 'function') {
+                    if (result.unsupported) {
+                        showToast('当前浏览器不支持系统通知');
+                    } else if (result.permission === 'denied') {
+                        showToast('系统通知权限被拒绝，请在浏览器设置中开启');
+                    } else {
+                        showToast(result.enabled ? '消息通知已开启' : '消息通知已关闭');
+                    }
+                }
+                return;
+            }
+
+            UI.inputs.systemNotificationToggle.checked = false;
+            if (showFeedback && typeof showToast === 'function') {
+                showToast('消息通知模块未加载');
+            }
+        }
+
+        if (UI.inputs.systemNotificationToggle) {
+            UI.inputs.systemNotificationToggle.addEventListener('change', () => {
+                applySystemNotificationControls(true);
+            });
+        }
+
         function renderNativeModelSelect() {
             if (!UI.inputs.apiModel) return;
             UI.inputs.apiModel.innerHTML = '<option value="" disabled selected>选择模型</option>';
@@ -2062,6 +2106,7 @@
                 syncSelectValue(UI.inputs.apiModel, tempApiConfig.model || '');
                 UI.inputs.apiTemp.value = tempApiConfig.temperature ?? 0.7;
                 syncBackgroundActivityControls();
+                syncSystemNotificationControls();
 
                 openView(UI.overlays.apiConfig);
             });
@@ -2083,6 +2128,7 @@
                 };
 
                 applyBackgroundActivityControls(false);
+                applySystemNotificationControls(false);
                 
                 window.apiConfig = apiConfig;
                 saveGlobalData();

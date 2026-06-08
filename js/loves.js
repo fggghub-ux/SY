@@ -6,6 +6,7 @@ window.lovesApp = {
     backBtn: null,
     initialized: false,
     currentImsgAccount: 'main',
+    currentWeiboAccount: 'main',
     currentFriend: null,
     currentSelectedFriendId: null,
     lovesProgrammaticScrollUntil: 0,
@@ -1969,6 +1970,295 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
         // 动态更新列表中的按钮状态（仅模拟，实际上需要对方接受）
         this.renderTopFriends();
     },
+
+    getWeiboRandomAvatar: function(friend) {
+        const seed = encodeURIComponent(String(friend?.id || friend?.nickname || Date.now()));
+        return `https://picsum.photos/seed/weibo_alt_${seed}/160/160`;
+    },
+
+    getWeiboRandomImage: function(friend, index = 0, account = 'main') {
+        const seed = encodeURIComponent(`${friend?.id || friend?.nickname || 'friend'}_${account}_${index}`);
+        return `https://picsum.photos/seed/weibo_photo_${seed}/600/600`;
+    },
+
+    getWeiboRandomCover: function(friend, account = 'main') {
+        const seed = encodeURIComponent(`${friend?.id || friend?.nickname || 'friend'}_${account}`);
+        return `https://picsum.photos/seed/weibo_cover_${seed}/800/300`;
+    },
+
+    normalizeWeiboPost: function(post, index = 0, liked = false) {
+        const safePost = post && typeof post === 'object' ? post : {};
+        const rawComments = Array.isArray(safePost.comments) ? safePost.comments : [];
+        const comments = rawComments.map((comment, cIdx) => {
+            if (typeof comment === 'string') {
+                return { author: `评论用户${cIdx + 1}`, text: comment };
+            }
+            return {
+                author: comment?.author || comment?.name || `评论用户${cIdx + 1}`,
+                text: comment?.text || comment?.content || '说得很对。'
+            };
+        });
+        return {
+            id: safePost.id || `post_${Date.now()}_${index}`,
+            author: safePost.author || safePost.name || '',
+            text: safePost.text || safePost.content || safePost.title || '',
+            time: safePost.time || safePost.createdAt || '',
+            source: safePost.source || '来自 iPhone',
+            comments: comments.slice(0, 8),
+            reposts: safePost.reposts ?? safePost.repostCount ?? Math.max(1, index + 2),
+            likes: safePost.likes ?? safePost.likeCount ?? (liked ? 128 + index * 31 : 76 + index * 27),
+            likedByMe: liked || safePost.likedByMe === true
+        };
+    },
+
+    normalizeWeiboAlbumItem: function(item, index = 0, friend = null, account = 'main') {
+        const safeItem = item && typeof item === 'object' ? item : {};
+        return {
+            id: safeItem.id || `album_${account}_${index}`,
+            url: safeItem.url || safeItem.image || safeItem.imageUrl || this.getWeiboRandomImage(friend, index, account),
+            description: safeItem.description || safeItem.desc || safeItem.content || ''
+        };
+    },
+
+    getDefaultWeiboData: function(friend) {
+        return {
+            mainAccount: {
+                signature: '',
+                posts: [],
+                album: [],
+                liked: []
+            }
+        };
+    },
+
+    normalizeWeiboAccount: function(rawAccount, friend, account = 'main') {
+        const defaultData = this.getDefaultWeiboData(friend).mainAccount;
+        const source = rawAccount && typeof rawAccount === 'object' ? rawAccount : {};
+        const displayName = friend?.nickname || friend?.realname || friend?.realName || friend?.name || '好友';
+        const isAlt = account === 'alt';
+        const name = isAlt ? (source.name || '未公开小号') : displayName;
+        const avatarUrl = isAlt ? (source.avatarUrl || this.getWeiboRandomAvatar(friend)) : (friend?.avatarUrl || '');
+        const ensureGeneratedItems = (items, fallbackItems) => {
+            const list = Array.isArray(items) ? items.slice(0, 3) : [];
+            if (!Array.isArray(items)) return [];
+            const fallback = Array.isArray(fallbackItems) && fallbackItems.length ? fallbackItems : [{}];
+            while (list.length < 3) {
+                list.push({ ...fallback[list.length % fallback.length] });
+            }
+            return list;
+        };
+        const posts = ensureGeneratedItems(source.posts, defaultData.posts);
+        const album = ensureGeneratedItems(source.album, defaultData.album);
+        const liked = ensureGeneratedItems(source.liked, defaultData.liked);
+        return {
+            name,
+            signature: source.signature || '',
+            avatarUrl,
+            posts: posts.map((post, index) => this.normalizeWeiboPost(post, index, false)),
+            album: album.map((item, index) => this.normalizeWeiboAlbumItem(item, index, friend, account)),
+            liked: liked.map((post, index) => this.normalizeWeiboPost(post, index, true))
+        };
+    },
+
+    getFriendWeiboData: function(friend) {
+        const hasGeneratedData = friend?.weiboData && typeof friend.weiboData === 'object';
+        const data = hasGeneratedData ? friend.weiboData : this.getDefaultWeiboData(friend);
+        return {
+            mainAccount: this.normalizeWeiboAccount(data.mainAccount || data.main || data, friend, 'main'),
+            altAccount: hasGeneratedData && data.altAccount ? this.normalizeWeiboAccount(data.altAccount, friend, 'alt') : null
+        };
+    },
+
+    renderWeiboAvatarHtml: function(avatarUrl, size = 40) {
+        const safeUrl = this.escapeHTML(avatarUrl || '');
+        return `
+            <div style="width: ${size}px; height: ${size}px; border-radius: 50%; background: linear-gradient(135deg, #fff2e2, #ffd2c2); display: flex; align-items: center; justify-content: center; color: #ff8200; flex-shrink: 0; overflow: hidden;">
+                ${safeUrl ? `<img src="${safeUrl}" style="width: 100%; height: 100%; object-fit: cover;">` : `<i class="fas fa-user"></i>`}
+            </div>
+        `;
+    },
+
+    renderWeiboPostCard: function(post, accountData, options = {}) {
+        const safeName = this.escapeHTML(options.authorName || post.author || accountData.name);
+        const safeText = this.escapeHTML(post.text).replace(/\n/g, '<br>');
+        const safeTime = this.escapeHTML(post.time || '刚刚');
+        const safeSource = this.escapeHTML(post.source || '来自 iPhone');
+        const commentCount = Array.isArray(post.comments) ? post.comments.length : 0;
+        const imagePreview = options.images && options.images.length ? `
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 10px;">
+                ${options.images.slice(0, 3).map(img => `<div style="aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: #f2f2f2;"><img src="${this.escapeHTML(img.url)}" style="width: 100%; height: 100%; object-fit: cover;"></div>`).join('')}
+            </div>
+        ` : '';
+        return `
+            <div class="friend-weibo-post-card" data-post-type="${options.type || 'home'}" data-index="${options.index || 0}" style="background: #fff; padding: 14px 16px; cursor: pointer;">
+                ${options.likedLabel ? `<div style="font-size: 12px; color: #999; margin-bottom: 8px;">赞过 @${safeName} 的微博</div>` : ''}
+                <div style="display: flex; gap: 10px;">
+                    ${options.likedLabel ? '' : this.renderWeiboAvatarHtml(accountData.avatarUrl, 40)}
+                    <div style="flex: 1; min-width: 0;">
+                        ${options.likedLabel ? '' : `
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                            <div>
+                                <div style="font-size: 15px; font-weight: 700; color: #111;">${safeName}</div>
+                                <div style="font-size: 12px; color: #999; margin-top: 2px;">${safeTime} ${safeSource}</div>
+                            </div>
+                            <i class="fas fa-ellipsis-h" style="color: #999;"></i>
+                        </div>`}
+                        <div style="font-size: 15px; color: #222; line-height: 1.55; ${options.likedLabel ? '' : 'margin-top: 10px;'}">${safeText}</div>
+                        ${imagePreview}
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 13px; color: #888; font-size: 13px;">
+                            <span><i class="far fa-comment-dots"></i> ${commentCount || Math.max(3, Number(options.index || 0) + 3)}</span>
+                            <span><i class="fas fa-retweet"></i> ${this.escapeHTML(post.reposts ?? 0)}</span>
+                            <span style="${post.likedByMe ? 'color: #ff8200;' : ''}"><i class="${post.likedByMe ? 'fas' : 'far'} fa-heart"></i> ${post.likedByMe ? '已赞' : this.escapeHTML(post.likes ?? 0)}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    showWeiboPostDetail: function(post, accountData, options = {}) {
+        const safeName = this.escapeHTML(options.authorName || post.author || accountData.name);
+        const safeText = this.escapeHTML(post.text).replace(/\n/g, '<br>');
+        const comments = Array.isArray(post.comments) ? post.comments : [];
+        const commentsHtml = comments.length ? comments.map(comment => `
+            <div style="padding: 10px 0; border-top: 1px solid #f2f2f2;">
+                <span style="font-size: 13px; font-weight: 700; color: #333;">${this.escapeHTML(comment.author || '评论用户')}</span>
+                <span style="font-size: 13px; color: #333; line-height: 1.5;">：${this.escapeHTML(comment.text || '')}</span>
+            </div>
+        `).join('') : '<div style="padding: 12px 0; color: #999; font-size: 13px;">暂无评论</div>';
+        const imagesHtml = options.images && options.images.length ? `
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin: 14px 0;">
+                ${options.images.map((img, idx) => `<div class="friend-weibo-detail-image" data-index="${idx}" style="aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: #f2f2f2; cursor: pointer;"><img src="${this.escapeHTML(img.url)}" style="width: 100%; height: 100%; object-fit: cover;"></div>`).join('')}
+            </div>
+        ` : '';
+        const content = `
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
+                ${this.renderWeiboAvatarHtml(accountData.avatarUrl, 44)}
+                <div style="min-width: 0;">
+                    <div style="font-size: 16px; font-weight: 800; color: #111;">${safeName}</div>
+                    <div style="font-size: 12px; color: #999;">${this.escapeHTML(post.time || '刚刚')} ${this.escapeHTML(post.source || '来自 iPhone')}</div>
+                </div>
+            </div>
+            <div style="font-size: 16px; color: #222; line-height: 1.65; word-break: break-word;">${safeText}</div>
+            ${imagesHtml}
+            <div style="display: flex; justify-content: space-around; color: #777; font-size: 13px; padding: 12px 0; border-top: 1px solid #f2f2f2; border-bottom: 1px solid #f2f2f2; margin-top: 14px;">
+                <span><i class="far fa-comment-dots"></i> ${comments.length}</span>
+                <span><i class="fas fa-retweet"></i> ${this.escapeHTML(post.reposts ?? 0)}</span>
+                <span style="${post.likedByMe ? 'color: #ff8200;' : ''}"><i class="${post.likedByMe ? 'fas' : 'far'} fa-heart"></i> ${this.escapeHTML(post.likes ?? 0)}</span>
+            </div>
+            <div style="font-size: 14px; font-weight: 800; margin: 16px 0 4px; color: #111;">评论</div>
+            ${commentsHtml}
+        `;
+        this.showDetailModal('微博详情', content);
+        setTimeout(() => {
+            document.querySelectorAll('#loves-detail-modal .friend-weibo-detail-image').forEach(el => {
+                el.addEventListener('click', () => {
+                    const idx = Number(el.getAttribute('data-index') || 0);
+                    const image = options.images?.[idx];
+                    if (image) this.showWeiboImageDetail(image);
+                });
+            });
+        }, 30);
+    },
+
+    showWeiboImageDetail: function(item) {
+        const safeUrl = this.escapeHTML(item.url || '');
+        const safeDesc = this.escapeHTML(item.description || '').replace(/\n/g, '<br>');
+        const content = `
+            <div style="width: 100%; aspect-ratio: 1; border-radius: 14px; overflow: hidden; background: #f2f2f2; margin-bottom: 14px;">
+                ${safeUrl ? `<img src="${safeUrl}" style="width: 100%; height: 100%; object-fit: cover;">` : `<div style="height: 100%; display: flex; align-items: center; justify-content: center; color: #999;"><i class="far fa-image" style="font-size: 40px;"></i></div>`}
+            </div>
+            <div style="font-size: 15px; color: #222; line-height: 1.6; word-break: break-word;">${safeDesc || '暂无描述'}</div>
+        `;
+        this.showDetailModal('相册详情', content);
+    },
+
+    renderFriendWeibo: function(friend) {
+        const weiboView = document.getElementById('friend-weibo-view');
+        if (!weiboView) return;
+
+        const hasGeneratedWeiboData = !!(friend?.weiboData && typeof friend.weiboData === 'object');
+        const allData = this.getFriendWeiboData(friend);
+        if (this.currentWeiboAccount === 'alt' && !allData.altAccount) this.currentWeiboAccount = 'main';
+        const accountKey = this.currentWeiboAccount === 'alt' ? 'altAccount' : 'mainAccount';
+        const accountData = allData[accountKey] || allData.mainAccount;
+
+        const profileName = document.getElementById('friend-weibo-profile-name');
+        const signatureEl = document.getElementById('friend-weibo-profile-signature');
+        const postCountEl = document.getElementById('friend-weibo-post-count');
+        const switchBtn = document.getElementById('friend-weibo-switch-account-btn');
+        const coverEl = document.getElementById('friend-weibo-cover');
+        if (profileName) profileName.textContent = accountData.name;
+        if (signatureEl) signatureEl.textContent = accountData.signature || '';
+        if (postCountEl) postCountEl.textContent = String((accountData.posts || []).length);
+        if (switchBtn) switchBtn.textContent = this.currentWeiboAccount === 'alt' ? '切换大号' : '切换账号';
+        if (coverEl) {
+            const coverUrl = hasGeneratedWeiboData ? this.getWeiboRandomCover(friend, this.currentWeiboAccount) : '';
+            coverEl.style.backgroundImage = coverUrl ? `linear-gradient(180deg, rgba(0,0,0,0.12), rgba(0,0,0,0.34)), url("${coverUrl}")` : 'none';
+            coverEl.style.backgroundSize = 'cover';
+            coverEl.style.backgroundPosition = 'center';
+            coverEl.style.backgroundColor = coverUrl ? '' : '#f2f2f2';
+        }
+
+        weiboView.querySelectorAll('.friend-weibo-avatar-img').forEach(img => {
+            if (accountData.avatarUrl) {
+                img.src = accountData.avatarUrl;
+                img.style.display = 'block';
+            } else {
+                img.removeAttribute('src');
+                img.style.display = 'none';
+            }
+        });
+        weiboView.querySelectorAll('.friend-weibo-avatar-icon').forEach(icon => {
+            icon.style.display = accountData.avatarUrl ? 'none' : 'inline-block';
+        });
+
+        const homeList = document.getElementById('friend-weibo-home-list');
+        const albumGrid = document.getElementById('friend-weibo-album-grid');
+        const likedList = document.getElementById('friend-weibo-liked-list');
+        const albumImages = accountData.album || [];
+
+        if (homeList) {
+            const posts = accountData.posts || [];
+            homeList.innerHTML = posts.length ? posts.map((post, index) => {
+                const previewImages = index === 0 ? albumImages.slice(0, 3) : [];
+                return this.renderWeiboPostCard(post, accountData, { type: 'home', index, images: previewImages });
+            }).join('') : '<div style="padding: 38px 16px; text-align: center; color: #999; font-size: 14px;">暂无微博<br><span style="font-size: 12px; display: inline-block; margin-top: 6px;">请在设置中生成</span></div>';
+            homeList.querySelectorAll('.friend-weibo-post-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    const index = Number(card.getAttribute('data-index') || 0);
+                    this.showWeiboPostDetail(posts[index], accountData, { images: index === 0 ? albumImages.slice(0, 3) : [] });
+                });
+            });
+        }
+
+        if (albumGrid) {
+            albumGrid.innerHTML = albumImages.length ? albumImages.map((item, index) => `
+                <div class="friend-weibo-album-item" data-index="${index}" style="aspect-ratio: 1; border-radius: 6px; overflow: hidden; background: #f2f2f2; cursor: pointer; position: relative;">
+                    <img src="${this.escapeHTML(item.url)}" style="width: 100%; height: 100%; object-fit: cover;">
+                </div>
+            `).join('') : '<div style="grid-column: span 3; padding: 38px 0; text-align: center; color: #999; font-size: 14px;">暂无相册</div>';
+            albumGrid.querySelectorAll('.friend-weibo-album-item').forEach(itemEl => {
+                itemEl.addEventListener('click', () => {
+                    const index = Number(itemEl.getAttribute('data-index') || 0);
+                    this.showWeiboImageDetail(albumImages[index]);
+                });
+            });
+        }
+
+        if (likedList) {
+            const likedPosts = accountData.liked || [];
+            likedList.innerHTML = likedPosts.length ? likedPosts.map((post, index) => {
+                return this.renderWeiboPostCard(post, accountData, { type: 'liked', index, likedLabel: true, authorName: post.author || '微博用户' });
+            }).join('') : '<div style="padding: 38px 16px; text-align: center; color: #999; font-size: 14px;">暂无赞过</div>';
+            likedList.querySelectorAll('.friend-weibo-post-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    const index = Number(card.getAttribute('data-index') || 0);
+                    this.showWeiboPostDetail(likedPosts[index], accountData, { authorName: likedPosts[index]?.author || '微博用户' });
+                });
+            });
+        }
+    },
     
     enterLovesSpace: function(friend) {
         const spaceView = document.getElementById('lovers-space-view');
@@ -2144,92 +2434,28 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
 
         const genSettingsBtn = document.getElementById('friend-phone-gen-settings-btn');
         const genModal = document.getElementById('friend-phone-gen-modal');
+        const getGenAppCheckboxes = () => Array.from(document.querySelectorAll('.gen-app-checkbox'));
+        const defaultGenApps = ['imessage', 'music', 'health', 'pay', 'game', 'call', 'safari', 'weibo', 'files'];
+        const getSavedGenApps = () => {
+            return Array.isArray(friend.phoneGenApps) ? friend.phoneGenApps : defaultGenApps;
+        };
+        const applySavedGenApps = () => {
+            const savedApps = getSavedGenApps();
+            getGenAppCheckboxes().forEach(cb => {
+                cb.checked = savedApps.includes(cb.value);
+            });
+        };
+        const saveGenApps = () => {
+            friend.phoneGenApps = getGenAppCheckboxes().filter(cb => cb.checked).map(cb => cb.value);
+            this.persistFriendState(friend, { silent: true });
+        };
+        getGenAppCheckboxes().forEach(cb => {
+            cb.onchange = () => saveGenApps();
+        });
         if (genSettingsBtn && genModal) {
             genSettingsBtn.onclick = () => {
+                applySavedGenApps();
                 if (window.openView) window.openView(genModal);
-            };
-        }
-
-        const clearOldDataBtn = document.getElementById('friend-phone-clear-old-data-btn');
-        if (clearOldDataBtn) {
-            clearOldDataBtn.onclick = () => {
-                if (!window.confirm('确定要清空该好友除了最新一次生成以外的旧数据吗？此操作不可恢复。')) return;
-                
-                let cleaned = false;
-                
-                if (friend.imessageData) {
-                    if (friend.imessageData.mainAccount && friend.imessageData.mainAccount.chats) {
-                        friend.imessageData.mainAccount.chats.forEach(chat => {
-                            if (chat.messages && chat.messages.length > 5) {
-                                chat.messages = chat.messages.slice(-5);
-                                cleaned = true;
-                            }
-                        });
-                    }
-                    if (friend.imessageData.altAccount && friend.imessageData.altAccount.chats) {
-                        friend.imessageData.altAccount.chats.forEach(chat => {
-                            if (chat.messages && chat.messages.length > 5) {
-                                chat.messages = chat.messages.slice(-5);
-                                cleaned = true;
-                            }
-                        });
-                    }
-                }
-                
-                if (friend.musicData) {
-                    if (friend.musicData.recent && friend.musicData.recent.length > 5) { friend.musicData.recent = friend.musicData.recent.slice(0, 5); cleaned = true; }
-                    if (friend.musicData.favorites && friend.musicData.favorites.length > 5) { friend.musicData.favorites = friend.musicData.favorites.slice(0, 5); cleaned = true; }
-                    if (friend.musicData.top && friend.musicData.top.length > 5) { friend.musicData.top = friend.musicData.top.slice(0, 5); cleaned = true; }
-                }
-                
-                if (friend.payData && friend.payData.recentTransactions && friend.payData.recentTransactions.length > 5) {
-                    friend.payData.recentTransactions = friend.payData.recentTransactions.slice(0, 5);
-                    if (friend.payData.cards) friend.payData.cards = null; // 触发重新分配交易记录
-                    cleaned = true;
-                }
-                
-                if (friend.gameData && friend.gameData.recentGames) {
-                    friend.gameData.recentGames.forEach(g => {
-                        if (g.matches && g.matches.length > 3) {
-                            g.matches = g.matches.slice(0, 3);
-                            cleaned = true;
-                        }
-                    });
-                    if (friend.gameData.recentGames.length > 3) {
-                        friend.gameData.recentGames = friend.gameData.recentGames.slice(0, 3);
-                        cleaned = true;
-                    }
-                }
-                
-                if (friend.callData && friend.callData.recentCalls && friend.callData.recentCalls.length > 5) {
-                    friend.callData.recentCalls = friend.callData.recentCalls.slice(0, 5);
-                    cleaned = true;
-                }
-                
-                if (friend.safariData) {
-                    if (friend.safariData.recentSearches && friend.safariData.recentSearches.length > 5) { friend.safariData.recentSearches = friend.safariData.recentSearches.slice(0, 5); cleaned = true; }
-                    if (friend.safariData.privateSearches && friend.safariData.privateSearches.length > 5) { friend.safariData.privateSearches = friend.safariData.privateSearches.slice(0, 5); cleaned = true; }
-                }
-                
-                if (friend.filesData && friend.filesData.tags) {
-                    friend.filesData.tags.forEach(t => {
-                        if (t.items && t.items.length > 3) {
-                            t.items = t.items.slice(0, 3);
-                            cleaned = true;
-                        }
-                    });
-                    if (friend.filesData.tags.length > 3) {
-                        friend.filesData.tags = friend.filesData.tags.slice(0, 3);
-                        cleaned = true;
-                    }
-                }
-                
-                if (cleaned) {
-                    this.persistFriendState(friend);
-                    if (window.showToast) window.showToast('已清理旧数据，请重新打开应用查看');
-                } else {
-                    if (window.showToast) window.showToast('当前没有多余的旧数据需要清理');
-                }
             };
         }
 
@@ -2246,6 +2472,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                 friend.callData = null;
                 friend.safariData = null;
                 friend.filesData = null;
+                friend.weiboData = null;
                 
                 this.persistFriendState(friend);
                 if (window.showToast) window.showToast('所有生成数据已清空');
@@ -2255,8 +2482,8 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
         const genConfirmBtn = document.getElementById('friend-phone-gen-confirm-btn');
         if (genConfirmBtn) {
             genConfirmBtn.onclick = () => {
-                const checkboxes = document.querySelectorAll('.gen-app-checkbox');
-                const selectedApps = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+                saveGenApps();
+                const selectedApps = getSavedGenApps();
                 
                 if (selectedApps.length === 0) {
                     if (window.showToast) window.showToast('请至少选择一个应用');
@@ -2330,9 +2557,15 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                     const calls = friend.callData.recentCalls.slice(0, 3).map(c => c.name).join(', ');
                     if (calls) oldContext += `\n【已有通话联系人】: ${calls}`;
                 }
+                if (selectedApps.includes('weibo') && friend.weiboData) {
+                    const mainPosts = friend.weiboData.mainAccount?.posts || [];
+                    const altPosts = friend.weiboData.altAccount?.posts || [];
+                    if (mainPosts.length > 0) oldContext += `\n【已有微博大号帖子】: ${mainPosts.slice(0, 3).map(p => p.text || p.content || '').join(' / ')}`;
+                    if (altPosts.length > 0) oldContext += `\n【已有微博小号帖子】: ${altPosts.slice(0, 3).map(p => p.text || p.content || '').join(' / ')}`;
+                }
                 
                 let prompt = `你现在要模拟生成一部手机里不同应用的数据。请严格遵循给定的世界观设定、角色人设和聊天上下文，生成符合角色性格的JSON格式数据。\n`;
-                if (oldContext) prompt += `\n【历史已生成数据，请确保新生成的内容能够顺延往下发展并且避免重复】：${oldContext}\n`;
+                if (oldContext) prompt += `\n【旧数据参考，本次生成会覆盖旧内容；请参考这些信息避免机械重复，并生成一组新的完整数据】：${oldContext}\n`;
                 
                 if (globalRule) prompt += `\n【世界书设定】：\n${globalRule}\n`;
                 prompt += `\n【角色 (Char) 人设】：\n${charPersona}\n`;
@@ -2349,7 +2582,8 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                     music: `[music]: 生成 2-5 条听歌排行，风格应极大程度体现其人设与心境，每首歌必须包含循环次数(必须为纯数字)和听歌时的细腻心声(不少于20字)。`,
                     health: `[health]: 严格符合其人设（如是否运动、熬夜、体型等）的近期睡眠、步数、身高体重。`,
                     pay: `[pay]: 生成符合人设的银行卡总金额和近期不少于 5 条收支记录。`,
-                    game: `[game]: 生成符合人设 1-2 个玩的游戏。如果是已有游戏，必须生成全新的对局时间。每局必须包含时间、结果(胜利/失败)、KDA(如8/2/5)、使用英雄、高光时刻、内心戏(30字)、复盘(30字)。格式必须完全符合提供的JSON模板，不要使用特殊字符。`
+                    game: `[game]: 生成符合人设 1-2 个玩的游戏。如果是已有游戏，必须生成全新的对局时间。每局必须包含时间、结果(胜利/失败)、KDA(如8/2/5)、使用英雄、高光时刻(数组)、内心戏(30字)、复盘(30字)。格式必须完全符合提供的JSON模板，不要使用特殊字符。`,
+                    weibo: `[weibo]: 生成微博资料。大号必须生成签名、帖子3条，每条帖子3-8条评论；相册生成3张，每张内容描述20-50字；赞过生成3条帖子，必须符合微博大号风格，像公开主页，会更体面、可被熟人看到。另生成一个小号，包含名字和签名，帖子/评论/相册/赞过内容同上，但必须符合微博小号风格：可以发关于 User 的内容、暗恋/占有欲/嫉妒/窥探/自我厌弃/黑泥情绪，也可以发珍视的记忆、舍不得忘掉的细节、对关系的自我思考、只有小号才敢保存的温柔瞬间；表达要贴合 Char 人设，不要脱离世界观，也不要让小号只有负面情绪。小号头像使用随机图片，avatarUrl 可以留空，由系统随机补图。`
                 };
 
                 const promptParts = {
@@ -2360,7 +2594,8 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                     music: `"music": {\n  "recent": [{"name": "歌曲名1", "artist": "歌手1"}],\n  "favorites": [{"name": "最爱歌曲名1", "artist": "最爱歌手1"}],\n  "top": [{"name": "排行歌曲1", "artist": "歌手1", "loops": 156, "thoughts": "听这首歌时的内心情感与心声，要非常符合人设且细腻，不少于30字"}]\n}`,
                     health: `"health": {\n  "steps": "生成步数数字",\n  "sleepHours": "睡眠小时数数字",\n  "sleepMinutes": "睡眠分钟数数字",\n  "weight": "体重",\n  "height": "身高"\n}`,
                     pay: `"pay": {\n  "totalAssets": "24560.88",\n  "recentTransactions": [\n    {"title": "餐饮美食", "time": "昨天 18:45", "amount": "-128.00", "isIncome": false}\n  ]\n}`,
-                    game: `"game": {\n  "playerName": "游戏内id",\n  "totalHours": "200小时",\n  "recentGames": [\n    {"name": "游戏名(如王者荣耀)", "hours": "50小时", "rank": "王者", "winRate": "65%", "icon": "fas fa-gamepad", "matches": [\n      {"time": "昨天 21:00", "result": "胜利", "kda": "8/2/5", "hero": "李白", "highlights": [{"time": "14:20", "desc": "抢龙"}], "innerThoughts": "这局打得好累...", "postGameReflection": "下次注意走位"}\n    ]}\n  ]\n}`
+                    game: `"game": {\n  "playerName": "游戏内id",\n  "totalHours": "200小时",\n  "recentGames": [\n    {"name": "游戏名(如王者荣耀)", "hours": "50小时", "rank": "王者", "winRate": "65%", "icon": "fas fa-gamepad", "matches": [\n      {"time": "昨天 21:00", "result": "胜利", "kda": "8/2/5", "hero": "李白", "highlights": [{"time": "14:20", "desc": "抢龙"}], "innerThoughts": "这局打得好累...", "postGameReflection": "下次注意走位"}\n    ]}\n  ]\n}`,
+                    weibo: `"weibo": {\n  "mainAccount": {\n    "signature": "符合 Char 大号公开形象的微博签名",\n    "posts": [\n      {"text": "大号帖子正文，公开、体面、符合熟人可见的大号风格", "time": "今天 18:24", "source": "来自 iPhone", "comments": [{"author": "评论用户名", "text": "评论内容"}], "reposts": 6, "likes": 128}\n    ],\n    "album": [\n      {"description": "大号相册图片内容描述20-50字"}\n    ],\n    "liked": [\n      {"author": "被赞博主名", "text": "符合微博大号风格的赞过帖子正文", "time": "昨天 21:10", "source": "来自 微博", "comments": [{"author": "评论用户名", "text": "评论内容"}], "reposts": 12, "likes": 241}\n    ]\n  },\n  "altAccount": {\n    "name": "符合 Char 小号风格的小号名",\n    "signature": "符合小号隐秘状态的签名，可以关于 User、黑泥、珍视记忆或自我思考",\n    "avatarUrl": "",\n    "posts": [\n      {"text": "小号帖子正文，可以写关于 User 的内容、黑泥、暗恋、嫉妒、占有欲、珍视的记忆、舍不得忘掉的细节或自己的思考", "time": "今天 01:12", "source": "来自 iPhone", "comments": [{"author": "评论用户名", "text": "评论内容"}], "reposts": 1, "likes": 19}\n    ],\n    "album": [\n      {"description": "小号相册图片内容描述20-50字，可以隐晦关联 User、珍视记忆或 Char 的暗处状态"}\n    ],\n    "liked": [\n      {"author": "被赞博主名", "text": "符合微博小号风格的赞过帖子正文，可体现黑泥、隐秘欲望、珍视记忆、自我思考或对 User 的投射", "time": "昨天 02:34", "source": "来自 微博", "comments": [{"author": "评论用户名", "text": "评论内容"}], "reposts": 2, "likes": 33}\n    ]\n  }\n}`
                 };
 
                 prompt += `\n【各应用生成要求】：\n`;
@@ -2442,94 +2677,81 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                     try {
                         const parsed = JSON.parse(jsonStr);
                         
-                        // 合并数据逻辑（不覆盖已有内容）
-                        if (parsed.music) { 
-                            if (!friend.musicData) friend.musicData = { recent: [], favorites: [], top: [] };
-                            if (parsed.music.recent) friend.musicData.recent = parsed.music.recent.concat(friend.musicData.recent || []);
-                            if (parsed.music.favorites) friend.musicData.favorites = parsed.music.favorites.concat(friend.musicData.favorites || []);
-                            if (parsed.music.top) friend.musicData.top = parsed.music.top.concat(friend.musicData.top || []);
-                        }
-                        if (parsed.health) { friend.healthData = parsed.health; } // 健康可覆盖
-                        if (parsed.pay) { 
-                            if (!friend.payData) friend.payData = { recentTransactions: [] };
-                            if (parsed.pay.recentTransactions) friend.payData.recentTransactions = parsed.pay.recentTransactions.concat(friend.payData.recentTransactions || []);
-                            if (parsed.pay.totalAssets) friend.payData.totalAssets = parsed.pay.totalAssets;
-                        }
-                        if (parsed.game) { 
-                            if (!friend.gameData) friend.gameData = { recentGames: [] };
-                            if (parsed.game.playerName) friend.gameData.playerName = parsed.game.playerName;
-                            if (parsed.game.totalHours) friend.gameData.totalHours = parsed.game.totalHours;
-                            if (parsed.game.recentGames) {
-                                parsed.game.recentGames.forEach(ng => {
-                                    const existing = (friend.gameData.recentGames || []).find(g => g.name === ng.name);
-                                    if (existing) {
-                                        if (ng.hours) existing.hours = ng.hours;
-                                        if (ng.rank) existing.rank = ng.rank;
-                                        if (ng.winRate) existing.winRate = ng.winRate;
-                                        if (ng.matches) {
-                                            // 去重合并对局：通过时间比对
-                                            const existingMatches = existing.matches || [];
-                                            const newMatches = ng.matches.filter(nm => !existingMatches.some(em => em.time === nm.time));
-                                            existing.matches = newMatches.concat(existingMatches);
-                                        }
-                                    } else {
-                                        friend.gameData.recentGames = [ng].concat(friend.gameData.recentGames || []);
-                                    }
-                                });
-                            }
-                        }
-                        if (parsed.call) { 
-                            if (!friend.callData) friend.callData = { recentCalls: [], contacts: [] };
-                            if (parsed.call.recentCalls) friend.callData.recentCalls = parsed.call.recentCalls.concat(friend.callData.recentCalls || []);
-                            if (parsed.call.contacts) friend.callData.contacts = parsed.call.contacts.concat(friend.callData.contacts || []);
-                        }
-                        if (parsed.safari) { 
-                            if (!friend.safariData) friend.safariData = { recentSearches: [], privateSearches: [] };
-                            if (parsed.safari.recentSearches) friend.safariData.recentSearches = parsed.safari.recentSearches.concat(friend.safariData.recentSearches || []);
-                            if (parsed.safari.privateSearches) friend.safariData.privateSearches = parsed.safari.privateSearches.concat(friend.safariData.privateSearches || []);
-                        }
-                        if (parsed.files) { 
-                            if (!friend.filesData) friend.filesData = { tags: [], recent: [] };
-                            if (parsed.files.tags) {
-                                parsed.files.tags.forEach(nt => {
-                                    const existing = (friend.filesData.tags || []).find(t => t.name === nt.name);
-                                    if (existing) {
-                                        if (nt.items) {
-                                            // 避免重复同名文件
-                                            const newItems = nt.items.filter(ni => !existing.items.some(ei => ei.title === ni.title));
-                                            existing.items = newItems.concat(existing.items || []);
-                                        }
-                                    } else {
-                                        friend.filesData.tags = [nt].concat(friend.filesData.tags || []);
-                                    }
-                                });
-                            }
-                        }
-                        if (parsed.imessage) { 
-                            if (!friend.imessageData) friend.imessageData = { mainAccount: { chats: [] }, altAccount: { chats: [], name: '小号' } };
-                            if (Array.isArray(friend.imessageData)) {
-                                friend.imessageData = { mainAccount: { chats: friend.imessageData }, altAccount: { chats: [], name: '小号' } };
-                            }
-                            
-                            const mergeChats = (oldChats, newChats) => {
-                                newChats.forEach(nc => {
-                                    const ec = oldChats.find(c => c.contactName === nc.contactName);
-                                    if (ec) {
-                                        ec.messages = (ec.messages || []).concat(nc.messages || []);
-                                    } else {
-                                        oldChats.unshift(nc);
-                                    }
-                                });
+                        // 本次生成的数据直接覆盖对应应用的旧内容。
+                        if (parsed.music) {
+                            friend.musicData = {
+                                recent: Array.isArray(parsed.music.recent) ? parsed.music.recent : [],
+                                favorites: Array.isArray(parsed.music.favorites) ? parsed.music.favorites : [],
+                                top: Array.isArray(parsed.music.top) ? parsed.music.top : []
                             };
-                            
-                            if (parsed.imessage.mainAccount) {
-                                if (parsed.imessage.mainAccount.userRemark) friend.imessageData.mainAccount.userRemark = parsed.imessage.mainAccount.userRemark;
-                                if (parsed.imessage.mainAccount.chats) mergeChats(friend.imessageData.mainAccount.chats, parsed.imessage.mainAccount.chats);
-                            }
-                            if (parsed.imessage.altAccount) {
-                                if (parsed.imessage.altAccount.name) friend.imessageData.altAccount.name = parsed.imessage.altAccount.name;
-                                if (parsed.imessage.altAccount.chats) mergeChats(friend.imessageData.altAccount.chats, parsed.imessage.altAccount.chats);
-                            }
+                        }
+                        if (parsed.health) {
+                            friend.healthData = parsed.health;
+                        }
+                        if (parsed.pay) {
+                            friend.payData = {
+                                ...parsed.pay,
+                                recentTransactions: Array.isArray(parsed.pay.recentTransactions) ? parsed.pay.recentTransactions : []
+                            };
+                        }
+                        if (parsed.game) {
+                            friend.gameData = {
+                                ...parsed.game,
+                                recentGames: Array.isArray(parsed.game.recentGames) ? parsed.game.recentGames : []
+                            };
+                        }
+                        if (parsed.call) {
+                            friend.callData = {
+                                ...parsed.call,
+                                recentCalls: Array.isArray(parsed.call.recentCalls) ? parsed.call.recentCalls : [],
+                                contacts: Array.isArray(parsed.call.contacts) ? parsed.call.contacts : []
+                            };
+                        }
+                        if (parsed.safari) {
+                            friend.safariData = {
+                                recentSearches: Array.isArray(parsed.safari.recentSearches) ? parsed.safari.recentSearches : [],
+                                privateSearches: Array.isArray(parsed.safari.privateSearches) ? parsed.safari.privateSearches : []
+                            };
+                        }
+                        if (parsed.files) {
+                            friend.filesData = {
+                                ...parsed.files,
+                                tags: Array.isArray(parsed.files.tags) ? parsed.files.tags : [],
+                                recent: Array.isArray(parsed.files.recent) ? parsed.files.recent : []
+                            };
+                        }
+                        if (parsed.weibo) {
+                            const rawWeibo = parsed.weibo || {};
+                            const ensureAccount = (rawAccount, accountKey) => {
+                                const normalized = this.normalizeWeiboAccount(rawAccount || {}, friend, accountKey === 'altAccount' ? 'alt' : 'main');
+                                normalized.posts = normalized.posts.slice(0, 3);
+                                normalized.album = normalized.album.slice(0, 3).map((item, index) => ({
+                                    ...item,
+                                    url: item.url || this.getWeiboRandomImage(friend, index, accountKey === 'altAccount' ? 'alt' : 'main')
+                                }));
+                                normalized.liked = normalized.liked.slice(0, 3);
+                                if (accountKey === 'altAccount' && !normalized.avatarUrl) {
+                                    normalized.avatarUrl = this.getWeiboRandomAvatar(friend);
+                                }
+                                return normalized;
+                            };
+                            friend.weiboData = {
+                                mainAccount: ensureAccount(rawWeibo.mainAccount || rawWeibo.main || rawWeibo, 'mainAccount'),
+                                altAccount: ensureAccount(rawWeibo.altAccount || rawWeibo.alt || {}, 'altAccount')
+                            };
+                        }
+                        if (parsed.imessage) {
+                            friend.imessageData = {
+                                mainAccount: {
+                                    ...(parsed.imessage.mainAccount || {}),
+                                    chats: Array.isArray(parsed.imessage.mainAccount?.chats) ? parsed.imessage.mainAccount.chats : []
+                                },
+                                altAccount: {
+                                    name: parsed.imessage.altAccount?.name || '小号',
+                                    ...(parsed.imessage.altAccount || {}),
+                                    chats: Array.isArray(parsed.imessage.altAccount?.chats) ? parsed.imessage.altAccount.chats : []
+                                }
+                            };
                         }
                         
                         this.persistFriendState(friend);
@@ -2918,6 +3140,66 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
         }
         const safariBackBtn = document.getElementById('friend-safari-back-btn');
         if (safariBackBtn) safariBackBtn.onclick = () => { if (window.closeView) window.closeView(safariView); };
+
+        // 绑定微博
+        const weiboBtn = document.getElementById('friend-phone-app-weibo');
+        const weiboView = document.getElementById('friend-weibo-view');
+        if (weiboBtn && weiboView) {
+            weiboBtn.onclick = () => {
+                this.currentWeiboAccount = 'main';
+                this.renderFriendWeibo(friend);
+
+                const tabs = Array.from(weiboView.querySelectorAll('.friend-weibo-tab'));
+                const pages = document.getElementById('friend-weibo-pages');
+                const setActiveWeiboTab = (activeIndex) => {
+                    tabs.forEach((tab, index) => {
+                        const isActive = index === activeIndex;
+                        tab.style.color = isActive ? '#111' : '#777';
+                        tab.style.fontWeight = isActive ? '700' : '600';
+                        const line = tab.querySelector('.friend-weibo-tab-line');
+                        if (line) line.style.display = isActive ? 'block' : 'none';
+                    });
+                };
+                if (pages && tabs.length) {
+                    tabs.forEach((tab, index) => {
+                        tab.onclick = () => {
+                            pages.scrollTo({ left: index * pages.clientWidth, behavior: 'smooth' });
+                            setActiveWeiboTab(index);
+                        };
+                    });
+                    pages.onscroll = () => {
+                        const pageWidth = pages.clientWidth || 1;
+                        const activeIndex = Math.max(0, Math.min(2, Math.round(pages.scrollLeft / pageWidth)));
+                        setActiveWeiboTab(activeIndex);
+                    };
+                    pages.scrollTo({ left: 0, behavior: 'auto' });
+                    setActiveWeiboTab(0);
+                }
+
+                if (window.openView) window.openView(weiboView);
+            };
+        }
+        const weiboSwitchBtn = document.getElementById('friend-weibo-switch-account-btn');
+        if (weiboSwitchBtn) {
+            weiboSwitchBtn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const data = this.getFriendWeiboData(friend);
+                if (this.currentWeiboAccount === 'main') {
+                    if (!data.altAccount) {
+                        if (window.showToast) window.showToast('暂无微博小号数据，请在生成设置中生成微博');
+                        return;
+                    }
+                    this.currentWeiboAccount = 'alt';
+                } else {
+                    this.currentWeiboAccount = 'main';
+                }
+                this.renderFriendWeibo(friend);
+                if (window.showToast) window.showToast(this.currentWeiboAccount === 'alt' ? '已切换到微博小号' : '已切换到微博大号');
+            };
+        }
+        const weiboBackBtn = document.getElementById('friend-weibo-back-btn');
+        if (weiboBackBtn) weiboBackBtn.onclick = () => { if (window.closeView) window.closeView(weiboView); };
 
         // 绑定 Music
         const musicBtn = document.getElementById('friend-phone-app-music');

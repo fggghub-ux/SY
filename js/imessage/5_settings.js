@@ -1345,7 +1345,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         const page = document.getElementById(`chat-interface-${friendId}`);
                         if (page) {
                             const msgContainer = page.querySelector('.ins-chat-messages');
-                            if (msgContainer) msgContainer.innerHTML = '';
+                            const latestFriend = window.imApp.getFriendById ? window.imApp.getFriendById(friendId) : window.imData.currentSettingsFriend;
+                            if (msgContainer && latestFriend && window.imChat.rerenderChatContainer) {
+                                window.imChat.rerenderChatContainer(latestFriend, msgContainer, { scroll: false });
+                            } else if (msgContainer) {
+                                msgContainer.innerHTML = '';
+                            }
                         }
 
                         if (window.imApp.renderChatsList) window.imApp.renderChatsList();
@@ -1711,7 +1716,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         const page = document.getElementById(`chat-interface-${friendId}`);
                         if (page) {
                             const msgContainer = page.querySelector('.ins-chat-messages');
-                            if (msgContainer) msgContainer.innerHTML = '';
+                            const latestFriend = window.imApp.getFriendById ? window.imApp.getFriendById(friendId) : window.imData.currentSettingsFriend;
+                            if (msgContainer && latestFriend && window.imChat.rerenderChatContainer) {
+                                window.imChat.rerenderChatContainer(latestFriend, msgContainer, { scroll: false });
+                            } else if (msgContainer) {
+                                msgContainer.innerHTML = '';
+                            }
                         }
                         
                         showToast('已清空聊天记录');
