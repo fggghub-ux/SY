@@ -1103,11 +1103,11 @@
 }
 
 .home-widget-library-card.is-added {
-    cursor: pointer;
+    cursor: default;
     opacity: 1;
 }
 
-.home-widget-library-card.is-added:hover {
+.home-widget-library-card.is-added:has(.home-widget-card-chevron:hover) {
     background: #fbfbfd;
 }
 
@@ -1115,16 +1115,49 @@
     content: ' · 点击设置';
 }
 
+.home-widget-library-card.is-added:active {
+    transform: none;
+}
+
 .home-widget-card-chevron {
     position: absolute;
-    right: 12px;
-    top: 12px;
+    right: 8px;
+    top: 8px;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
     color: #c7c7cc;
     font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.14s ease, color 0.14s ease;
+}
+
+.home-widget-card-chevron i {
+    pointer-events: none;
     transition: transform 0.18s ease;
 }
 
-.home-widget-library-card.home-widget-card-expanded .home-widget-card-chevron {
+.home-widget-card-chevron:hover,
+.home-widget-card-chevron:focus-visible {
+    background: #f2f2f7;
+    color: #8e8e93;
+}
+
+.home-widget-card-chevron:focus-visible {
+    outline: 2px solid rgba(0, 122, 255, 0.45);
+    outline-offset: 2px;
+}
+
+.home-widget-card-chevron:active {
+    background: #e5e5ea;
+}
+
+.home-widget-library-card.home-widget-card-expanded .home-widget-card-chevron i {
     transform: rotate(180deg);
 }
 

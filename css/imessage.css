@@ -1040,8 +1040,22 @@
     padding-bottom: 5px;
 }
 
-.chat-sticky-container * {
-    pointer-events: auto; /* Re-enable clicks on buttons */
+.chat-sticky-container :where(
+    .chat-back-btn,
+    .im-chat-back-btn,
+    .chat-call-btn,
+    .chat-menu-btn,
+    .chat-cancel-batch-btn,
+    .group-header-right-avatar,
+    .group-header-right-avatar *,
+    .im-chat-group-title-wrap,
+    .im-chat-group-title-wrap *,
+    .im-chat-header-main,
+    .im-chat-header-main *,
+    .ins-chat-avatar,
+    .ins-chat-avatar *
+) {
+    pointer-events: auto;
 }
 
 .chat-sticky-container::before {
@@ -2450,6 +2464,17 @@ input:checked + .slider:before {
 .chat-profile-panel-overlay.active {
     opacity: 1;
     pointer-events: auto;
+}
+
+.chat-profile-panel-floating-tabs {
+    position: relative;
+    z-index: 2;
+    pointer-events: auto;
+}
+
+.chat-profile-panel-tab-btn {
+    pointer-events: auto;
+    touch-action: manipulation;
 }
 
 .chat-profile-panel-card {
@@ -5230,13 +5255,59 @@ input:checked + .slider:before {
     object-fit: cover;
 }
 
+.sticker-local-preview {
+    display: none;
+    grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+    gap: 12px;
+    padding: 12px 14px;
+    border-top: 1px solid var(--separator-color);
+    max-height: 208px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    align-items: start;
+}
+
+.sticker-local-preview.has-items {
+    display: grid;
+}
+
+.sticker-preview-item {
+    min-width: 0;
+    width: 100%;
+    display: grid;
+    grid-template-rows: 64px 28px;
+    gap: 7px;
+    align-items: center;
+    justify-items: center;
+}
+
 .sticker-preview-img {
-    width: 60px;
-    height: 60px;
+    width: 64px;
+    height: 64px;
     border-radius: 8px;
     object-fit: cover;
     background: #e5e5ea;
     flex-shrink: 0;
+    display: block;
+}
+
+.sticker-name-input {
+    width: 100%;
+    min-width: 0;
+    height: 28px;
+    border: 1px solid #e5e5ea;
+    border-radius: 7px;
+    padding: 3px 6px;
+    background: #fff;
+    color: #111;
+    font-size: 11px;
+    line-height: 1.2;
+    text-align: center;
+    outline: none;
+}
+
+.sticker-name-input:focus {
+    border-color: #c7c7cc;
 }
 
 

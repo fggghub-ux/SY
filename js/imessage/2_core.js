@@ -3211,7 +3211,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (stickerUrlInput) stickerUrlInput.value = '';
                 if (stickerLocalPreview) {
                     stickerLocalPreview.innerHTML = '';
-                    stickerLocalPreview.style.display = 'none';
+                    stickerLocalPreview.classList.remove('has-items');
                 }
                 pendingLocalStickers = [];
             }
@@ -3224,6 +3224,11 @@ document.addEventListener('DOMContentLoaded', () => {
             addStickerSheet.classList.remove('active');
             setTimeout(() => {
                 addStickerSheet.style.display = 'none';
+                if (stickerLocalPreview) {
+                    stickerLocalPreview.innerHTML = '';
+                    stickerLocalPreview.classList.remove('has-items');
+                }
+                pendingLocalStickers = [];
             }, 300);
         }
     }
@@ -3247,9 +3252,7 @@ document.addEventListener('DOMContentLoaded', () => {
             pendingLocalStickers = [];
             if (stickerLocalPreview) {
                 stickerLocalPreview.innerHTML = '';
-                stickerLocalPreview.style.display = 'flex';
-                stickerLocalPreview.style.flexWrap = 'wrap';
-                stickerLocalPreview.style.gap = '10px';
+                stickerLocalPreview.classList.add('has-items');
             }
 
             Array.from(files).forEach(async (file, index) => {
@@ -3273,18 +3276,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (stickerLocalPreview) {
                         const previewContainer = document.createElement('div');
                         previewContainer.className = 'sticker-preview-item';
-                        previewContainer.style.cssText = 'display: flex; flex-direction: column; align-items: center; gap: 5px; width: 80px;';
                         
                         const previewImg = document.createElement('img');
                         previewImg.src = dataUrl;
                         previewImg.className = 'sticker-preview-img';
-                        previewImg.style.cssText = 'width: 60px; height: 60px; object-fit: cover; border-radius: 8px;';
                         
                         const nameInput = document.createElement('input');
                         nameInput.type = 'text';
                         nameInput.value = name;
                         nameInput.className = 'sticker-name-input';
-                        nameInput.style.cssText = 'width: 70px; font-size: 11px; padding: 3px 5px; border: 1px solid #e5e5ea; border-radius: 5px; text-align: center; outline: none;';
                         nameInput.placeholder = '名称';
                         
                         // Update name when input changes

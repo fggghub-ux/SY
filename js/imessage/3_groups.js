@@ -856,7 +856,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (groupCallStartBtn) {
-        groupCallStartBtn.addEventListener('click', () => {
+        groupCallStartBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (
+                !groupCallInviteSheet ||
+                !groupCallInviteSheet.classList.contains('active') ||
+                window.getComputedStyle(groupCallInviteSheet).pointerEvents === 'none'
+            ) {
+                return;
+            }
+
             if (!currentViewingGroup || selectedGroupCallMembers.length === 0) return;
             closeView(groupCallInviteSheet);
             

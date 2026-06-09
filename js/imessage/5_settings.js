@@ -2024,12 +2024,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                         targetFriend.memory.cherished = newCherishedText;
 
-                    }, { silent: true });
+                    }, { silent: true, syncActive: true, syncSettings: true });
 
                     if (saved) {
                         if (window.showToast) window.showToast('已删除下载项');
                         hideCherishedMemoryDetail();
-                        const latestFriend = window.imData.friends.find(f => String(f.id) === String(friend.id)) || friend;
+                        const latestFriend = window.imApp.getFriendById
+                            ? (window.imApp.getFriendById(friend.id) || friend)
+                            : (window.imData.friends.find(f => String(f.id) === String(friend.id)) || friend);
+                        const chatMemoryCherishedInput = document.getElementById('chat-memory-cherished-input');
+                        if (chatMemoryCherishedInput && window.imData.currentSettingsFriend && String(window.imData.currentSettingsFriend.id) === String(latestFriend.id)) {
+                            chatMemoryCherishedInput.value = latestFriend.memory?.cherished || '';
+                        }
                         
                         // Update memory location sheet (Downloads) if it's open
                         const memoryLocationSheet = document.getElementById('memory-location-sheet');
@@ -2039,6 +2045,13 @@ document.addEventListener('DOMContentLoaded', () => {
                                 // re-render downloads
                                 const cherishedEntries = Array.isArray(latestFriend.memory?.cherishedEntries) ? latestFriend.memory.cherishedEntries : [];
                                 
+                                const escapeCherishedListHtml = (value) => String(value || '')
+                                    .replace(/&/g, '&amp;')
+                                    .replace(/</g, '&lt;')
+                                    .replace(/>/g, '&gt;')
+                                    .replace(/"/g, '&quot;')
+                                    .replace(/'/g, '&#39;');
+
                                 if (cherishedEntries.length === 0) {
                                     memoryLocationSheetContent.innerHTML = `
                                         <div class="memory-sheet-title">下载项</div>
@@ -2052,8 +2065,8 @@ document.addEventListener('DOMContentLoaded', () => {
                                         <div class="chat-memory-modal-cherished-list" style="padding: 0 16px;">
                                             ${cherishedEntries.slice().reverse().map(e => `
                                                 <button type="button" class="chat-memory-modal-cherished-card" data-entry-id="${e.id}">
-                                                    <div class="chat-memory-modal-cherished-card-title">${String(e.title || '下载项').replace(/</g, '<').replace(/>/g, '>')}</div>
-                                                    <div class="chat-memory-modal-cherished-card-time">${String(e.createdAt || '点击查看详情').replace(/</g, '<').replace(/>/g, '>')}</div>
+                                                    <div class="chat-memory-modal-cherished-card-title">${escapeCherishedListHtml(e.title || '下载项')}</div>
+                                                    <div class="chat-memory-modal-cherished-card-time">${escapeCherishedListHtml(e.createdAt || '点击查看详情')}</div>
                                                 </button>
                                             `).join('')}
                                         </div>
@@ -2562,6 +2575,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const chatAvatarToggle = document.getElementById('chat-avatar-toggle');
         const chatLanguageSelect = document.getElementById('chat-language-select');
         const chatTimeAwareToggle = document.getElementById('chat-time-aware-toggle');
+        const chatMinimaxEnabledToggle = document.getElementById('chat-minimax-enabled-toggle');
+        const chatMinimaxBody = document.getElementById('chat-minimax-settings-body');
+        const chatMinimaxVoiceInput = document.getElementById('chat-minimax-voice-id-input');
+        const chatMinimaxSpeedInput = document.getElementById('chat-minimax-speed-input');
         
         if (chatAvatarToggle) {
             chatAvatarToggle.checked = !!friend.showAvatar;
@@ -2573,6 +2590,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (chatTimeAwareToggle) {
             chatTimeAwareToggle.checked = friend.timeAware !== false;
+        }
+
+        const minimaxVoice = friend.minimaxVoice && typeof friend.minimaxVoice === 'object' ? friend.minimaxVoice : {};
+        if (chatMinimaxEnabledToggle) {
+            chatMinimaxEnabledToggle.checked = !!minimaxVoice.enabled;
+        }
+        if (chatMinimaxBody) {
+            chatMinimaxBody.style.display = minimaxVoice.enabled ? 'block' : 'none';
+        }
+        if (chatMinimaxVoiceInput) {
+            chatMinimaxVoiceInput.value = minimaxVoice.voiceId || '';
+        }
+        if (chatMinimaxSpeedInput) {
+            chatMinimaxSpeedInput.value = minimaxVoice.speed || 1;
         }
 
         if (tsToggle) {
@@ -2816,6 +2847,76 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function getCurrentMinimaxVoiceSettings(friend) {
+        return friend && friend.minimaxVoice && typeof friend.minimaxVoice === 'object'
+            ? friend.minimaxVoice
+            : { enabled: false, voiceId: '', speed: 1 };
+    }
+
+    function syncChatMinimaxBodyVisibility(enabled) {
+        const body = document.getElementById('chat-minimax-settings-body');
+        if (body) body.style.display = enabled ? 'block' : 'none';
+    }
+
+    const chatMinimaxEnabledToggle = document.getElementById('chat-minimax-enabled-toggle');
+    if (chatMinimaxEnabledToggle && chatMinimaxEnabledToggle.dataset.bound !== 'true') {
+        chatMinimaxEnabledToggle.dataset.bound = 'true';
+        chatMinimaxEnabledToggle.addEventListener('change', async (e) => {
+            if (!window.imData.currentSettingsFriend) return;
+            const previousSettings = { ...getCurrentMinimaxVoiceSettings(window.imData.currentSettingsFriend) };
+            const nextValue = e.target.checked;
+
+            syncChatMinimaxBodyVisibility(nextValue);
+            const saved = await commitSettingsFriendChange((targetFriend) => {
+                targetFriend.minimaxVoice = {
+                    ...getCurrentMinimaxVoiceSettings(targetFriend),
+                    enabled: nextValue
+                };
+            }, { silent: true });
+
+            if (!saved) {
+                e.target.checked = !!previousSettings.enabled;
+                syncChatMinimaxBodyVisibility(!!previousSettings.enabled);
+                showToast('Minimax 语音设置保存失败');
+            }
+        });
+    }
+
+    async function saveChatMinimaxField(field, value, inputEl, previousValue) {
+        if (!window.imData.currentSettingsFriend) return;
+        const saved = await commitSettingsFriendChange((targetFriend) => {
+            targetFriend.minimaxVoice = {
+                ...getCurrentMinimaxVoiceSettings(targetFriend),
+                [field]: value
+            };
+        }, { silent: true });
+
+        if (!saved) {
+            if (inputEl) inputEl.value = previousValue;
+            showToast('Minimax 语音设置保存失败');
+        }
+    }
+
+    const chatMinimaxVoiceInput = document.getElementById('chat-minimax-voice-id-input');
+    if (chatMinimaxVoiceInput && chatMinimaxVoiceInput.dataset.bound !== 'true') {
+        chatMinimaxVoiceInput.dataset.bound = 'true';
+        chatMinimaxVoiceInput.addEventListener('change', async (e) => {
+            const previousValue = getCurrentMinimaxVoiceSettings(window.imData.currentSettingsFriend).voiceId || '';
+            await saveChatMinimaxField('voiceId', e.target.value.trim(), e.target, previousValue);
+        });
+    }
+
+    const chatMinimaxSpeedInput = document.getElementById('chat-minimax-speed-input');
+    if (chatMinimaxSpeedInput && chatMinimaxSpeedInput.dataset.bound !== 'true') {
+        chatMinimaxSpeedInput.dataset.bound = 'true';
+        chatMinimaxSpeedInput.addEventListener('change', async (e) => {
+            const previousValue = getCurrentMinimaxVoiceSettings(window.imData.currentSettingsFriend).speed || 1;
+            const nextValue = Math.max(0.5, Math.min(2, parseFloat(e.target.value) || 1));
+            e.target.value = nextValue;
+            await saveChatMinimaxField('speed', nextValue, e.target, previousValue);
+        });
+    }
+
     const chatAvatarToggle = document.getElementById('chat-avatar-toggle');
     if (chatAvatarToggle) {
         chatAvatarToggle.addEventListener('change', async (e) => {
@@ -3009,7 +3110,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Thought History Logic (Replaced Stickers) ---
     const bindStickersSheet = document.getElementById('bind-stickers-sheet');
     const bindStickersList = document.getElementById('bind-stickers-list');
+    const bindStickersEmpty = document.getElementById('bind-stickers-empty');
     const confirmBindStickersBtn = document.getElementById('confirm-bind-stickers-btn');
+    const clearAllStatusbarBtn = document.getElementById('clear-all-statusbar-btn');
     const stickersBtn = document.getElementById('stickers-btn');
     const stickersBtnCount = document.getElementById('stickers-btn-count');
 
@@ -3033,6 +3136,70 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function createEmptyStatusBarPanel() {
+        return {
+            activeTab: 'thought',
+            thought: '',
+            location: '未知位置',
+            action: '暂无动作',
+            mood: '平静',
+            expression: '自然',
+            affection: 0,
+            affectionChange: 0,
+            status: 'online',
+            thoughtHistory: [],
+            events: []
+        };
+    }
+
+    function refreshOpenProfilePanel(friend) {
+        if (!friend) return;
+        const page = document.getElementById(`chat-interface-${friend.id}`);
+        const profilePanelOverlay = page ? page.querySelector('.chat-profile-panel-overlay') : null;
+        if (
+            profilePanelOverlay &&
+            profilePanelOverlay.classList.contains('active') &&
+            window.imChat &&
+            typeof window.imChat.renderProfilePanel === 'function'
+        ) {
+            window.imChat.renderProfilePanel(friend, profilePanelOverlay);
+        }
+    }
+
+    if (clearAllStatusbarBtn) {
+        clearAllStatusbarBtn.addEventListener('click', () => {
+            if (!window.imData.currentSettingsFriend) return;
+
+            showCustomModal({
+                title: '清空状态栏',
+                message: '确定彻底清空当前角色的状态栏数据吗？这会删除当前心声、心声历史、状态栏事件、位置、动作、心情、表情和好感记录。',
+                isDestructive: true,
+                confirmText: '清空全部',
+                onConfirm: async () => {
+                    const saved = await commitSettingsFriendChange((targetFriend) => {
+                        if (!targetFriend) return;
+                        targetFriend.profilePanel = createEmptyStatusBarPanel();
+                        targetFriend.latestThought = '';
+                        targetFriend.status = 'online';
+                    }, {
+                        syncActive: true,
+                        silent: true
+                    });
+
+                    if (saved) {
+                        const latestFriend = window.imData.currentSettingsFriend;
+                        renderThoughtHistoryList();
+                        updateStickersBtnCount(latestFriend);
+                        refreshOpenProfilePanel(latestFriend);
+                        showToast('状态栏已清空');
+                    } else {
+                        showToast('状态栏清空失败');
+                    }
+                }
+            });
+        });
+    }
+
     function updateStickersBtnCount(friend) {
         if (stickersBtnCount) {
             const count = (friend.profilePanel?.thoughtHistory || []).length;
@@ -3040,9 +3207,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function escapeThoughtHistoryHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     function renderThoughtHistoryList() {
         if (!bindStickersList) return;
         bindStickersList.innerHTML = '';
+        if (bindStickersEmpty) bindStickersEmpty.style.display = 'none';
 
         const friend = window.imData.currentSettingsFriend;
         if (!friend) return;
@@ -3050,7 +3227,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const history = friend.profilePanel?.thoughtHistory || [];
 
         if (history.length === 0) {
-            bindStickersList.innerHTML = '<div style="text-align: center; color: #8e8e93; padding: 20px;">暂无心声历史记录</div>';
+            if (bindStickersEmpty) {
+                bindStickersEmpty.style.display = 'block';
+            } else {
+                bindStickersList.innerHTML = '<div style="text-align: center; color: #8e8e93; padding: 20px;">暂无心声历史记录</div>';
+            }
             return;
         }
 
@@ -3059,18 +3240,19 @@ document.addEventListener('DOMContentLoaded', () => {
             el.style.cssText = 'display: flex; flex-direction: column; margin-bottom: 16px; align-items: flex-start; max-width: 95%;';
 
             const timeStr = item.time ? new Date(item.time).toLocaleString() : '';
+            const safeContent = escapeThoughtHistoryHtml(item.content);
 
             el.innerHTML = `
                 <div style="font-size: 12px; color: #8e8e93; margin-bottom: 4px; display: flex; justify-content: space-between; width: 100%; padding-left: 4px;">
-                    <span>${timeStr}</span>
+                    <span>${escapeThoughtHistoryHtml(timeStr)}</span>
                     <div style="display: flex; gap: 14px; font-size: 13px;">
                         <span class="edit-thought-btn" style="color: #007aff; cursor: pointer; padding: 0 2px;"><i class="fas fa-edit"></i></span>
                         <span class="del-thought-btn" style="color: #ff3b30; cursor: pointer; padding: 0 2px;"><i class="fas fa-times"></i></span>
                     </div>
                 </div>
-                <div class="thought-content-display" style="font-size: 15px; color: #000; line-height: 1.5; white-space: pre-wrap; background: #ffffff; padding: 12px 16px; border-radius: 18px; border-top-left-radius: 4px; ">${item.content}</div>
+                <div class="thought-content-display" style="font-size: 15px; color: #000; line-height: 1.5; white-space: pre-wrap; background: #ffffff; padding: 12px 16px; border-radius: 18px; border-top-left-radius: 4px; ">${safeContent}</div>
                 <div class="thought-edit-area" style="display: none; width: 100%;">
-                    <textarea style="width: 100%; height: 80px; box-sizing: border-box; background: #ffffff; padding: 12px; border-radius: 12px; border: 1px solid #007aff; resize: none; font-size: 15px;  outline: none; font-family: inherit;">${item.content}</textarea>
+                    <textarea style="width: 100%; height: 80px; box-sizing: border-box; background: #ffffff; padding: 12px; border-radius: 12px; border: 1px solid #007aff; resize: none; font-size: 15px;  outline: none; font-family: inherit;">${safeContent}</textarea>
                 </div>
             `;
 

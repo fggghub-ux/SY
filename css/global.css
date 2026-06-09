@@ -241,6 +241,196 @@ input, textarea, [contenteditable] {
     transform: translateX(20px);
 }
 
+/* Global Assistive API Ball */
+.assistive-api-ball {
+    position: absolute;
+    --assistive-ball-opacity: 0.72;
+    left: auto;
+    top: 46%;
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    z-index: var(--z-system, 99999);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    background: rgba(28, 28, 30, var(--assistive-ball-opacity));
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: none;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    color: rgba(255, 255, 255, 0.9);
+    touch-action: none;
+    user-select: none;
+    transition: opacity 0.2s ease, transform 0.18s ease, background 0.18s ease;
+}
+
+.assistive-api-ball.visible {
+    display: flex;
+}
+
+.assistive-api-ball.panel-open {
+    display: none;
+}
+
+.assistive-api-ball:active,
+.assistive-api-ball.dragging {
+    transform: scale(0.96);
+}
+
+.assistive-api-ball-inner {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.12);
+    box-shadow: none;
+    font-size: 19px;
+}
+
+.assistive-api-panel {
+    position: absolute;
+    inset: 0;
+    z-index: calc(var(--z-system, 99999) + 1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.26);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.assistive-api-panel.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.assistive-api-panel::before {
+    content: '';
+    width: min(248px, calc(100vw - 72px));
+    aspect-ratio: 1 / 1;
+    min-height: 0;
+    border-radius: 28px;
+    background: rgba(246, 246, 248, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: none;
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    transform: scale(0.96);
+    transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.assistive-api-panel.active::before {
+    transform: scale(1);
+}
+
+.assistive-api-panel > * {
+    position: absolute;
+    width: min(216px, calc(100vw - 104px));
+    color: #111;
+}
+
+.assistive-api-panel-title {
+    top: calc(50% - 92px);
+    font-size: 13px;
+    font-weight: 700;
+    color: #6b6b70;
+    text-align: center;
+}
+
+.assistive-api-row {
+    top: calc(50% - 34px);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 30px;
+    border-bottom: 0.5px solid rgba(60, 60, 67, 0.16);
+    font-size: 13px;
+}
+
+.assistive-api-row:nth-of-type(2) {
+    top: calc(50% - 34px);
+}
+
+.assistive-api-row span,
+.assistive-api-select-wrap span {
+    width: 42px;
+    flex: 0 0 42px;
+    color: #8e8e93;
+}
+
+.assistive-api-row strong {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: #111;
+    text-align: right;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.assistive-api-select-wrap {
+    top: calc(50% + 8px);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 38px;
+    margin-top: 8px;
+    font-size: 13px;
+}
+
+.assistive-api-select-wrap select {
+    flex: 1;
+    min-width: 0;
+    height: 34px;
+    padding: 0 24px 0 10px;
+    border: none;
+    border-radius: 12px;
+    outline: none;
+    appearance: none;
+    -webkit-appearance: none;
+    background: rgba(255, 255, 255, 0.86);
+    color: var(--blue-color, #007aff);
+    font: inherit;
+    font-weight: 600;
+    text-align: right;
+}
+
+.assistive-api-select-wrap i {
+    position: absolute;
+    right: 9px;
+    color: #8e8e93;
+    font-size: 11px;
+    pointer-events: none;
+}
+
+.assistive-ball-opacity-item {
+    justify-content: space-between;
+    border-bottom: none;
+    gap: 10px;
+}
+
+.assistive-ball-opacity-range {
+    flex: 0 1 128px;
+    min-width: 96px;
+    accent-color: var(--blue-color, #007aff);
+}
+
+.assistive-ball-opacity-value {
+    width: 42px;
+    color: #8e8e93;
+    font-size: 14px;
+    text-align: right;
+    flex-shrink: 0;
+}
+
 /* Global Textarea for Persona, Bios, Descriptions */
 .global-textarea {
     width: 100%;

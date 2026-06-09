@@ -298,6 +298,45 @@ document.addEventListener('DOMContentLoaded', () => {
                             });
                         }
                     }
+                } else if (action === 'speak') {
+                    if (window.imData.currentActiveRow && window.imData.currentActiveFriend) {
+                        const row = window.imData.currentActiveRow;
+                        const ts = row.getAttribute('data-timestamp');
+                        const messageId = row.getAttribute('data-message-id');
+                        const friendId = window.imData.currentActiveFriend.id;
+                        const liveFriend = (window.imData.friends || []).find(f => String(f.id) === String(friendId)) || window.imData.currentActiveFriend;
+                        const msg = (liveFriend.messages || []).find(m => {
+                            if (!m) return false;
+                            if (messageId && String(m.id) === String(messageId)) return true;
+                            return ts && String(m.timestamp) === String(ts);
+                        });
+                        const bubble = row.querySelector('.chat-bubble');
+                        let text = msg && (msg.content || msg.text || msg.description || '');
+                        if (!text && bubble) {
+                            const clone = bubble.cloneNode(true);
+                            clone.querySelectorAll('.bubble-meta, .msg-translation, .msg-reply-quote, .bubble-reaction-icon').forEach(node => node.remove());
+                            text = clone.innerText || clone.textContent || '';
+                        }
+
+                        try {
+                            if (!window.u2MinimaxTts || typeof window.u2MinimaxTts.speakTextCached !== 'function') {
+                                throw new Error('Minimax TTS 未初始化');
+                            }
+                            const cacheOwner = msg && typeof msg === 'object' ? msg : {};
+                            const audioUrl = await window.u2MinimaxTts.speakTextCached(text, liveFriend, cacheOwner);
+                            if (audioUrl && msg && typeof msg === 'object' && !msg.minimaxAudioUrl && window.imApp?.updateFriendMessage) {
+                                await window.imApp.updateFriendMessage(friendId, {
+                                    id: msg.id || messageId || null,
+                                    timestamp: ts || null
+                                }, (targetMsg) => {
+                                    if (targetMsg) targetMsg.minimaxAudioUrl = audioUrl;
+                                }, { silent: true });
+                            }
+                        } catch (error) {
+                            console.error('Minimax speech failed', error);
+                            if (window.showToast) window.showToast('语音播放失败');
+                        }
+                    }
                 } else if (action === 'translate') {
                     if (window.imData.currentActiveRow) {
                         const row = window.imData.currentActiveRow;

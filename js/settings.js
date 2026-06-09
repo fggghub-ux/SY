@@ -54,8 +54,10 @@
         if (window.StorageManager) {
             StorageManager.save('u2_userState', userState);
             StorageManager.save('u2_apiConfig', apiConfig);
+            StorageManager.save('u2_minimaxConfig', minimaxConfig);
             StorageManager.save('u2_apiPresets', apiPresets);
             StorageManager.save('u2_fetchedModels', fetchedModels);
+            StorageManager.save('u2_assistiveBallSettings', assistiveBallSettings);
             StorageManager.save('u2_accounts', accounts);
             StorageManager.save('u2_currentAccountId', currentAccountId);
             StorageManager.save('u2_themeState', themeState);
@@ -71,8 +73,10 @@
                         accounts: clonePlainData(accounts),
                         currentAccountId,
                         apiConfig: clonePlainData(apiConfig),
+                        minimaxConfig: clonePlainData(minimaxConfig),
                         apiPresets: clonePlainData(apiPresets),
                         fetchedModels: clonePlainData(fetchedModels),
+                        assistiveBallSettings: clonePlainData(assistiveBallSettings),
                         themeState: clonePlainData(themeState),
                         appState: typeof window.getAllAppState === 'function'
                             ? clonePlainData(window.getAllAppState())
@@ -96,8 +100,22 @@
         model: '',
         temperature: 0.7,
     };
+    let minimaxConfig = {
+        region: 'cn',
+        customEndpointEnabled: false,
+        endpoint: '',
+        apiKey: '',
+        groupId: '',
+        ttsModel: 'speech-02-hd'
+    };
     let apiPresets = [];
     let fetchedModels = [];
+    let assistiveBallSettings = {
+        enabled: false,
+        x: null,
+        y: null,
+        opacity: 0.72
+    };
     
     // 用于保存正在编辑的状态，避免未点保存就污染全局配置
     let tempApiConfig = {};
@@ -149,8 +167,13 @@
         // ==========================================
         if (window.StorageManager) {
             apiConfig = StorageManager.load('u2_apiConfig', apiConfig);
+            minimaxConfig = StorageManager.load('u2_minimaxConfig', minimaxConfig);
             apiPresets = StorageManager.load('u2_apiPresets', []);
             fetchedModels = StorageManager.load('u2_fetchedModels', []);
+            assistiveBallSettings = {
+                ...assistiveBallSettings,
+                ...StorageManager.load('u2_assistiveBallSettings', {})
+            };
             
             accounts = StorageManager.load('u2_accounts', []);
             currentAccountId = StorageManager.load('u2_currentAccountId', null);
@@ -193,6 +216,11 @@
         
         // Expose globally for other modules if needed
         window.apiConfig = apiConfig;
+        if (window.u2MinimaxTts && typeof window.u2MinimaxTts.setConfig === 'function') {
+            minimaxConfig = window.u2MinimaxTts.setConfig({ ...(window.u2MinimaxTts.DEFAULT_CONFIG || {}), ...minimaxConfig });
+        } else {
+            window.minimaxConfig = minimaxConfig;
+        }
         window.userState = userState;
         exposeAccountGlobals();
 
@@ -223,14 +251,25 @@
             apiTemp: document.getElementById('api-temp-input'),
             bgActivityToggle: document.getElementById('bg-activity-toggle'),
             systemNotificationToggle: document.getElementById('system-notification-toggle'),
+            minimaxRegion: document.getElementById('minimax-region-select'),
+            minimaxCustomEndpoint: document.getElementById('minimax-custom-endpoint-toggle'),
+            minimaxEndpoint: document.getElementById('minimax-endpoint-input'),
+            minimaxKey: document.getElementById('minimax-key-input'),
+            minimaxGroupId: document.getElementById('minimax-group-id-input'),
+            minimaxTtsModel: document.getElementById('minimax-tts-model-input'),
             presetName: document.getElementById('preset-name-input')
         };
 
         UI.lists.presets = document.getElementById('preset-list');
         
         UI.overlays.apiConfig = document.getElementById('api-config-sheet');
+        UI.overlays.minimaxConfig = document.getElementById('minimax-config-sheet');
         UI.overlays.savePreset = document.getElementById('save-preset-name-sheet');
         UI.overlays.loadPreset = document.getElementById('load-preset-list-sheet');
+        UI.overlays.assistiveBallSettings = document.getElementById('assistive-ball-settings-sheet');
+        UI.inputs.assistiveBallToggle = document.getElementById('assistive-ball-toggle');
+        UI.inputs.assistiveBallOpacity = document.getElementById('assistive-ball-opacity-range');
+        UI.inputs.assistiveBallOpacityValue = document.getElementById('assistive-ball-opacity-value');
 
         // ==========================================
         // NAVIGATION EVENT LISTENERS
@@ -2062,6 +2101,336 @@
             });
         }
 
+        // -- Global Assistive API Ball --
+        const assistiveBallConfigBtn = document.getElementById('assistive-ball-config-btn');
+        let assistiveBallEl = null;
+        let assistiveBallPanelEl = null;
+        let assistivePresetSelectEl = null;
+        let assistiveDragState = null;
+
+        function getCurrentApiPresetId() {
+            if (!Array.isArray(apiPresets)) return '';
+            const match = apiPresets.find(preset =>
+                (preset.endpoint || '') === (apiConfig.endpoint || '') &&
+                (preset.apiKey || '') === (apiConfig.apiKey || '') &&
+                (preset.model || '') === (apiConfig.model || '') &&
+                String(preset.temp ?? 0.7) === String(apiConfig.temperature ?? 0.7)
+            );
+            return match ? String(match.id) : '';
+        }
+
+        function getApiDisplayValue(value, fallback = '未设置') {
+            const text = String(value || '').trim();
+            return text || fallback;
+        }
+
+        function maskApiKey(key) {
+            const text = String(key || '').trim();
+            if (!text) return '未设置';
+            if (text.length <= 8) return '已填写';
+            return `${text.slice(0, 4)}...${text.slice(-4)}`;
+        }
+
+        function normalizeAssistiveBallOpacity(value) {
+            const numeric = parseFloat(value);
+            if (!Number.isFinite(numeric)) return 0.72;
+            return Math.max(0.2, Math.min(1, numeric > 1 ? numeric / 100 : numeric));
+        }
+
+        function syncAssistiveBallOpacityControls() {
+            assistiveBallSettings.opacity = normalizeAssistiveBallOpacity(assistiveBallSettings.opacity);
+            const percent = Math.round(assistiveBallSettings.opacity * 100);
+            if (UI.inputs.assistiveBallOpacity) {
+                UI.inputs.assistiveBallOpacity.value = String(percent);
+            }
+            if (UI.inputs.assistiveBallOpacityValue) {
+                UI.inputs.assistiveBallOpacityValue.textContent = `${percent}%`;
+            }
+            if (assistiveBallEl) {
+                assistiveBallEl.style.setProperty('--assistive-ball-opacity', assistiveBallSettings.opacity.toFixed(2));
+            }
+        }
+
+        function ensureAssistiveBallDom() {
+            const appContainer = document.getElementById('app') || document.body;
+
+            if (!assistiveBallEl) {
+                assistiveBallEl = document.createElement('div');
+                assistiveBallEl.id = 'global-assistive-api-ball';
+                assistiveBallEl.className = 'assistive-api-ball';
+                assistiveBallEl.setAttribute('role', 'button');
+                assistiveBallEl.setAttribute('aria-label', 'API 悬浮球');
+                assistiveBallEl.innerHTML = '<div class="assistive-api-ball-inner"><i class="fas fa-circle-dot"></i></div>';
+                appContainer.appendChild(assistiveBallEl);
+
+                assistiveBallEl.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    if (assistiveBallEl.dataset.dragged === 'true') {
+                        assistiveBallEl.dataset.dragged = 'false';
+                        return;
+                    }
+                    openAssistiveBallPanel();
+                });
+                assistiveBallEl.addEventListener('pointerdown', startAssistiveBallDrag);
+                syncAssistiveBallOpacityControls();
+            }
+
+            if (!assistiveBallPanelEl) {
+                assistiveBallPanelEl = document.createElement('div');
+                assistiveBallPanelEl.id = 'global-assistive-api-panel';
+                assistiveBallPanelEl.className = 'assistive-api-panel';
+                assistiveBallPanelEl.innerHTML = `
+                    <div class="assistive-api-panel-title">当前 API</div>
+                    <div class="assistive-api-row">
+                        <span>模型</span>
+                        <strong id="assistive-api-model">未设置</strong>
+                    </div>
+                    <label class="assistive-api-select-wrap">
+                        <span>API 预设</span>
+                        <select id="assistive-api-preset-select"></select>
+                        <i class="fas fa-chevron-down"></i>
+                    </label>
+                `;
+                appContainer.appendChild(assistiveBallPanelEl);
+                assistivePresetSelectEl = assistiveBallPanelEl.querySelector('#assistive-api-preset-select');
+
+                assistiveBallPanelEl.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    if (event.target === assistiveBallPanelEl) {
+                        closeAssistiveBallPanel();
+                    }
+                });
+
+                assistivePresetSelectEl?.addEventListener('change', (event) => {
+                    applyAssistivePreset(event.target.value);
+                });
+            }
+        }
+
+        function openAssistiveBallPanel() {
+            ensureAssistiveBallDom();
+            syncAssistiveBallPanel();
+            assistiveBallEl.classList.remove('visible');
+            assistiveBallEl.classList.add('panel-open');
+            assistiveBallPanelEl.classList.add('active');
+        }
+
+        function closeAssistiveBallPanel() {
+            if (assistiveBallPanelEl) assistiveBallPanelEl.classList.remove('active');
+            if (assistiveBallEl) {
+                assistiveBallEl.classList.remove('panel-open');
+                assistiveBallEl.classList.toggle('visible', assistiveBallSettings.enabled);
+            }
+        }
+
+        function clampAssistiveBallPosition(x, y) {
+            if (!assistiveBallEl) return { x: 0, y: 0 };
+            const parent = assistiveBallEl.parentElement || document.body;
+            const parentRect = parent.getBoundingClientRect();
+            const ballRect = assistiveBallEl.getBoundingClientRect();
+            const margin = 8;
+            const width = ballRect.width || 58;
+            const height = ballRect.height || 58;
+            return {
+                x: Math.max(margin, Math.min(x, parentRect.width - width - margin)),
+                y: Math.max(margin, Math.min(y, parentRect.height - height - margin))
+            };
+        }
+
+        function applyAssistiveBallPosition() {
+            if (!assistiveBallEl) return;
+            const parent = assistiveBallEl.parentElement || document.body;
+            const parentRect = parent.getBoundingClientRect();
+            const currentRect = assistiveBallEl.getBoundingClientRect();
+            const fallbackX = parentRect.width - (currentRect.width || 58) - 12;
+            const fallbackY = parentRect.height * 0.46;
+            const next = clampAssistiveBallPosition(
+                Number.isFinite(assistiveBallSettings.x) ? assistiveBallSettings.x : fallbackX,
+                Number.isFinite(assistiveBallSettings.y) ? assistiveBallSettings.y : fallbackY
+            );
+            assistiveBallSettings.x = next.x;
+            assistiveBallSettings.y = next.y;
+            assistiveBallEl.style.left = `${next.x}px`;
+            assistiveBallEl.style.top = `${next.y}px`;
+        }
+
+        function startAssistiveBallDrag(event) {
+            if (!assistiveBallEl) return;
+            const parent = assistiveBallEl.parentElement || document.body;
+            const parentRect = parent.getBoundingClientRect();
+            const ballRect = assistiveBallEl.getBoundingClientRect();
+
+            assistiveDragState = {
+                pointerId: event.pointerId,
+                startClientX: event.clientX,
+                startClientY: event.clientY,
+                offsetX: event.clientX - ballRect.left,
+                offsetY: event.clientY - ballRect.top,
+                parentLeft: parentRect.left,
+                parentTop: parentRect.top,
+                moved: false
+            };
+
+            assistiveBallEl.classList.add('dragging');
+            assistiveBallEl.setPointerCapture?.(event.pointerId);
+            assistiveBallEl.addEventListener('pointermove', moveAssistiveBallDrag);
+            assistiveBallEl.addEventListener('pointerup', endAssistiveBallDrag);
+            assistiveBallEl.addEventListener('pointercancel', endAssistiveBallDrag);
+        }
+
+        function moveAssistiveBallDrag(event) {
+            if (!assistiveDragState || !assistiveBallEl) return;
+
+            const deltaX = event.clientX - assistiveDragState.startClientX;
+            const deltaY = event.clientY - assistiveDragState.startClientY;
+            if (Math.abs(deltaX) + Math.abs(deltaY) > 4) {
+                assistiveDragState.moved = true;
+                closeAssistiveBallPanel();
+            }
+
+            const next = clampAssistiveBallPosition(
+                event.clientX - assistiveDragState.parentLeft - assistiveDragState.offsetX,
+                event.clientY - assistiveDragState.parentTop - assistiveDragState.offsetY
+            );
+            assistiveBallSettings.x = next.x;
+            assistiveBallSettings.y = next.y;
+            assistiveBallEl.style.left = `${next.x}px`;
+            assistiveBallEl.style.top = `${next.y}px`;
+        }
+
+        function endAssistiveBallDrag(event) {
+            if (!assistiveBallEl) return;
+            const moved = !!assistiveDragState?.moved;
+            assistiveBallEl.classList.remove('dragging');
+            assistiveBallEl.releasePointerCapture?.(event.pointerId);
+            assistiveBallEl.removeEventListener('pointermove', moveAssistiveBallDrag);
+            assistiveBallEl.removeEventListener('pointerup', endAssistiveBallDrag);
+            assistiveBallEl.removeEventListener('pointercancel', endAssistiveBallDrag);
+            assistiveDragState = null;
+
+            if (moved) {
+                assistiveBallEl.dataset.dragged = 'true';
+                saveGlobalData();
+                window.setTimeout(() => {
+                    if (assistiveBallEl) assistiveBallEl.dataset.dragged = 'false';
+                }, 0);
+            }
+        }
+
+        function syncAssistiveBallPanel() {
+            if (!assistiveBallPanelEl) return;
+
+            const modelEl = assistiveBallPanelEl.querySelector('#assistive-api-model');
+
+            if (modelEl) modelEl.textContent = getApiDisplayValue(apiConfig.model);
+
+            if (!assistivePresetSelectEl) return;
+
+            assistivePresetSelectEl.innerHTML = '';
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = Array.isArray(apiPresets) && apiPresets.length ? '选择 API 预设' : '暂无 API 预设';
+            assistivePresetSelectEl.appendChild(placeholder);
+
+            if (Array.isArray(apiPresets)) {
+                apiPresets.forEach((preset) => {
+                    const option = document.createElement('option');
+                    option.value = String(preset.id);
+                    option.textContent = preset.name || '未命名预设';
+                    assistivePresetSelectEl.appendChild(option);
+                });
+            }
+
+            assistivePresetSelectEl.value = getCurrentApiPresetId();
+        }
+
+        function setAssistiveBallEnabled(enabled) {
+            assistiveBallSettings.enabled = !!enabled;
+            if (UI.inputs.assistiveBallToggle) {
+                UI.inputs.assistiveBallToggle.checked = assistiveBallSettings.enabled;
+            }
+
+            ensureAssistiveBallDom();
+            syncAssistiveBallOpacityControls();
+            applyAssistiveBallPosition();
+            assistiveBallEl.classList.toggle('visible', assistiveBallSettings.enabled);
+            if (!assistiveBallSettings.enabled) {
+                closeAssistiveBallPanel();
+            } else {
+                syncAssistiveBallPanel();
+            }
+        }
+
+        function applyAssistivePreset(presetId) {
+            const preset = Array.isArray(apiPresets)
+                ? apiPresets.find(item => String(item.id) === String(presetId))
+                : null;
+            if (!preset) {
+                syncAssistiveBallPanel();
+                return;
+            }
+
+            apiConfig = {
+                endpoint: preset.endpoint || '',
+                apiKey: preset.apiKey || '',
+                model: preset.model || '',
+                temperature: preset.temp ?? 0.7
+            };
+            tempApiConfig = { ...apiConfig };
+            window.apiConfig = apiConfig;
+
+            if (UI.inputs.apiEndpoint) UI.inputs.apiEndpoint.value = apiConfig.endpoint;
+            if (UI.inputs.apiKey) UI.inputs.apiKey.value = apiConfig.apiKey;
+            if (UI.inputs.apiModel) syncSelectValue(UI.inputs.apiModel, apiConfig.model || '');
+            if (UI.inputs.apiTemp) UI.inputs.apiTemp.value = apiConfig.temperature;
+
+            saveGlobalData();
+            syncAssistiveBallPanel();
+            showToast(`已切换到 ${preset.name || '未命名预设'}`);
+        }
+
+        if (assistiveBallConfigBtn && UI.overlays.assistiveBallSettings) {
+            assistiveBallConfigBtn.addEventListener('click', () => {
+                setAssistiveBallEnabled(assistiveBallSettings.enabled);
+                syncAssistiveBallOpacityControls();
+                openView(UI.overlays.assistiveBallSettings);
+            });
+        }
+
+        if (UI.inputs.assistiveBallToggle) {
+            UI.inputs.assistiveBallToggle.addEventListener('change', () => {
+                setAssistiveBallEnabled(UI.inputs.assistiveBallToggle.checked);
+                saveGlobalData();
+                showToast(assistiveBallSettings.enabled ? '悬浮球已开启' : '悬浮球已关闭');
+            });
+        }
+
+        if (UI.inputs.assistiveBallOpacity) {
+            UI.inputs.assistiveBallOpacity.addEventListener('input', () => {
+                assistiveBallSettings.opacity = normalizeAssistiveBallOpacity(UI.inputs.assistiveBallOpacity.value);
+                syncAssistiveBallOpacityControls();
+            });
+            UI.inputs.assistiveBallOpacity.addEventListener('change', () => {
+                assistiveBallSettings.opacity = normalizeAssistiveBallOpacity(UI.inputs.assistiveBallOpacity.value);
+                syncAssistiveBallOpacityControls();
+                saveGlobalData();
+            });
+        }
+
+        document.addEventListener('click', (event) => {
+            if (assistiveBallPanelEl?.classList.contains('active') && !assistiveBallPanelEl.contains(event.target)) {
+                closeAssistiveBallPanel();
+            }
+        });
+
+        window.u2AssistiveApiBall = {
+            sync: syncAssistiveBallPanel,
+            setEnabled: setAssistiveBallEnabled,
+            getSettings: () => ({ ...assistiveBallSettings })
+        };
+
+        setAssistiveBallEnabled(assistiveBallSettings.enabled);
+
         function renderNativeModelSelect() {
             if (!UI.inputs.apiModel) return;
             UI.inputs.apiModel.innerHTML = '<option value="" disabled selected>选择模型</option>';
@@ -2112,6 +2481,62 @@
             });
         }
 
+        function syncMinimaxCustomEndpointVisibility() {
+            const endpointGroup = document.getElementById('minimax-custom-endpoint-group');
+            const enabled = !!(UI.inputs.minimaxCustomEndpoint && UI.inputs.minimaxCustomEndpoint.checked);
+            if (endpointGroup) endpointGroup.style.display = enabled ? 'block' : 'none';
+        }
+
+        function syncMinimaxInputs() {
+            if (window.u2MinimaxTts && typeof window.u2MinimaxTts.getConfig === 'function') {
+                minimaxConfig = window.u2MinimaxTts.getConfig();
+            }
+            if (UI.inputs.minimaxRegion) UI.inputs.minimaxRegion.value = minimaxConfig.region || 'cn';
+            if (UI.inputs.minimaxCustomEndpoint) UI.inputs.minimaxCustomEndpoint.checked = !!minimaxConfig.customEndpointEnabled;
+            if (UI.inputs.minimaxEndpoint) UI.inputs.minimaxEndpoint.value = minimaxConfig.endpoint || '';
+            if (UI.inputs.minimaxKey) UI.inputs.minimaxKey.value = minimaxConfig.apiKey || '';
+            if (UI.inputs.minimaxGroupId) UI.inputs.minimaxGroupId.value = minimaxConfig.groupId || '';
+            if (UI.inputs.minimaxTtsModel) UI.inputs.minimaxTtsModel.value = minimaxConfig.ttsModel || 'speech-02-hd';
+            syncMinimaxCustomEndpointVisibility();
+        }
+
+        const minimaxConfigBtn = document.getElementById('minimax-config-btn');
+        if (minimaxConfigBtn && UI.overlays.minimaxConfig) {
+            minimaxConfigBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                syncMinimaxInputs();
+                openView(UI.overlays.minimaxConfig);
+            });
+        }
+
+        if (UI.inputs.minimaxCustomEndpoint) {
+            UI.inputs.minimaxCustomEndpoint.addEventListener('change', syncMinimaxCustomEndpointVisibility);
+        }
+
+        const confirmMinimaxBtn = document.getElementById('confirm-minimax-btn');
+        if (confirmMinimaxBtn) {
+            confirmMinimaxBtn.addEventListener('click', () => {
+                minimaxConfig = {
+                    region: UI.inputs.minimaxRegion ? UI.inputs.minimaxRegion.value : 'cn',
+                    customEndpointEnabled: !!(UI.inputs.minimaxCustomEndpoint && UI.inputs.minimaxCustomEndpoint.checked),
+                    endpoint: UI.inputs.minimaxEndpoint ? UI.inputs.minimaxEndpoint.value.trim() : '',
+                    apiKey: UI.inputs.minimaxKey ? UI.inputs.minimaxKey.value.trim() : '',
+                    groupId: UI.inputs.minimaxGroupId ? UI.inputs.minimaxGroupId.value.trim() : '',
+                    ttsModel: UI.inputs.minimaxTtsModel ? (UI.inputs.minimaxTtsModel.value.trim() || 'speech-02-hd') : 'speech-02-hd'
+                };
+
+                if (window.u2MinimaxTts && typeof window.u2MinimaxTts.setConfig === 'function') {
+                    minimaxConfig = window.u2MinimaxTts.setConfig(minimaxConfig);
+                } else {
+                    window.minimaxConfig = minimaxConfig;
+                }
+
+                saveGlobalData();
+                closeView(UI.overlays.minimaxConfig);
+                showToast('Minimax 设置已保存');
+            });
+        }
+
         const confirmApiBtn = document.getElementById('confirm-api-btn');
         if (confirmApiBtn) {
             confirmApiBtn.addEventListener('click', () => {
@@ -2132,6 +2557,7 @@
                 
                 window.apiConfig = apiConfig;
                 saveGlobalData();
+                syncAssistiveBallPanel();
                 
                 closeView(UI.overlays.apiConfig);
                 showToast('API 设置已保存');
@@ -2224,6 +2650,7 @@
                 });
 
                 saveGlobalData();
+                syncAssistiveBallPanel();
                 closeView(UI.overlays.savePreset);
                 showToast('预设已保存');
             });
@@ -2294,6 +2721,7 @@
                             apiPresets = apiPresets.filter(p => p.id !== preset.id);
                             saveGlobalData();
                             renderPresetList();
+                            syncAssistiveBallPanel();
                             showToast('预设已删除');
                         }
                     });

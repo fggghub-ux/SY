@@ -499,8 +499,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const tabButtons = panelEl.querySelectorAll('.chat-profile-panel-tab-btn');
         tabButtons.forEach((btn) => {
-            btn.addEventListener('click', async (e) => {
+            const stopProfileTabEvent = (e) => {
                 e.stopPropagation();
+                if (typeof e.stopImmediatePropagation === 'function') {
+                    e.stopImmediatePropagation();
+                }
+            };
+
+            const handleProfileTabClick = (e) => {
+                e.preventDefault();
+                stopProfileTabEvent(e);
+            };
+
+            btn.addEventListener('pointerdown', stopProfileTabEvent, true);
+            btn.addEventListener('touchstart', stopProfileTabEvent, { capture: true, passive: false });
+
+            btn.addEventListener('click', async (e) => {
+                handleProfileTabClick(e);
                 const nextTab = btn.getAttribute('data-tab') || 'thought';
                 window.imChat.setProfilePanelTab(friend, nextTab);
 

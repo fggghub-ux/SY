@@ -215,8 +215,10 @@
         const localStorageSettingsMap = {
             u2_userState: 'userState',
             u2_apiConfig: 'apiConfig',
+            u2_minimaxConfig: 'minimaxConfig',
             u2_apiPresets: 'apiPresets',
             u2_fetchedModels: 'fetchedModels',
+            u2_assistiveBallSettings: 'assistiveBallSettings',
             u2_themeState: 'themeState',
             u2_currentAccountId: 'currentAccountId',
             u2_wbGroups: 'wbGroups',
@@ -727,6 +729,22 @@
             isSelf: safe.isSelf,
             statusText: safe.statusText,
             senderId: safe.senderId,
+            apiRunId: safe.apiRunId,
+            rollbackSourceMessage: safe.rollbackSourceMessage || null,
+            paymentAction: safe.paymentAction,
+            payDirection: safe.payDirection,
+            payerName: safe.payerName,
+            payeeName: safe.payeeName,
+            receiverName: safe.receiverName,
+            cardTitle: safe.cardTitle,
+            payStatus: safe.payStatus,
+            claimed: !!safe.claimed,
+            imageSource: safe.imageSource,
+            packetId: safe.packetId,
+            totalAmount: safe.totalAmount,
+            claimRecords: safe.claimRecords,
+            claimedMemberIds: safe.claimedMemberIds,
+            speakerMemberId: safe.speakerMemberId,
             payload: safe.payload || null
         };
     }
@@ -767,6 +785,22 @@
             isSelf: row.isSelf,
             statusText: row.statusText,
             senderId: row.senderId,
+            apiRunId: row.apiRunId,
+            rollbackSourceMessage: row.rollbackSourceMessage || null,
+            paymentAction: row.paymentAction,
+            payDirection: row.payDirection,
+            payerName: row.payerName,
+            payeeName: row.payeeName,
+            receiverName: row.receiverName,
+            cardTitle: row.cardTitle,
+            payStatus: row.payStatus,
+            claimed: !!row.claimed,
+            imageSource: row.imageSource,
+            packetId: row.packetId,
+            totalAmount: row.totalAmount,
+            claimRecords: row.claimRecords,
+            claimedMemberIds: row.claimedMemberIds,
+            speakerMemberId: row.speakerMemberId,
             payload: row.payload,
             __messageOrder: Number(row.order) || 0
         };
@@ -1632,6 +1666,22 @@
                 : { endpoint: '', apiKey: '', model: '', temperature: 0.7 },
             apiPresets: Array.isArray(safe.apiPresets) ? safe.apiPresets : [],
             fetchedModels: Array.isArray(safe.fetchedModels) ? safe.fetchedModels : [],
+            assistiveBallSettings: safe.assistiveBallSettings && typeof safe.assistiveBallSettings === 'object'
+                ? {
+                    enabled: !!safe.assistiveBallSettings.enabled,
+                    x: Number.isFinite(parseFloat(safe.assistiveBallSettings.x))
+                        ? parseFloat(safe.assistiveBallSettings.x)
+                        : null,
+                    y: Number.isFinite(parseFloat(safe.assistiveBallSettings.y))
+                        ? parseFloat(safe.assistiveBallSettings.y)
+                        : null,
+                    opacity: Number.isFinite(parseFloat(safe.assistiveBallSettings.opacity))
+                        ? Math.max(0.2, Math.min(1, parseFloat(safe.assistiveBallSettings.opacity) > 1
+                            ? parseFloat(safe.assistiveBallSettings.opacity) / 100
+                            : parseFloat(safe.assistiveBallSettings.opacity)))
+                        : 0.72
+                }
+                : { enabled: false, x: null, y: null, opacity: 0.72 },
             themeState: themeState || {
                 bgUrl: null,
                 fontMode: 'preset',
@@ -1676,6 +1726,7 @@
             setSetting('apiConfig', normalized.apiConfig),
             setSetting('apiPresets', normalized.apiPresets),
             setSetting('fetchedModels', normalized.fetchedModels),
+            setSetting('assistiveBallSettings', normalized.assistiveBallSettings),
             setSetting('themeState', normalized.themeState),
             setSetting('wbGroups', normalized.wbGroups),
             setSetting('worldBooks', normalized.worldBooks),
@@ -1695,6 +1746,7 @@
             apiConfig,
             apiPresets,
             fetchedModels,
+            assistiveBallSettings,
             themeState,
             wbGroups,
             worldBooks,
@@ -1707,6 +1759,7 @@
             getSetting('apiConfig', null),
             getSetting('apiPresets', []),
             getSetting('fetchedModels', []),
+            getSetting('assistiveBallSettings', { enabled: false }),
             getSetting('themeState', null),
             getSetting('wbGroups', []),
             getSetting('worldBooks', []),
@@ -1722,6 +1775,7 @@
                 apiConfig,
                 apiPresets,
                 fetchedModels,
+                assistiveBallSettings,
                 themeState,
                 wbGroups,
                 worldBooks,
@@ -1842,8 +1896,10 @@
                 const lsKeys = {
                     'userState': 'u2_userState',
                     'apiConfig': 'u2_apiConfig',
+                    'minimaxConfig': 'u2_minimaxConfig',
                     'apiPresets': 'u2_apiPresets',
                     'fetchedModels': 'u2_fetchedModels',
+                    'assistiveBallSettings': 'u2_assistiveBallSettings',
                     'themeState': 'u2_themeState',
                     'currentAccountId': 'u2_currentAccountId'
                 };
@@ -1878,16 +1934,20 @@
                 if (window.StorageManager && typeof window.StorageManager.save === 'function') {
                     if (globalData.userState) StorageManager.save('u2_userState', globalData.userState);
                     if (globalData.apiConfig) StorageManager.save('u2_apiConfig', globalData.apiConfig);
+                    if (globalData.minimaxConfig) StorageManager.save('u2_minimaxConfig', globalData.minimaxConfig);
                     if (globalData.apiPresets) StorageManager.save('u2_apiPresets', globalData.apiPresets);
                     if (globalData.fetchedModels) StorageManager.save('u2_fetchedModels', globalData.fetchedModels);
+                    if (globalData.assistiveBallSettings) StorageManager.save('u2_assistiveBallSettings', globalData.assistiveBallSettings);
                     if (globalData.accounts) StorageManager.save('u2_accounts', globalData.accounts);
                     if (globalData.currentAccountId !== undefined) StorageManager.save('u2_currentAccountId', globalData.currentAccountId);
                     if (globalData.themeState) StorageManager.save('u2_themeState', globalData.themeState);
                 } else {
                     if (globalData.userState) localStorage.setItem('u2_userState', JSON.stringify(globalData.userState));
                     if (globalData.apiConfig) localStorage.setItem('u2_apiConfig', JSON.stringify(globalData.apiConfig));
+                    if (globalData.minimaxConfig) localStorage.setItem('u2_minimaxConfig', JSON.stringify(globalData.minimaxConfig));
                     if (globalData.apiPresets) localStorage.setItem('u2_apiPresets', JSON.stringify(globalData.apiPresets));
                     if (globalData.fetchedModels) localStorage.setItem('u2_fetchedModels', JSON.stringify(globalData.fetchedModels));
+                    if (globalData.assistiveBallSettings) localStorage.setItem('u2_assistiveBallSettings', JSON.stringify(globalData.assistiveBallSettings));
                     if (globalData.accounts) localStorage.setItem('u2_accounts', JSON.stringify(globalData.accounts));
                     if (globalData.currentAccountId !== undefined) localStorage.setItem('u2_currentAccountId', JSON.stringify(globalData.currentAccountId));
                     if (globalData.themeState) localStorage.setItem('u2_themeState', JSON.stringify(globalData.themeState));
@@ -2168,8 +2228,10 @@
         const compatibilityMap = {
             userState: 'u2_userState',
             apiConfig: 'u2_apiConfig',
+            minimaxConfig: 'u2_minimaxConfig',
             apiPresets: 'u2_apiPresets',
             fetchedModels: 'u2_fetchedModels',
+            assistiveBallSettings: 'u2_assistiveBallSettings',
             themeState: 'u2_themeState',
             currentAccountId: 'u2_currentAccountId',
             wbGroups: 'u2_wbGroups',
@@ -2195,8 +2257,10 @@
         const map = {
             userState: 'u2_userState',
             apiConfig: 'u2_apiConfig',
+            minimaxConfig: 'u2_minimaxConfig',
             apiPresets: 'u2_apiPresets',
             fetchedModels: 'u2_fetchedModels',
+            assistiveBallSettings: 'u2_assistiveBallSettings',
             accounts: 'u2_accounts',
             currentAccountId: 'u2_currentAccountId',
             themeState: 'u2_themeState',

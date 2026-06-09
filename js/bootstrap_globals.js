@@ -11,6 +11,15 @@
         temperature: 0.7
     };
 
+    const defaultMinimaxConfig = {
+        region: 'cn',
+        customEndpointEnabled: false,
+        endpoint: '',
+        apiKey: '',
+        groupId: '',
+        ttsModel: 'speech-02-hd'
+    };
+
     const defaultUserState = {
         name: '',
         phone: '',
@@ -39,6 +48,13 @@
         };
     }
 
+    function normalizeMinimaxConfig(value) {
+        return {
+            ...defaultMinimaxConfig,
+            ...(value && typeof value === 'object' ? value : {})
+        };
+    }
+
     function resolveUserStateFromAccounts() {
         const accounts = safeLoad('u2_accounts', []);
         const currentAccountId = safeLoad('u2_currentAccountId', null);
@@ -59,6 +75,7 @@
     }
 
     window.apiConfig = normalizeApiConfig(window.apiConfig || safeLoad('u2_apiConfig', defaultApiConfig));
+    window.minimaxConfig = normalizeMinimaxConfig(window.minimaxConfig || safeLoad('u2_minimaxConfig', defaultMinimaxConfig));
     window.userState = {
         ...defaultUserState,
         ...(window.userState && typeof window.userState === 'object' ? window.userState : resolveUserStateFromAccounts())
@@ -67,6 +84,11 @@
     window.getApiConfig = function getApiConfig() {
         window.apiConfig = normalizeApiConfig(window.apiConfig || safeLoad('u2_apiConfig', defaultApiConfig));
         return window.apiConfig;
+    };
+
+    window.getMinimaxConfig = function getMinimaxConfig() {
+        window.minimaxConfig = normalizeMinimaxConfig(window.minimaxConfig || safeLoad('u2_minimaxConfig', defaultMinimaxConfig));
+        return window.minimaxConfig;
     };
 
     window.getUserState = function getUserState() {

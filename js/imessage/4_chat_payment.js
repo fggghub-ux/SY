@@ -953,7 +953,7 @@ function ensureTransferDetailOverlayForExistingPage(page, friend) {
         }
     }
 
-async function claimIncomingTransfer(friend, msg) {
+async function claimIncomingTransfer(friend, msg, options = {}) {
         if (!friend || !msg || msg.claimed) return;
         
         // 允许自己收下AI的转账，或者AI收下自己的转账
@@ -995,6 +995,7 @@ async function claimIncomingTransfer(friend, msg) {
         }
 
         const sourceMessageId = msg.id;
+        const sourceMessageSnapshot = JSON.parse(JSON.stringify(msg));
         let updatedMsg = null;
         let receiveMsg = null;
         let receiveTimestamp = Date.now();
@@ -1016,7 +1017,9 @@ async function claimIncomingTransfer(friend, msg) {
                 cardTitle: '收款',
                 payStatus: 'completed',
                 content: `[收款] ${description} ¥${amount.toFixed(2)}`,
-                timestamp: receiveTimestamp
+                timestamp: receiveTimestamp,
+                apiRunId: options.apiRunId || null,
+                rollbackSourceMessage: sourceMessageSnapshot
             };
         } else {
             // AI收下用户的钱
@@ -1036,7 +1039,9 @@ async function claimIncomingTransfer(friend, msg) {
                 cardTitle: `${receiverName}已收款`,
                 payStatus: 'completed',
                 content: `[对方已收款] ${description} ¥${amount.toFixed(2)}`,
-                timestamp: receiveTimestamp
+                timestamp: receiveTimestamp,
+                apiRunId: options.apiRunId || null,
+                rollbackSourceMessage: sourceMessageSnapshot
             };
         }
 
@@ -1165,7 +1170,7 @@ async function claimIncomingTransfer(friend, msg) {
     window.imChat.normalizeGroupRedPacketState = normalizeGroupRedPacketState;
     window.imChat.processPendingGroupRedPackets = processPendingGroupRedPackets;
     window.imChat.ensureRedPacketDetailOverlayForExistingPage = ensureRedPacketDetailOverlayForExistingPage;
-    async function rejectIncomingTransfer(friend, msg) {
+    async function rejectIncomingTransfer(friend, msg, options = {}) {
         if (!friend || !msg || msg.claimed) return;
         
         // 允许退回AI的转账，或者模拟AI退回用户的转账
@@ -1199,6 +1204,7 @@ async function claimIncomingTransfer(friend, msg) {
         }
 
         const sourceMessageId = msg.id;
+        const sourceMessageSnapshot = JSON.parse(JSON.stringify(msg));
         let updatedMsg = null;
         let rejectMsg = null;
         let rejectTimestamp = Date.now();
@@ -1220,7 +1226,9 @@ async function claimIncomingTransfer(friend, msg) {
                 cardTitle: '已退还',
                 payStatus: 'completed',
                 content: `[已退还] ${description} ¥${amount.toFixed(2)}`,
-                timestamp: rejectTimestamp
+                timestamp: rejectTimestamp,
+                apiRunId: options.apiRunId || null,
+                rollbackSourceMessage: sourceMessageSnapshot
             };
         } else {
             rejectMsg = {
@@ -1239,7 +1247,9 @@ async function claimIncomingTransfer(friend, msg) {
                 cardTitle: '已退还',
                 payStatus: 'completed',
                 content: `[对方已退还] ${description} ¥${amount.toFixed(2)}`,
-                timestamp: rejectTimestamp
+                timestamp: rejectTimestamp,
+                apiRunId: options.apiRunId || null,
+                rollbackSourceMessage: sourceMessageSnapshot
             };
         }
 

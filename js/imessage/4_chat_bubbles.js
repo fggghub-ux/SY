@@ -1226,6 +1226,7 @@ function renderVoiceMessageBubble(msg, friend, container, timestamp = Date.now()
         const calculatedDuration = Math.min(18, Math.max(3, Math.ceil(transcript.length / 3)));
         const duration = Math.min(18, Math.max(3, Number(msg.duration) || calculatedDuration));
         const safeTranscript = escapeHtml(transcript || '暂无转文字');
+        const cleanTranslation = String(msg.translation || '').trim();
         const timeStr = typeof window.formatChatBubbleTime === 'function' ? window.formatChatBubbleTime(timestamp) : (() => {
             const date = new Date(timestamp);
             return `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
@@ -1246,6 +1247,7 @@ function renderVoiceMessageBubble(msg, friend, container, timestamp = Date.now()
                 <span class="voice-message-duration">${duration}s</span>
             </button>
             <div class="voice-message-transcript" hidden>${safeTranscript}</div>
+            ${cleanTranslation && msg.showTranslation ? `<div class="msg-translation" style="margin-top: 6px; padding-top: 6px; border-top: 1px solid ${isUser ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)'}; font-size: 13px; color: ${isUser ? 'rgba(255,255,255,0.7)' : '#8e8e93'}; line-height: 1.4; word-wrap: break-word; white-space: normal;">${escapeHtml(cleanTranslation)}</div>` : ''}
             ${metaHtml}
         `;
 
@@ -1285,12 +1287,30 @@ function renderVoiceMessageBubble(msg, friend, container, timestamp = Date.now()
         const toggle = row.querySelector('.voice-message-bubble-inner');
         const transcriptEl = row.querySelector('.voice-message-transcript');
         if (toggle && transcriptEl) {
-            toggle.addEventListener('click', (e) => {
+            toggle.addEventListener('click', async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 const shouldExpand = transcriptEl.hidden;
                 transcriptEl.hidden = !shouldExpand;
                 toggle.setAttribute('aria-expanded', shouldExpand ? 'true' : 'false');
+
+                if (shouldExpand && window.u2MinimaxTts && typeof window.u2MinimaxTts.speakTextCached === 'function') {
+                    try {
+                        const cacheOwner = msg && typeof msg === 'object' ? msg : {};
+                        const audioUrl = await window.u2MinimaxTts.speakTextCached(transcript, friend, cacheOwner);
+                        if (audioUrl && msg && typeof msg === 'object' && !msg.minimaxAudioUrl && window.imApp?.updateFriendMessage) {
+                            await window.imApp.updateFriendMessage(friend.id, {
+                                id: msg.id || row.getAttribute('data-message-id') || null,
+                                timestamp: row.getAttribute('data-timestamp') || timestamp || null
+                            }, (targetMsg) => {
+                                if (targetMsg) targetMsg.minimaxAudioUrl = audioUrl;
+                            }, { silent: true });
+                        }
+                    } catch (error) {
+                        console.error('Voice message playback failed', error);
+                        if (window.showToast) window.showToast('语音播放失败');
+                    }
+                }
             });
         }
 

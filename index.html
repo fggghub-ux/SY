@@ -1752,6 +1752,11 @@
                         <div class="settings-text">API 配置</div>
                         <i class="fas fa-chevron-right arrow"></i>
                     </div>
+                    <div class="settings-item" id="minimax-config-btn">
+                        <div class="settings-icon" style="background-color: #ff9500;"><i class="fas fa-volume-up"></i></div>
+                        <div class="settings-text">Minimax</div>
+                        <i class="fas fa-chevron-right arrow"></i>
+                    </div>
                     <div class="settings-item" id="world-book-main-btn">
                         <div class="settings-icon" style="background-color: #1c1c1e;"><i class="fas fa-book"></i></div>
                         <div class="settings-text">世界书</div>
@@ -1769,6 +1774,11 @@
                     <div class="settings-item" id="home-widget-config-btn" onclick="window.openHomeWidgetPanelFromSettings && window.openHomeWidgetPanelFromSettings()">
                         <div class="settings-icon" style="background-color: #5ac8fa;"><i class="fas fa-layer-group"></i></div>
                         <div class="settings-text">小组件</div>
+                        <i class="fas fa-chevron-right arrow"></i>
+                    </div>
+                    <div class="settings-item" id="assistive-ball-config-btn">
+                        <div class="settings-icon" style="background-color: #111111;"><i class="fas fa-circle-dot"></i></div>
+                        <div class="settings-text">悬浮球</div>
                         <i class="fas fa-chevron-right arrow"></i>
                     </div>
                 </div>
@@ -2201,6 +2211,57 @@
             </div>
         </div>
 
+        <div class="bottom-sheet-overlay detail-sheet-overlay" id="minimax-config-sheet" style="z-index: 505;">
+            <div class="bottom-sheet" style="max-height: 85%;">
+                <div class="sheet-handle"></div>
+                <div class="sheet-title">Minimax</div>
+
+                <div class="detail-sheet-content" style="padding-bottom: 20px;">
+                    <div class="form-group fully-rounded" style="margin-bottom: 20px;">
+                        <div class="form-item">
+                            <label style="width: 100px; white-space: nowrap;">版本</label>
+                            <select id="minimax-region-select" style="flex: 1; border: none; text-align: right; direction: rtl; appearance: none; background: transparent; color: var(--blue-color); outline: none; font-size: 16px; min-width: 0;">
+                                <option value="cn">国内版</option>
+                                <option value="intl">海外版</option>
+                            </select>
+                            <i class="fas fa-chevron-right arrow" style="margin-left: 5px; color: #c7c7cc; pointer-events: none;"></i>
+                        </div>
+                        <div class="form-item" style="justify-content: space-between; border-bottom: none;">
+                            <label style="width: auto; white-space: nowrap; flex: 1; margin-right: 10px; color: #000; font-size: 16px;">自定义地址</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="minimax-custom-endpoint-toggle">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-group fully-rounded" id="minimax-custom-endpoint-group" style="display: none; margin-bottom: 20px;">
+                        <div class="form-item" style="border-bottom: none;">
+                            <label style="width: 100px; white-space: nowrap;">接口地址</label>
+                            <input type="text" id="minimax-endpoint-input" placeholder="https://api.minimax.chat">
+                        </div>
+                    </div>
+
+                    <div class="form-group fully-rounded" style="margin-bottom: 20px;">
+                        <div class="form-item">
+                            <label style="width: 100px; white-space: nowrap;">User Key</label>
+                            <input type="password" id="minimax-key-input" placeholder="填写 Minimax API Key">
+                        </div>
+                        <div class="form-item">
+                            <label style="width: 100px; white-space: nowrap;">Group ID</label>
+                            <input type="text" id="minimax-group-id-input" placeholder="填写 Group ID">
+                        </div>
+                        <div class="form-item" style="border-bottom: none;">
+                            <label style="width: 100px; white-space: nowrap;">TTS 模型</label>
+                            <input type="text" id="minimax-tts-model-input" placeholder="speech-02-hd">
+                        </div>
+                    </div>
+
+                    <div class="sheet-action confirm-action" id="confirm-minimax-btn" style="background-color: #1c1c1e; color: #fff;">保存 Minimax 设置</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Save Preset Name Sheet -->
         <div class="bottom-sheet-overlay detail-sheet-overlay" id="save-preset-name-sheet" style="z-index: 550;">
             <div class="bottom-sheet" style="height: auto; max-height: 50%;">
@@ -2223,6 +2284,27 @@
                 <div class="sheet-title">选择预设</div>
                 <div class="account-list" id="preset-list" style="margin: 20px 16px; overflow-y: auto; overscroll-behavior: contain;">
                     <!-- Presets injected here -->
+                </div>
+            </div>
+        </div>
+
+        <div class="bottom-sheet-overlay detail-sheet-overlay" id="assistive-ball-settings-sheet" style="z-index: 560;">
+            <div class="bottom-sheet" style="height: auto; max-height: 55%;">
+                <div class="sheet-handle"></div>
+                <div class="sheet-title">悬浮球设置</div>
+                <div class="settings-group fully-rounded" style="margin: 0 16px 20px;">
+                    <div class="form-item" style="justify-content: space-between; border-bottom: none;">
+                        <label style="width: auto; white-space: nowrap; flex: 1; margin-right: 10px; color: #000; font-size: 16px;">显示悬浮球</label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="assistive-ball-toggle">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="form-item assistive-ball-opacity-item">
+                        <label style="width: auto; white-space: nowrap; flex: 1; margin-right: 12px; color: #000; font-size: 16px;">透明度</label>
+                        <input type="range" id="assistive-ball-opacity-range" min="20" max="100" step="1" value="72" class="assistive-ball-opacity-range">
+                        <span id="assistive-ball-opacity-value" class="assistive-ball-opacity-value">72%</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -2447,7 +2529,7 @@
                                 </div>
                                 <input type="file" id="sticker-local-upload-input" accept="image/*" multiple="" style="display:none;">
                             </div>
-                            <div id="sticker-local-preview" style="padding: 10px 16px; display: flex; gap: 10px; overflow-x: auto; border-top: 1px solid var(--separator-color); display: none;">
+                            <div id="sticker-local-preview" class="sticker-local-preview">
                                 <!-- Local image previews -->
                             </div>
                         </div>
@@ -2619,7 +2701,10 @@
                 <div class="bottom-sheet" style="height: 80%; display: flex; flex-direction: column;">
                     <div class="sheet-handle"></div>
                     <div class="sheet-title">状态栏心声历史</div>
-                    <div style="padding: 0 16px 12px; text-align: center; color: #8e8e93; font-size: 13px;">
+                    <div style="padding: 0 16px 12px; display: flex; justify-content: flex-end;">
+                        <button type="button" id="clear-all-statusbar-btn" style="border: none; background: #ffe5e5; color: #ff3b30; border-radius: 999px; padding: 7px 12px; font-size: 13px; font-weight: 700; cursor: pointer;">
+                            <i class="fas fa-trash-alt" style="margin-right: 5px;"></i>清空全部
+                        </button>
                     </div>
                     <div class="detail-sheet-content" style="flex: 1; overflow-y: auto; padding: 0 16px 16px;">
                         <div id="bind-stickers-list" style="display: flex; flex-direction: column; gap: 10px;">
@@ -2698,6 +2783,10 @@
                         <div class="msg-menu-item" data-action="translate">
                             <span>Translate</span>
                             <i class="fas fa-language" style="font-size: 16px; color: #8e8e93;"></i>
+                        </div>
+                        <div class="msg-menu-item" data-action="speak">
+                            <span>语音</span>
+                            <i class="fas fa-volume-up" style="font-size: 16px; color: #8e8e93;"></i>
                         </div>
                         <div class="msg-menu-item" data-action="more" style="border-bottom: none;">
                             <span>More...</span>
@@ -3400,6 +3489,27 @@
                                         <input type="checkbox" id="chat-time-aware-toggle">
                                         <span class="slider"></span>
                                     </label>
+                                </div>
+                            </div>
+
+                            <div class="settings-group fully-rounded" style="margin: 10px 16px;">
+                                <div class="settings-item" style="justify-content: space-between; cursor: default;">
+                                    <div class="settings-icon" style="background-color: #ff9500;"><i class="fas fa-volume-up"></i></div>
+                                    <div class="settings-text">Minimax 语音</div>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="chat-minimax-enabled-toggle">
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                                <div id="chat-minimax-settings-body" style="display: none;">
+                                    <div class="form-item">
+                                        <label style="width: 100px; white-space: nowrap;">语音 ID</label>
+                                        <input type="text" id="chat-minimax-voice-id-input" placeholder="默认音色">
+                                    </div>
+                                    <div class="form-item" style="border-bottom: none;">
+                                        <label style="width: 100px; white-space: nowrap;">语速</label>
+                                        <input type="number" id="chat-minimax-speed-input" min="0.5" max="2" step="0.1" value="1" style="text-align: right; padding-right: 5px;">
+                                    </div>
                                 </div>
                             </div>
 
@@ -6663,6 +6773,7 @@
     <script src="js/imessage/4_chat_status.js"></script>
     <script src="js/imessage/4_chat_payment.js"></script>
     <script src="js/imessage/4_chat_bubbles.js"></script>
+    <script src="js/imessage/minimax_tts.js"></script>
     <script src="js/imessage/4_chat_ai.js"></script>
     <script src="js/imessage/4_chat_sheet.js"></script>
     <script src="js/imessage/4_chat_list.js"></script>

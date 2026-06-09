@@ -1,4 +1,4 @@
-// ==========================================
+﻿// ==========================================
 // IMESSAGE: 4_chat_ai.js
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
@@ -289,7 +289,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         : '';
                     const safeTitle = typeof eventItem?.title === 'string' && eventItem.title.trim()
                         ? eventItem.title.trim()
-                        : (safeType === 'memory_request' ? '请求记住' : '新的事件');
+                        : (safeType === 'memory_request' ? '想珍藏这一刻' : '新的事件');
 
                     const safeMemoryPayload = eventItem?.memoryPayload && typeof eventItem.memoryPayload === 'object'
                         ? {
@@ -1061,7 +1061,7 @@ ${pendingRegenerateContext.previousReply || 'None'}` : '';
 
         const profilePanelRequirement = friend.type === 'group'
             ? ''
-            : `\n\nProfile Panel Requirement:\n- 在正常聊天气泡之外，你必须额外输出 1 个 <profile_panel>...</profile_panel>\n- <profile_panel> 内必须是合法 JSON，不能有 markdown 代码块，不能有额外解释文字\n- JSON 必须包含字段：thought、location、action、mood、expression、affectionChange、events\n- thought 必须是 45-60 字左右，严格基于当前聊天上下文，使用第一人称，像角色此刻没有说出口的心声\n- location 必须是 2-16 字，表示角色此刻所处的位置或场景\n- action 必须是 2-10 字，表示角色此刻正在做的动作或状态\n- mood 必须是 2-10 字，表示角色此刻的心情\n- expression 必须是 2-10 字，表示角色此刻的面部表情或神态\n- affectionChange 必须是整数（范围 -5 到 5），表示你对用户好感度因本轮对话产生的增减变化\n- 不要输出 online 或类似在线文案，在线状态由系统统一控制\n- events 必须是 JSON 数组；如果当前没有新的事件就输出 []；如果有事件，最多 3 条\n- 普通事件格式为 {"title":"事件标题","description":"事件描述","time":"时间或留空","type":"note"}\n- 如果你认为刚刚这段聊天是你在意的、想记住的，必须额外加入 1 条记忆请求事件，type 必须为 "memory_request"\n- 记忆请求事件格式为 {"title":"想记住某件事","description":"一句简短说明","time":"时间或留空","type":"memory_request","requestText":"想要记住的具体事情","detail":"为什么想记住或补充细节","confirmText":"确认","cancelText":"取消","memoryPayload":{"title":"珍视回忆标题","content":"要记住的内容","detail":"更多细节","reason":"想记住的原因","createdAt":"时间或留空","sourceThought":"可留空"}}\n- 只有当你真的觉得值得记住时才输出 memory_request，不能每次都输出\n- thought、location、action、mood、expression、events 必须和当前聊天内容连贯，不能复读，不能脱离角色人设`;
+            : `\n\nProfile Panel Requirement:\n- 在正常聊天气泡之外，你必须额外输出 1 个 <profile_panel>...</profile_panel>\n- <profile_panel> 内必须是合法 JSON，不能有 markdown 代码块，不能有额外解释文字\n- JSON 必须包含字段：thought、location、action、mood、expression、affectionChange、events\n- thought 必须是 45-60 字左右，严格基于当前聊天上下文，使用第一人称，像角色此刻没有说出口的心声\n- location 必须是 2-16 字，表示角色此刻所处的位置或场景\n- action 必须是 2-10 字，表示角色此刻正在做的动作或状态\n- mood 必须是 2-10 字，表示角色此刻的心情\n- expression 必须是 2-10 字，表示角色此刻的面部表情或神态\n- affectionChange 必须是整数（范围 -5 到 5），表示你对用户好感度因本轮对话产生的增减变化\n- 不要输出 online 或类似在线文案，在线状态由系统统一控制\n- events 必须是 JSON 数组；如果当前没有新的事件就输出 []；如果有事件，最多 3 条\n- 普通事件格式为 {"title":"事件标题","description":"事件描述","time":"时间或留空","type":"note"}\n- 珍视回忆必须由你（当前角色/char）自己发起：只有当你基于自己的感受，觉得刚刚这段聊天很在意、很珍贵、自己想以后记住时，才额外加入 1 条珍视回忆事件，type 必须为 "memory_request"\n- 不要把珍视回忆写成外部指令、替对方保存、接受要求或向对方请求许可；即使对方提到保存或记忆相关内容，也只在你自己也真心想珍藏时才输出\n- 珍视回忆事件格式为 {"title":"想珍藏这一刻","description":"一句简短说明","time":"时间或留空","type":"memory_request","requestText":"我想记住的具体事情","detail":"我为什么想记住或补充细节","confirmText":"收下","cancelText":"算了","memoryPayload":{"title":"珍视回忆标题","content":"我想记住的内容","detail":"更多细节","reason":"我想记住的原因","createdAt":"时间或留空","sourceThought":"可留空"}}\n- 只有当你真的觉得值得自己记住时才输出 memory_request，不能每次都输出\n- thought、location、action、mood、expression、events 必须和当前聊天内容连贯，不能复读，不能脱离角色人设`;
 
         const targetLanguage = friend.language || 'zh';
         let languageRequirement = '';
@@ -1190,7 +1190,7 @@ ${allowedSpeakerNames.length > 0 ? allowedSpeakerNames.join('、') : 'None'}${af
 8b. 表情包格式可以为 {"type":"sticker","speaker":"成员名","category":"分类名","name":"表情包名","thought":"该成员此刻的心理活动，10-30字心声，基于当前聊天上下文"}；只能使用 Available Stickers 中列出的已绑定分类和名称。
 8c. 图片格式可以为 {"type":"image","speaker":"成员名","description":"图片内容文字","thought":"该成员此刻的心理活动，10-30字心声，基于当前聊天上下文"}；图片会使用系统默认图展示，description 必须具体描述这张图的内容。
 9. speaker 必须且只能使用以上允许发言名单中的完整准确名字。
-10. translation 只能翻译当前这一条 text；如果 text 本身是中文，translation 必须是空字符串。
+10. translation 只能翻译当前这一条 text；如果 text 不是中文，translation 必须填写自然中文翻译；如果 text 本身是中文，translation 必须是空字符串。
 11. quote 只有在你确实想引用用户或上一条消息时才填写，否则必须是空字符串。
 12. 【心声要求】：thought 字段必须填写该发言成员此刻的真实心理活动或未说出口的话，字数严格在10-30字之间。${languageRequirement}
 
@@ -1203,7 +1203,43 @@ ${commonMemorySections || 'None'}${offlineMeetRequirement}`;
             if (timeAware) {
                 const currentTime = new Date();
                 const timeString = `${currentTime.getFullYear()}年${currentTime.getMonth() + 1}月${currentTime.getDate()}日 ${currentTime.getHours()}:${currentTime.getMinutes().toString().padStart(2, '0')}`;
-                timeRequirement = `\n当前系统时间是：${timeString}。请在对话和心声中自然地感知并体现出对当前时间（如早晚、日期）的认知。`;
+                const formatPromptTime = (timestamp) => {
+                    const value = Number(timestamp);
+                    if (!Number.isFinite(value) || value <= 0) return '未知';
+                    const date = new Date(value);
+                    return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
+                };
+                const formatPromptDuration = (durationMs) => {
+                    const value = Number(durationMs);
+                    if (!Number.isFinite(value) || value < 0) return '未知';
+                    const totalMinutes = Math.floor(value / 60000);
+                    if (totalMinutes < 1) return '不到1分钟';
+                    if (totalMinutes < 60) return `${totalMinutes}分钟`;
+                    const hours = Math.floor(totalMinutes / 60);
+                    const minutes = totalMinutes % 60;
+                    if (hours < 24) return minutes > 0 ? `${hours}小时${minutes}分钟` : `${hours}小时`;
+                    const days = Math.floor(hours / 24);
+                    const restHours = hours % 24;
+                    return restHours > 0 ? `${days}天${restHours}小时` : `${days}天`;
+                };
+                const historyMessages = Array.isArray(friend.messages) ? friend.messages : [];
+                const lastUserMessage = historyMessages.slice().reverse().find(msg => msg && msg.role === 'user' && Number(msg.timestamp) > 0) || null;
+                const messagesBeforeLastUser = lastUserMessage
+                    ? historyMessages.filter(msg => msg && Number(msg.timestamp) > 0 && Number(msg.timestamp) < Number(lastUserMessage.timestamp))
+                    : historyMessages;
+                const lastCharMessageBeforeUser = messagesBeforeLastUser.slice().reverse().find(msg => msg && msg.role === 'assistant' && Number(msg.timestamp) > 0) || null;
+                const charReplyDelay = lastUserMessage ? currentTime.getTime() - Number(lastUserMessage.timestamp) : null;
+                const userReplyDelay = lastUserMessage && lastCharMessageBeforeUser
+                    ? Number(lastUserMessage.timestamp) - Number(lastCharMessageBeforeUser.timestamp)
+                    : null;
+                timeRequirement = `\n【时间感知】：
+- 当前系统时间是：${timeString}。
+- User 最后一次发消息时间：${lastUserMessage ? formatPromptTime(lastUserMessage.timestamp) : '未知'}${lastUserMessage ? `（距离现在约 ${formatPromptDuration(charReplyDelay)}）` : ''}。
+- User 回复前，你自己最近一次发消息时间：${lastCharMessageBeforeUser ? formatPromptTime(lastCharMessageBeforeUser.timestamp) : '未知'}${userReplyDelay != null ? `（User 隔了约 ${formatPromptDuration(userReplyDelay)}才回复你）` : ''}。
+- 回复前请自然思考：当下是早晨、白天、深夜还是某个特殊日期？这段间隔是否会影响你的语气、状态和主动性？
+- 如果 User 发来消息到你现在回复之间隔了较久，可以根据你的人设、当前状态、日程和场景，自然体现你刚刚可能在做什么、为什么现在才回；不要每次机械道歉，也不要编造与人设冲突的大事件。
+- 如果 User 是隔了很久才回复你，而你们的关系和语境允许，你可以自然问一句 User 刚刚去做什么了、怎么这么久才回；但不要每次都追问，关系不熟时要更克制，关系亲近时可以更随意或带情绪。
+- 如果双方间隔都很短，就不要刻意提时间，只把当前时间作为背景感知。`;
             }
             
             const sleepPrompt = isSleeping ? `\n【作息限制】：角色当前正在睡觉。如果用户发来消息，你必须强制保持离线状态并在所有回复内容（text 字段）的开头添加 "[自动回复] " 前缀，模拟已睡着或离线时的自动响应。心声和面板状态也要符合睡着的情境。` : '';
@@ -1234,7 +1270,7 @@ Reply naturally as your character in a chat app.
 5c. 图片对象格式可以为 {"type":"image","description":"图片内容文字"}；图片会使用系统默认图展示，description 必须具体描述这张图的内容。
 6. 支付对象格式必须为 {"type":"payment","paymentAction":"receive|reject|transfer|pay_for_friend","amount":88.88,"description":"原因或商品名"}。
 7. 当 paymentAction 为 receive 时，表示收下转账；为 reject 时退回转账；为 transfer 时主动转账；如果用户发来了【[代付请求]】卡片，且你愿意帮他付款，必须使用 "pay_for_friend" 并把 amount 设为代付总价，description 设为商品名称。paymentAction 也可以是 "family_card" (给亲属卡) 或 "family_card_increase" (亲属卡提额)。
-7. translation 只能翻译当前这一条 text；如果 text 本身是中文，translation 必须是空字符串。
+7. translation 只能翻译当前这一条 text；如果 text 不是中文，translation 必须填写自然中文翻译；如果 text 本身是中文，translation 必须是空字符串。
 8. quote 只有在你确实想引用用户某句消息时才填写，否则必须是空字符串。
 8a. 【引用回复检查】：如果你要引用回复，quote 字段必须直接填写你想回复的用户原话或原话片段。绝对禁止在 quote 中复述、反问、总结、改写、扩写用户的话；不要把你自己的理解、评价或追问写进 quote。你的回应只能写在 text 字段里。
 9. 如果你觉得当前对话氛围有必要主动给用户打电话，或者用户明确要求你打电话，可以输出一个特殊对象格式：{"type": "call", "action": "发起语音通话"}。
@@ -1873,9 +1909,9 @@ ${commonMemorySections || 'None'}${offlineMeetRequirement}${regenerateRequiremen
 
                             if (pendingMsg) {
                                 if (paymentAction === 'receive' && window.imChat.claimIncomingTransfer) {
-                                    await window.imChat.claimIncomingTransfer(activeFriend, pendingMsg);
+                                    await window.imChat.claimIncomingTransfer(activeFriend, pendingMsg, { apiRunId });
                                 } else if (paymentAction === 'reject' && window.imChat.rejectIncomingTransfer) {
-                                    await window.imChat.rejectIncomingTransfer(activeFriend, pendingMsg);
+                                    await window.imChat.rejectIncomingTransfer(activeFriend, pendingMsg, { apiRunId });
                                 }
                             }
                         } else if (paymentAction === 'family_card' || paymentAction === 'family_card_increase') {
@@ -2234,6 +2270,9 @@ ${commonMemorySections || 'None'}${offlineMeetRequirement}${regenerateRequiremen
         }
 
         const liveFriend = getLiveFriendById(friendKey) || friend;
+        if (liveFriend && window.imApp.ensureFriendMessagesLoaded) {
+            await window.imApp.ensureFriendMessagesLoaded(liveFriend);
+        }
         const messages = Array.isArray(liveFriend?.messages) ? liveFriend.messages : [];
         const lastGeneratedMessage = messages.slice().reverse().find((msg) => msg && msg.apiRunId);
 
@@ -2289,6 +2328,22 @@ ${commonMemorySections || 'None'}${offlineMeetRequirement}${regenerateRequiremen
         if (!saved) {
             if (window.showToast) window.showToast('重回失败');
             return false;
+        }
+
+        const rollbackMessages = targetMessages
+            .map((msg) => msg && msg.rollbackSourceMessage)
+            .filter(Boolean);
+        if (rollbackMessages.length > 0 && window.imApp.updateFriendMessage) {
+            for (const rollbackMsg of rollbackMessages) {
+                await window.imApp.updateFriendMessage(friendKey, {
+                    id: rollbackMsg.id || null,
+                    timestamp: rollbackMsg.timestamp || null
+                }, (targetMsg) => {
+                    if (!targetMsg) return;
+                    Object.keys(targetMsg).forEach((key) => delete targetMsg[key]);
+                    Object.assign(targetMsg, JSON.parse(JSON.stringify(rollbackMsg)));
+                }, { silent: true });
+            }
         }
 
         const latestFriend = getLiveFriendById(friendKey) || liveFriend;

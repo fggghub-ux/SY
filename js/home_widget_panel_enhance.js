@@ -356,12 +356,23 @@
 
             if (card.classList.contains('is-added')) {
                 card.disabled = false;
+                card.removeAttribute('role');
+                card.removeAttribute('tabindex');
                 card.setAttribute('aria-expanded', card.classList.contains('home-widget-card-expanded') ? 'true' : 'false');
 
                 if (!card.querySelector('.home-widget-card-chevron')) {
+                    const toggle = document.createElement('button');
+                    toggle.className = 'home-widget-card-chevron';
+                    toggle.type = 'button';
+                    toggle.setAttribute(
+                        'aria-label',
+                        card.classList.contains('home-widget-card-expanded') ? '收起小组件设置' : '展开小组件设置'
+                    );
+
                     const icon = document.createElement('i');
-                    icon.className = 'fas fa-chevron-down home-widget-card-chevron';
-                    card.appendChild(icon);
+                    icon.className = 'fas fa-chevron-down';
+                    toggle.appendChild(icon);
+                    card.appendChild(toggle);
                 }
 
                 if (!card.querySelector('.home-widget-card-controls')) {
@@ -382,16 +393,17 @@
     }
 
     function onLibraryClick(event) {
-        const card = event.target.closest('.home-widget-library-card.is-added');
+        const toggle = event.target.closest('.home-widget-card-chevron');
+        const card = toggle && toggle.closest('.home-widget-library-card.is-added');
         if (!card) return;
-
-        if (event.target.closest('.home-widget-card-controls')) return;
 
         event.preventDefault();
         event.stopPropagation();
 
         card.classList.toggle('home-widget-card-expanded');
-        card.setAttribute('aria-expanded', card.classList.contains('home-widget-card-expanded') ? 'true' : 'false');
+        const isExpanded = card.classList.contains('home-widget-card-expanded');
+        card.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+        toggle.setAttribute('aria-label', isExpanded ? '收起小组件设置' : '展开小组件设置');
         syncControl(card);
     }
 
