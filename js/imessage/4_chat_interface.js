@@ -637,6 +637,7 @@ async function openChatTab(friend) {
 
             if (input) {
                 input.addEventListener('focus', () => {
+                    page.classList.add('keyboard-open');
                     const attachmentSheet = document.getElementById('chat-attachment-sheet');
                     if (attachmentSheet) {
                         const overlay = attachmentSheet.querySelector('.sheet-overlay');
@@ -649,6 +650,10 @@ async function openChatTab(friend) {
                     setTimeout(() => {
                         if (msgContainer) msgContainer.scrollTop = msgContainer.scrollHeight;
                     }, 100);
+                });
+
+                input.addEventListener('blur', () => {
+                    page.classList.remove('keyboard-open');
                 });
             }
 

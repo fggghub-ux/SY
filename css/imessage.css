@@ -1792,6 +1792,10 @@
     transition: background-color 0.25s;
 }
 
+.active-chat-interface.keyboard-open .ins-chat-input-container {
+    padding-bottom: 6px;
+}
+
 /* @ Mention List Box */
 .at-mention-list {
     position: absolute;
