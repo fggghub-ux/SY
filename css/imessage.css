@@ -995,7 +995,6 @@
     inset: 0;
     width: 100%;
     height: 100%;
-    height: 100dvh;
     background-color: var(--im-chat-page-bg, var(--im-chat-bg-color));
     background-image: var(--im-chat-bg-image);
     background-size: var(--im-chat-bg-size);
@@ -1793,7 +1792,7 @@
 }
 
 .active-chat-interface.keyboard-open .ins-chat-input-container {
-    padding-bottom: 6px;
+    padding: 8px 12px;
 }
 
 /* @ Mention List Box */
