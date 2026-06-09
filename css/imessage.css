@@ -3428,6 +3428,7 @@ input:checked + .slider:before {
 
 .publish-top-bar,
 .publish-moment-top-bar {
+    height: calc(54px + env(safe-area-inset-top, 0px));
     min-height: calc(54px + env(safe-area-inset-top, 0px));
     display: flex;
     justify-content: space-between;
@@ -3436,6 +3437,15 @@ input:checked + .slider:before {
     background: #fff;
     border-bottom: 1px solid #f2f2f2;
     flex-shrink: 0;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    z-index: 30;
+}
+
+.publish-moment-content {
+    padding-top: calc(69px + env(safe-area-inset-top, 0px)) !important;
 }
 
 .publish-content {
@@ -3582,14 +3592,23 @@ input:checked + .slider:before {
 }
 
 .moments-message-top-bar {
+    height: calc(54px + env(safe-area-inset-top, 0px));
     min-height: calc(54px + env(safe-area-inset-top, 0px));
     display: flex;
     align-items: center;
     padding: calc(env(safe-area-inset-top, 0px) + 10px) 20px 12px;
     background-color: #fff;
     border-bottom: 1px solid #e5e5e5;
-    position: relative;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
     flex-shrink: 0;
+    z-index: 30;
+}
+
+#moments-message-list {
+    padding-top: calc(54px + env(safe-area-inset-top, 0px));
 }
 
 /* Moment Forward Sheet Tweaks */

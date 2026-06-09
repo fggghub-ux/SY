@@ -7,6 +7,12 @@
     
     let currentActivePost = null;
 
+    function blurPostCommentInput() {
+        if (postChatInput && document.activeElement === postChatInput) {
+            postChatInput.blur();
+        }
+    }
+
     function getCurrentYtCommunityUser() {
         if (typeof window.getYtEffectiveUserState === 'function') {
             return window.getYtEffectiveUserState() || {};
@@ -16,6 +22,7 @@
 
     if (communityDetailBackBtn) {
         communityDetailBackBtn.addEventListener('click', () => {
+            blurPostCommentInput();
             if (communityDetailView) communityDetailView.classList.remove('active');
         });
     }
@@ -23,6 +30,11 @@
     function openPostDetail(post) {
         if (!communityDetailView || !communityDetailContent || !currentSubChannelData) return;
         currentActivePost = post;
+        if (postChatInput) {
+            postChatInput.value = '';
+            postChatInput.placeholder = '发表评论...';
+            postChatInput.setAttribute('enterkeyhint', 'send');
+        }
 
         // Initialize user avatar in input area
         const userAvatar = document.getElementById('yt-community-user-avatar');
@@ -115,7 +127,8 @@
     if (postChatSend && postChatInput) {
         postChatSend.addEventListener('click', async () => {
             const text = postChatInput.value.trim();
-            if(!text) return;
+            blurPostCommentInput();
+            if(!text || !currentActivePost) return;
             
             const effectiveYtUser = getCurrentYtCommunityUser();
             addPostCommentMessage(effectiveYtUser.name || '我', text, true);
@@ -136,15 +149,25 @@
                 container.appendChild(loadingDiv);
             }
 
-            const responseObj = await getVODResponse(text, currentActivePost.content);
-            if(loadingId) { const el = document.getElementById(loadingId); if(el) el.remove(); }
-            renderVODResponse(responseObj, true);
+            try {
+                const responseObj = await getVODResponse(text, currentActivePost.content);
+                renderVODResponse(responseObj, true);
+            } finally {
+                if(loadingId) { const el = document.getElementById(loadingId); if(el) el.remove(); }
+            }
         });
         postChatInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
+                blurPostCommentInput();
                 postChatSend.click();
             }
+        });
+    }
+
+    if (communityDetailContent) {
+        ['pointerdown', 'touchmove'].forEach((eventName) => {
+            communityDetailContent.addEventListener(eventName, blurPostCommentInput, { passive: true });
         });
     }
 
@@ -154,6 +177,7 @@
     const groupChatTitle = document.getElementById('yt-bubble-chat-title');
     const groupChatContainer = document.getElementById('yt-bubble-chat-container');
     const groupChatInput = document.getElementById('yt-bubble-chat-input');
+    const groupChatApiBtn = document.getElementById('yt-bubble-chat-api-btn');
     const groupChatSendBtn = document.getElementById('yt-bubble-chat-send-btn');
     const groupChatSettingsBtn = document.getElementById('yt-bubble-chat-settings-btn');
     
@@ -165,8 +189,36 @@
     
     let isGroupChatLoading = false;
 
+    function blurGroupChatInput() {
+        if (groupChatInput && document.activeElement === groupChatInput) {
+            groupChatInput.blur();
+        }
+    }
+
+    function sendGroupChatMessageOnly(text) {
+        if (!text || !currentSubChannelData || !groupChatTitle) return false;
+
+        const effectiveYtUser = getCurrentYtCommunityUser();
+        const userMsg = { type: 'user', name: effectiveYtUser.name || '我', text: text };
+        const isDM = groupChatTitle.textContent === currentSubChannelData.name;
+
+        if (isDM) {
+            if (!currentSubChannelData.dmHistory) currentSubChannelData.dmHistory = [];
+            currentSubChannelData.dmHistory.push(userMsg);
+        } else {
+            if (!currentSubChannelData.groupChatHistory) currentSubChannelData.groupChatHistory = [];
+            currentSubChannelData.groupChatHistory.push(userMsg);
+        }
+
+        saveYoutubeData();
+        addGroupChatMessageToUI(userMsg);
+        if (groupChatInput) groupChatInput.value = '';
+        return true;
+    }
+
     if (groupChatBackBtn) {
         groupChatBackBtn.addEventListener('click', () => {
+            blurGroupChatInput();
             if (groupChatView) groupChatView.classList.remove('active');
         });
     }
@@ -839,12 +891,16 @@
 
     if (groupChatSendBtn && groupChatInput) {
         groupChatSendBtn.addEventListener('click', () => {
-            triggerGroupChatAPI(groupChatInput.value.trim());
+            blurGroupChatInput();
+            sendGroupChatMessageOnly(groupChatInput.value.trim());
         });
         
         groupChatInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
+                blurGroupChatInput();
+                sendGroupChatMessageOnly(groupChatInput.value.trim());
+                return;
                 const text = groupChatInput.value.trim();
                 if (text) {
                     const effectiveYtUser = getCurrentYtCommunityUser();
@@ -864,6 +920,21 @@
                     groupChatInput.value = '';
                 }
             }
+        });
+
+        groupChatInput.setAttribute('enterkeyhint', 'send');
+
+        if (groupChatContainer) {
+            ['pointerdown', 'touchmove'].forEach((eventName) => {
+                groupChatContainer.addEventListener(eventName, blurGroupChatInput, { passive: true });
+            });
+        }
+    }
+
+    if (groupChatApiBtn && groupChatInput) {
+        groupChatApiBtn.addEventListener('click', () => {
+            blurGroupChatInput();
+            triggerGroupChatAPI('');
         });
     }
 

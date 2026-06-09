@@ -1641,7 +1641,7 @@
             <div class="bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay" id="chat-memory-schedule-modal" style="z-index: 1300; background: rgba(0, 0, 0, 0.4);">
                 <div class="wb-centered-modal-card memory-entry-detail-card" style="display: flex; flex-direction: column; max-height: 80vh; overflow: hidden;">
                     <div class="wb-centered-modal-header" style="position: relative; flex-shrink: 0;">
-                        <div class="wb-centered-modal-title">日程作息</div>
+                        <div class="wb-centered-modal-title">作息时刻表</div>
                         <div class="wb-centered-modal-close" id="chat-memory-schedule-close" style="position: absolute; right: 16px; top: 16px; font-size: 18px; color: #8e8e93; cursor: pointer;">
                             <i class="fas fa-times"></i>
                         </div>
@@ -2604,12 +2604,9 @@
                 </div>
 
                 <div id="voice-call-main-content" style="position: relative; z-index: 1; display: flex; flex-direction: column; width: 100%; height: 100%; pointer-events: auto; transition: opacity 0.3s ease;">
-                    <!-- 顶部按钮栏 -->
-                    <div style="display: flex; justify-content: space-between; align-items: center; padding: max(20px, env(safe-area-inset-top)) 20px 10px;">
-                        <div style="width: 32px;"></div> <!-- 占位保持居中 -->
-                        <div id="voice-call-minimize-btn" style="width: 36px; height: 36px; background: rgba(255,255,255,0.15); border-radius: 18px; display: flex; justify-content: center; align-items: center; cursor: pointer;">
-                            <i class="fas fa-chevron-down" style="font-size: 16px;"></i>
-                        </div>
+                    <!-- 顶部按钮 -->
+                    <div id="voice-call-minimize-btn" style="position: absolute; top: max(16px, env(safe-area-inset-top, 16px)); left: 16px; width: 36px; height: 36px; background: rgba(255,255,255,0.15); border-radius: 18px; display: flex; justify-content: center; align-items: center; cursor: pointer; z-index: 10;">
+                        <i class="fas fa-chevron-down" style="font-size: 16px;"></i>
                     </div>
                     
                     <!-- 头像及名称信息 -->
@@ -2623,7 +2620,7 @@
                     </div>
 
                     <!-- Messages Area -->
-                    <div id="voice-call-messages" style="flex: 1; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 15px; margin-top: 10px;">
+                    <div id="voice-call-messages" style="flex: 1; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 0; margin-top: 10px;">
                         <!-- Bubbles will be injected here -->
                     </div>
 
@@ -2642,6 +2639,9 @@
                                 <div id="voice-call-hangup-btn" style="width: 64px; height: 64px; border-radius: 50%; background: #ff3b30; display: flex; justify-content: center; align-items: center; cursor: pointer; color: #fff; font-size: 24px; box-shadow: 0 4px 12px rgba(255, 59, 48, 0.4);">
                                     <i class="fas fa-phone-slash"></i>
                                 </div>
+                                <div id="voice-call-regenerate-btn" title="重回上一轮回复" style="width: 64px; height: 64px; border-radius: 50%; background: rgba(255,255,255,0.18); display: flex; justify-content: center; align-items: center; cursor: pointer; color: #fff; font-size: 22px; border: 1px solid rgba(255,255,255,0.22); box-shadow: 0 4px 12px rgba(0,0,0,0.18);">
+                                    <i class="fas fa-redo-alt"></i>
+                                </div>
                             </div>
                             
                             <!-- 占位 -->
@@ -2651,8 +2651,8 @@
                         <!-- Input Row -->
                         <div id="voice-call-input-row" style="display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.15); border-radius: 24px; padding: 6px 6px 6px 16px; margin-top: 10px;">
                             <input type="text" id="voice-call-input" placeholder="发消息..." style="flex: 1; height: 36px; border: none; background: transparent; color: #fff; outline: none; font-size: 15px; font-weight: 500;">
-                            <div id="voice-call-ai-btn" style="width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,0.2); display: flex; justify-content: center; align-items: center; cursor: pointer; color: #fff; flex-shrink: 0;" title="让 AI 回复">
-                                <i class="fas fa-magic"></i>
+                            <div id="voice-call-ai-btn" style="width: 36px; height: 36px; background: transparent; display: flex; justify-content: center; align-items: center; cursor: pointer; color: #fff; flex-shrink: 0;" title="? AI ??">
+                                <i class="fas fa-chevron-down" style="font-size: 17px;"></i>
                             </div>
                             <div id="voice-call-send-btn" style="width: 36px; height: 36px; border-radius: 50%; background: #fff; display: flex; justify-content: center; align-items: center; cursor: pointer; color: #111; flex-shrink: 0;">
                                 <i class="fas fa-arrow-up"></i>
@@ -2666,14 +2666,20 @@
 <div class="bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay" id="voice-call-detail-modal" style="z-index: 1010;">
                 <div class="wb-centered-modal-card wb-group-modal-card" style="height: 70%; display: flex; flex-direction: column; background: #f2f2f7;">
                     <div class="wb-centered-modal-header" style="position: relative; flex-shrink: 0;">
-                        <div class="wb-centered-modal-title">通话记录详情</div>
-                        <div class="wb-centered-modal-close" style="position: absolute; right: 16px; top: 16px; font-size: 18px; color: #8e8e93; cursor: pointer;" onclick="window.closeView(document.getElementById('voice-call-detail-modal'))">
-                            <i class="fas fa-times"></i>
+                        <div class="wb-centered-modal-title" style="display: flex; align-items: center; gap: 8px;">
+                            通话记录详情
+                            <i class="fas fa-edit" id="voice-call-detail-edit-btn" style="font-size: 14px; color: #007aff; cursor: pointer;"></i>
+                        </div>
+                        <div style="position: absolute; right: 16px; top: 16px; display: flex; gap: 12px;">
+                            <div id="voice-call-detail-cancel-btn" style="display: none; font-size: 14px; color: #8e8e93; cursor: pointer;">取消</div>
+                            <div id="voice-call-detail-save-btn" style="display: none; font-size: 14px; color: #007aff; font-weight: 600; cursor: pointer;">保存</div>
+                            <div class="wb-centered-modal-close" style="font-size: 18px; color: #8e8e93; cursor: pointer;" onclick="window.closeView(document.getElementById('voice-call-detail-modal'))">
+                                <i class="fas fa-times"></i>
+                            </div>
                         </div>
                     </div>
                     <div style="padding: 10px 16px; text-align: center; font-size: 13px; color: #8e8e93; flex-shrink: 0; border-bottom: 1px solid #e5e5ea;" id="voice-call-detail-meta">
-                        通话时长: 00:00
-                    </div>
+                        通话时长: 00:00</div>
                     <div class="detail-sheet-content" id="voice-call-detail-content" style="flex: 1; overflow-y: auto; padding: 16px; background: #ffffff;">
                         <!-- Call messages log injected here -->
                     </div>

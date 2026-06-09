@@ -243,6 +243,7 @@
 
     if(playerBackBtn && playerView) {
         playerBackBtn.addEventListener('click', () => {
+            blurPlayerChatInput();
             playerView.classList.remove('active');
             playerView.classList.remove('yt-char-live-mode');
             if(chatInterval) clearInterval(chatInterval);
@@ -561,6 +562,7 @@
             if(chatContainer) chatContainer.innerHTML = ''; 
 
             if (video.isLive) {
+                syncPlayerChatInputMode(true);
                 if(liveBadge) liveBadge.style.display = 'block';
                 if(chatTitle) chatTitle.textContent = '实时聊天';
                 if(giftBtn) giftBtn.style.display = 'flex';
@@ -594,6 +596,7 @@
                     if(chatInterval) clearInterval(chatInterval);
                 }
             } else {
+                syncPlayerChatInputMode(false);
                 if(liveBadge) liveBadge.style.display = 'none';
                 if(chatTitle) chatTitle.textContent = '评论';
                 if(giftBtn) giftBtn.style.display = 'none';
@@ -779,6 +782,12 @@
         }
     }
 
+    function getYtVodReplyText(reply) {
+        if (typeof reply === 'string') return reply.trim();
+        if (!reply || typeof reply !== 'object') return '';
+        return String(reply.text || reply.reply || reply.comment || reply.content || reply.message || '').trim();
+    }
+
     function renderVODResponse(responseObj, isPost = false) {
         if (!responseObj) return;
         
@@ -795,7 +804,7 @@
         }
 
         // Add char replies with prefix
-        replies.forEach((text, index) => {
+        replies.map(getYtVodReplyText).filter(Boolean).forEach((text, index) => {
             let tId = setTimeout(() => {
                 const replyText = `回复 @${userName} : ${text}`;
                 if (isPost) {
@@ -806,6 +815,23 @@
             }, 1000 + (index * 1500));
             window.ytLiveTimeouts.push(tId);
         });
+
+        if (responseObj.fanReplies && Array.isArray(responseObj.fanReplies)) {
+            responseObj.fanReplies = responseObj.fanReplies
+                .map((reply) => {
+                    const text = getYtVodReplyText(reply);
+                    if (!text) return null;
+                    if (reply && typeof reply === 'object') {
+                        return {
+                            ...reply,
+                            name: reply.name || reply.user || reply.nickname,
+                            text
+                        };
+                    }
+                    return { text };
+                })
+                .filter(Boolean);
+        }
 
         // Add fan replies with prefix
         if (responseObj.fanReplies && Array.isArray(responseObj.fanReplies)) {
@@ -1116,6 +1142,23 @@
 
     const chatInput = document.getElementById('yt-player-chat-input');
     const chatSend = document.getElementById('yt-player-chat-send');
+
+    function blurPlayerChatInput() {
+        if (chatInput && document.activeElement === chatInput) {
+            chatInput.blur();
+        }
+    }
+
+    function syncPlayerChatInputMode(isLive) {
+        if (chatInput) {
+            chatInput.placeholder = isLive ? '发送消息...' : '发表评论...';
+            chatInput.setAttribute('aria-label', isLive ? '发送直播聊天' : '发表评论');
+            chatInput.setAttribute('enterkeyhint', 'send');
+        }
+        if (chatSend) {
+            chatSend.title = isLive ? '发送消息' : '发表评论';
+        }
+    }
     
     const playerPlusBtn = document.getElementById('yt-player-plus-btn');
     const playerActionMenu = document.getElementById('yt-player-action-menu');
@@ -1125,6 +1168,7 @@
     if(chatSend && chatInput) {
         chatSend.addEventListener('click', async () => {
             const text = chatInput.value.trim();
+            blurPlayerChatInput();
             if(!text) return;
             
             const isLive = currentVideoData && currentVideoData.isLive;
@@ -1161,9 +1205,21 @@
         chatInput.addEventListener('keydown', (e) => {
             if(e.key === 'Enter') {
                 e.preventDefault();
+                blurPlayerChatInput();
                 chatSend.click();
             }
         });
+
+        const chatContainer = document.getElementById('yt-player-chat-container');
+        if (chatContainer) {
+            ['pointerdown', 'touchmove'].forEach((eventName) => {
+                chatContainer.addEventListener(eventName, blurPlayerChatInput, { passive: true });
+            });
+        }
+
+        if (ytPlayerVideoArea) {
+            ytPlayerVideoArea.addEventListener('pointerdown', blurPlayerChatInput, { passive: true });
+        }
     }
 
     if(playerPlusBtn && playerActionMenu) {

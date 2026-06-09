@@ -8,6 +8,8 @@
     let callSeconds = 0;
     let callFriend = null;
     let callMessages = [];
+    let callMessageSeq = 0;
+    let lastCallAiTurn = null;
 
     function formatTime(seconds) {
         const m = Math.floor(seconds / 60).toString().padStart(2, '0');
@@ -37,62 +39,160 @@
         }
     }
 
-    function addCallBubble(text, isSelf, messagesArea, actionText = '') {
-        if (actionText) {
-            const actionDiv = document.createElement('div');
-            actionDiv.style.textAlign = 'center';
-            actionDiv.style.fontSize = '12px';
-            actionDiv.style.color = 'rgba(255,255,255,0.6)';
-            actionDiv.style.marginBottom = '10px';
-            actionDiv.innerText = actionText;
-            if (messagesArea) {
-                messagesArea.appendChild(actionDiv);
-            }
+    function getCallSpeakerName(message, friend = callFriend) {
+        if (!message || !message.isSelf) {
+            return friend?.nickname || friend?.realName || 'Char';
         }
+        return window.userState?.name || window.userState?.realName || 'User';
+    }
 
-        if (text) {
-            const bubbleWrap = document.createElement('div');
-            bubbleWrap.style.display = 'flex';
-            bubbleWrap.style.justifyContent = isSelf ? 'flex-end' : 'flex-start';
-            bubbleWrap.style.marginBottom = '10px';
+    function formatCallLineText(text) {
+        const cleanText = String(text || '').trim();
+        return cleanText ? `「${cleanText}」` : '';
+    }
 
-            const bubble = document.createElement('div');
-            bubble.style.maxWidth = '75%';
-            bubble.style.padding = '10px 14px';
-            bubble.style.borderRadius = '18px';
-            bubble.style.fontSize = '15px';
-            bubble.style.lineHeight = '1.4';
-            bubble.style.wordBreak = 'break-word';
+    function createCallNovelLine(text, options = {}) {
+        const row = document.createElement('div');
+        if (options.callTurnId) row.dataset.callTurnId = options.callTurnId;
+        if (options.callLineType) row.dataset.callLineType = options.callLineType;
+        row.style.width = '100%';
+        row.style.display = 'flex';
+        row.style.alignItems = 'flex-start';
+        row.style.justifyContent = 'flex-start';
+        row.style.gap = '8px';
+        row.style.marginBottom = '10px';
+        row.style.padding = '0 10px';
+        row.style.boxSizing = 'border-box';
+        row.style.fontSize = options.fontSize || '15px';
+        row.style.lineHeight = '1.55';
+        row.style.color = options.color || '#fff';
+        row.style.textAlign = 'left';
+        row.style.wordBreak = 'break-word';
 
-            if (isSelf) {
-                bubble.style.background = 'rgba(255, 255, 255, 0.2)';
-                bubble.style.backdropFilter = 'blur(10px)';
-                bubble.style.color = '#fff';
-                bubble.style.borderBottomRightRadius = '4px';
-            } else {
-                bubble.style.background = 'rgba(0, 0, 0, 0.3)';
-                bubble.style.backdropFilter = 'blur(10px)';
-                bubble.style.color = '#fff';
-                bubble.style.borderBottomLeftRadius = '4px';
-            }
-
-            bubble.innerText = '「 ' + text + ' 」';
-            bubbleWrap.appendChild(bubble);
-            if(messagesArea) {
-                messagesArea.appendChild(bubbleWrap);
-            }
-        }
+        const textEl = document.createElement('div');
+        textEl.style.minWidth = '0';
+        textEl.style.maxWidth = options.voiceButton ? 'calc(100% - 42px)' : '100%';
+        textEl.style.whiteSpace = 'pre-wrap';
         
+        if (options.speakerName) {
+            const nameTag = document.createElement('span');
+            nameTag.style.display = 'inline-block';
+            nameTag.style.padding = '1px 6px';
+            nameTag.style.borderRadius = '8px';
+            nameTag.style.marginRight = '6px';
+            nameTag.style.fontSize = '12px';
+            nameTag.style.fontWeight = '500';
+            nameTag.style.verticalAlign = 'baseline';
+            
+            if (options.isSelf) {
+                nameTag.style.background = 'rgba(255, 255, 255, 0.15)';
+                nameTag.style.color = '#fff';
+            } else {
+                nameTag.style.background = 'rgba(255, 255, 255, 0.15)';
+                nameTag.style.color = '#fff';
+            }
+            nameTag.innerText = `@${options.speakerName}`;
+            
+            textEl.appendChild(nameTag);
+            textEl.appendChild(document.createTextNode(text));
+        } else {
+            textEl.innerText = text;
+        }
+
+        row.appendChild(textEl);
+
+        if (options.voiceButton) row.appendChild(options.voiceButton);
+        return row;
+    }
+
+    function createCallVoiceButton(text, message, friend = callFriend) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.title = '播放语音';
+        btn.setAttribute('aria-label', '播放语音');
+        btn.style.width = '30px';
+        btn.style.height = '30px';
+        btn.style.border = '1px solid rgba(255,255,255,0.35)';
+        btn.style.borderRadius = '50%';
+        btn.style.background = 'rgba(255,255,255,0.14)';
+        btn.style.color = '#fff';
+        btn.style.display = 'inline-flex';
+        btn.style.alignItems = 'center';
+        btn.style.justifyContent = 'center';
+        btn.style.cursor = 'pointer';
+        btn.style.flexShrink = '0';
+        btn.style.padding = '0';
+        btn.innerHTML = '<i class="fas fa-volume-up" style="font-size: 12px;"></i>';
+
+        btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            if (!window.u2MinimaxTts || typeof window.u2MinimaxTts.speakTextCached !== 'function') {
+                if (window.showToast) window.showToast('Minimax 语音不可用');
+                return;
+            }
+
+            btn.style.opacity = '0.55';
+            btn.style.pointerEvents = 'none';
+            try {
+                await window.u2MinimaxTts.speakTextCached(text, friend, message);
+            } catch (error) {
+                console.error('Call voice playback failed', error);
+                if (window.showToast) window.showToast('语音播放失败');
+            } finally {
+                btn.style.opacity = '1';
+                btn.style.pointerEvents = 'auto';
+            }
+        });
+
+        return btn;
+    }
+
+    function addCallBubble(text, isSelf, messagesArea, actionText = '', thoughtText = '') {
+        const turnId = `call-msg-${Date.now()}-${++callMessageSeq}`;
+        const message = {
+            text: text,
+            actionText: actionText,
+            thoughtText: thoughtText,
+            isSelf: isSelf,
+            timestamp: Date.now(),
+            callTurnId: turnId
+        };
+        callMessages.push(message);
+
+        if (actionText && messagesArea) {
+            messagesArea.appendChild(createCallNovelLine(actionText, {
+                callTurnId: turnId,
+                callLineType: 'action'
+            }));
+        }
+
+        if (thoughtText && messagesArea) {
+            messagesArea.appendChild(createCallNovelLine(thoughtText, {
+                callTurnId: turnId,
+                callLineType: 'thought',
+                color: 'rgba(255,255,255,0.55)',
+                fontSize: '13px'
+            }));
+        }
+
+        if (text && messagesArea) {
+            const speakerName = getCallSpeakerName(message);
+            messagesArea.appendChild(createCallNovelLine(formatCallLineText(text), {
+                voiceButton: isSelf ? null : createCallVoiceButton(text, message),
+                callTurnId: turnId,
+                callLineType: 'text',
+                speakerName: speakerName,
+                isSelf: isSelf
+            }));
+        }
+
         if (messagesArea) {
             messagesArea.scrollTop = messagesArea.scrollHeight;
         }
 
-        callMessages.push({
-            text: text,
-            actionText: actionText,
-            isSelf: isSelf,
-            timestamp: Date.now()
-        });
+        return message;
     }
 
     window.imChat.openVoiceCall = function(friend, isIncoming = false) {
@@ -117,6 +217,7 @@
         const newSendBtn = newView.querySelector('#voice-call-send-btn');
         const newAiBtn = newView.querySelector('#voice-call-ai-btn');
         const newHangupBtn = newView.querySelector('#voice-call-hangup-btn');
+        const newRegenerateBtn = newView.querySelector('#voice-call-regenerate-btn');
         const newAcceptBtn = newView.querySelector('#voice-call-accept-btn');
         
         const minimizedFloat = newView.querySelector('#voice-call-minimized-float');
@@ -127,6 +228,8 @@
 
         callFriend = friend;
         callMessages = [];
+        callMessageSeq = 0;
+        lastCallAiTurn = null;
         if(newMessagesArea) newMessagesArea.innerHTML = '';
         if(newInput) newInput.value = '';
 
@@ -364,6 +467,7 @@
                 if (!text || !callFriend) return;
                 
                 addCallBubble(text, true, newMessagesArea);
+                lastCallAiTurn = null;
                 newInput.value = '';
 
                 // Optional: trigger API for character response inside call
@@ -377,43 +481,90 @@
             });
         }
 
-        if (newAiBtn && newMessagesArea) {
-            newAiBtn.addEventListener('click', async () => {
-                if (!isConnected || !callFriend) return;
-                const { apiConfig, userState } = window;
-                if (!apiConfig || !apiConfig.endpoint || !apiConfig.apiKey) {
-                    if (window.showToast) window.showToast('请先配置 API');
+        function removeCallTurnFromView(turn, messagesArea) {
+            if (!turn?.message?.callTurnId || !messagesArea) return;
+            messagesArea.querySelectorAll(`[data-call-turn-id="${turn.message.callTurnId}"]`).forEach(node => node.remove());
+        }
+
+        function buildCallRegeneratePrompt(previousReply) {
+            return previousReply ? `
+
+【重回重新生成要求】：
+- User 按下了“重回”，这通常代表 User 对上一轮语音回复不满意。
+- 请先在内部思考：User 为什么重回、刚刚生成的内容不好的点在哪里、User 现在更需要怎样的电话回复。可能问题包括：语气不对、关系距离不对、动作氛围太泛、没有接住情绪、对话太长、太敷衍、太热情、偏离人设、节奏不像电话、没有回应重点。
+- 禁止与上一轮重复或高度相似，不能复用相同句式、称呼、情绪走向、动作安排、环境声细节或结尾。
+- 不要在 action 或 text 里解释“重回”。
+【刚刚被重回的回复】：
+${previousReply}` : '';
+        }
+
+        async function runCallAiReply(options = {}) {
+            const triggerBtn = options.regenerate ? newRegenerateBtn : newAiBtn;
+            if (!isConnected || !callFriend || !newMessagesArea) return;
+            const { apiConfig, userState } = window;
+            if (!apiConfig || !apiConfig.endpoint || !apiConfig.apiKey) {
+                if (window.showToast) window.showToast('请先配置 API');
+                return;
+            }
+
+            let regenerateContext = null;
+            if (options.regenerate) {
+                if (!lastCallAiTurn?.message) {
+                    if (window.showToast) window.showToast('暂无可重回的回复');
                     return;
                 }
+                regenerateContext = {
+                    previousAction: lastCallAiTurn.message.actionText || '',
+                    previousThought: lastCallAiTurn.message.thoughtText || '',
+                    previousText: lastCallAiTurn.message.text || '',
+                    previousReply: [
+                        lastCallAiTurn.message.actionText ? `动作/氛围：${lastCallAiTurn.message.actionText}` : '',
+                        lastCallAiTurn.message.thoughtText ? `心声：${lastCallAiTurn.message.thoughtText}` : '',
+                        lastCallAiTurn.message.text ? `对话：${lastCallAiTurn.message.text}` : ''
+                    ].filter(Boolean).join('\n')
+                };
+                removeCallTurnFromView(lastCallAiTurn, newMessagesArea);
+                callMessages = callMessages.filter(item => item !== lastCallAiTurn.message);
+                lastCallAiTurn = null;
+            }
 
-                newAiBtn.style.opacity = '0.5';
-                newAiBtn.style.pointerEvents = 'none';
+            if (triggerBtn) {
+                triggerBtn.style.opacity = '0.5';
+                triggerBtn.style.pointerEvents = 'none';
+            }
 
-                try {
-                    const systemDepth = window.getGlobalWorldBookContextByPosition ? window.getGlobalWorldBookContextByPosition('system_depth') : '';
-                    const beforeRole = window.getGlobalWorldBookContextByPosition ? window.getGlobalWorldBookContextByPosition('before_role') : '';
-                    
-                    const effectiveUserPersona = window.imApp?.getEffectivePersonaForFriend ? window.imApp.getEffectivePersonaForFriend(callFriend) : (userState?.persona || '普通用户');
-                    
-                    const contextLimit = window.imApp?.getContextLimit ? window.imApp.getContextLimit(callFriend) : 20;
-                    
-                    let chatContextStr = '';
-                    if (window.imApp?.getRecentContextMessages) {
-                        const contextMsgs = window.imApp.getRecentContextMessages(callFriend);
-                        if (contextMsgs && contextMsgs.length > 0) {
-                            chatContextStr = contextMsgs.map(m => {
-                                const roleName = m.role === 'user' ? (userState.name || 'User') : (m.speaker || callFriend.nickname);
-                                const content = m.text || m.content || '';
-                                return `${roleName}: ${content}`;
-                            }).join('\n');
-                        }
+            try {
+                const systemDepth = window.getGlobalWorldBookContextByPosition ? window.getGlobalWorldBookContextByPosition('system_depth') : '';
+                const beforeRole = window.getGlobalWorldBookContextByPosition ? window.getGlobalWorldBookContextByPosition('before_role') : '';
+                
+                const effectiveUserPersona = window.imApp?.getEffectivePersonaForFriend ? window.imApp.getEffectivePersonaForFriend(callFriend) : (userState?.persona || '普通用户');
+                
+                const contextLimit = window.imApp?.getContextLimit ? window.imApp.getContextLimit(callFriend) : 20;
+                
+                let chatContextStr = '';
+                if (window.imApp?.getRecentContextMessages) {
+                    const contextMsgs = window.imApp.getRecentContextMessages(callFriend);
+                    if (contextMsgs && contextMsgs.length > 0) {
+                        chatContextStr = contextMsgs.map(m => {
+                            const roleName = m.role === 'user' ? (userState.name || 'User') : (m.speaker || callFriend.nickname);
+                            const content = m.text || m.content || '';
+                            return `${roleName}: ${content}`;
+                        }).join('\n');
                     }
+                }
 
-                    const recentMessages = callMessages.slice(-contextLimit).map(m => {
-                        return `${m.isSelf ? (userState.name || 'User') : callFriend.nickname}: ${m.text}`;
-                    }).join('\n');
+                const recentMessages = callMessages.slice(-contextLimit).map(m => {
+                    const speaker = m.isSelf ? (userState.name || 'User') : callFriend.nickname;
+                    const parts = [];
+                    if (m.actionText) parts.push(`动作/氛围：${m.actionText}`);
+                    if (m.thoughtText) parts.push(`心声：${m.thoughtText}`);
+                    if (m.text) parts.push(`对话：${m.text}`);
+                    return `${speaker}: ${parts.join(' / ')}`;
+                }).join('\n');
 
-                    const systemPrompt = `${systemDepth ? `System Depth Rules:\n${systemDepth}\n\n` : ''}${beforeRole ? `Before Role Rules:\n${beforeRole}\n\n` : ''}You are playing the role of ${callFriend.realName || callFriend.nickname}.
+                const charDisplayName = callFriend.realName || callFriend.nickname || 'Char';
+                const regeneratePrompt = buildCallRegeneratePrompt(regenerateContext?.previousReply || '');
+                const systemPrompt = `${systemDepth ? `System Depth Rules:\n${systemDepth}\n\n` : ''}${beforeRole ? `Before Role Rules:\n${beforeRole}\n\n` : ''}You are playing the role of ${charDisplayName}.
 【核心设定/Core Persona】：${callFriend.persona || 'No specific persona'}。
 You are talking to ${userState.name || 'User'}, whose persona is: ${effectiveUserPersona}。
 
@@ -421,63 +572,93 @@ You are talking to ${userState.name || 'User'}, whose persona is: ${effectiveUse
 ${chatContextStr || '无'}
 
 【当前场景】：你和用户正处于实时的语音通话中。
-【要求】：请结合之前的文字聊天记录以及当前的语音通话上下文，给出一个连贯的自然回复，并且描写你当前的动作或心理状态。
-【输出格式】：必须返回纯 JSON，格式为 {"action": "动作或心理描写，如：轻轻叹了口气 / 听起来很开心", "text": "你说出口的对话内容"}
+【要求】：
+1. 请结合之前的文字聊天记录以及当前的语音通话上下文，给出一个连贯自然的电话回复。
+2. action 必须用第三人称描写动作、环境声或通话氛围，必须包含角色名字“${charDisplayName}”，不要用“我/你”开头。
+3. action 要像电话那头能听到或感受到的细节，例如：${charDisplayName}翻了个身，电话那头传来布料摩擦声；${charDisplayName}压低了呼吸，背景里有很轻的脚步声。
+4. thought 是 ${charDisplayName} 此刻没说出口的当下心声，必须使用第一人称自述视角（即以“我”自称），可以体现口是心非、犹豫、压住的情绪、真正想说但没说的话；必须贴合人设和当前电话氛围。
+5. text 是角色真正说出口的话，可以和 thought 有反差，但不能让 text 解释 thought。
+6. action、thought、text 都要简短、口语、贴近实时通话，不要长篇独白。
+【输出格式】：必须返回纯 JSON，格式为 {"action": "第三人称动作/环境声/氛围描写，必须带${charDisplayName}的名字", "thought": "角色当下心声，不说出口的话（第一人称视角）", "text": "角色说出口的对话内容"}${regeneratePrompt}
 
 【当前的语音通话上下文】:
 ${recentMessages}`;
 
-                    let endpoint = apiConfig.endpoint;
-                    if(endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-                    if(!endpoint.endsWith('/chat/completions')) {
-                        endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
-                    }
-
-                    const response = await fetch(endpoint, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                        body: JSON.stringify({
-                            model: apiConfig.model || '',
-                            messages: [
-                                { role: 'system', content: systemPrompt },
-                                { role: 'user', content: '请继续语音通话' }
-                            ],
-                            temperature: parseFloat(apiConfig.temperature) || 0.7
-                        })
-                    });
-
-                    if (!response.ok) throw new Error('API Error');
-                    const data = await response.json();
-                    let fullReply = data.choices[0].message.content;
-
-                    let parsed = null;
-                    let cleanText = fullReply.trim();
-                    if (cleanText.startsWith('```json')) cleanText = cleanText.substring(7);
-                    else if (cleanText.startsWith('```')) cleanText = cleanText.substring(3);
-                    if (cleanText.endsWith('```')) cleanText = cleanText.substring(0, cleanText.length - 3);
-
-                    try {
-                        parsed = JSON.parse(cleanText);
-                    } catch (e) {
-                        parsed = { action: '', text: cleanText };
-                    }
-
-                    if (!callFriend) return; // 检查是否在返回前挂断了
-
-                    if (parsed && (parsed.text || parsed.action)) {
-                        addCallBubble(parsed.text || '', false, newMessagesArea, parsed.action || '');
-                    }
-
-                } catch (error) {
-                    console.error(error);
-                    if (window.showToast) window.showToast('API 请求失败');
-                } finally {
-                    newAiBtn.style.opacity = '1';
-                    newAiBtn.style.pointerEvents = 'auto';
+                let endpoint = apiConfig.endpoint;
+                if(endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
+                if(!endpoint.endsWith('/chat/completions')) {
+                    endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
                 }
+
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                    body: JSON.stringify({
+                        model: apiConfig.model || '',
+                        messages: [
+                            { role: 'system', content: systemPrompt },
+                            { role: 'user', content: options.regenerate ? '请重回并重新生成这一轮语音通话回复' : '请继续语音通话' }
+                        ],
+                        temperature: parseFloat(apiConfig.temperature) || 0.7
+                    })
+                });
+
+                if (!response.ok) throw new Error('API Error');
+                const data = await response.json();
+                let fullReply = data.choices[0].message.content;
+
+                let parsed = null;
+                let cleanText = fullReply.trim();
+                if (cleanText.startsWith('```json')) cleanText = cleanText.substring(7);
+                else if (cleanText.startsWith('```')) cleanText = cleanText.substring(3);
+                if (cleanText.endsWith('```')) cleanText = cleanText.substring(0, cleanText.length - 3);
+
+                try {
+                    parsed = JSON.parse(cleanText);
+                } catch (e) {
+                    parsed = { action: '', text: cleanText };
+                }
+
+                if (!callFriend) return;
+
+                if (parsed && (parsed.text || parsed.action || parsed.thought)) {
+                    const message = addCallBubble(parsed.text || '', false, newMessagesArea, parsed.action || '', parsed.thought || '');
+                    lastCallAiTurn = { message };
+                }
+
+            } catch (error) {
+                console.error(error);
+                if (options.regenerate && regenerateContext?.previousReply) {
+                    const restored = addCallBubble(
+                        regenerateContext.previousText || '',
+                        false,
+                        newMessagesArea,
+                        regenerateContext.previousAction || '',
+                        regenerateContext.previousThought || ''
+                    );
+                    lastCallAiTurn = { message: restored };
+                }
+                if (window.showToast) window.showToast(options.regenerate ? '重回失败' : 'API 请求失败');
+            } finally {
+                if (triggerBtn) {
+                    triggerBtn.style.opacity = '1';
+                    triggerBtn.style.pointerEvents = 'auto';
+                }
+            }
+        }
+
+        if (newAiBtn && newMessagesArea) {
+            newAiBtn.addEventListener('click', async () => {
+                await runCallAiReply();
             });
         }
-        
+
+        if (newRegenerateBtn && newMessagesArea) {
+            newRegenerateBtn.addEventListener('click', async () => {
+                await runCallAiReply({ regenerate: true });
+            });
+        }
+
         if (newInput && newSendBtn) {
             newInput.addEventListener('keydown', (e) => {
                 if (e.isComposing || e.keyCode === 229) return;
@@ -1076,4 +1257,253 @@ systemPrompt += `\n【!!!重要指示!!!】:
             detailModal.style.display = 'flex';
         }
     };
+    function serializeCallMessagesForEdit(messages, friend = null) {
+        const safeMessages = Array.isArray(messages) ? messages : [];
+        return safeMessages.map((message) => {
+            const lines = [];
+            if (message.actionText) lines.push(String(message.actionText).trim());
+            if (message.thoughtText) lines.push(`心声：${String(message.thoughtText).trim()}`);
+            if (message.text) lines.push(`${getCallSpeakerName(message, friend)}：${formatCallLineText(message.text)}`);
+            return lines.join('\n');
+        }).filter(Boolean).join('\n\n');
+    }
+
+    function buildCallRecordContextText(messages, friend = null, duration = 0, statusText = '通话记录') {
+        const safeMessages = Array.isArray(messages) ? messages : [];
+        const durationText = `${Math.floor((Number(duration) || 0) / 60)}分${(Number(duration) || 0) % 60}秒`;
+
+        if (statusText === '已拒绝') {
+            return '[语音通话记录] 对方刚刚拒绝了这通语音通话。';
+        }
+        if (statusText === '已取消') {
+            return '[语音通话记录] 用户刚刚取消了这通语音通话。';
+        }
+
+        const transcript = safeMessages.map((message) => {
+            const parts = [];
+            if (message.actionText) parts.push(String(message.actionText).trim());
+            if (message.thoughtText) parts.push(`心声：${String(message.thoughtText).trim()}`);
+            if (message.text) parts.push(`${getCallSpeakerName(message, friend)}：${formatCallLineText(message.text)}`);
+            return parts.join('\n');
+        }).filter(Boolean).join('\n');
+
+        return transcript
+            ? `[语音通话记录] 时长 ${durationText}\n${transcript}`
+            : `[语音通话记录] 时长 ${durationText}，未产生可识别的文本记录。`;
+    }
+
+    function parseCallMessagesFromEdit(rawText, previousMessages = [], friend = null) {
+        const userNames = [window.userState?.name, window.userState?.realName, 'User', '我']
+            .filter(Boolean)
+            .map(name => String(name).trim());
+        const charNames = [friend?.nickname, friend?.realName, 'Char', '对方']
+            .filter(Boolean)
+            .map(name => String(name).trim());
+        const messages = [];
+        let pendingAction = '';
+        let pendingThought = '';
+
+        String(rawText || '').split(/\r?\n/).forEach((rawLine) => {
+            const line = rawLine.trim();
+            if (!line) return;
+
+            const thoughtMatch = line.match(/^心声[：:]\s*(.+)$/);
+            if (thoughtMatch) {
+                pendingThought = String(thoughtMatch[1] || '').trim();
+                return;
+            }
+
+            const dialogMatch = line.match(/^(?:(.+?)[：:]\s*)?[「"](.*?)[」"]$/);
+            if (dialogMatch) {
+                const speaker = String(dialogMatch[1] || '').trim();
+                const text = String(dialogMatch[2] || '').trim();
+                const fallback = previousMessages[messages.length] || {};
+                let isSelf = !!fallback.isSelf;
+
+                if (speaker) {
+                    if (userNames.some(name => name && speaker.includes(name))) isSelf = true;
+                    if (charNames.some(name => name && speaker.includes(name))) isSelf = false;
+                }
+
+                messages.push({
+                    text,
+                    actionText: pendingAction,
+                    thoughtText: pendingThought,
+                    isSelf,
+                    timestamp: fallback.timestamp || Date.now()
+                });
+                pendingAction = '';
+                pendingThought = '';
+                return;
+            }
+
+            pendingAction = pendingAction ? `${pendingAction}\n${line}` : line;
+        });
+
+        if (pendingAction || pendingThought) {
+            const fallback = previousMessages[messages.length] || {};
+            messages.push({
+                text: '',
+                actionText: pendingAction,
+                thoughtText: pendingThought,
+                isSelf: !!fallback.isSelf,
+                timestamp: fallback.timestamp || Date.now()
+            });
+        }
+
+        return messages;
+    }
+
+    function renderCallDetailReadMode(detailContent, msg, friend = null) {
+        detailContent.innerHTML = '';
+        const safeMessages = Array.isArray(msg.callMessages) ? msg.callMessages : [];
+
+        if (safeMessages.length === 0) {
+            detailContent.innerHTML = '<div style="text-align:left; color:#8e8e93; padding:20px 0;">无通话内容记录</div>';
+            return;
+        }
+
+        safeMessages.forEach((cMsg) => {
+            const block = document.createElement('div');
+            block.style.marginBottom = '14px';
+            block.style.textAlign = 'left';
+            block.style.color = '#111';
+            block.style.fontSize = '15px';
+            block.style.lineHeight = '1.65';
+
+            if (cMsg.actionText) {
+                const action = document.createElement('div');
+                action.style.whiteSpace = 'pre-wrap';
+                action.style.wordBreak = 'break-word';
+                action.innerText = cMsg.actionText;
+                block.appendChild(action);
+            }
+
+            if (cMsg.thoughtText) {
+                const thought = document.createElement('div');
+                thought.style.whiteSpace = 'pre-wrap';
+                thought.style.wordBreak = 'break-word';
+                thought.style.color = '#8e8e93';
+                thought.style.fontSize = '13px';
+                thought.innerText = cMsg.thoughtText;
+                block.appendChild(thought);
+            }
+
+            if (cMsg.text) {
+                const line = document.createElement('div');
+                line.style.whiteSpace = 'pre-wrap';
+                line.style.wordBreak = 'break-word';
+                line.innerText = `${getCallSpeakerName(cMsg, friend)}：${formatCallLineText(cMsg.text)}`;
+                block.appendChild(line);
+            }
+
+            detailContent.appendChild(block);
+        });
+    }
+
+    function renderCallDetailEditMode(detailContent, msg, friend = null) {
+        detailContent.innerHTML = '';
+        const textarea = document.createElement('textarea');
+        textarea.id = 'voice-call-detail-editor';
+        // 保留说话人名称，便于保存时识别通话双方。
+        textarea.value = serializeCallMessagesForEdit(msg.callMessages, friend);
+        textarea.style.width = '100%';
+        textarea.style.height = '100%';
+        textarea.style.minHeight = '320px';
+        textarea.style.boxSizing = 'border-box';
+        textarea.style.border = '1px solid #d1d1d6';
+        textarea.style.borderRadius = '12px';
+        textarea.style.padding = '12px';
+        textarea.style.fontSize = '15px';
+        textarea.style.lineHeight = '1.6';
+        textarea.style.outline = 'none';
+        textarea.style.resize = 'none';
+        textarea.style.background = '#fff';
+        textarea.style.color = '#111';
+        detailContent.appendChild(textarea);
+        textarea.focus();
+    }
+
+    window.imChat.openVoiceCallDetail = function(msg, friend = null) {
+        const detailModal = document.getElementById('voice-call-detail-modal');
+        const detailContent = document.getElementById('voice-call-detail-content');
+        const detailMeta = document.getElementById('voice-call-detail-meta');
+        const editBtn = document.getElementById('voice-call-detail-edit-btn');
+        const saveBtn = document.getElementById('voice-call-detail-save-btn');
+        const cancelBtn = document.getElementById('voice-call-detail-cancel-btn');
+
+        if (!detailModal || !detailContent || !detailMeta) return;
+
+        const detailFriend = friend || window.imData?.currentActiveFriend || null;
+        let isEditing = false;
+
+        const setEditMode = (nextEditing) => {
+            isEditing = nextEditing;
+            if (editBtn) editBtn.style.display = isEditing ? 'none' : 'block';
+            if (saveBtn) saveBtn.style.display = isEditing ? 'block' : 'none';
+            if (cancelBtn) cancelBtn.style.display = isEditing ? 'block' : 'none';
+            if (isEditing) renderCallDetailEditMode(detailContent, msg, detailFriend);
+            else renderCallDetailReadMode(detailContent, msg, detailFriend);
+        };
+
+        detailMeta.innerText = `通话时长: ${formatTime(msg.duration || 0)}`;
+
+        if (editBtn) editBtn.onclick = () => setEditMode(true);
+        if (cancelBtn) cancelBtn.onclick = () => setEditMode(false);
+        if (saveBtn) {
+            saveBtn.onclick = async () => {
+                const editor = document.getElementById('voice-call-detail-editor');
+                if (!editor) return;
+
+                const previousMessages = Array.isArray(msg.callMessages) ? msg.callMessages : [];
+                const nextMessages = parseCallMessagesFromEdit(editor.value, previousMessages, detailFriend);
+                const nextContextText = buildCallRecordContextText(
+                    nextMessages,
+                    detailFriend,
+                    msg.duration || 0,
+                    msg.statusText || '通话记录'
+                );
+                msg.callMessages = nextMessages;
+                msg.content = nextContextText;
+                msg.text = nextContextText;
+                msg.updatedAt = new Date().toISOString();
+
+                let saved = true;
+                if (detailFriend?.id && window.imApp?.updateFriendMessage) {
+                    saved = await window.imApp.updateFriendMessage(detailFriend.id, {
+                        id: msg.id || null,
+                        timestamp: msg.timestamp || null
+                    }, (targetMsg) => {
+                        targetMsg.callMessages = nextMessages;
+                        targetMsg.content = nextContextText;
+                        targetMsg.text = nextContextText;
+                        targetMsg.updatedAt = msg.updatedAt;
+                    }, { silent: true });
+
+                    if (!saved && window.showToast) {
+                        window.showToast('通话记录保存失败');
+                    }
+                }
+
+                const page = detailFriend?.id ? document.getElementById(`chat-interface-${detailFriend.id}`) : null;
+                const msgContainer = page ? page.querySelector('.ins-chat-messages') : null;
+                if (msgContainer && window.imChat.rerenderChatContainer) {
+                    const latestFriend = (window.imData?.friends || []).find(item => String(item.id) === String(detailFriend.id)) || detailFriend;
+                    window.imChat.rerenderChatContainer(latestFriend, msgContainer, { scroll: false });
+                }
+
+                if (saved && window.showToast) window.showToast('通话上下文已更新');
+                setEditMode(false);
+            };
+        }
+
+        setEditMode(false);
+
+        if (window.openView) {
+            window.openView(detailModal);
+        } else {
+            detailModal.style.display = 'flex';
+        }
+    };
 })();
+

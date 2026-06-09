@@ -311,6 +311,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     const momentsUserAvatarIcon = document.getElementById('moments-user-avatar-icon');
     const mainMomentsSignature = document.getElementById('main-moments-signature');
 
+    function refreshActiveMomentDetailForUserState() {
+        if (
+            currentDetailMoment &&
+            momentDetailOverlay &&
+            momentDetailOverlay.classList.contains('active') &&
+            isUserMoment(currentDetailMoment)
+        ) {
+            const latestMoment = findMomentById(currentDetailMoment.id) || currentDetailMoment;
+            openMomentDetail(latestMoment);
+        }
+    }
+
+    function pruneStoredSelfMomentAvatars() {
+        if (!Array.isArray(window.imData?.moments)) return false;
+        let changed = false;
+        window.imData.moments.forEach((moment) => {
+            if (isUserMoment(moment) && moment.avatar) {
+                moment.avatar = null;
+                changed = true;
+            }
+        });
+        if (changed && window.imApp?.saveMoments) {
+            window.imApp.saveMoments({ silent: true });
+        }
+        return changed;
+    }
+
     function syncMomentsUser() {
         if (momentsUserName) momentsUserName.textContent = window.userState ? window.userState.name : 'User';
         if (mainMomentsSignature) {
@@ -334,6 +361,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 momentsUserAvatarIcon.style.display = 'flex';
             }
         }
+        pruneStoredSelfMomentAvatars();
+        renderMoments();
+        refreshActiveMomentDetailForUserState();
     }
 
     setTimeout(syncMomentsUser, 0);
@@ -826,7 +856,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 id: Date.now(),
                 userId: 'me',
                 name: window.userState ? window.userState.name : 'Me',
-                avatar: window.userState ? window.userState.avatarUrl : null,
+                avatar: null,
                 text: text,
                 images: imgs,
                 time: Date.now(),
@@ -1782,7 +1812,8 @@ Do not output private chat messages, [Chat], [Like], JSON, explanations, or chai
         if (!list) return;
         list.innerHTML = '';
 
-        window.imData.moments.forEach((m) => {
+        const moments = Array.isArray(window.imData?.moments) ? window.imData.moments : [];
+        moments.forEach((m) => {
             const item = createMomentElement(m);
             list.appendChild(item);
         });

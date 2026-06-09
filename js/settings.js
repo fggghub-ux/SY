@@ -38,6 +38,18 @@
         return userState;
     }
 
+    function notifyUserStateUpdated(detail = {}) {
+        window.userState = userState;
+        const eventDetail = {
+            userState: clonePlainData(userState),
+            ...detail
+        };
+        window.dispatchEvent(new CustomEvent('user-state-updated', { detail: eventDetail }));
+        if (detail.avatarChanged) {
+            window.dispatchEvent(new CustomEvent('avatar-updated', { detail: eventDetail }));
+        }
+    }
+
     function exposeAccountGlobals() {
         window.getAccounts = () => accounts;
         window.getCurrentAccountId = () => currentAccountId;
@@ -45,6 +57,7 @@
             currentAccountId = id;
             syncUserStateFromCurrentAccount();
             persistSettingsData();
+            notifyUserStateUpdated({ avatarChanged: true });
             return currentAccountId;
         };
     }
@@ -419,9 +432,9 @@
                 if (file) {
                     try {
                         const url = await readImageAsCompressedDataUrl(file, {
-                            maxWidth: 768,
-                            maxHeight: 768,
-                            quality: 0.82
+                            maxWidth: 256,
+                            maxHeight: 256,
+                            quality: 0.72
                         });
 
                         // Update user state
@@ -436,6 +449,7 @@
                         saveGlobalData();
                         // Sync the UI immediately
                         syncUIs();
+                        notifyUserStateUpdated({ avatarChanged: true });
                         showToast('头像已更新');
                     } catch (err) {
                         console.error('Failed to process avatar upload', err);
@@ -518,6 +532,7 @@
                         }
                         saveGlobalData();
                         syncUIs();
+                        notifyUserStateUpdated({ avatarChanged: true });
                         renderAccountList();
                     }
                 });
@@ -556,6 +571,7 @@
             }
             saveGlobalData();
             syncUIs();
+            notifyUserStateUpdated({ avatarChanged: true });
             closeView(UI.overlays.accountSwitcher);
         });
 
@@ -586,6 +602,7 @@
             }
             saveGlobalData();
             syncUIs();
+            notifyUserStateUpdated({ avatarChanged: true });
             renderAccountList(); 
             closeView(UI.overlays.personaDetail); 
             showToast('资料已保存');
@@ -604,9 +621,9 @@
             if (file) {
                 try {
                     const url = await readImageAsCompressedDataUrl(file, {
-                        maxWidth: 768,
-                        maxHeight: 768,
-                        quality: 0.82
+                        maxWidth: 256,
+                        maxHeight: 256,
+                        quality: 0.72
                     });
                     setDetailAvatar(url);
                 } catch (err) {

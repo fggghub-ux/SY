@@ -551,8 +551,12 @@ window.imApp.formatMessageForApiContext = function(message, friend, options = {}
                 const charName = normalizedFriend.nickname || '对方';
                 const callTranscript = callMessages.map(m => {
                     const speaker = m.isSelf ? userName : charName;
-                    return `${speaker}: ${m.text || ''}`;
-                }).join('\n  ');
+                    const parts = [];
+                    if (m.actionText) parts.push(String(m.actionText).trim());
+                    if (m.thoughtText) parts.push(`心声：${String(m.thoughtText).trim()}`);
+                    if (m.text) parts.push(`${speaker}：「${String(m.text).trim()}」`);
+                    return parts.join('\n  ');
+                }).filter(Boolean).join('\n  ');
                 
                 apiContent = `[提示：你们刚刚完成了一通语音通话，时长 ${callDurationText}。通话期间的交流内容如下：\n  ${callTranscript}\n（通话已结束，请直接用普通文字回复）]`;
             } else {

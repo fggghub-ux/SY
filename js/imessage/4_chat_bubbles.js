@@ -1520,7 +1520,7 @@ function renderVoiceCallRecordBubble(msg, friend, container, timestamp = Date.no
                     e.preventDefault();
                     e.stopPropagation();
                     if (window.imChat && window.imChat.openVoiceCallDetail) {
-                        window.imChat.openVoiceCallDetail(msg);
+                        window.imChat.openVoiceCallDetail(msg, friend);
                     }
                 });
             }
@@ -1600,7 +1600,7 @@ function renderVoiceCallRecordBubble(msg, friend, container, timestamp = Date.no
                 e.preventDefault();
                 e.stopPropagation();
                 if (window.imChat && window.imChat.openVoiceCallDetail) {
-                    window.imChat.openVoiceCallDetail(msg);
+                    window.imChat.openVoiceCallDetail(msg, friend);
                 }
             });
         }
