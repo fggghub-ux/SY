@@ -1158,8 +1158,11 @@
             }
         });
         
-        chatInput.addEventListener('keypress', (e) => {
-            if(e.key === 'Enter') chatSend.click();
+        chatInput.addEventListener('keydown', (e) => {
+            if(e.key === 'Enter') {
+                e.preventDefault();
+                chatSend.click();
+            }
         });
     }
 

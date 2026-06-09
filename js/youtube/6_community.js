@@ -140,8 +140,11 @@
             if(loadingId) { const el = document.getElementById(loadingId); if(el) el.remove(); }
             renderVODResponse(responseObj, true);
         });
-        postChatInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') postChatSend.click();
+        postChatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                postChatSend.click();
+            }
         });
     }
 
@@ -839,8 +842,9 @@
             triggerGroupChatAPI(groupChatInput.value.trim());
         });
         
-        groupChatInput.addEventListener('keypress', (e) => {
+        groupChatInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
+                e.preventDefault();
                 const text = groupChatInput.value.trim();
                 if (text) {
                     const effectiveYtUser = getCurrentYtCommunityUser();

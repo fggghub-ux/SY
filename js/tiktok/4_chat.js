@@ -1026,8 +1026,11 @@ JSON example:
 
     if (wtSendBtn && wtChatInput) {
         wtSendBtn.addEventListener('click', sendWtMessage);
-        wtChatInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendWtMessage();
+        wtChatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                sendWtMessage();
+            }
         });
     }
 
@@ -1853,8 +1856,9 @@ ${tkMountedWorldBookContext ? `\nTikTok Mounted World Book:\n${tkMountedWorldBoo
             // Note: Auto reply removed. Use the mic button for AI generation.
         });
 
-        chatInput.addEventListener('keypress', (e) => {
+        chatInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
+                e.preventDefault();
                 chatSendBtn.click();
             }
         });

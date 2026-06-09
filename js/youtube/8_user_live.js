@@ -576,8 +576,11 @@
         };
 
         userLiveChatSend.addEventListener('click', sendAction);
-        userLiveChatInput.addEventListener('keypress', (e) => {
-            if(e.key === 'Enter') sendAction();
+        userLiveChatInput.addEventListener('keydown', (e) => {
+            if(e.key === 'Enter') {
+                e.preventDefault();
+                sendAction();
+            }
         });
     }
 

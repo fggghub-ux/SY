@@ -2134,11 +2134,11 @@ ${wbContext}
             };
 
             sendBtnRef.addEventListener('click', sendComment);
-            // We use keyup directly on inputEl (no clone here, just bind once, but since it accumulates we must clean it)
-            // A better way is inline or named function. For now, since input gets typed, cloning input is bad (loses focus).
-            // Let's rely on just button click for simplicity to avoid memory leaks, or attach onkeydown safely:
-            newInputEl.onkeypress = (e) => {
-                if (e.key === 'Enter') sendComment();
+            newInputEl.onkeydown = (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    sendComment();
+                }
             };
         }
     };
