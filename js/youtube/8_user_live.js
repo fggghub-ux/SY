@@ -407,6 +407,26 @@
         el.addEventListener('pointerdown', stopUserLiveControlEvent);
     });
 
+    if (userLiveChatContainer) {
+        let isDraggingUserLive = false;
+        userLiveChatContainer.addEventListener('touchstart', () => { isDraggingUserLive = false; }, { passive: true });
+        userLiveChatContainer.addEventListener('touchmove', () => { isDraggingUserLive = true; }, { passive: true });
+        userLiveChatContainer.addEventListener('touchend', () => {
+            if (isDraggingUserLive) {
+                if (userLiveChatInput && document.activeElement === userLiveChatInput) userLiveChatInput.blur();
+            }
+        });
+        userLiveChatContainer.addEventListener('click', () => {
+            if (userLiveChatInput && document.activeElement === userLiveChatInput) userLiveChatInput.blur();
+        });
+    }
+
+    if (userLiveBackBtn) {
+        userLiveBackBtn.addEventListener('click', () => {
+            if (userLiveChatInput && document.activeElement === userLiveChatInput) userLiveChatInput.blur();
+        });
+    }
+
     if (userLiveChatInput) {
         userLiveChatInput.addEventListener('focus', () => {
             if (userLiveView) userLiveView.classList.add('keyboard-open');

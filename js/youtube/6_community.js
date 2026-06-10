@@ -22,6 +22,26 @@
         el.addEventListener('pointerdown', stopCommunityControlEvent);
     });
 
+    if (communityDetailContent) {
+        let isDraggingDetail = false;
+        communityDetailContent.addEventListener('touchstart', () => { isDraggingDetail = false; }, { passive: true });
+        communityDetailContent.addEventListener('touchmove', () => { isDraggingDetail = true; }, { passive: true });
+        communityDetailContent.addEventListener('touchend', () => {
+            if (isDraggingDetail) {
+                if (postChatInput && document.activeElement === postChatInput) postChatInput.blur();
+            }
+        });
+        communityDetailContent.addEventListener('click', () => {
+            if (postChatInput && document.activeElement === postChatInput) postChatInput.blur();
+        });
+    }
+
+    if (communityDetailBackBtn) {
+        communityDetailBackBtn.addEventListener('click', () => {
+            if (postChatInput && document.activeElement === postChatInput) postChatInput.blur();
+        });
+    }
+
     if (postChatInput) {
         postChatInput.addEventListener('focus', () => {
             if (communityDetailView) communityDetailView.classList.add('keyboard-open');
@@ -209,6 +229,26 @@
         el.addEventListener('click', stopCommunityControlEvent);
         el.addEventListener('pointerdown', stopCommunityControlEvent);
     });
+
+    if (groupChatContainer) {
+        let isDraggingGroupChat = false;
+        groupChatContainer.addEventListener('touchstart', () => { isDraggingGroupChat = false; }, { passive: true });
+        groupChatContainer.addEventListener('touchmove', () => { isDraggingGroupChat = true; }, { passive: true });
+        groupChatContainer.addEventListener('touchend', () => {
+            if (isDraggingGroupChat) {
+                if (groupChatInput && document.activeElement === groupChatInput) groupChatInput.blur();
+            }
+        });
+        groupChatContainer.addEventListener('click', () => {
+            if (groupChatInput && document.activeElement === groupChatInput) groupChatInput.blur();
+        });
+    }
+
+    if (groupChatBackBtn) {
+        groupChatBackBtn.addEventListener('click', () => {
+            if (groupChatInput && document.activeElement === groupChatInput) groupChatInput.blur();
+        });
+    }
 
     if (groupChatInput) {
         groupChatInput.addEventListener('focus', () => {

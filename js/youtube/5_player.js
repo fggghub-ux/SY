@@ -243,6 +243,9 @@
 
     if(playerBackBtn && playerView) {
         playerBackBtn.addEventListener('click', () => {
+            if (chatInput && document.activeElement === chatInput) chatInput.blur();
+            if (ytScCustomInput && document.activeElement === ytScCustomInput) ytScCustomInput.blur();
+            if (ytScInput && document.activeElement === ytScInput) ytScInput.blur();
             playerView.classList.remove('active');
             playerView.classList.remove('yt-char-live-mode');
             if(chatInterval) clearInterval(chatInterval);
@@ -1147,10 +1150,16 @@
         e.stopPropagation();
     }
 
+    const ytPlayerChatContainer = document.getElementById('yt-player-chat-container');
+    const playerPlusBtn = document.getElementById('yt-player-plus-btn');
+    const playerActionMenu = document.getElementById('yt-player-action-menu');
+    const actionContinue = document.getElementById('yt-player-action-continue');
+    const actionSummary = document.getElementById('yt-player-action-summary');
+
     [
         ytPlayerVideoArea,
         playerBackBtn,
-        document.getElementById('yt-player-chat-container'),
+        ytPlayerChatContainer,
         chatInput,
         chatSend,
         playerPlusBtn,
@@ -1159,6 +1168,20 @@
         el.addEventListener('click', stopPlayerControlEvent);
         el.addEventListener('pointerdown', stopPlayerControlEvent);
     });
+
+    if (ytPlayerChatContainer) {
+        let isDraggingPlayerChat = false;
+        ytPlayerChatContainer.addEventListener('touchstart', () => { isDraggingPlayerChat = false; }, { passive: true });
+        ytPlayerChatContainer.addEventListener('touchmove', () => { isDraggingPlayerChat = true; }, { passive: true });
+        ytPlayerChatContainer.addEventListener('touchend', () => {
+            if (isDraggingPlayerChat) {
+                if (chatInput && document.activeElement === chatInput) chatInput.blur();
+            }
+        });
+        ytPlayerChatContainer.addEventListener('click', () => {
+            if (chatInput && document.activeElement === chatInput) chatInput.blur();
+        });
+    }
 
     if (chatInput) {
         chatInput.addEventListener('focus', () => {
@@ -1179,11 +1202,6 @@
             chatSend.title = isLive ? '发送消息' : '发表评论';
         }
     }
-    
-    const playerPlusBtn = document.getElementById('yt-player-plus-btn');
-    const playerActionMenu = document.getElementById('yt-player-action-menu');
-    const actionContinue = document.getElementById('yt-player-action-continue');
-    const actionSummary = document.getElementById('yt-player-action-summary');
 
     if(chatSend && chatInput) {
         chatSend.addEventListener('click', async () => {
@@ -1287,6 +1305,8 @@
 
         ytScSheet.addEventListener('mousedown', (e) => {
             if (e.target === ytScSheet) {
+                if (ytScCustomInput && document.activeElement === ytScCustomInput) ytScCustomInput.blur();
+                if (ytScInput && document.activeElement === ytScInput) ytScInput.blur();
                 ytScSheet.classList.remove('active');
             }
         });
