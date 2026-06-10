@@ -7,20 +7,20 @@
     
     let currentActivePost = null;
 
-    function blurPostCommentInput() {
-        if (postChatInput && document.activeElement === postChatInput) {
-            postChatInput.blur();
-        }
+    function stopCommunityControlEvent(e) {
+        if (!e) return;
+        e.stopPropagation();
     }
 
-    if (postChatInput) {
-        postChatInput.addEventListener('focus', () => {
-            communityDetailView.classList.add('keyboard-open');
-        });
-        postChatInput.addEventListener('blur', () => {
-            communityDetailView.classList.remove('keyboard-open');
-        });
-    }
+    [
+        communityDetailContent,
+        postChatInput,
+        postChatSend,
+        communityDetailBackBtn
+    ].filter(Boolean).forEach((el) => {
+        el.addEventListener('click', stopCommunityControlEvent);
+        el.addEventListener('pointerdown', stopCommunityControlEvent);
+    });
 
     function getCurrentYtCommunityUser() {
         if (typeof window.getYtEffectiveUserState === 'function') {
@@ -31,7 +31,6 @@
 
     if (communityDetailBackBtn) {
         communityDetailBackBtn.addEventListener('click', () => {
-            blurPostCommentInput();
             if (communityDetailView) communityDetailView.classList.remove('active');
         });
     }
@@ -136,7 +135,6 @@
     if (postChatSend && postChatInput) {
         postChatSend.addEventListener('click', async () => {
             const text = postChatInput.value.trim();
-            blurPostCommentInput();
             if(!text || !currentActivePost) return;
             
             const effectiveYtUser = getCurrentYtCommunityUser();
@@ -168,15 +166,8 @@
         postChatInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
-                blurPostCommentInput();
                 postChatSend.click();
             }
-        });
-    }
-
-    if (communityDetailContent) {
-        ['pointerdown', 'touchmove'].forEach((eventName) => {
-            communityDetailContent.addEventListener(eventName, blurPostCommentInput, { passive: true });
         });
     }
 
@@ -198,20 +189,17 @@
     
     let isGroupChatLoading = false;
 
-    function blurGroupChatInput() {
-        if (groupChatInput && document.activeElement === groupChatInput) {
-            groupChatInput.blur();
-        }
-    }
-
-    if (groupChatInput) {
-        groupChatInput.addEventListener('focus', () => {
-            groupChatView.classList.add('keyboard-open');
-        });
-        groupChatInput.addEventListener('blur', () => {
-            groupChatView.classList.remove('keyboard-open');
-        });
-    }
+    [
+        groupChatContainer,
+        groupChatInput,
+        groupChatSendBtn,
+        groupChatApiBtn,
+        groupChatBackBtn,
+        groupChatSettingsBtn
+    ].filter(Boolean).forEach((el) => {
+        el.addEventListener('click', stopCommunityControlEvent);
+        el.addEventListener('pointerdown', stopCommunityControlEvent);
+    });
 
     function sendGroupChatMessageOnly(text) {
         if (!text || !currentSubChannelData || !groupChatTitle) return false;
@@ -236,7 +224,6 @@
 
     if (groupChatBackBtn) {
         groupChatBackBtn.addEventListener('click', () => {
-            blurGroupChatInput();
             if (groupChatView) groupChatView.classList.remove('active');
         });
     }
@@ -909,14 +896,12 @@
 
     if (groupChatSendBtn && groupChatInput) {
         groupChatSendBtn.addEventListener('click', () => {
-            blurGroupChatInput();
             sendGroupChatMessageOnly(groupChatInput.value.trim());
         });
         
         groupChatInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
-                blurGroupChatInput();
                 sendGroupChatMessageOnly(groupChatInput.value.trim());
                 return;
                 const text = groupChatInput.value.trim();
@@ -941,17 +926,10 @@
         });
 
         groupChatInput.setAttribute('enterkeyhint', 'send');
-
-        if (groupChatContainer) {
-            ['pointerdown', 'touchmove'].forEach((eventName) => {
-                groupChatContainer.addEventListener(eventName, blurGroupChatInput, { passive: true });
-            });
-        }
     }
 
     if (groupChatApiBtn && groupChatInput) {
         groupChatApiBtn.addEventListener('click', () => {
-            blurGroupChatInput();
             triggerGroupChatAPI('');
         });
     }

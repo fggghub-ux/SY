@@ -243,7 +243,6 @@
 
     if(playerBackBtn && playerView) {
         playerBackBtn.addEventListener('click', () => {
-            blurPlayerChatInput();
             playerView.classList.remove('active');
             playerView.classList.remove('yt-char-live-mode');
             if(chatInterval) clearInterval(chatInterval);
@@ -1143,20 +1142,23 @@
     const chatInput = document.getElementById('yt-player-chat-input');
     const chatSend = document.getElementById('yt-player-chat-send');
 
-    function blurPlayerChatInput() {
-        if (chatInput && document.activeElement === chatInput) {
-            chatInput.blur();
-        }
+    function stopPlayerControlEvent(e) {
+        if (!e) return;
+        e.stopPropagation();
     }
 
-    if (chatInput) {
-        chatInput.addEventListener('focus', () => {
-            playerView.classList.add('keyboard-open');
-        });
-        chatInput.addEventListener('blur', () => {
-            playerView.classList.remove('keyboard-open');
-        });
-    }
+    [
+        ytPlayerVideoArea,
+        playerBackBtn,
+        document.getElementById('yt-player-chat-container'),
+        chatInput,
+        chatSend,
+        playerPlusBtn,
+        document.getElementById('yt-gift-btn')
+    ].filter(Boolean).forEach((el) => {
+        el.addEventListener('click', stopPlayerControlEvent);
+        el.addEventListener('pointerdown', stopPlayerControlEvent);
+    });
 
     function syncPlayerChatInputMode(isLive) {
         if (chatInput) {
@@ -1177,7 +1179,6 @@
     if(chatSend && chatInput) {
         chatSend.addEventListener('click', async () => {
             const text = chatInput.value.trim();
-            blurPlayerChatInput();
             if(!text) return;
             
             const isLive = currentVideoData && currentVideoData.isLive;
@@ -1214,21 +1215,9 @@
         chatInput.addEventListener('keydown', (e) => {
             if(e.key === 'Enter') {
                 e.preventDefault();
-                blurPlayerChatInput();
                 chatSend.click();
             }
         });
-
-        const chatContainer = document.getElementById('yt-player-chat-container');
-        if (chatContainer) {
-            ['pointerdown', 'touchmove'].forEach((eventName) => {
-                chatContainer.addEventListener(eventName, blurPlayerChatInput, { passive: true });
-            });
-        }
-
-        if (ytPlayerVideoArea) {
-            ytPlayerVideoArea.addEventListener('pointerdown', blurPlayerChatInput, { passive: true });
-        }
     }
 
     if(playerPlusBtn && playerActionMenu) {
