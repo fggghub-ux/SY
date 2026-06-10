@@ -22,6 +22,19 @@
         el.addEventListener('pointerdown', stopCommunityControlEvent);
     });
 
+    if (postChatInput) {
+        postChatInput.addEventListener('focus', () => {
+            if (communityDetailView) communityDetailView.classList.add('keyboard-open');
+        });
+        postChatInput.addEventListener('blur', () => {
+            if (communityDetailView) communityDetailView.classList.remove('keyboard-open');
+            setTimeout(() => {
+                window.scrollTo(0, 0);
+                document.body.scrollTop = 0;
+            }, 100);
+        });
+    }
+
     function getCurrentYtCommunityUser() {
         if (typeof window.getYtEffectiveUserState === 'function') {
             return window.getYtEffectiveUserState() || {};
@@ -200,6 +213,19 @@
         el.addEventListener('click', stopCommunityControlEvent);
         el.addEventListener('pointerdown', stopCommunityControlEvent);
     });
+
+    if (groupChatInput) {
+        groupChatInput.addEventListener('focus', () => {
+            if (groupChatView) groupChatView.classList.add('keyboard-open');
+        });
+        groupChatInput.addEventListener('blur', () => {
+            if (groupChatView) groupChatView.classList.remove('keyboard-open');
+            setTimeout(() => {
+                window.scrollTo(0, 0);
+                document.body.scrollTop = 0;
+            }, 100);
+        });
+    }
 
     function sendGroupChatMessageOnly(text) {
         if (!text || !currentSubChannelData || !groupChatTitle) return false;

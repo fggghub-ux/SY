@@ -407,6 +407,19 @@
         el.addEventListener('pointerdown', stopUserLiveControlEvent);
     });
 
+    if (userLiveChatInput) {
+        userLiveChatInput.addEventListener('focus', () => {
+            if (userLiveView) userLiveView.classList.add('keyboard-open');
+        });
+        userLiveChatInput.addEventListener('blur', () => {
+            if (userLiveView) userLiveView.classList.remove('keyboard-open');
+            setTimeout(() => {
+                window.scrollTo(0, 0);
+                document.body.scrollTop = 0;
+            }, 100);
+        });
+    }
+
     restoreActiveUserLiveState();
 
     if (startUserLiveBtn) {

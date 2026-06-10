@@ -1160,6 +1160,19 @@
         el.addEventListener('pointerdown', stopPlayerControlEvent);
     });
 
+    if (chatInput) {
+        chatInput.addEventListener('focus', () => {
+            if (playerView) playerView.classList.add('keyboard-open');
+        });
+        chatInput.addEventListener('blur', () => {
+            if (playerView) playerView.classList.remove('keyboard-open');
+            setTimeout(() => {
+                window.scrollTo(0, 0);
+                document.body.scrollTop = 0;
+            }, 100);
+        });
+    }
+
     function syncPlayerChatInputMode(isLive) {
         if (chatInput) {
             chatInput.placeholder = isLive ? '发送消息...' : '发表评论...';
@@ -1322,6 +1335,29 @@
                 });
                 updateScBtn();
             }
+        });
+        ytScCustomInput.addEventListener('focus', () => {
+            if (ytScSheet) ytScSheet.classList.add('keyboard-open');
+        });
+        ytScCustomInput.addEventListener('blur', () => {
+            if (ytScSheet) ytScSheet.classList.remove('keyboard-open');
+            setTimeout(() => {
+                window.scrollTo(0, 0);
+                document.body.scrollTop = 0;
+            }, 100);
+        });
+    }
+
+    if (ytScInput) {
+        ytScInput.addEventListener('focus', () => {
+            if (ytScSheet) ytScSheet.classList.add('keyboard-open');
+        });
+        ytScInput.addEventListener('blur', () => {
+            if (ytScSheet) ytScSheet.classList.remove('keyboard-open');
+            setTimeout(() => {
+                window.scrollTo(0, 0);
+                document.body.scrollTop = 0;
+            }, 100);
         });
     }
 
