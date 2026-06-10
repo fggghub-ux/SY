@@ -1181,6 +1181,12 @@
         ytPlayerChatContainer.addEventListener('click', () => {
             if (chatInput && document.activeElement === chatInput) chatInput.blur();
         });
+        const playerBackBtnInner = document.getElementById('yt-player-back-btn');
+        if (playerBackBtnInner) {
+            playerBackBtnInner.addEventListener('click', () => {
+                if (chatInput && document.activeElement === chatInput) chatInput.blur();
+            });
+        }
     }
 
     if (chatInput) {
