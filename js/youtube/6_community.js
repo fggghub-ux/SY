@@ -28,10 +28,6 @@
         });
         postChatInput.addEventListener('blur', () => {
             if (communityDetailView) communityDetailView.classList.remove('keyboard-open');
-            setTimeout(() => {
-                window.scrollTo(0, 0);
-                document.body.scrollTop = 0;
-            }, 100);
         });
     }
 
@@ -220,10 +216,6 @@
         });
         groupChatInput.addEventListener('blur', () => {
             if (groupChatView) groupChatView.classList.remove('keyboard-open');
-            setTimeout(() => {
-                window.scrollTo(0, 0);
-                document.body.scrollTop = 0;
-            }, 100);
         });
     }
 

@@ -1166,10 +1166,6 @@
         });
         chatInput.addEventListener('blur', () => {
             if (playerView) playerView.classList.remove('keyboard-open');
-            setTimeout(() => {
-                window.scrollTo(0, 0);
-                document.body.scrollTop = 0;
-            }, 100);
         });
     }
 
@@ -1341,10 +1337,6 @@
         });
         ytScCustomInput.addEventListener('blur', () => {
             if (ytScSheet) ytScSheet.classList.remove('keyboard-open');
-            setTimeout(() => {
-                window.scrollTo(0, 0);
-                document.body.scrollTop = 0;
-            }, 100);
         });
     }
 
@@ -1354,10 +1346,6 @@
         });
         ytScInput.addEventListener('blur', () => {
             if (ytScSheet) ytScSheet.classList.remove('keyboard-open');
-            setTimeout(() => {
-                window.scrollTo(0, 0);
-                document.body.scrollTop = 0;
-            }, 100);
         });
     }
 

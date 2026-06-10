@@ -413,10 +413,6 @@
         });
         userLiveChatInput.addEventListener('blur', () => {
             if (userLiveView) userLiveView.classList.remove('keyboard-open');
-            setTimeout(() => {
-                window.scrollTo(0, 0);
-                document.body.scrollTop = 0;
-            }, 100);
         });
     }
 
