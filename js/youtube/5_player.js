@@ -1204,7 +1204,7 @@
     }
 
     if(chatSend && chatInput) {
-        chatSend.addEventListener('click', async () => {
+        const sendAction = async () => {
             const text = chatInput.value.trim();
             if(!text) return;
             
@@ -1237,12 +1237,14 @@
                 const responseObj = await getVODResponse(text);
                 renderVODResponse(responseObj);
             }
-        });
+        };
+
+        chatSend.addEventListener('click', sendAction);
         
         chatInput.addEventListener('keydown', (e) => {
             if(e.key === 'Enter') {
                 e.preventDefault();
-                chatSend.click();
+                sendAction();
             }
         });
     }
