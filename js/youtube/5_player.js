@@ -1149,6 +1149,15 @@
         }
     }
 
+    if (chatInput) {
+        chatInput.addEventListener('focus', () => {
+            playerView.classList.add('keyboard-open');
+        });
+        chatInput.addEventListener('blur', () => {
+            playerView.classList.remove('keyboard-open');
+        });
+    }
+
     function syncPlayerChatInputMode(isLive) {
         if (chatInput) {
             chatInput.placeholder = isLive ? '发送消息...' : '发表评论...';

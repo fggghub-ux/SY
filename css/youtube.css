@@ -826,6 +826,14 @@
     border-top: 1px solid #e5e5e5;
 }
 
+#yt-video-player-view.yt-char-live-mode .yt-chat-input-area {
+    padding: 10px 16px max(14px, env(safe-area-inset-bottom, 0px)) !important;
+}
+
+.keyboard-open #yt-video-player-view.yt-char-live-mode .yt-chat-input-area {
+    padding-bottom: 10px !important;
+}
+
 #yt-player-chat-input {
     background-color: #f2f2f2 !important;
     color: #0f0f0f !important;
@@ -1443,10 +1451,21 @@
     border-radius: 18px 18px 4px 18px;
 }
 
+.yt-chat-input-area,
+#yt-community-detail-view .chat-input-area {
+    padding: 10px 16px max(14px, env(safe-area-inset-bottom, 0px));
+}
+
+.keyboard-open .yt-chat-input-area,
+.keyboard-open #yt-community-detail-view .chat-input-area,
+.keyboard-open .yt-bubble-input-area {
+    padding-bottom: 10px !important;
+}
+
 .yt-bubble-input-area {
     background-color: #ffffff;
     border-top: 1px solid #f2f2f2;
-    padding: 8px 16px calc(8px + var(--safe-bottom)); /* Safe area */
+    padding: 8px 16px max(14px, env(safe-area-inset-bottom, 0px)); /* Safe area */
     display: flex;
     align-items: center;
     gap: 12px;

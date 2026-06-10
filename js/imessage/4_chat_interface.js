@@ -766,8 +766,8 @@ async function openChatTab(friend) {
                 }
             });
 
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' || e.keyCode === 13) {
+            input.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
                     if (e.shiftKey || e.ctrlKey || e.altKey) {
                         return; // 允许在多行文本框中换行（如果适用）或忽略修饰键
                     }

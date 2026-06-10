@@ -2274,13 +2274,34 @@ ${commonMemorySections || 'None'}${offlineMeetRequirement}${regenerateRequiremen
             await window.imApp.ensureFriendMessagesLoaded(liveFriend);
         }
         const messages = Array.isArray(liveFriend?.messages) ? liveFriend.messages : [];
-        const lastGeneratedMessage = messages.slice().reverse().find((msg) => msg && msg.apiRunId);
+        
+        let lastGeneratedIndex = -1;
+        for (let i = messages.length - 1; i >= 0; i--) {
+            if (messages[i] && messages[i].apiRunId) {
+                lastGeneratedIndex = i;
+                break;
+            }
+        }
 
-        if (!lastGeneratedMessage || !lastGeneratedMessage.apiRunId) {
+        if (lastGeneratedIndex === -1) {
             if (window.showToast) window.showToast('暂无可重回的回复');
             return false;
         }
 
+        let hasUserMessageAfter = false;
+        for (let i = lastGeneratedIndex + 1; i < messages.length; i++) {
+            if (messages[i] && messages[i].role === 'user') {
+                hasUserMessageAfter = true;
+                break;
+            }
+        }
+
+        if (hasUserMessageAfter) {
+            if (window.showToast) window.showToast('已回复，无法重回上一轮');
+            return false;
+        }
+
+        const lastGeneratedMessage = messages[lastGeneratedIndex];
         const targetRunId = String(lastGeneratedMessage.apiRunId);
         const targetMessages = messages.filter((msg) => msg && String(msg.apiRunId) === targetRunId);
         const previousReply = targetMessages

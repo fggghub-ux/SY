@@ -13,6 +13,15 @@
         }
     }
 
+    if (postChatInput) {
+        postChatInput.addEventListener('focus', () => {
+            communityDetailView.classList.add('keyboard-open');
+        });
+        postChatInput.addEventListener('blur', () => {
+            communityDetailView.classList.remove('keyboard-open');
+        });
+    }
+
     function getCurrentYtCommunityUser() {
         if (typeof window.getYtEffectiveUserState === 'function') {
             return window.getYtEffectiveUserState() || {};
@@ -193,6 +202,15 @@
         if (groupChatInput && document.activeElement === groupChatInput) {
             groupChatInput.blur();
         }
+    }
+
+    if (groupChatInput) {
+        groupChatInput.addEventListener('focus', () => {
+            groupChatView.classList.add('keyboard-open');
+        });
+        groupChatInput.addEventListener('blur', () => {
+            groupChatView.classList.remove('keyboard-open');
+        });
     }
 
     function sendGroupChatMessageOnly(text) {
