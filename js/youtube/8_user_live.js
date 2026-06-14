@@ -429,11 +429,7 @@
 
     if (userLiveChatInput) {
         userLiveChatInput.addEventListener('focus', () => {
-            if (userLiveView) {
-                setTimeout(() => {
-                    userLiveView.classList.add('keyboard-open');
-                }, 200);
-            }
+            if (userLiveView) userLiveView.classList.add('keyboard-open');
         });
         userLiveChatInput.addEventListener('blur', () => {
             if (userLiveView) userLiveView.classList.remove('keyboard-open');

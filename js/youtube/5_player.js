@@ -1191,11 +1191,7 @@
 
     if (chatInput) {
         chatInput.addEventListener('focus', () => {
-            if (playerView) {
-                setTimeout(() => {
-                    playerView.classList.add('keyboard-open');
-                }, 200);
-            }
+            if (playerView) playerView.classList.add('keyboard-open');
         });
         chatInput.addEventListener('blur', () => {
             if (playerView) playerView.classList.remove('keyboard-open');
@@ -1366,11 +1362,7 @@
             }
         });
         ytScCustomInput.addEventListener('focus', () => {
-            if (ytScSheet) {
-                setTimeout(() => {
-                    ytScSheet.classList.add('keyboard-open');
-                }, 200);
-            }
+            if (ytScSheet) ytScSheet.classList.add('keyboard-open');
         });
         ytScCustomInput.addEventListener('blur', () => {
             if (ytScSheet) ytScSheet.classList.remove('keyboard-open');
@@ -1380,11 +1372,7 @@
 
     if (ytScInput) {
         ytScInput.addEventListener('focus', () => {
-            if (ytScSheet) {
-                setTimeout(() => {
-                    ytScSheet.classList.add('keyboard-open');
-                }, 200);
-            }
+            if (ytScSheet) ytScSheet.classList.add('keyboard-open');
         });
         ytScInput.addEventListener('blur', () => {
             if (ytScSheet) ytScSheet.classList.remove('keyboard-open');

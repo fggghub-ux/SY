@@ -44,11 +44,7 @@
 
     if (postChatInput) {
         postChatInput.addEventListener('focus', () => {
-            if (communityDetailView) {
-                setTimeout(() => {
-                    communityDetailView.classList.add('keyboard-open');
-                }, 200);
-            }
+            if (communityDetailView) communityDetailView.classList.add('keyboard-open');
         });
         postChatInput.addEventListener('blur', () => {
             if (communityDetailView) communityDetailView.classList.remove('keyboard-open');
@@ -257,11 +253,7 @@
 
     if (groupChatInput) {
         groupChatInput.addEventListener('focus', () => {
-            if (groupChatView) {
-                setTimeout(() => {
-                    groupChatView.classList.add('keyboard-open');
-                }, 200);
-            }
+            if (groupChatView) groupChatView.classList.add('keyboard-open');
         });
         groupChatInput.addEventListener('blur', () => {
             if (groupChatView) groupChatView.classList.remove('keyboard-open');
