@@ -429,10 +429,15 @@
 
     if (userLiveChatInput) {
         userLiveChatInput.addEventListener('focus', () => {
-            if (userLiveView) userLiveView.classList.add('keyboard-open');
+            if (userLiveView) {
+                setTimeout(() => {
+                    userLiveView.classList.add('keyboard-open');
+                }, 200);
+            }
         });
         userLiveChatInput.addEventListener('blur', () => {
             if (userLiveView) userLiveView.classList.remove('keyboard-open');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         });
     }
 
