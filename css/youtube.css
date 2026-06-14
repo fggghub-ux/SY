@@ -934,6 +934,12 @@
     min-height: 0 !important;
 }
 
+#yt-user-live-view.keyboard-open .yt-chat-input-area,
+#yt-user-live-view.keyboard-open #yt-user-live-chat-input-area {
+    padding: 8px 12px !important;
+    margin-bottom: 0 !important;
+}
+
 #yt-video-player-view.yt-char-live-mode #yt-player-chat-title {
     background: #ffffff !important;
     border-bottom: none !important;
