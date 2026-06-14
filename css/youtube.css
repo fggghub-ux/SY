@@ -1749,6 +1749,8 @@
 #yt-community-detail-view,
 #yt-bubble-chat-view {
     inset: 0;
+    height: 100%;
+    width: 100%;
     padding-top: 0;
     padding-bottom: 0;
     transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
