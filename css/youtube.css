@@ -911,6 +911,23 @@
     min-height: 280px;
 }
 
+#yt-user-live-view .yt-user-live-chat-shell {
+    height: 60%;
+    min-height: 360px;
+}
+
+.keyboard-open #yt-user-live-view #yt-user-live-video-area {
+    flex: 0 0 auto !important;
+    height: 150px !important;
+    min-height: 0 !important;
+}
+
+.keyboard-open #yt-user-live-view .yt-user-live-chat-shell {
+    flex: 1 1 auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+}
+
 #yt-video-player-view.yt-char-live-mode #yt-player-chat-title {
     background: #ffffff !important;
     border-bottom: none !important;
