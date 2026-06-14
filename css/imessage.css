@@ -1992,7 +1992,7 @@
     transition: background-color 0.25s;
 }
 
-.active-chat-interface.keyboard-open .ins-chat-input-container {
+.keyboard-open .ins-chat-input-container {
     padding: 8px 12px;
 }
 
