@@ -1269,6 +1269,7 @@
                     }
                     savePresets(type, presets);
                     updatePresetSelect(type, selectEl);
+                    if (listEl) renderThemePresetList(type, listEl, selectEl, cssInputEl);
                     if (nameInput) nameInput.value = '';
                     if (window.showToast) window.showToast(`预设 "${name}" 已保存`);
                 });

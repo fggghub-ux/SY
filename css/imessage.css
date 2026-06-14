@@ -1339,6 +1339,7 @@
     font-size: 15px;
     line-height: 1.4;
     word-wrap: break-word;
+    white-space: pre-wrap;
     transition: border-radius 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     user-select: none;
     -webkit-user-select: none;
@@ -1437,6 +1438,235 @@
     color: #8e8e93;
 }
 
+/* Offline Tavern Fullscreen View */
+#offline-tavern-view {
+    position: absolute;
+    inset: 0;
+    background: #ffffff; /* 改为白色背景 */
+    color: #111;
+    z-index: 1000;
+    display: none;
+    flex-direction: column;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+#offline-tavern-view.active {
+    opacity: 1;
+}
+
+.offline-tavern-header {
+    height: calc(54px + env(safe-area-inset-top, 0px));
+    padding-top: env(safe-area-inset-top, 0px);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-left: 16px;
+    padding-right: 16px;
+    background: transparent;
+    border-bottom: none;
+    flex-shrink: 0;
+}
+
+.offline-tavern-back, .offline-tavern-settings {
+    color: #000;
+    font-size: 20px;
+    cursor: pointer;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #f2f2f7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.offline-tavern-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: #111;
+}
+
+.offline-tavern-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 16px;
+    font-size: 15px;
+    line-height: 1.6;
+    background: #ffffff;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* 居中气泡样式 */
+.offline-tavern-bubble {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 10px;
+    text-align: center;
+}
+
+.offline-tavern-bubble-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.offline-tavern-avatar {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    overflow: hidden;
+    background-color: #f2f2f7;
+    border: 3px solid #f2f2f7;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.offline-tavern-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.offline-tavern-avatar i {
+    font-size: 30px;
+    color: #ccc;
+}
+
+.offline-tavern-name-container {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.offline-tavern-name {
+    font-size: 16px;
+    font-weight: 800;
+    color: #111;
+}
+
+.offline-tavern-name-dropdown {
+    font-size: 12px;
+    color: #8e8e93;
+}
+
+.offline-tavern-sign {
+    font-size: 12px;
+    color: #8e8e93;
+    background: #f7f7f5;
+    padding: 2px 8px;
+    border-radius: 12px;
+    margin-top: 4px;
+}
+
+.offline-tavern-bubble-text {
+    background: #f2f2f7;
+    color: #111;
+    padding: 18px 20px;
+    border-radius: 24px;
+    font-size: 15px;
+    width: 100%;
+    max-width: 348px;
+    text-align: left;
+    box-sizing: border-box;
+    line-height: 1.5;
+    word-break: break-word;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.offline-tavern-bubble.user .offline-tavern-bubble-text {
+    background: #111;
+    color: #fff;
+}
+
+/* 占位文本样式，后续可以根据实际内容替换 */
+.offline-tavern-placeholder {
+    color: #8e8e93;
+    text-align: center;
+    font-style: italic;
+    margin-top: 40px;
+}
+
+.offline-tavern-input-area {
+    padding: 6px 16px max(12px, env(safe-area-inset-bottom, 0px));
+    background: #ffffff;
+}
+
+.offline-tavern-input-bar {
+    display: flex;
+    align-items: flex-end;
+    background: #ffffff;
+    border: 1px solid #e5e5ea;
+    border-radius: 22px;
+    padding: 6px 6px 6px 14px;
+}
+
+.offline-tavern-input {
+    flex: 1;
+    height: 34px;
+    min-height: 34px;
+    max-height: 120px;
+    background: transparent;
+    border: none;
+    color: #111;
+    padding: 6px 0;
+    font-size: 15px;
+    line-height: 22px;
+    resize: none;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.offline-tavern-input::placeholder {
+    color: #8e8e93;
+}
+
+.offline-tavern-send {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #111;
+    color: #fff;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    margin-left: 8px;
+    margin-bottom: 1px;
+    font-size: 14px;
+}
+
+.offline-tavern-attachment {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    color: #8e8e93;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    margin-right: 4px;
+    margin-bottom: 1px;
+    font-size: 20px;
+}
+
+.offline-tavern-attachment:active {
+    opacity: 0.7;
+}
+
+.offline-tavern-send:active {
+    background: #666;
+}
+
+
 /* Adjust padding for group packets / pay transfer in outside mode */
 .active-chat-interface.timestamp-outside .pay-transfer-bubble .bubble-meta,
 .active-chat-interface.timestamp-outside .group-red-packet-bubble .bubble-meta {
@@ -1460,35 +1690,6 @@
     border-bottom-left-radius: 4px;
 }
 
-.chat-offline-scene-row {
-    width: 100%;
-    display: flex;
-    justify-content: center;
-    padding: 2px 40px;
-    box-sizing: border-box;
-    text-align: center;
-}
-
-.chat-offline-scene-row span {
-    max-width: 100%;
-    padding: 4px 10px;
-    border-radius: 999px;
-    background: var(--im-chat-bg-color, #ffffff);
-    color: #8e8e93;
-    font-size: 12px;
-    font-style: italic;
-    line-height: 1.35;
-    text-align: center;
-    
-    word-break: break-word;
-}
-
-.chat-offline-action {
-    display: inline;
-    color: #8e8e93;
-    font-size: inherit;
-    line-height: inherit;
-}
 
 .voice-message-bubble {
     min-width: 0;
@@ -2074,8 +2275,8 @@ input:checked + .slider:before {
     justify-content: flex-end;
     align-items: flex-start;
     gap: 15px;
-    height: calc(78px + env(safe-area-inset-top, 0px));
-    padding: calc(44px + env(safe-area-inset-top, 0px)) 20px 10px;
+    height: calc(54px + env(safe-area-inset-top, 0px));
+    padding: calc(14px + env(safe-area-inset-top, 0px)) 20px 10px;
     color: #fff; /* White icons on cover */
     position: absolute;
     top: 0;
@@ -4521,7 +4722,7 @@ input:checked + .slider:before {
     align-items: center;
     justify-content: center;
     padding: 18px;
-    background: rgba(15, 23, 42, 0.26);
+    background: rgba(0, 0, 0, 0.4);
     opacity: 0;
     transition: opacity 0.22s ease;
 }
@@ -4632,7 +4833,7 @@ input:checked + .slider:before {
     align-items: center;
     justify-content: center;
     padding: 18px;
-    background: rgba(15, 23, 42, 0.24);
+    background: rgba(0, 0, 0, 0.4);
     opacity: 0;
     transition: opacity 0.22s ease;
 }

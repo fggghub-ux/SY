@@ -878,6 +878,10 @@
     min-height: 40%;
 }
 
+.keyboard-open #yt-video-player-view.yt-char-live-mode #yt-player-video-area {
+    min-height: 20%;
+}
+
 #yt-video-player-view.yt-char-live-mode #yt-player-thumbnail {
     height: 100%;
     opacity: 0.96;
@@ -901,6 +905,10 @@
     position: relative;
     z-index: 6;
     overflow: hidden !important;
+}
+
+.keyboard-open #yt-video-player-view.yt-char-live-mode .yt-player-chat-shell {
+    min-height: 280px;
 }
 
 #yt-video-player-view.yt-char-live-mode #yt-player-chat-title {

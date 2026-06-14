@@ -23,6 +23,23 @@ document.addEventListener('DOMContentLoaded', () => {
             : `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     }
 
+    function isMemoryEntryTriggered(entry, recentText) {
+        if (!entry) return false;
+        const title = String(entry.title || '').trim();
+        const memoryPoints = String(entry.memoryPoints || '').trim();
+        const keyword = String(entry.keyword || '').trim();
+        
+        if (keyword && recentText.includes(keyword)) return true;
+        if (title && title !== '对话总结' && title !== '未命名词条' && title !== '珍视回忆' && title !== '长期记忆' && recentText.includes(title)) return true;
+        if (memoryPoints && recentText.includes(memoryPoints)) return true;
+        return false;
+    }
+
+    function getRecentContextText(friend) {
+        if (!Array.isArray(friend.messages)) return '';
+        return friend.messages.slice(-10).map(m => String(m.content || m.text || '')).join('\n');
+    }
+
     function resolveMountedSticker(friend, categoryName, stickerName) {
         const mounted = Array.isArray(friend?.mountedStickers) ? friend.mountedStickers.map(String) : [];
         if (mounted.length === 0) return null;
@@ -494,23 +511,46 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function buildLinkedPromptMemorySections(friend) {
         const normalizedFriend = window.imApp.normalizeFriendData(friend || {});
-        const entries = Array.isArray(normalizedFriend.memory?.shortTermEntries)
+        const recentText = getRecentContextText(normalizedFriend);
+
+        const shortTermEntries = Array.isArray(normalizedFriend.memory?.shortTermEntries)
             ? normalizedFriend.memory.shortTermEntries
-                .filter(entry => entry && (entry.title || entry.event || entry.memoryPoints))
+                .filter(entry => entry && (entry.title || entry.event || entry.memoryPoints) && isMemoryEntryTriggered(entry, recentText))
                 .slice(-8)
-                .map(entry => `- ${entry.title || 'Memory'}: ${entry.event || entry.content || ''}${entry.memoryPoints ? ` (${entry.memoryPoints})` : ''}`)
+                .map(entry => `<short_term_memory>\n<title>${entry.title || 'Memory'}</title>\n<content>${entry.event || entry.content || ''}</content>\n<memory_points>${entry.memoryPoints || ''}</memory_points>\n</short_term_memory>`)
                 .join('\n')
             : '';
+
+        let longTermXml = '';
+        if (Array.isArray(normalizedFriend.memory?.longTermEntries) && normalizedFriend.memory.longTermEntries.length > 0) {
+            const triggered = normalizedFriend.memory.longTermEntries.filter(e => isMemoryEntryTriggered(e, recentText));
+            if (triggered.length > 0) {
+                longTermXml = `<long_term_memories>\n${triggered.map(e => `<memory>\n<title>${e.title || ''}</title>\n<content>${e.content || ''}</content>\n</memory>`).join('\n')}\n</long_term_memories>`;
+            }
+        } else if (normalizedFriend.memory?.longTerm) {
+            longTermXml = `<long_term_memories>\n${normalizedFriend.memory.longTerm}\n</long_term_memories>`;
+        }
+
+        let cherishedXml = '';
+        if (Array.isArray(normalizedFriend.memory?.cherishedEntries) && normalizedFriend.memory.cherishedEntries.length > 0) {
+            const triggered = normalizedFriend.memory.cherishedEntries.filter(e => isMemoryEntryTriggered(e, recentText));
+            if (triggered.length > 0) {
+                cherishedXml = `<cherished_memories>\n${triggered.map(e => `<memory>\n<title>${e.title || ''}</title>\n<content>${e.content || ''}</content>\n<detail>${e.detail || ''}</detail>\n<reason>${e.reason || ''}</reason>\n<time>${e.createdAt || ''}</time>\n</memory>`).join('\n')}\n</cherished_memories>`;
+            }
+        } else if (normalizedFriend.memory?.cherished) {
+            cherishedXml = `<cherished_memories>\n${normalizedFriend.memory.cherished}\n</cherished_memories>`;
+        }
+
         const linkedFriendMemory = window.imApp.buildLinkedAccountMemoryContext
             ? window.imApp.buildLinkedAccountMemoryContext(normalizedFriend)
             : '';
 
         return [
-            normalizedFriend.memory?.overview ? `Core Memory Overview:\n${normalizedFriend.memory.overview}` : '',
-            normalizedFriend.memory?.longTerm ? `Long-term Memory:\n${normalizedFriend.memory.longTerm}` : '',
-            normalizedFriend.memory?.context?.notes ? `Extra Context Notes:\n${normalizedFriend.memory.context.notes}` : '',
-            entries ? `Short-term Memory:\n${entries}` : '',
-            normalizedFriend.memory?.cherished ? `Cherished Memories:\n${normalizedFriend.memory.cherished}` : '',
+            normalizedFriend.memory?.overview ? `<core_memory_overview>\n${normalizedFriend.memory.overview}\n</core_memory_overview>` : '',
+            longTermXml,
+            normalizedFriend.memory?.context?.notes ? `<extra_context_notes>\n${normalizedFriend.memory.context.notes}\n</extra_context_notes>` : '',
+            shortTermEntries ? `<short_term_memories>\n${shortTermEntries}\n</short_term_memories>` : '',
+            cherishedXml,
             linkedFriendMemory
         ].filter(Boolean).join('\n\n');
     }
@@ -869,6 +909,32 @@ Output only valid JSON with this exact shape:
             friend.memory = window.imApp.normalizeFriendData(friend).memory;
 
         const isSleeping = window.imApp.isCharacterSleeping(friend);
+        const recentText = getRecentContextText(friend);
+
+        function formatDetailedTime(timestamp) {
+            if (!timestamp) return '';
+            const date = new Date(timestamp);
+            const year = date.getFullYear();
+            const month = date.getMonth() + 1;
+            const day = date.getDate();
+            const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+            const dayOfWeek = days[date.getDay()];
+            const hour = date.getHours();
+            const minute = date.getMinutes().toString().padStart(2, '0');
+            const second = date.getSeconds().toString().padStart(2, '0');
+            
+            let period = '';
+            if (hour >= 0 && hour < 6) period = '凌晨';
+            else if (hour >= 6 && hour < 9) period = '早上';
+            else if (hour >= 9 && hour < 12) period = '上午';
+            else if (hour === 12) period = '中午';
+            else if (hour > 12 && hour < 18) period = '下午';
+            else if (hour >= 18 && hour <= 23) period = '晚上';
+
+            let displayHour = hour % 12;
+            if (displayHour === 0) displayHour = 12;
+            return `[时间：${year}年${month}月${day}日 ${dayOfWeek} ${period}${displayHour}:${minute}:${second}] `;
+        }
 
         const relationshipText = friend.memory.relationships && friend.memory.relationships.length > 0
             ? friend.memory.relationships.map(rel => {
@@ -898,12 +964,14 @@ Output only valid JSON with this exact shape:
 
         function formatShortTermMemoryEntry(entry) {
             return [
-                `- ID: ${entry.id || ''}`,
-                `  标题: ${entry.title || '对话总结'}`,
-                `  时间: ${entry.time || ''}`,
-                `  事件: ${entry.event || ''}`,
-                `  记忆点: ${entry.memoryPoints || ''}`,
-                `  记忆程度: ${normalizeShortTermMemoryDegree(entry.degree)}`
+                `<short_term_memory>`,
+                `  <id>${entry.id || ''}</id>`,
+                `  <title>${entry.title || '对话总结'}</title>`,
+                `  <time>${entry.time || ''}</time>`,
+                `  <event>${entry.event || ''}</event>`,
+                `  <memory_points>${entry.memoryPoints || ''}</memory_points>`,
+                `  <degree>${normalizeShortTermMemoryDegree(entry.degree)}</degree>`,
+                `</short_term_memory>`
             ].join('\n');
         }
 
@@ -912,7 +980,9 @@ Output only valid JSON with this exact shape:
             const entries = Array.isArray(friend.memory?.shortTermEntries)
                 ? friend.memory.shortTermEntries.filter(entry => entry && (entry.event || entry.memoryPoints || entry.title))
                 : [];
-            if (entries.length === 0) return '';
+            
+            const triggeredEntries = entries.filter(entry => isMemoryEntryTriggered(entry, recentText));
+            if (triggeredEntries.length === 0) return '';
 
             const buckets = {
                 高: [],
@@ -921,7 +991,7 @@ Output only valid JSON with this exact shape:
                 遗忘: []
             };
 
-            entries.forEach(entry => {
+            triggeredEntries.forEach(entry => {
                 const degree = normalizeShortTermMemoryDegree(entry.degree);
                 buckets[degree].push(entry);
             });
@@ -944,13 +1014,7 @@ Output only valid JSON with this exact shape:
                 .map(([title, items]) => `${title}\n${items.map(formatShortTermMemoryEntry).join('\n')}`)
                 .join('\n\n');
 
-            return `Short-term Memory Library（全部可读取，必须按权重使用）:
-- 高：强参考，优先影响情绪、态度、称呼和细节联想，占记忆影响约70%。
-- 中：辅助参考，只在话题相关时使用，占约25%。
-- 低：弱参考，只在用户明确触发时轻微使用，占约5%。
-- 遗忘：仅作为模糊残影，不主动提起，除非用户强烈触发。
-
-${sections}`;
+            return `<short_term_memory_library>\n<rules>\n- 高：强参考，优先影响情绪、态度、称呼和细节联想，占记忆影响约70%。\n- 中：辅助参考，只在话题相关时使用，占约25%。\n- 低：弱参考，只在用户明确触发时轻微使用，占约5%。\n- 遗忘：仅作为模糊残影，不主动提起，除非用户强烈触发。\n</rules>\n\n<memories>\n${sections}\n</memories>\n</short_term_memory_library>`;
         }
 
         // 提取日程信息
@@ -1000,13 +1064,23 @@ ${sections}`;
             }
         }
 
+        let longTermXml = '';
+        if (Array.isArray(friend.memory?.longTermEntries) && friend.memory.longTermEntries.length > 0) {
+            const triggered = friend.memory.longTermEntries.filter(e => isMemoryEntryTriggered(e, recentText));
+            if (triggered.length > 0) {
+                longTermXml = `<long_term_memories>\n${triggered.map(e => `<memory>\n<title>${e.title || ''}</title>\n<content>${e.content || ''}</content>\n</memory>`).join('\n')}\n</long_term_memories>`;
+            }
+        } else if (friend.memory?.longTerm) {
+            longTermXml = `<long_term_memories>\n${friend.memory.longTerm}\n</long_term_memories>`;
+        }
+
         const commonMemorySections = [
-            friend.memory.overview ? `【我的iPhone - 核心记忆总结】:\n${friend.memory.overview}` : '',
-            friend.memory.longTerm ? `Long-term Memory:\n${friend.memory.longTerm}` : '',
-            friend.memory.context?.notes ? `Extra Context Notes:\n${friend.memory.context.notes}` : '',
+            friend.memory.overview ? `<core_memory_overview>\n${friend.memory.overview}\n</core_memory_overview>` : '',
+            longTermXml,
+            friend.memory.context?.notes ? `<extra_context_notes>\n${friend.memory.context.notes}\n</extra_context_notes>` : '',
             buildShortTermMemoryContext(friend),
             scheduleSection,
-            `Relationship Network:\n${relationshipText}`,
+            `<relationship_network>\n${relationshipText}\n</relationship_network>`,
             window.imApp.buildLinkedAccountMemoryContext
                 ? window.imApp.buildLinkedAccountMemoryContext(friend)
                 : '',
@@ -1032,11 +1106,7 @@ ${sections}`;
 
                 const affection = typeof panel.affection === 'number' ? panel.affection : 0;
 
-                const historySummary = Array.isArray(panel.thoughtHistory) && panel.thoughtHistory.length > 0
-                    ? panel.thoughtHistory.slice(0, 3).map(t => `- ${t.content}`).join('\n')
-                    : 'None';
-
-                return `Current Profile Panel Snapshot:\nOnline Status: ${isSleeping ? 'offline' : 'online'}\nLocation: ${panel.location || '未知位置'}\nAction: ${panel.action || '暂无动作'}\nMood: ${panel.mood || '平静'}\nExpression: ${panel.expression || '自然'}\nAffection(好感度): ${affection}\nThought: ${panel.thought || '暂无心声'}\nRecent Events:\n${eventSummary}\nRecent Thought History (for context):\n${historySummary}`;
+                return `Current Profile Panel Snapshot:\nOnline Status: ${isSleeping ? 'offline' : 'online'}\nLocation: ${panel.location || '未知位置'}\nAction: ${panel.action || '暂无动作'}\nMood: ${panel.mood || '平静'}\nExpression: ${panel.expression || '自然'}\nAffection(好感度): ${affection}\nThought: ${panel.thought || '暂无心声'}\nRecent Events:\n${eventSummary}`;
             })()
         ].filter(Boolean).join('\n\n');
 
@@ -1057,11 +1127,10 @@ ${sections}`;
 【刚刚被重回的回复】：
 ${pendingRegenerateContext.previousReply || 'None'}` : '';
 
-        const offlineMeetRequirement = friend.offlineMeetEnabled ? `\n\nOffline Meet Mode / 线下见面模式:\n- You and User are physically together in the same offline scene now, not only texting through a phone.\n- For every text or voice object inside <chat_json>, include two extra string fields: "scene" and "action".\n- "scene" describes the overall atmosphere for this reply batch, at least 20 Chinese characters and ideally 20-36 Chinese characters. It will be shown once as centered small gray italic text before the first rendered AI bubble in this round.\n- "scene" must use third-person or objective camera language only. Do not use first-person or second-person pronouns in scene, including 我, 我们, 咱, 咱们, 你, 你们, 您, 她对我, 他看着你, or similar wording.\n- For "scene", use objective subjects such as character names, 对方, 两人, 桌边, 房间, 街灯, 空气, 灯光, 雨声, or the surrounding environment.\n- Use the same "scene" value for all objects in the same reply batch, or only include it on the first object. Do not create a different scene for every bubble.\n- "action" is your own visible movement, posture, expression, or tone, 4-18 Chinese characters. Output the action text only, without parentheses, brackets, or quotes.\n- Keep "text" as the spoken message only. Do not put the scene or action inside text.` : '';
 
         const profilePanelRequirement = friend.type === 'group'
             ? ''
-            : `\n\nProfile Panel Requirement:\n- 在正常聊天气泡之外，你必须额外输出 1 个 <profile_panel>...</profile_panel>\n- <profile_panel> 内必须是合法 JSON，不能有 markdown 代码块，不能有额外解释文字\n- JSON 必须包含字段：thought、location、action、mood、expression、affectionChange、events\n- thought 必须是 45-60 字左右，严格基于当前聊天上下文，使用第一人称，像角色此刻没有说出口的心声\n- location 必须是 2-16 字，表示角色此刻所处的位置或场景\n- action 必须是 2-10 字，表示角色此刻正在做的动作或状态\n- mood 必须是 2-10 字，表示角色此刻的心情\n- expression 必须是 2-10 字，表示角色此刻的面部表情或神态\n- affectionChange 必须是整数（范围 -5 到 5），表示你对用户好感度因本轮对话产生的增减变化\n- 不要输出 online 或类似在线文案，在线状态由系统统一控制\n- events 必须是 JSON 数组；如果当前没有新的事件就输出 []；如果有事件，最多 3 条\n- 普通事件格式为 {"title":"事件标题","description":"事件描述","time":"时间或留空","type":"note"}\n- 珍视回忆必须由你（当前角色/char）自己发起：只有当你基于自己的感受，觉得刚刚这段聊天很在意、很珍贵、自己想以后记住时，才额外加入 1 条珍视回忆事件，type 必须为 "memory_request"\n- 不要把珍视回忆写成外部指令、替对方保存、接受要求或向对方请求许可；即使对方提到保存或记忆相关内容，也只在你自己也真心想珍藏时才输出\n- 珍视回忆事件格式为 {"title":"想珍藏这一刻","description":"一句简短说明","time":"时间或留空","type":"memory_request","requestText":"我想记住的具体事情","detail":"我为什么想记住或补充细节","confirmText":"收下","cancelText":"算了","memoryPayload":{"title":"珍视回忆标题","content":"我想记住的内容","detail":"更多细节","reason":"我想记住的原因","createdAt":"时间或留空","sourceThought":"可留空"}}\n- 只有当你真的觉得值得自己记住时才输出 memory_request，不能每次都输出\n- thought、location、action、mood、expression、events 必须和当前聊天内容连贯，不能复读，不能脱离角色人设`;
+            : `\n\nProfile Panel Requirement:\n- 在正常聊天气泡之外，你必须额外输出 1 个 <profile_panel>...</profile_panel>\n- <profile_panel> 内必须是合法 JSON，不能有 markdown 代码块，不能有额外解释文字\n- JSON 必须包含字段：thought、location、action、mood、expression、affectionChange、events\n- thought 必须是 45-60 字左右，严格基于当前聊天上下文，使用第一人称，像角色此刻没有说出口的心声，并且你必须在心声的最前面带上当前的具体时间（例如：[6月11日 凌晨2:14] 心声内容）\n- location 必须是 2-16 字，表示角色此刻所处的位置或场景\n- action 必须是 2-10 字，表示角色此刻正在做的动作或状态\n- mood 必须是 2-10 字，表示角色此刻的心情\n- expression 必须是 2-10 字，表示角色此刻的面部表情或神态\n- affectionChange 必须是整数（范围 -5 到 5），表示你对用户好感度因本轮对话产生的增减变化\n- 不要输出 online 或类似在线文案，在线状态由系统统一控制\n- events 必须是 JSON 数组；如果当前没有新的事件就输出 []；如果有事件，最多 3 条\n- 普通事件格式为 {"title":"事件标题","description":"事件描述","time":"时间或留空","type":"note"}\n- 珍视回忆必须由你（当前角色/char）自己发起：只有当你基于自己的感受，觉得刚刚这段聊天很在意、很珍贵、自己想以后记住时，才额外加入 1 条珍视回忆事件，type 必须为 "memory_request"\n- 不要把珍视回忆写成外部指令、替对方保存、接受要求或向对方请求许可；即使对方提到保存或记忆相关内容，也只在你自己也真心想珍藏时才输出\n- 珍视回忆事件格式为 {"title":"想珍藏这一刻","description":"一句简短说明","time":"时间或留空","type":"memory_request","requestText":"我想记住的具体事情","detail":"我为什么想记住或补充细节","confirmText":"收下","cancelText":"算了","memoryPayload":{"title":"珍视回忆标题","content":"我想记住的内容","detail":"更多细节","reason":"我想记住的原因","createdAt":"时间或留空","sourceThought":"可留空"}}\n- 只有当你真的觉得值得自己记住时才输出 memory_request，不能每次都输出\n- thought、location、action、mood、expression、events 必须和当前聊天内容连贯，不能复读，不能脱离角色人设`;
 
         const targetLanguage = friend.language || 'zh';
         let languageRequirement = '';
@@ -1084,7 +1153,13 @@ ${pendingRegenerateContext.previousReply || 'None'}` : '';
         let worldBookContextText = '';
         if (friend.messages && friend.messages.length > 0) {
             const recentMsgs = friend.messages.slice(-10);
-            worldBookContextText += recentMsgs.map(m => m.content || m.text || '').join('\n');
+            worldBookContextText += recentMsgs.map(m => {
+                let timeStr = '';
+                if (m.timestamp) {
+                    timeStr = formatDetailedTime(m.timestamp);
+                }
+                return `${timeStr}${m.content || m.text || ''}`;
+            }).join('\n');
         }
         if (friend.memory && friend.memory.overview) {
             worldBookContextText += '\n' + friend.memory.overview;
@@ -1155,7 +1230,12 @@ ${pendingRegenerateContext.previousReply || 'None'}` : '';
                                     text = `[转账相关消息] ${msg.description || ''}`;
                                 }
 
-                                return `${role}: ${text}`;
+                                let timeStr = '';
+                                if (msg.timestamp) {
+                                    timeStr = formatDetailedTime(msg.timestamp);
+                                }
+
+                                return `${timeStr}${role}: ${text}`;
                             }).join('\n');
 
                             infoStr += `\n\n【挂载单聊记忆｜${member.nickname} 与 ${currentUserState.name || 'User'}】\n以下内容是 char「${member.nickname}」和 user「${currentUserState.name || 'User'}」的单聊记忆/私聊上下文，不是当前群聊内公开发生的消息。你必须把它当作该 char 与 user 之间已经存在的私人关系、经历、称呼和语气参考；只有 ${member.nickname} 本人可以自然参考这些记忆，其他群成员默认不知道这些私聊内容，除非 ${member.nickname} 在群里主动说出。\n${formattedContext}`;
@@ -1195,7 +1275,7 @@ ${allowedSpeakerNames.length > 0 ? allowedSpeakerNames.join('、') : 'None'}${af
 12. 【心声要求】：thought 字段必须填写该发言成员此刻的真实心理活动或未说出口的话，字数严格在10-30字之间。${languageRequirement}
 
 群聊的背景与关系记忆:
-${commonMemorySections || 'None'}${offlineMeetRequirement}`;
+${commonMemorySections || 'None'}`;
 
         } else {
             const timeAware = friend.timeAware !== false;
@@ -1236,10 +1316,11 @@ ${commonMemorySections || 'None'}${offlineMeetRequirement}`;
 - 当前系统时间是：${timeString}。
 - User 最后一次发消息时间：${lastUserMessage ? formatPromptTime(lastUserMessage.timestamp) : '未知'}${lastUserMessage ? `（距离现在约 ${formatPromptDuration(charReplyDelay)}）` : ''}。
 - User 回复前，你自己最近一次发消息时间：${lastCharMessageBeforeUser ? formatPromptTime(lastCharMessageBeforeUser.timestamp) : '未知'}${userReplyDelay != null ? `（User 隔了约 ${formatPromptDuration(userReplyDelay)}才回复你）` : ''}。
-- 回复前请自然思考：当下是早晨、白天、深夜还是某个特殊日期？这段间隔是否会影响你的语气、状态和主动性？
-- 如果 User 发来消息到你现在回复之间隔了较久，可以根据你的人设、当前状态、日程和场景，自然体现你刚刚可能在做什么、为什么现在才回；不要每次机械道歉，也不要编造与人设冲突的大事件。
-- 如果 User 是隔了很久才回复你，而你们的关系和语境允许，你可以自然问一句 User 刚刚去做什么了、怎么这么久才回；但不要每次都追问，关系不熟时要更克制，关系亲近时可以更随意或带情绪。
-- 如果双方间隔都很短，就不要刻意提时间，只把当前时间作为背景感知。`;
+- 回复前，你必须在完成以下思考，禁止直接输出思考内容：
+  1. 现在具体的日期和时间是？
+  2. 距离上次互动过去了多久？
+  3. 这段时间你可能在做什么？
+- 然后，将这些感受自然融入你的台词、动作和情绪中，如果距离上一次聊天很久，会有“你昨天怎么没回我”的情绪；如果user的消息中断了一段时间，你（char）会在回来时告诉你离线了多久，开会让你略有点小埋怨；一整天的失联则可能让你生气或担忧。如果双方间隔都很短，就不要刻意提时间，只把当前时间作为背景感知。`;
             }
             
             const sleepPrompt = isSleeping ? `\n【作息限制】：角色当前正在睡觉。如果用户发来消息，你必须强制保持离线状态并在所有回复内容（text 字段）的开头添加 "[自动回复] " 前缀，模拟已睡着或离线时的自动响应。心声和面板状态也要符合睡着的情境。` : '';
@@ -1278,7 +1359,7 @@ Reply naturally as your character in a chat app.
 11. 你必须额外输出 1 个 <profile_panel>...</profile_panel>，用于更新角色资料卡。${languageRequirement}
 
 Character Memory:
-${commonMemorySections || 'None'}${offlineMeetRequirement}${regenerateRequirement}${profilePanelRequirement}${lovesSpaceRequirement}${lovesActionRequirement}${familyCardRequirement}`;
+${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequirement}${lovesSpaceRequirement}${lovesActionRequirement}${familyCardRequirement}`;
         }
 
         const messages = [{ role: 'system', content: systemPrompt }];
@@ -1288,15 +1369,36 @@ ${commonMemorySections || 'None'}${offlineMeetRequirement}${regenerateRequiremen
             });
 
             if (Array.isArray(contextMessages) && contextMessages.length > 0) {
-                messages.push(...contextMessages);
+                const formattedContextMsgs = contextMessages.map(m => {
+                    let timeStr = '';
+                    if (m.timestamp) {
+                        timeStr = formatDetailedTime(m.timestamp);
+                    }
+                    return {
+                        ...m,
+                        content: `${timeStr}${m.content}`
+                    };
+                });
+                messages.push(...formattedContextMsgs);
             }
         }
         if (messages.length === 1) messages.push({ role: 'user', content: 'Hello' });
 
         const trailingContexts = [];
-        if (friend.memory && friend.memory.cherished && String(friend.memory.cherished).trim()) {
-            trailingContexts.push(`[Important Cherished Memories / 珍视回忆 - 请深刻记住并参考这些回忆：]\n${friend.memory.cherished}`);
+        let cherishedXml = '';
+        if (Array.isArray(friend.memory?.cherishedEntries) && friend.memory.cherishedEntries.length > 0) {
+            const triggered = friend.memory.cherishedEntries.filter(e => isMemoryEntryTriggered(e, recentText));
+            if (triggered.length > 0) {
+                cherishedXml = `<cherished_memories>\n${triggered.map(e => `<memory>\n<title>${e.title || ''}</title>\n<content>${e.content || ''}</content>\n<detail>${e.detail || ''}</detail>\n<reason>${e.reason || ''}</reason>\n<time>${e.createdAt || ''}</time>\n</memory>`).join('\n')}\n</cherished_memories>`;
+            }
+        } else if (friend.memory && friend.memory.cherished && String(friend.memory.cherished).trim()) {
+            cherishedXml = `<cherished_memories>\n${friend.memory.cherished}\n</cherished_memories>`;
         }
+
+        if (cherishedXml) {
+            trailingContexts.push(cherishedXml);
+        }
+
         if (trailingContexts.length > 0) {
             messages.push({
                 role: 'system',
@@ -1591,13 +1693,11 @@ ${commonMemorySections || 'None'}${offlineMeetRequirement}${regenerateRequiremen
                                 ? item.translation.trim()
                                 : (typeof item.trans === 'string' ? item.trans.trim() : ''),
                             replyTo: typeof item.quote === 'string' ? item.quote.trim() : '',
-                            speaker: typeof item.speaker === 'string' ? item.speaker.trim() : '',
-                            offlineScene: typeof item.scene === 'string' ? item.scene.trim() : '',
-                            offlineAction: typeof item.action === 'string' ? item.action.trim() : ''
-                        };
-                    }
+                        speaker: typeof item.speaker === 'string' ? item.speaker.trim() : ''
+                    };
+                }
 
-                    if (itemType === 'sticker') {
+                if (itemType === 'sticker') {
                         const name = typeof item.name === 'string' ? item.name.trim() : '';
                         if (!name) return null;
 
@@ -1671,9 +1771,7 @@ ${commonMemorySections || 'None'}${offlineMeetRequirement}${regenerateRequiremen
                             ? item.translation.trim()
                             : (typeof item.trans === 'string' ? item.trans.trim() : ''),
                         replyTo: typeof item.quote === 'string' ? item.quote.trim() : '',
-                        speaker: typeof item.speaker === 'string' ? item.speaker.trim() : '',
-                        offlineScene: typeof item.scene === 'string' ? item.scene.trim() : '',
-                        offlineAction: typeof item.action === 'string' ? item.action.trim() : ''
+                        speaker: typeof item.speaker === 'string' ? item.speaker.trim() : ''
                     };
                 }).filter(Boolean);
             }
@@ -1687,13 +1785,21 @@ ${commonMemorySections || 'None'}${offlineMeetRequirement}${regenerateRequiremen
                     fullReply = fullReply.replace(transRegex, '').trim();
                 }
 
+                let fullThinking = null;
+                const thinkRegex = /<thinking>([\s\S]*?)<\/thinking>/i;
+                const thinkMatch = fullReply.match(thinkRegex);
+                if (thinkMatch) {
+                    fullThinking = thinkMatch[1].trim();
+                    fullReply = fullReply.replace(thinkRegex, '').trim();
+                }
+
                 let sentences = [];
                 if (friend.type === 'group') {
-                    sentences = fullReply.split(/\n+/).map(s => s.trim()).filter(s => s.length > 0);
+                    sentences = fullReply.split(/\n+/).map(s => s.replace(/^\s*(.*?)\s*$/, '$1')).filter(s => s.length > 0);
                 } else if (fullTranslation) {
                     sentences = [fullReply];
                 } else {
-                    sentences = fullReply.split(/(?<=[。！？.!?\n])/).map(s => s.trim()).filter(s => s.length > 0);
+                    sentences = fullReply.split(/(?<=[。！？.!?])/).map(s => s.replace(/^\s*(.*?)\s*$/, '$1')).filter(s => s.length > 0);
 
                     if (sentences.length > 7) {
                         while (sentences.length > 7) {
@@ -1710,20 +1816,18 @@ ${commonMemorySections || 'None'}${offlineMeetRequirement}${regenerateRequiremen
                             sentences.splice(minIdx + 1, 1);
                         }
                     } else if (sentences.length < 3 && fullReply.length > 30) {
-                        sentences = fullReply.split(/(?<=[。！？.!?\n，,])/).map(s => s.trim()).filter(s => s.length > 0);
+                        sentences = fullReply.split(/(?<=[。！？.!?，,])/).map(s => s.replace(/^\s*(.*?)\s*$/, '$1')).filter(s => s.length > 0);
                         if (sentences.length > 7) sentences = sentences.slice(0, 7);
                     }
                 }
 
                 if (sentences.length === 0 && fullReply) sentences = [fullReply];
 
-                queueItems = sentences.map(text => ({
+                queueItems = sentences.map((text, index) => ({
                     text,
                     translation: fullTranslation || '',
-                    replyTo: '',
-                    speaker: '',
-                    offlineScene: '',
-                    offlineAction: ''
+                    thought: (index === 0 && fullThinking) ? fullThinking : (typeof aiThought === 'string' ? aiThought : ''),
+                    speaker: currentSpeakerName
                 }));
             }
 
@@ -2158,16 +2262,6 @@ ${commonMemorySections || 'None'}${offlineMeetRequirement}${regenerateRequiremen
                 if (currentSpeakerAvatar) msgObj.senderAvatarUrl = currentSpeakerAvatar;
                 if (speakerFriend.type === 'group' && currentItem.thought) {
                     msgObj.thought = currentItem.thought;
-                }
-                const shouldAttachBatchOfflineScene = friend.offlineMeetEnabled && !batchOfflineSceneAttached && !!batchOfflineScene;
-                const messageOfflineScene = shouldAttachBatchOfflineScene ? batchOfflineScene : '';
-                if (shouldAttachBatchOfflineScene) {
-                    batchOfflineSceneAttached = true;
-                }
-                if (messageOfflineScene || itemOfflineAction || friend.offlineMeetEnabled) {
-                    msgObj.offlineMode = true;
-                    msgObj.offlineScene = messageOfflineScene;
-                    msgObj.offlineAction = itemOfflineAction;
                 }
                 if (itemTranslation) {
                     msgObj.translation = itemTranslation;

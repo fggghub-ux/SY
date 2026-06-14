@@ -604,41 +604,6 @@ function renderTimestamp(timestamp, container) {
         container.appendChild(div);
     }
 
-function renderOfflineSceneText(sceneText, container, timestamp = Date.now()) {
-        if (!sceneText || !container) return;
-        const row = document.createElement('div');
-        row.className = 'chat-offline-scene-row';
-        row.setAttribute('data-timestamp', timestamp);
-        row.innerHTML = `<span>${escapeHtml(sceneText)}</span>`;
-        container.appendChild(row);
-    }
-
-function normalizeOfflineActionText(value) {
-        let text = String(value == null ? '' : value).trim();
-        const wrapperPairs = [
-            ['（', '）'],
-            ['(', ')'],
-            ['[', ']'],
-            ['【', '】'],
-            ['{', '}'],
-            ['「', '」'],
-            ['『', '』']
-        ];
-
-        let changed = true;
-        while (changed && text.length > 1) {
-            changed = false;
-            for (const [open, close] of wrapperPairs) {
-                if (text.startsWith(open) && text.endsWith(close)) {
-                    text = text.slice(open.length, text.length - close.length).trim();
-                    changed = true;
-                    break;
-                }
-            }
-        }
-
-        return text;
-    }
 
 function renderUserBubble(text, container, timestamp = Date.now(), replyTo = null, translation = null, showTranslation = false, messageId = null, friend = null) {
         const rows = Array.from(container.children).filter(el => el.classList.contains('chat-row') && !el.classList.contains('typing-row'));
@@ -686,8 +651,8 @@ function renderUserBubble(text, container, timestamp = Date.now(), replyTo = nul
         window.imChat.scrollToBottom(container);
     }
 
-function renderAiBubble(text, friend, container, timestamp = Date.now(), translation = null, showTranslation = false, replyTo = null, speakerName = null, speakerAvatar = null, messageId = null, thought = null, offlineScene = null, offlineAction = null) {
-        const rows = Array.from(container.children).filter(el => !el.classList.contains('chat-timestamp') && !el.classList.contains('typing-row') && !el.classList.contains('chat-offline-scene-row'));
+    function renderAiBubble(text, friend, container, timestamp = Date.now(), translation = null, showTranslation = false, replyTo = null, speakerName = null, speakerAvatar = null, messageId = null, thought = null) {
+        const rows = Array.from(container.children).filter(el => !el.classList.contains('chat-timestamp') && !el.classList.contains('typing-row'));
         const lastRow = rows.length > 0 ? rows[rows.length - 1] : null;
         const isGroupMessage = friend.type === 'group' && !!speakerName;
         let hasPrev = false;
@@ -722,10 +687,6 @@ function renderAiBubble(text, friend, container, timestamp = Date.now(), transla
         let contentHtml = '';
         if (replyTo) {
             contentHtml += `<div class="msg-reply-quote" style="font-size: 13px; color: rgba(0,0,0,0.6); background: rgba(0,0,0,0.05); padding: 8px 12px; border-radius: 14px; margin-bottom: 8px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${replyTo}</div>`;
-        }
-        const safeOfflineAction = normalizeOfflineActionText(offlineAction);
-        if (safeOfflineAction) {
-            contentHtml += `<span class="chat-offline-action">（${escapeHtml(safeOfflineAction)}）</span>`;
         }
         contentHtml += text;
         if (translation && showTranslation) {
@@ -771,9 +732,6 @@ function renderAiBubble(text, friend, container, timestamp = Date.now(), transla
                 </div>
             </div>
         `;
-        if (offlineScene) {
-            renderOfflineSceneText(offlineScene, container, timestamp);
-        }
         container.appendChild(row);
         window.imChat.scrollToBottom(container);
     }
@@ -1233,12 +1191,7 @@ function renderVoiceMessageBubble(msg, friend, container, timestamp = Date.now()
         })();
         const metaHtml = "";
 
-        const safeOfflineAction = !isUser ? normalizeOfflineActionText(msg.offlineAction) : '';
-        const offlineActionHtml = safeOfflineAction
-            ? `<span class="chat-offline-action">（${escapeHtml(safeOfflineAction)}）</span>`
-            : '';
         const contentHtml = `
-            ${offlineActionHtml}
             <button type="button" class="voice-message-bubble-inner" aria-expanded="false">
                 <span class="voice-message-mic"><i class="fas fa-microphone-alt"></i></span>
                 <span class="voice-message-wave" aria-hidden="true">
@@ -1314,9 +1267,6 @@ function renderVoiceMessageBubble(msg, friend, container, timestamp = Date.now()
             });
         }
 
-        if (!isUser && msg.offlineScene) {
-            renderOfflineSceneText(msg.offlineScene, container, timestamp);
-        }
         container.appendChild(row);
         window.imChat.scrollToBottom(container);
     }
@@ -1425,7 +1375,6 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
     window.imChat.renderChatHistory = renderChatHistory;
     window.imChat.scrollToBottom = scrollToBottom;
     window.imChat.renderTimestamp = renderTimestamp;
-    window.imChat.renderOfflineSceneText = renderOfflineSceneText;
     window.imChat.renderUserBubble = renderUserBubble;
     window.imChat.renderAiBubble = renderAiBubble;
     window.imChat.renderImageBubble = renderImageBubble;

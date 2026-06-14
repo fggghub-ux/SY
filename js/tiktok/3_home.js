@@ -1104,15 +1104,11 @@ ${wbContext}
     // Render Home Feed
     window.tkRenderHome = function(options = {}) {
         if (!feedContainer) return;
-        const renderOptions = options && typeof options === 'object' ? options : {};
         
         // Determine active tab
         const activeTabEl = document.querySelector('.tk-topbar-tab.active');
         const isActiveTabFollowing = activeTabEl && activeTabEl.textContent === '关注';
         const renderKey = isActiveTabFollowing ? 'following' : 'recommend';
-        if (tkHomeRenderKey !== renderKey && !renderOptions.preserveLimit) {
-            tkHomeVisibleLimit = TK_HOME_INITIAL_RENDER_COUNT;
-        }
         tkHomeRenderKey = renderKey;
         
         // Filter videos based on tab
@@ -1134,7 +1130,6 @@ ${wbContext}
         feedContainer.innerHTML = '';
         
         if (displayVideos.length === 0) {
-            tkHomeHasMoreVideos = false;
             if (isActiveTabFollowing) {
                 feedContainer.innerHTML = '<div class="tk-empty-feed"><p style="color: #999; font-size: 14px;">暂无关注的内容，快去探索吧</p></div>';
             } else {
@@ -1151,8 +1146,7 @@ ${wbContext}
             return;
         }
 
-        const visibleVideos = displayVideos.slice(0, tkHomeVisibleLimit);
-        tkHomeHasMoreVideos = visibleVideos.length < displayVideos.length;
+        const visibleVideos = displayVideos;
         
         visibleVideos.forEach((video, index) => {
             const char = window.tkGetChar(video.authorId);
@@ -1257,24 +1251,6 @@ ${wbContext}
         });
     };
 
-    if (feedContainer && !feedContainer.dataset.tkLazyLoadBound) {
-        feedContainer.dataset.tkLazyLoadBound = 'true';
-        feedContainer.addEventListener('scroll', () => {
-            if (!tkHomeHasMoreVideos || tkHomeIsAppending) return;
-            const threshold = Math.max(120, feedContainer.clientHeight * 0.6);
-            const distanceToBottom = feedContainer.scrollHeight - (feedContainer.scrollTop + feedContainer.clientHeight);
-            if (distanceToBottom > threshold) return;
-
-            tkHomeIsAppending = true;
-            const previousScrollTop = feedContainer.scrollTop;
-            tkHomeVisibleLimit += TK_HOME_LOAD_STEP;
-            window.tkRenderHome({ preserveLimit: true, preserveScroll: true });
-            requestAnimationFrame(() => {
-                feedContainer.scrollTop = previousScrollTop;
-                tkHomeIsAppending = false;
-            });
-        }, { passive: true });
-    }
 
     // Make sure fullscreen music icon also opens music view
     setTimeout(() => {

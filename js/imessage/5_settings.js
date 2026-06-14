@@ -596,6 +596,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!chatBindIdLabel) return;
         const boundAccount = getBoundAccountByFriend(friend);
         chatBindIdLabel.textContent = boundAccount ? (boundAccount.name || '已绑定') : '';
+        
+        const chatBindIdSelect = document.getElementById('chat-bind-id-select');
+        if (chatBindIdSelect) {
+            const accounts = getAvailableAccounts();
+            chatBindIdSelect.innerHTML = '<option value="none">不绑定</option>';
+            accounts.forEach(acc => {
+                const opt = document.createElement('option');
+                opt.value = acc.id;
+                opt.textContent = acc.name || '未命名ID';
+                chatBindIdSelect.appendChild(opt);
+            });
+            chatBindIdSelect.value = friend && friend.boundAccountId ? friend.boundAccountId : 'none';
+        }
     }
 
     function renderBindAccountList(friend) {
@@ -735,19 +748,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         statsContainer.innerHTML = `
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
-                <div style="background: #f8f8fb; border: 1px solid #ececf2; border-radius: 12px; padding: 10px; text-align: center;">
+                <div style="background: #ffffff; border: 1px solid #ececf2; border-radius: 12px; padding: 10px; text-align: center;">
                     <div style="font-size: 11px; color: #8e8e93; margin-bottom: 4px;">聊天总数</div>
                     <div style="font-size: 16px; font-weight: 700; color: #111;">${messageCount}</div>
                 </div>
-                <div style="background: #f8f8fb; border: 1px solid #ececf2; border-radius: 12px; padding: 10px; text-align: center;">
+                <div style="background: #ffffff; border: 1px solid #ececf2; border-radius: 12px; padding: 10px; text-align: center;">
                     <div style="font-size: 11px; color: #8e8e93; margin-bottom: 4px;">建联天数</div>
                     <div style="font-size: 16px; font-weight: 700; color: #111;">${days}</div>
                 </div>
-                <div style="background: #f8f8fb; border: 1px solid #ececf2; border-radius: 12px; padding: 10px; text-align: center;">
+                <div style="background: #ffffff; border: 1px solid #ececf2; border-radius: 12px; padding: 10px; text-align: center;">
                     <div style="font-size: 11px; color: #8e8e93; margin-bottom: 4px;">总Token估算</div>
                     <div style="font-size: 16px; font-weight: 700; color: #111;">${tokenCount}</div>
                 </div>
-                <div style="background: #f8f8fb; border: 1px solid #ececf2; border-radius: 12px; padding: 10px; text-align: center;">
+                <div style="background: #ffffff; border: 1px solid #ececf2; border-radius: 12px; padding: 10px; text-align: center;">
                     <div style="font-size: 11px; color: #8e8e93; margin-bottom: 4px;">最后聊天</div>
                     <div style="font-size: 13px; font-weight: 700; color: #111; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${messageCount > 0 ? lastTimeStr : '无'}</div>
                 </div>
@@ -956,19 +969,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const statsHtml = `
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
-                    <div style="background: #f8f8fb; border: 1px solid #ececf2; border-radius: 12px; padding: 10px; text-align: center;">
+                    <div style="background: #ffffff; border: 1px solid #ececf2; border-radius: 12px; padding: 10px; text-align: center;">
                         <div style="font-size: 11px; color: #8e8e93; margin-bottom: 4px;">聊天总数</div>
                         <div style="font-size: 16px; font-weight: 700; color: #111;">${messageCount}</div>
                     </div>
-                    <div style="background: #f8f8fb; border: 1px solid #ececf2; border-radius: 12px; padding: 10px; text-align: center;">
+                    <div style="background: #ffffff; border: 1px solid #ececf2; border-radius: 12px; padding: 10px; text-align: center;">
                         <div style="font-size: 11px; color: #8e8e93; margin-bottom: 4px;">建联天数</div>
                         <div style="font-size: 16px; font-weight: 700; color: #111;">${days}</div>
                     </div>
-                    <div style="background: #f8f8fb; border: 1px solid #ececf2; border-radius: 12px; padding: 10px; text-align: center;">
+                    <div style="background: #ffffff; border: 1px solid #ececf2; border-radius: 12px; padding: 10px; text-align: center;">
                         <div style="font-size: 11px; color: #8e8e93; margin-bottom: 4px;">总Token估算</div>
                         <div style="font-size: 16px; font-weight: 700; color: #111;">${tokenCount}</div>
                     </div>
-                    <div style="background: #f8f8fb; border: 1px solid #ececf2; border-radius: 12px; padding: 10px; text-align: center;">
+                    <div style="background: #ffffff; border: 1px solid #ececf2; border-radius: 12px; padding: 10px; text-align: center;">
                         <div style="font-size: 11px; color: #8e8e93; margin-bottom: 4px;">最后聊天</div>
                         <div style="font-size: 13px; font-weight: 700; color: #111; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${messageCount > 0 ? lastTimeStr : '无'}</div>
                     </div>
@@ -1468,12 +1481,25 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    if (chatBindIdBtn && bindAccountSheet) {
-        chatBindIdBtn.addEventListener('click', () => {
-            if (!window.imData.currentSettingsFriend) return;
-            tempSelectedAccountId = window.imData.currentSettingsFriend.boundAccountId || null;
-            renderBindAccountList(window.imData.currentSettingsFriend);
-            openView(bindAccountSheet);
+    const chatBindIdSelect = document.getElementById('chat-bind-id-select');
+    if (chatBindIdSelect) {
+        chatBindIdSelect.addEventListener('change', async (e) => {
+            const friend = window.imData.currentSettingsFriend;
+            if (!friend) return;
+            
+            const nextBoundAccountId = e.target.value === 'none' ? null : e.target.value;
+            const saved = await commitSettingsFriendChange((targetFriend) => {
+                targetFriend.boundAccountId = nextBoundAccountId;
+            }, { silent: true });
+
+            if (!saved) {
+                showToast('角色绑定ID保存失败');
+                return;
+            }
+
+            updateChatBindIdLabel(friend);
+            if (window.updateBindRoleEntryPoints) window.updateBindRoleEntryPoints();
+            showToast(friend.boundAccountId ? '角色绑定ID已更新' : '已取消绑定ID');
         });
     }
 
@@ -1845,16 +1871,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 newAvatarUpload.addEventListener('change', async (e) => {
                     const file = e.target.files[0];
-            if (file) {
-                try {
-                    const avatarUrl = window.imApp.compressImageFile
-                        ? await window.imApp.compressImageFile(file, {
-                            maxWidth: 256,
-                            maxHeight: 256,
-                            mimeType: 'image/jpeg',
-                            quality: 0.8
-                        })
-                        : await window.imApp.readFileAsDataUrl(file);
+                    if (file) {
+                        try {
+                            tempAvatarUrl = window.imApp.compressImageFile
+                                ? await window.imApp.compressImageFile(file, {
+                                    maxWidth: 256,
+                                    maxHeight: 256,
+                                    mimeType: 'image/jpeg',
+                                    quality: 0.8
+                                })
+                                : await window.imApp.readFileAsDataUrl(file);
 
                             const img = document.getElementById('char-edit-avatar-img');
                             const iconPreview = document.getElementById('char-edit-avatar-preview');
@@ -1865,6 +1891,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         } catch (error) {
                             console.error('Failed to process character avatar image', error);
                             showToast('头像处理失败');
+                        } finally {
+                            e.target.value = '';
                         }
                     }
                 });
@@ -1924,6 +1952,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     if(window.imApp.renderFriendsList) window.imApp.renderFriendsList();
                     if(window.imApp.renderChatsList) window.imApp.renderChatsList();
+                    
+                    if (window.imChat && window.imChat.rerenderChatContainer && page) {
+                        const msgContainer = page.querySelector('.ins-chat-messages');
+                        if (msgContainer) window.imChat.rerenderChatContainer(latestFriend, msgContainer, { scroll: false });
+                    }
                     
                     showToast('角色修改成功');
                     closeView(editSheet);

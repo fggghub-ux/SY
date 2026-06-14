@@ -16,7 +16,7 @@
     document.addEventListener('touchend', function(e) {
         const now = Date.now();
         if (now - lastTap < 300) { 
-            e.preventDefault(); 
+            if (e.cancelable) e.preventDefault(); 
         }
         lastTap = now;
     }, { passive: false });

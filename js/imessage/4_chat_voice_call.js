@@ -52,6 +52,12 @@
     }
 
     function createCallNovelLine(text, options = {}) {
+        const rowWrap = document.createElement('div');
+        rowWrap.style.width = '100%';
+        rowWrap.style.marginBottom = '10px';
+        rowWrap.style.display = 'flex';
+        rowWrap.style.flexDirection = 'column';
+
         const row = document.createElement('div');
         if (options.callTurnId) row.dataset.callTurnId = options.callTurnId;
         if (options.callLineType) row.dataset.callLineType = options.callLineType;
@@ -60,7 +66,6 @@
         row.style.alignItems = 'flex-start';
         row.style.justifyContent = 'flex-start';
         row.style.gap = '8px';
-        row.style.marginBottom = '10px';
         row.style.padding = '0 10px';
         row.style.boxSizing = 'border-box';
         row.style.fontSize = options.fontSize || '15px';
@@ -71,7 +76,7 @@
 
         const textEl = document.createElement('div');
         textEl.style.minWidth = '0';
-        textEl.style.maxWidth = options.voiceButton ? 'calc(100% - 42px)' : '100%';
+        textEl.style.flex = '1';
         textEl.style.whiteSpace = 'pre-wrap';
         
         if (options.speakerName) {
@@ -101,8 +106,62 @@
 
         row.appendChild(textEl);
 
-        if (options.voiceButton) row.appendChild(options.voiceButton);
-        return row;
+        const actionsContainer = document.createElement('div');
+        actionsContainer.style.display = 'flex';
+        actionsContainer.style.gap = '4px';
+        actionsContainer.style.flexShrink = '0';
+
+        if (options.translationText) {
+            const translateBtn = document.createElement('button');
+            translateBtn.type = 'button';
+            translateBtn.title = '显示翻译';
+            translateBtn.style.width = '30px';
+            translateBtn.style.height = '30px';
+            translateBtn.style.border = '1px solid rgba(255,255,255,0.35)';
+            translateBtn.style.borderRadius = '50%';
+            translateBtn.style.background = 'rgba(255,255,255,0.14)';
+            translateBtn.style.color = '#fff';
+            translateBtn.style.display = 'inline-flex';
+            translateBtn.style.alignItems = 'center';
+            translateBtn.style.justifyContent = 'center';
+            translateBtn.style.cursor = 'pointer';
+            translateBtn.style.padding = '0';
+            translateBtn.style.fontSize = '12px';
+            translateBtn.innerText = '译';
+
+            const translationEl = document.createElement('div');
+            translationEl.style.padding = '4px 10px';
+            translationEl.style.fontSize = '13px';
+            translationEl.style.color = 'rgba(255,255,255,0.7)';
+            translationEl.style.display = 'none';
+            translationEl.style.marginTop = '4px';
+            translationEl.innerText = options.translationText;
+
+            translateBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                translationEl.style.display = translationEl.style.display === 'none' ? 'block' : 'none';
+            });
+            
+            actionsContainer.appendChild(translateBtn);
+            rowWrap.translationElNode = translationEl;
+        }
+
+        if (options.voiceButton) {
+            actionsContainer.appendChild(options.voiceButton);
+        }
+
+        if (actionsContainer.children.length > 0) {
+            row.appendChild(actionsContainer);
+        }
+
+        rowWrap.appendChild(row);
+
+        if (rowWrap.translationElNode) {
+            rowWrap.appendChild(rowWrap.translationElNode);
+        }
+
+        return rowWrap;
     }
 
     function createCallVoiceButton(text, message, friend = callFriend) {
@@ -149,12 +208,13 @@
         return btn;
     }
 
-    function addCallBubble(text, isSelf, messagesArea, actionText = '', thoughtText = '') {
+    function addCallBubble(text, isSelf, messagesArea, actionText = '', thoughtText = '', translationText = '') {
         const turnId = `call-msg-${Date.now()}-${++callMessageSeq}`;
         const message = {
             text: text,
             actionText: actionText,
             thoughtText: thoughtText,
+            translationText: translationText,
             isSelf: isSelf,
             timestamp: Date.now(),
             callTurnId: turnId
@@ -184,7 +244,8 @@
                 callTurnId: turnId,
                 callLineType: 'text',
                 speakerName: speakerName,
-                isSelf: isSelf
+                isSelf: isSelf,
+                translationText: translationText
             }));
         }
 
@@ -541,6 +602,32 @@ ${previousReply}` : '';
                 
                 const contextLimit = window.imApp?.getContextLimit ? window.imApp.getContextLimit(callFriend) : 20;
                 
+                const targetLanguage = callFriend.language || 'zh';
+                const langMap = {
+                    'en': 'English',
+                    'ja': 'Japanese',
+                    'ko': 'Korean',
+                    'fr': 'French',
+                    'de': 'German',
+                    'ru': 'Russian',
+                    'es': 'Spanish',
+                    'pt': 'Portuguese',
+                    'it': 'Italian',
+                    'th': 'Thai',
+                    'vi': 'Vietnamese',
+                    'ar': 'Arabic',
+                    'hi': 'Hindi'
+                };
+                let languageRequirement = '';
+                let jsonFormat = `{"action": "第三人称动作/环境声/氛围描写，必须带\${charDisplayName}的名字", "thought": "角色当下心声，不说出口的话（第一人称视角）", "text": "角色说出口的对话内容"}`;
+                
+                let isChinese = ['zh', 'cn', 'zh-cn', 'chinese'].includes(targetLanguage.toLowerCase());
+                if (!isChinese) {
+                    const langName = langMap[targetLanguage.toLowerCase()] || langMap[targetLanguage] || targetLanguage;
+                    languageRequirement = `\n\n【!!! CRITICAL LANGUAGE RULE / 绝对最高优先级语言指令 !!!】:\n- [ABSOLUTE REQUIREMENT]: You MUST speak ONLY in ${langName} for the "text" field. This overrides ALL persona and memory settings.\n- Even if your persona is Chinese or the user speaks in Chinese, your spoken "text" MUST be in ${langName}.\n- [TRANSLATION]: You MUST provide an accurate Chinese translation of your ${langName} "text" in the "translation" field.\n- [CHINESE ONLY]: The "thought" and "action" fields MUST ALWAYS be written in Chinese (必须使用中文).`;
+                    jsonFormat = `{"action": "第三人称动作/环境声/氛围描写，必须带\${charDisplayName}的名字(必须用中文)", "thought": "角色当下心声，不说出口的话（第一人称视角）(必须用中文)", "text": "角色说出口的对话内容（使用${langName}）", "translation": "text字段对应的中文翻译（必须用中文）"}`;
+                }
+
                 let chatContextStr = '';
                 if (window.imApp?.getRecentContextMessages) {
                     const contextMsgs = window.imApp.getRecentContextMessages(callFriend);
@@ -548,7 +635,12 @@ ${previousReply}` : '';
                         chatContextStr = contextMsgs.map(m => {
                             const roleName = m.role === 'user' ? (userState.name || 'User') : (m.speaker || callFriend.nickname);
                             const content = m.text || m.content || '';
-                            return `${roleName}: ${content}`;
+                            let timeStr = '';
+                            if (m.timestamp) {
+                                const date = new Date(m.timestamp);
+                                timeStr = `[${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}] `;
+                            }
+                            return `${timeStr}${roleName}: ${content}`;
                         }).join('\n');
                     }
                 }
@@ -573,13 +665,15 @@ ${chatContextStr || '无'}
 
 【当前场景】：你和用户正处于实时的语音通话中。
 【要求】：
-1. 请结合之前的文字聊天记录以及当前的语音通话上下文，给出一个连贯自然的电话回复。
-2. action 必须用第三人称描写动作、环境声或通话氛围，必须包含角色名字“${charDisplayName}”，不要用“我/你”开头。
-3. action 要像电话那头能听到或感受到的细节，例如：${charDisplayName}翻了个身，电话那头传来布料摩擦声；${charDisplayName}压低了呼吸，背景里有很轻的脚步声。
-4. thought 是 ${charDisplayName} 此刻没说出口的当下心声，必须使用第一人称自述视角（即以“我”自称），可以体现口是心非、犹豫、压住的情绪、真正想说但没说的话；必须贴合人设和当前电话氛围。
-5. text 是角色真正说出口的话，可以和 thought 有反差，但不能让 text 解释 thought。
-6. action、thought、text 都要简短、口语、贴近实时通话，不要长篇独白。
-【输出格式】：必须返回纯 JSON，格式为 {"action": "第三人称动作/环境声/氛围描写，必须带${charDisplayName}的名字", "thought": "角色当下心声，不说出口的话（第一人称视角）", "text": "角色说出口的对话内容"}${regeneratePrompt}
+1. 思考来电/接听背景：仔细思考用户打来电话或接听电话的原因，用户目前的情绪是怎样的，你（${charDisplayName}）现在在做什么，以及此时应该用怎样的语气来应对。
+2. 话题推进：如果这不是一通带有明确紧急事由的电话，仅仅是日常闲聊，你是否应该主动给用户分享你正在做的事情，或者主动挑起一些能够延续通话的有趣话题？请在内心（thought）进行推演，并在文本（text）中自然地表达出来。
+3. 结合记录：请结合之前的文字聊天记录以及当前的语音通话上下文，给出一个连贯自然的电话回复。
+4. action 必须用第三人称描写动作、环境声或通话氛围，必须包含角色名字“${charDisplayName}”，不要用“我/你”开头。
+5. action 要像电话那头能听到或感受到的细节，例如：${charDisplayName}翻了个身，电话那头传来布料摩擦声；${charDisplayName}压低了呼吸，背景里有很轻的脚步声。
+6. thought 是 ${charDisplayName} 此刻没说出口的当下心声，必须使用第一人称自述视角（即以“我”自称），可以体现口是心非、犹豫、压住的情绪、真正想说但没说的话；必须贴合人设和当前电话氛围。
+7. text 是角色真正说出口的话，可以和 thought 有反差，但不能让 text 解释 thought。
+8. action、thought、text 都要简短、口语、贴近实时通话，不要长篇独白。${languageRequirement}
+【输出格式】：必须返回纯 JSON，格式为 ${jsonFormat}${regeneratePrompt}
 
 【当前的语音通话上下文】:
 ${recentMessages}`;
@@ -622,7 +716,7 @@ ${recentMessages}`;
                 if (!callFriend) return;
 
                 if (parsed && (parsed.text || parsed.action || parsed.thought)) {
-                    const message = addCallBubble(parsed.text || '', false, newMessagesArea, parsed.action || '', parsed.thought || '');
+                    const message = addCallBubble(parsed.text || '', false, newMessagesArea, parsed.action || '', parsed.thought || '', parsed.translation || '');
                     lastCallAiTurn = { message };
                 }
 
@@ -634,7 +728,8 @@ ${recentMessages}`;
                         false,
                         newMessagesArea,
                         regenerateContext.previousAction || '',
-                        regenerateContext.previousThought || ''
+                        regenerateContext.previousThought || '',
+                        regenerateContext.previousTranslation || ''
                     );
                     lastCallAiTurn = { message: restored };
                 }
@@ -1074,7 +1169,12 @@ ${recentMessages}`;
                             if (contextMsgs && contextMsgs.length > 0) {
                                 const chatContextStr = contextMsgs.map(msg => {
                                     const roleName = msg.role === 'user' ? (userState.name || 'User') : (msg.speaker || m.nickname);
-                                    return `${roleName}: ${msg.text || msg.content || ''}`;
+                                    let timeStr = '';
+                                    if (msg.timestamp) {
+                                        const date = new Date(msg.timestamp);
+                                        timeStr = `[${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}] `;
+                                    }
+                                    return `${timeStr}${roleName}: ${msg.text || msg.content || ''}`;
                                 }).join('\n');
                                 memberStr += `\n【${m.nickname} 与 ${userState.name || 'User'} 的单聊记忆（供参考该角色的态度和背景）】:\n${chatContextStr}`;
                             }
@@ -1264,6 +1364,7 @@ systemPrompt += `\n【!!!重要指示!!!】:
             if (message.actionText) lines.push(String(message.actionText).trim());
             if (message.thoughtText) lines.push(`心声：${String(message.thoughtText).trim()}`);
             if (message.text) lines.push(`${getCallSpeakerName(message, friend)}：${formatCallLineText(message.text)}`);
+            if (message.translationText) lines.push(`翻译：${String(message.translationText).trim()}`);
             return lines.join('\n');
         }).filter(Boolean).join('\n\n');
     }
@@ -1284,6 +1385,7 @@ systemPrompt += `\n【!!!重要指示!!!】:
             if (message.actionText) parts.push(String(message.actionText).trim());
             if (message.thoughtText) parts.push(`心声：${String(message.thoughtText).trim()}`);
             if (message.text) parts.push(`${getCallSpeakerName(message, friend)}：${formatCallLineText(message.text)}`);
+            if (message.translationText) parts.push(`翻译：${String(message.translationText).trim()}`);
             return parts.join('\n');
         }).filter(Boolean).join('\n');
 
@@ -1302,6 +1404,7 @@ systemPrompt += `\n【!!!重要指示!!!】:
         const messages = [];
         let pendingAction = '';
         let pendingThought = '';
+        let pendingTranslation = '';
 
         String(rawText || '').split(/\r?\n/).forEach((rawLine) => {
             const line = rawLine.trim();
@@ -1310,6 +1413,12 @@ systemPrompt += `\n【!!!重要指示!!!】:
             const thoughtMatch = line.match(/^心声[：:]\s*(.+)$/);
             if (thoughtMatch) {
                 pendingThought = String(thoughtMatch[1] || '').trim();
+                return;
+            }
+
+            const translationMatch = line.match(/^翻译[：:]\s*(.+)$/);
+            if (translationMatch) {
+                pendingTranslation = String(translationMatch[1] || '').trim();
                 return;
             }
 
@@ -1329,23 +1438,26 @@ systemPrompt += `\n【!!!重要指示!!!】:
                     text,
                     actionText: pendingAction,
                     thoughtText: pendingThought,
+                    translationText: pendingTranslation,
                     isSelf,
                     timestamp: fallback.timestamp || Date.now()
                 });
                 pendingAction = '';
                 pendingThought = '';
+                pendingTranslation = '';
                 return;
             }
 
             pendingAction = pendingAction ? `${pendingAction}\n${line}` : line;
         });
 
-        if (pendingAction || pendingThought) {
+        if (pendingAction || pendingThought || pendingTranslation) {
             const fallback = previousMessages[messages.length] || {};
             messages.push({
                 text: '',
                 actionText: pendingAction,
                 thoughtText: pendingThought,
+                translationText: pendingTranslation,
                 isSelf: !!fallback.isSelf,
                 timestamp: fallback.timestamp || Date.now()
             });
@@ -1395,6 +1507,17 @@ systemPrompt += `\n【!!!重要指示!!!】:
                 line.style.wordBreak = 'break-word';
                 line.innerText = `${getCallSpeakerName(cMsg, friend)}：${formatCallLineText(cMsg.text)}`;
                 block.appendChild(line);
+            }
+
+            if (cMsg.translationText) {
+                const translation = document.createElement('div');
+                translation.style.whiteSpace = 'pre-wrap';
+                translation.style.wordBreak = 'break-word';
+                translation.style.color = '#8e8e93';
+                translation.style.fontSize = '13px';
+                translation.style.marginTop = '4px';
+                translation.innerText = `翻译：${cMsg.translationText}`;
+                block.appendChild(translation);
             }
 
             detailContent.appendChild(block);

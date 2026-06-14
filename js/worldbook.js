@@ -1045,7 +1045,7 @@ window.renderWorldBookSelector = function(selectedIds = [], onConfirm) {
         selectorSheet = document.createElement('div');
         selectorSheet.id = 'wb-selector-sheet';
         selectorSheet.className = 'bottom-sheet-overlay detail-sheet-overlay';
-        selectorSheet.style.zIndex = '650';
+        selectorSheet.style.zIndex = '1150';
         selectorSheet.innerHTML = `
             <div class="bottom-sheet wb-selector-panel">
                 <div class="sheet-handle"></div>
@@ -1233,7 +1233,7 @@ function renderLegacyWorldBookSelector(selectedIds = [], onConfirm) {
         selectorSheet = document.createElement('div');
         selectorSheet.id = 'wb-selector-sheet';
         selectorSheet.className = 'bottom-sheet-overlay detail-sheet-overlay';
-        selectorSheet.style.zIndex = '650';
+        selectorSheet.style.zIndex = '1150';
         selectorSheet.innerHTML = `
             <div class="bottom-sheet" style="height: 72%; display: flex; flex-direction: column;">
                 <div class="sheet-handle"></div>
