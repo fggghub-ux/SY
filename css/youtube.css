@@ -831,7 +831,7 @@
 }
 
 .keyboard-open #yt-video-player-view.yt-char-live-mode .yt-chat-input-area {
-    padding-bottom: 10px !important;
+    padding: 8px 12px !important;
 }
 
 #yt-player-chat-input {
@@ -1467,7 +1467,7 @@
 .keyboard-open .yt-chat-input-area,
 .keyboard-open #yt-community-detail-view .chat-input-area,
 .keyboard-open .yt-bubble-input-area {
-    padding-bottom: 10px !important;
+    padding: 8px 12px !important;
 }
 
 .yt-bubble-input-area {
