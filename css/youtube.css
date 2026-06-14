@@ -879,7 +879,9 @@
 }
 
 .keyboard-open #yt-video-player-view.yt-char-live-mode #yt-player-video-area {
-    min-height: 20%;
+    flex: 0 0 auto !important;
+    height: 150px !important;
+    min-height: 0 !important;
 }
 
 #yt-video-player-view.yt-char-live-mode #yt-player-thumbnail {
@@ -908,7 +910,9 @@
 }
 
 .keyboard-open #yt-video-player-view.yt-char-live-mode .yt-player-chat-shell {
-    min-height: 280px;
+    flex: 1 1 auto !important;
+    height: auto !important;
+    min-height: 0 !important;
 }
 
 #yt-user-live-view .yt-user-live-chat-shell {
@@ -1481,10 +1485,16 @@
     padding: 10px 16px max(14px, env(safe-area-inset-bottom, 0px));
 }
 
+.keyboard-open .yt-community-detail-content,
+.keyboard-open .yt-bubble-chat-container {
+    min-height: 0 !important;
+}
+
 .keyboard-open .yt-chat-input-area,
 .keyboard-open #yt-community-detail-view .chat-input-area,
 .keyboard-open .yt-bubble-input-area {
     padding: 8px 12px !important;
+    margin-bottom: 0 !important;
 }
 
 .yt-bubble-input-area {
