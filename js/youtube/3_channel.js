@@ -195,8 +195,11 @@
                     </div>
                 `;
                 el.querySelector('.yt-video-card').addEventListener('click', () => {
-                    const userLiveView = document.getElementById('yt-user-live-view');
-                    if (userLiveView) userLiveView.classList.add('active');
+                    if (typeof window.openYtUserLiveView === 'function') window.openYtUserLiveView();
+                    else {
+                        const userLiveView = document.getElementById('yt-user-live-view');
+                        if (userLiveView) userLiveView.classList.add('active');
+                    }
                 });
                 container.appendChild(el);
             } else {

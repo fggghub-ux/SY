@@ -538,24 +538,37 @@
     window.buildYtChannelFromTrendingItem = buildYtChannelFromTrendingItem;
     window.mergeYtChannelIntoSubscriptions = mergeYtChannelIntoSubscriptions;
     window.saveYoutubeData = saveYoutubeData;
+    const ytChatKeyboardViewIds = [
+        'yt-video-player-view',
+        'yt-user-live-view',
+        'yt-community-detail-view',
+        'yt-bubble-chat-view'
+    ];
+
+    window.releaseYtChatKeyboardLock = function(nextView = null) {
+        const active = document.activeElement;
+        const keepView = nextView || null;
+
+        ytChatKeyboardViewIds.forEach((id) => {
+            const view = document.getElementById(id);
+            if (!view || view === keepView) return;
+            if (active && view.contains(active) && typeof active.blur === 'function') active.blur();
+            view.classList.remove('keyboard-open', 'yt-chat-keyboard-lock');
+            delete view.dataset.ytKeyboardScrollTop;
+        });
+    };
+
     window.setYtChatKeyboardLock = function(view, isOpen) {
         if (!view) return;
         if (isOpen) {
-            const scrollTop = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
-            view.dataset.ytKeyboardScrollTop = String(scrollTop);
-            view.classList.add('keyboard-open', 'yt-chat-keyboard-lock');
-            requestAnimationFrame(() => {
-                window.scrollTo(0, scrollTop);
-            });
+            window.releaseYtChatKeyboardLock(view);
+            view.classList.remove('keyboard-open', 'yt-chat-keyboard-lock');
+            delete view.dataset.ytKeyboardScrollTop;
             return;
         }
 
         view.classList.remove('keyboard-open', 'yt-chat-keyboard-lock');
-        const scrollTop = Number(view.dataset.ytKeyboardScrollTop || 0);
         delete view.dataset.ytKeyboardScrollTop;
-        requestAnimationFrame(() => {
-            window.scrollTo(0, scrollTop);
-        });
     };
 
     // 2. DOM Elements
@@ -1225,8 +1238,11 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
             el.addEventListener('click', () => {
                 if(channel.id === 'user_channel_id') {
                     if(video.isLive) {
-                        const userLiveView = document.getElementById('yt-user-live-view');
-                        if (userLiveView) userLiveView.classList.add('active');
+                        if (typeof window.openYtUserLiveView === 'function') window.openYtUserLiveView();
+                        else {
+                            const userLiveView = document.getElementById('yt-user-live-view');
+                            if (userLiveView) userLiveView.classList.add('active');
+                        }
                     } else {
                         const userProfileTab = document.querySelector('.yt-nav-item[data-target="yt-profile-tab"]');
                         if (userProfileTab) userProfileTab.click();

@@ -93,6 +93,10 @@
             document.getElementById('yt-user-live-alert-container').innerHTML = '';
             userLiveHistory = [];
 
+            if (typeof window.openYtUserLiveView === 'function') {
+                window.openYtUserLiveView();
+                return;
+            }
             userLiveView.classList.add('active');
         });
     }
@@ -106,6 +110,7 @@
                 cancelText: '继续',
                 isDestructive: true,
                 onConfirm: () => {
+                    if (typeof window.releaseYtChatKeyboardLock === 'function') window.releaseYtChatKeyboardLock();
                     userLiveView.classList.remove('active');
                     
                     document.getElementById('yt-summary-views').textContent = userLiveTotalViews;
@@ -392,6 +397,13 @@
             userLiveComments.forEach(renderUserLiveChatRow);
         }
     }
+
+    window.openYtUserLiveView = function() {
+        if (typeof window.releaseYtChatKeyboardLock === 'function') window.releaseYtChatKeyboardLock(userLiveView);
+        const playerView = document.getElementById('yt-video-player-view');
+        if (playerView) playerView.classList.remove('active', 'yt-char-live-mode');
+        if (userLiveView) userLiveView.classList.add('active');
+    };
 
     [
         userLiveVideoArea,

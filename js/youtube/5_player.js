@@ -246,6 +246,7 @@
             if (chatInput && document.activeElement === chatInput) chatInput.blur();
             if (ytScCustomInput && document.activeElement === ytScCustomInput) ytScCustomInput.blur();
             if (ytScInput && document.activeElement === ytScInput) ytScInput.blur();
+            if (typeof window.releaseYtChatKeyboardLock === 'function') window.releaseYtChatKeyboardLock();
             playerView.classList.remove('active');
             playerView.classList.remove('yt-char-live-mode');
             if(chatInterval) clearInterval(chatInterval);
@@ -516,6 +517,9 @@
     function openVideoPlayer(video) {
         try {
             if(!playerView) return;
+            if (typeof window.releaseYtChatKeyboardLock === 'function') window.releaseYtChatKeyboardLock(playerView);
+            const userLiveView = document.getElementById('yt-user-live-view');
+            if (userLiveView) userLiveView.classList.remove('active');
             currentVideoData = video;
             if(!currentVideoData._originalTitle) currentVideoData._originalTitle = video.title;
             const channel = video.channelData;
@@ -1131,6 +1135,7 @@
             saveYoutubeData();
             if(window.showToast) window.showToast('直播总结生成完毕并已保存');
             
+            if (typeof window.releaseYtChatKeyboardLock === 'function') window.releaseYtChatKeyboardLock();
             if(playerView) playerView.classList.remove('active');
             if(chatInterval) clearInterval(chatInterval);
             clearCharLiveBubbles();
