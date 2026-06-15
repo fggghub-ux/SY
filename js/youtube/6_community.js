@@ -44,11 +44,12 @@
 
     if (postChatInput) {
         postChatInput.addEventListener('focus', () => {
-            if (communityDetailView) communityDetailView.classList.add('keyboard-open');
+            if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(communityDetailView, true);
+            else if (communityDetailView) communityDetailView.classList.add('keyboard-open');
         });
         postChatInput.addEventListener('blur', () => {
-            if (communityDetailView) communityDetailView.classList.remove('keyboard-open');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(communityDetailView, false);
+            else if (communityDetailView) communityDetailView.classList.remove('keyboard-open');
         });
     }
 
@@ -253,11 +254,12 @@
 
     if (groupChatInput) {
         groupChatInput.addEventListener('focus', () => {
-            if (groupChatView) groupChatView.classList.add('keyboard-open');
+            if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(groupChatView, true);
+            else if (groupChatView) groupChatView.classList.add('keyboard-open');
         });
         groupChatInput.addEventListener('blur', () => {
-            if (groupChatView) groupChatView.classList.remove('keyboard-open');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(groupChatView, false);
+            else if (groupChatView) groupChatView.classList.remove('keyboard-open');
         });
     }
 

@@ -429,11 +429,12 @@
 
     if (userLiveChatInput) {
         userLiveChatInput.addEventListener('focus', () => {
-            if (userLiveView) userLiveView.classList.add('keyboard-open');
+            if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(userLiveView, true);
+            else if (userLiveView) userLiveView.classList.add('keyboard-open');
         });
         userLiveChatInput.addEventListener('blur', () => {
-            if (userLiveView) userLiveView.classList.remove('keyboard-open');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(userLiveView, false);
+            else if (userLiveView) userLiveView.classList.remove('keyboard-open');
         });
     }
 

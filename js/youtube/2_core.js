@@ -538,6 +538,25 @@
     window.buildYtChannelFromTrendingItem = buildYtChannelFromTrendingItem;
     window.mergeYtChannelIntoSubscriptions = mergeYtChannelIntoSubscriptions;
     window.saveYoutubeData = saveYoutubeData;
+    window.setYtChatKeyboardLock = function(view, isOpen) {
+        if (!view) return;
+        if (isOpen) {
+            const scrollTop = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+            view.dataset.ytKeyboardScrollTop = String(scrollTop);
+            view.classList.add('keyboard-open', 'yt-chat-keyboard-lock');
+            requestAnimationFrame(() => {
+                window.scrollTo(0, scrollTop);
+            });
+            return;
+        }
+
+        view.classList.remove('keyboard-open', 'yt-chat-keyboard-lock');
+        const scrollTop = Number(view.dataset.ytKeyboardScrollTop || 0);
+        delete view.dataset.ytKeyboardScrollTop;
+        requestAnimationFrame(() => {
+            window.scrollTo(0, scrollTop);
+        });
+    };
 
     // 2. DOM Elements
     const ytView = document.getElementById('youtube-view');

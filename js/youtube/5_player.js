@@ -1191,11 +1191,12 @@
 
     if (chatInput) {
         chatInput.addEventListener('focus', () => {
-            if (playerView) playerView.classList.add('keyboard-open');
+            if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(playerView, true);
+            else if (playerView) playerView.classList.add('keyboard-open');
         });
         chatInput.addEventListener('blur', () => {
-            if (playerView) playerView.classList.remove('keyboard-open');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(playerView, false);
+            else if (playerView) playerView.classList.remove('keyboard-open');
         });
     }
 

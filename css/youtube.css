@@ -1686,3 +1686,13 @@
     padding-bottom: 0;
     transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
 }
+
+#yt-video-player-view.yt-chat-keyboard-lock,
+#yt-user-live-view.yt-chat-keyboard-lock,
+#yt-community-detail-view.yt-chat-keyboard-lock,
+#yt-bubble-chat-view.yt-chat-keyboard-lock {
+    position: absolute;
+    overflow: hidden;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+}
