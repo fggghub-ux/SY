@@ -1277,18 +1277,22 @@
 /* --- Community Detail View --- */
 .yt-community-detail-view {
     position: absolute;
-    top: 0;
-    left: 0;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
     background-color: var(--screen-bg, #ffffff);
     z-index: 300; /* Higher than sub-channel-view */
-    display: flex;
+    display: none;
     flex-direction: column;
-    transform: translateY(100%);
-    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+    overflow: hidden;
+    transform: none;
+    transition: none;
 }
 
 .yt-community-detail-view.active {
-    transform: translateY(0);
+    display: flex;
+    transform: none;
 }
 
 .yt-community-detail-header {
@@ -1334,18 +1338,22 @@
 /* --- Bubble Chat View (Fan Group - Ins Style) --- */
 .yt-bubble-chat-view {
     position: absolute;
-    top: 0;
-    left: 0;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
     background-color: var(--screen-bg, #ffffff); /* White background for Ins style */
     z-index: 300;
-    display: flex;
+    display: none;
     flex-direction: column;
-    transform: translateY(100%);
-    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+    overflow: hidden;
+    transform: none;
+    transition: none;
 }
 
 .yt-bubble-chat-view.active {
-    transform: translateY(0);
+    display: flex;
+    transform: none;
 }
 
 .yt-bubble-chat-header {
@@ -1686,7 +1694,8 @@
     width: 100%;
     padding-top: 0;
     padding-bottom: 0;
-    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+    transform: none !important;
+    transition: none !important;
 }
 
 #yt-video-player-view .yt-player-chat-shell,
@@ -1711,6 +1720,7 @@
 #yt-user-live-view,
 #yt-community-detail-view,
 #yt-bubble-chat-view {
+    display: none;
     position: absolute;
     inset: 0;
     width: 100%;
@@ -1718,6 +1728,9 @@
     min-height: 0;
     padding: 0 !important;
     overflow: hidden;
+    flex-direction: column;
+    transform: none !important;
+    transition: none !important;
 }
 
 #yt-video-player-view.active,
@@ -1726,6 +1739,7 @@
 #yt-bubble-chat-view.active {
     display: flex !important;
     flex-direction: column;
+    transform: none !important;
 }
 
 #yt-video-player-view .yt-player-chat-shell,

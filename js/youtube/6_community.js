@@ -44,8 +44,12 @@
 
     if (postChatInput) {
         postChatInput.addEventListener('focus', () => {
-            if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(communityDetailView, true);
-            if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(communityDetailContent, 80);
+            if (typeof window.stabilizeYtChatFocus === 'function') {
+                window.stabilizeYtChatFocus(communityDetailView, postChatInput, communityDetailContent);
+            } else {
+                if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(communityDetailView, true);
+                if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(communityDetailContent, 80);
+            }
         });
         postChatInput.addEventListener('blur', () => {
             if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(communityDetailView, false);
@@ -256,8 +260,12 @@
 
     if (groupChatInput) {
         groupChatInput.addEventListener('focus', () => {
-            if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(groupChatView, true);
-            if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(groupChatContainer, 80);
+            if (typeof window.stabilizeYtChatFocus === 'function') {
+                window.stabilizeYtChatFocus(groupChatView, groupChatInput, groupChatContainer);
+            } else {
+                if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(groupChatView, true);
+                if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(groupChatContainer, 80);
+            }
         });
         groupChatInput.addEventListener('blur', () => {
             if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(groupChatView, false);

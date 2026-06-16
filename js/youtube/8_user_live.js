@@ -441,8 +441,12 @@
 
     if (userLiveChatInput) {
         userLiveChatInput.addEventListener('focus', () => {
-            if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(userLiveView, true);
-            if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(userLiveChatContainer, 80);
+            if (typeof window.stabilizeYtChatFocus === 'function') {
+                window.stabilizeYtChatFocus(userLiveView, userLiveChatInput, userLiveChatContainer);
+            } else {
+                if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(userLiveView, true);
+                if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(userLiveChatContainer, 80);
+            }
         });
         userLiveChatInput.addEventListener('blur', () => {
             if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(userLiveView, false);

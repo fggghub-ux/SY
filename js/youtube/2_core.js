@@ -568,6 +568,132 @@
         delete view.dataset.ytKeyboardScrollTop;
     };
 
+    function getYtChatViewForElement(el) {
+        if (!el || typeof el.closest !== 'function') return null;
+        return el.closest(ytChatKeyboardViewIds.map((id) => `#${id}`).join(','));
+    }
+
+    function captureYtChatOuterScroll() {
+        const snapshot = [{
+            type: 'window',
+            left: window.pageXOffset || 0,
+            top: window.pageYOffset || 0
+        }];
+        const nodes = [
+            document.scrollingElement,
+            document.documentElement,
+            document.body,
+            document.getElementById('app'),
+            document.getElementById('youtube-view')
+        ];
+        const seen = new Set();
+
+        nodes.forEach((node) => {
+            if (!node || seen.has(node)) return;
+            seen.add(node);
+            snapshot.push({
+                type: 'element',
+                node,
+                left: node.scrollLeft || 0,
+                top: node.scrollTop || 0
+            });
+        });
+
+        return snapshot;
+    }
+
+    function restoreYtChatOuterScroll(snapshot) {
+        if (!snapshot || !Array.isArray(snapshot)) return;
+        snapshot.forEach((item) => {
+            if (!item) return;
+            if (item.type === 'window') {
+                window.scrollTo(item.left || 0, item.top || 0);
+                return;
+            }
+            if (item.node) {
+                item.node.scrollLeft = item.left || 0;
+                item.node.scrollTop = item.top || 0;
+            }
+        });
+    }
+
+    function scheduleYtChatOuterScrollRestore(snapshot) {
+        restoreYtChatOuterScroll(snapshot);
+        if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(() => restoreYtChatOuterScroll(snapshot));
+        }
+        [0, 50, 120, 220, 360].forEach((delay) => {
+            setTimeout(() => restoreYtChatOuterScroll(snapshot), delay);
+        });
+    }
+
+    let pendingYtChatFocusSnapshot = null;
+
+    function rememberYtChatFocusScroll(event) {
+        const input = event && event.target && event.target.closest
+            ? event.target.closest('input, textarea')
+            : null;
+        const view = getYtChatViewForElement(input);
+        if (!input || !view) return;
+        pendingYtChatFocusSnapshot = {
+            input,
+            view,
+            snapshot: captureYtChatOuterScroll(),
+            time: Date.now()
+        };
+    }
+
+    ['pointerdown', 'touchstart', 'mousedown'].forEach((eventName) => {
+        document.addEventListener(eventName, rememberYtChatFocusScroll, true);
+    });
+
+    window.stabilizeYtChatFocus = function(view, input, scrollContainer) {
+        if (!view) return;
+        const pending = pendingYtChatFocusSnapshot;
+        const snapshot = pending &&
+            pending.input === input &&
+            pending.view === view &&
+            Date.now() - pending.time < 1200
+            ? pending.snapshot
+            : captureYtChatOuterScroll();
+
+        if (typeof window.setYtChatKeyboardLock === 'function') {
+            window.setYtChatKeyboardLock(view, true);
+        } else {
+            window.releaseYtChatKeyboardLock(view);
+            view.classList.remove('keyboard-open', 'yt-chat-keyboard-lock');
+        }
+
+        scheduleYtChatOuterScrollRestore(snapshot);
+        if (typeof window.scrollYtChatToBottom === 'function') {
+            window.scrollYtChatToBottom(scrollContainer, 80);
+            window.scrollYtChatToBottom(scrollContainer, 180);
+        }
+    };
+
+    window.focusYtChatInput = function(input, view, scrollContainer) {
+        if (!input) return;
+        const resolvedView = view || getYtChatViewForElement(input);
+        const snapshot = captureYtChatOuterScroll();
+        pendingYtChatFocusSnapshot = {
+            input,
+            view: resolvedView,
+            snapshot,
+            time: Date.now()
+        };
+
+        try {
+            input.focus({ preventScroll: true });
+        } catch (e) {
+            input.focus();
+        }
+
+        scheduleYtChatOuterScrollRestore(snapshot);
+        if (resolvedView && typeof window.stabilizeYtChatFocus === 'function') {
+            window.stabilizeYtChatFocus(resolvedView, input, scrollContainer);
+        }
+    };
+
     window.scrollYtChatToBottom = function(container, delay = 0) {
         if (!container) return;
         const run = () => {
