@@ -1689,6 +1689,37 @@
     transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
+html.yt-soft-keyboard-active,
+body.yt-soft-keyboard-active {
+    height: var(--yt-visual-viewport-height, 100%);
+    overflow: hidden !important;
+}
+
+body.yt-soft-keyboard-active #app {
+    position: fixed !important;
+    top: var(--yt-visual-viewport-offset-top, 0px) !important;
+    left: 0 !important;
+    right: 0 !important;
+    height: var(--yt-visual-viewport-height, 100vh) !important;
+    max-height: var(--yt-visual-viewport-height, 100vh) !important;
+    overflow: hidden !important;
+}
+
+body.yt-soft-keyboard-active #yt-video-player-view.yt-soft-keyboard-active-view,
+body.yt-soft-keyboard-active #yt-user-live-view.yt-soft-keyboard-active-view,
+body.yt-soft-keyboard-active #yt-community-detail-view.yt-soft-keyboard-active-view,
+body.yt-soft-keyboard-active #yt-bubble-chat-view.yt-soft-keyboard-active-view {
+    height: var(--yt-visual-viewport-height, 100%) !important;
+    max-height: var(--yt-visual-viewport-height, 100%) !important;
+    overflow: hidden !important;
+}
+
+body.yt-soft-keyboard-active #yt-video-player-view.yt-soft-keyboard-active-view.yt-char-live-mode .yt-player-chat-shell,
+body.yt-soft-keyboard-active #yt-user-live-view.yt-soft-keyboard-active-view .yt-user-live-chat-shell {
+    min-height: 0 !important;
+    height: 60% !important;
+}
+
 #yt-video-player-view .yt-player-chat-shell,
 #yt-user-live-view .yt-user-live-chat-shell,
 #yt-community-detail-view,
@@ -1714,6 +1745,13 @@
     padding: 10px 16px max(12px, env(safe-area-inset-bottom, 0px));
     background: #ffffff;
     transform: none !important;
+}
+
+body.yt-soft-keyboard-active #yt-video-player-view .ins-chat-input-container,
+body.yt-soft-keyboard-active #yt-user-live-view .ins-chat-input-container,
+body.yt-soft-keyboard-active #yt-community-detail-view .ins-chat-input-container,
+body.yt-soft-keyboard-active #yt-bubble-chat-view .ins-chat-input-container {
+    padding-bottom: 10px !important;
 }
 
 #yt-video-player-view.keyboard-open .ins-chat-input-container,

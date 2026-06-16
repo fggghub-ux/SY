@@ -571,6 +571,112 @@
         delete view.dataset.ytKeyboardScrollTop;
     };
 
+    (function setupYtSoftKeyboardViewport() {
+        const inputSelector = [
+            '#yt-player-chat-input',
+            '#yt-user-live-chat-input',
+            '#yt-community-chat-input',
+            '#yt-bubble-chat-input'
+        ].join(',');
+
+        const viewSelector = [
+            '#yt-video-player-view',
+            '#yt-user-live-view',
+            '#yt-community-detail-view',
+            '#yt-bubble-chat-view'
+        ].join(',');
+
+        let activeInput = null;
+        let activeView = null;
+        let cleanupTimer = null;
+
+        function isYtKeyboardInput(el) {
+            return !!(el && el.matches && el.matches(inputSelector));
+        }
+
+        function getViewportHeight() {
+            const vv = window.visualViewport;
+            return Math.max(
+                0,
+                Math.round((vv && vv.height) || window.innerHeight || document.documentElement.clientHeight || 0)
+            );
+        }
+
+        function keepRootAtTop() {
+            if (window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop) {
+                window.scrollTo(0, 0);
+            }
+        }
+
+        function syncYtViewport() {
+            if (!activeInput) return;
+            const vv = window.visualViewport;
+            const viewportHeight = getViewportHeight();
+            if (viewportHeight > 0) {
+                document.documentElement.style.setProperty('--yt-visual-viewport-height', viewportHeight + 'px');
+                document.body.style.setProperty('--yt-visual-viewport-height', viewportHeight + 'px');
+            }
+            const viewportOffsetTop = Math.max(0, Math.round((vv && vv.offsetTop) || 0));
+            document.documentElement.style.setProperty('--yt-visual-viewport-offset-top', viewportOffsetTop + 'px');
+            document.body.style.setProperty('--yt-visual-viewport-offset-top', viewportOffsetTop + 'px');
+            keepRootAtTop();
+        }
+
+        function scheduleViewportSync() {
+            syncYtViewport();
+            requestAnimationFrame(syncYtViewport);
+            setTimeout(syncYtViewport, 60);
+            setTimeout(syncYtViewport, 180);
+            setTimeout(syncYtViewport, 360);
+        }
+
+        function activateYtKeyboard(input) {
+            if (!input) return;
+            if (cleanupTimer) {
+                clearTimeout(cleanupTimer);
+                cleanupTimer = null;
+            }
+            activeInput = input;
+            activeView = input.closest(viewSelector);
+            document.documentElement.classList.add('yt-soft-keyboard-active');
+            document.body.classList.add('yt-soft-keyboard-active');
+            if (activeView) activeView.classList.add('yt-soft-keyboard-active-view');
+            scheduleViewportSync();
+        }
+
+        function deactivateYtKeyboard(input) {
+            if (input && activeInput !== input) return;
+            cleanupTimer = setTimeout(() => {
+                if (isYtKeyboardInput(document.activeElement)) {
+                    activateYtKeyboard(document.activeElement);
+                    return;
+                }
+                if (activeView) activeView.classList.remove('yt-soft-keyboard-active-view');
+                activeInput = null;
+                activeView = null;
+                document.documentElement.classList.remove('yt-soft-keyboard-active');
+                document.body.classList.remove('yt-soft-keyboard-active');
+                document.documentElement.style.removeProperty('--yt-visual-viewport-height');
+                document.documentElement.style.removeProperty('--yt-visual-viewport-offset-top');
+                document.body.style.removeProperty('--yt-visual-viewport-height');
+                document.body.style.removeProperty('--yt-visual-viewport-offset-top');
+                keepRootAtTop();
+            }, 80);
+        }
+
+        document.addEventListener('focusin', (e) => {
+            if (isYtKeyboardInput(e.target)) activateYtKeyboard(e.target);
+        }, true);
+
+        document.addEventListener('focusout', (e) => {
+            if (isYtKeyboardInput(e.target)) deactivateYtKeyboard(e.target);
+        }, true);
+
+        window.visualViewport?.addEventListener('resize', scheduleViewportSync);
+        window.visualViewport?.addEventListener('scroll', scheduleViewportSync);
+        window.addEventListener('resize', scheduleViewportSync);
+    })();
+
     // 2. DOM Elements
     const ytView = document.getElementById('youtube-view');
     const subChannelView = document.getElementById('sub-channel-view');
