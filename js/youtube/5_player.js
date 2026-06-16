@@ -1197,11 +1197,11 @@
     if (chatInput) {
         chatInput.addEventListener('focus', () => {
             if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(playerView, true);
-            else if (playerView) playerView.classList.add('keyboard-open');
+            if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(ytPlayerChatContainer, 80);
         });
         chatInput.addEventListener('blur', () => {
             if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(playerView, false);
-            else if (playerView) playerView.classList.remove('keyboard-open');
+            else if (playerView) playerView.classList.remove('keyboard-open', 'yt-chat-keyboard-lock');
         });
     }
 
@@ -1225,6 +1225,7 @@
             const effectiveYtUser = getCurrentYtViewer();
             addChatMessage(effectiveYtUser.name || '我', text, isLive);
             chatInput.value = '';
+            if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(ytPlayerChatContainer);
             
             if (!currentVideoData) return;
             
@@ -1244,7 +1245,8 @@
                     loadingDiv.style.fontSize = '12px';
                     loadingDiv.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> 回复生成中...';
                     chatContainer.appendChild(loadingDiv);
-                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                    if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(chatContainer);
+                    else chatContainer.scrollTop = chatContainer.scrollHeight;
                 }
                 
                 const responseObj = await getVODResponse(text);

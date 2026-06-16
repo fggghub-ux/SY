@@ -45,11 +45,11 @@
     if (postChatInput) {
         postChatInput.addEventListener('focus', () => {
             if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(communityDetailView, true);
-            else if (communityDetailView) communityDetailView.classList.add('keyboard-open');
+            if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(communityDetailContent, 80);
         });
         postChatInput.addEventListener('blur', () => {
             if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(communityDetailView, false);
-            else if (communityDetailView) communityDetailView.classList.remove('keyboard-open');
+            else if (communityDetailView) communityDetailView.classList.remove('keyboard-open', 'yt-chat-keyboard-lock');
         });
     }
 
@@ -161,6 +161,7 @@
 
         // Re-render
         renderPostComments();
+        if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(communityDetailContent);
     }
 
     if (postChatSend && postChatInput) {
@@ -185,6 +186,7 @@
                 loadingDiv.style.fontSize = '12px';
                 loadingDiv.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> 回复生成中...';
                 container.appendChild(loadingDiv);
+                if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(communityDetailContent);
             }
 
             try {
@@ -255,11 +257,11 @@
     if (groupChatInput) {
         groupChatInput.addEventListener('focus', () => {
             if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(groupChatView, true);
-            else if (groupChatView) groupChatView.classList.add('keyboard-open');
+            if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(groupChatContainer, 80);
         });
         groupChatInput.addEventListener('blur', () => {
             if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(groupChatView, false);
-            else if (groupChatView) groupChatView.classList.remove('keyboard-open');
+            else if (groupChatView) groupChatView.classList.remove('keyboard-open', 'yt-chat-keyboard-lock');
         });
     }
 
@@ -280,6 +282,7 @@
 
         saveYoutubeData();
         addGroupChatMessageToUI(userMsg);
+        if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(groupChatContainer);
         if (groupChatInput) groupChatInput.value = '';
         return true;
     }
