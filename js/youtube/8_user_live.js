@@ -97,6 +97,7 @@
                 window.openYtUserLiveView();
                 return;
             }
+            if (typeof window.prepareYtChatPortalView === 'function') window.prepareYtChatPortalView(userLiveView);
             userLiveView.classList.add('active');
         });
     }
@@ -402,6 +403,7 @@
         if (typeof window.releaseYtChatKeyboardLock === 'function') window.releaseYtChatKeyboardLock(userLiveView);
         const playerView = document.getElementById('yt-video-player-view');
         if (playerView) playerView.classList.remove('active', 'yt-char-live-mode');
+        if (typeof window.prepareYtChatPortalView === 'function') window.prepareYtChatPortalView(userLiveView);
         if (userLiveView) userLiveView.classList.add('active');
     };
 

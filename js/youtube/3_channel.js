@@ -198,6 +198,7 @@
                     if (typeof window.openYtUserLiveView === 'function') window.openYtUserLiveView();
                     else {
                         const userLiveView = document.getElementById('yt-user-live-view');
+                        if (typeof window.prepareYtChatPortalView === 'function') window.prepareYtChatPortalView(userLiveView);
                         if (userLiveView) userLiveView.classList.add('active');
                     }
                 });

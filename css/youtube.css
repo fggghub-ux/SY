@@ -873,7 +873,7 @@
     width: 100%;
     aspect-ratio: auto !important;
     margin-top: 0 !important;
-    min-height: 40%;
+    min-height: 0;
 }
 
 
@@ -895,7 +895,7 @@
     min-height: 0;
     background: #ffffff !important;
     border-radius: 22px 22px 0 0;
-    margin-top: -14px;
+    margin-top: 0;
     position: relative;
     z-index: 6;
     overflow: hidden !important;
@@ -906,6 +906,7 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow: hidden;
+    margin-top: 0 !important;
 }
 
 
@@ -1719,7 +1720,7 @@
 #yt-community-detail-view,
 #yt-bubble-chat-view {
     display: none;
-    position: absolute;
+    position: fixed;
     inset: 0;
     width: 100%;
     height: 100%;
@@ -1730,6 +1731,23 @@
     overflow-anchor: none;
     transform: none !important;
     transition: none !important;
+}
+
+#yt-video-player-view.yt-chat-portal-view,
+#yt-user-live-view.yt-chat-portal-view,
+#yt-community-detail-view.yt-chat-portal-view,
+#yt-bubble-chat-view.yt-chat-portal-view {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 950 !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    transform: none !important;
+    transition: none !important;
+    background-clip: padding-box;
 }
 
 #yt-video-player-view.yt-chat-interface,
@@ -1755,6 +1773,31 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow: hidden;
+}
+
+#yt-video-player-view.yt-chat-portal-view #yt-player-video-area {
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: 42%;
+    margin-top: max(52px, calc(44px + env(safe-area-inset-top, 0px))) !important;
+}
+
+#yt-video-player-view.yt-chat-portal-view.yt-char-live-mode #yt-player-video-area,
+#yt-user-live-view.yt-chat-portal-view #yt-user-live-video-area {
+    flex: 1 1 40%;
+    min-height: 0;
+    max-height: 50%;
+}
+
+#yt-video-player-view.yt-chat-portal-view .yt-player-meta-panel {
+    flex: 0 0 auto;
+}
+
+#yt-video-player-view.yt-chat-portal-view .yt-player-chat-shell,
+#yt-user-live-view.yt-chat-portal-view .yt-user-live-chat-shell {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    margin-top: 0 !important;
 }
 
 #yt-video-player-view #yt-player-chat-container,

@@ -616,6 +616,7 @@
                 }
             }
 
+            if (typeof window.prepareYtChatPortalView === 'function') window.prepareYtChatPortalView(playerView);
             playerView.classList.add('active');
         } catch (e) {
             console.error("Error opening video player:", e);

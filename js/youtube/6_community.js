@@ -90,6 +90,7 @@
         }
 
         renderPostComments();
+        if (typeof window.prepareYtChatPortalView === 'function') window.prepareYtChatPortalView(communityDetailView);
         communityDetailView.classList.add('active');
     }
 
@@ -618,6 +619,7 @@
         }
 
         renderGroupChatHistory(false);
+        if (typeof window.prepareYtChatPortalView === 'function') window.prepareYtChatPortalView(groupChatView);
         groupChatView.classList.add('active');
         
         setTimeout(() => {
@@ -633,6 +635,7 @@
         }
 
         renderGroupChatHistory(true);
+        if (typeof window.prepareYtChatPortalView === 'function') window.prepareYtChatPortalView(groupChatView);
         groupChatView.classList.add('active');
         
         setTimeout(() => {

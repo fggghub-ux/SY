@@ -579,9 +579,10 @@
         return el.closest(ytChatKeyboardViewIds.map((id) => `#${id}`).join(','));
     }
 
-    function normalizeYtChatComposerLayout() {
+    function normalizeYtChatComposerLayout(targetView = null) {
         ytChatComposerConfigs.forEach(({ viewId, inputId, messagesId }) => {
             const view = document.getElementById(viewId);
+            if (targetView && view !== targetView) return;
             const input = document.getElementById(inputId);
             const messages = document.getElementById(messagesId);
             const composer = input && typeof input.closest === 'function'
@@ -600,9 +601,45 @@
     }
     window.normalizeYtChatComposerLayout = normalizeYtChatComposerLayout;
 
+    window.prepareYtChatPortalView = function(view) {
+        if (!view) return null;
+        const app = document.getElementById('app');
+        if (!app) return view;
+
+        normalizeYtChatComposerLayout(view);
+        view.classList.add('yt-chat-portal-view', 'yt-chat-interface');
+        view.classList.remove('keyboard-open', 'yt-chat-keyboard-lock');
+        view.style.transform = 'none';
+        view.style.transition = 'none';
+        view.style.paddingTop = '0';
+        view.style.paddingBottom = '0';
+
+        if (view.parentElement !== app) {
+            app.appendChild(view);
+        }
+
+        normalizeYtChatComposerLayout(view);
+        return view;
+    };
+
+    window.closeYtChatPortalViews = function() {
+        ytChatKeyboardViewIds.forEach((id) => {
+            const view = document.getElementById(id);
+            if (!view) return;
+            const active = document.activeElement;
+            if (active && view.contains(active) && typeof active.blur === 'function') active.blur();
+            view.classList.remove('active', 'keyboard-open', 'yt-chat-keyboard-lock');
+            delete view.dataset.ytKeyboardScrollTop;
+        });
+    };
+
     window.stabilizeYtChatFocus = function(view, input, scrollContainer) {
         if (!view) return;
-        normalizeYtChatComposerLayout();
+        if (typeof window.prepareYtChatPortalView === 'function') {
+            window.prepareYtChatPortalView(view);
+        } else {
+            normalizeYtChatComposerLayout(view);
+        }
         if (typeof window.setYtChatKeyboardLock === 'function') {
             window.setYtChatKeyboardLock(view, true);
         } else {
@@ -715,6 +752,7 @@
 
     if (backBtn && ytView) {
         backBtn.addEventListener('click', () => {
+            if (typeof window.closeYtChatPortalViews === 'function') window.closeYtChatPortalViews();
             if (window.closeView) window.closeView(ytView);
             else ytView.classList.remove('active');
         });
@@ -1315,6 +1353,7 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
                         if (typeof window.openYtUserLiveView === 'function') window.openYtUserLiveView();
                         else {
                             const userLiveView = document.getElementById('yt-user-live-view');
+                            if (typeof window.prepareYtChatPortalView === 'function') window.prepareYtChatPortalView(userLiveView);
                             if (userLiveView) userLiveView.classList.add('active');
                         }
                     } else {
