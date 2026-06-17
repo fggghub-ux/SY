@@ -806,7 +806,7 @@
 }
 
 /* Light Theme Chat Area */
-#yt-video-player-view > div:last-child {
+#yt-video-player-view .yt-player-chat-shell {
     background-color: #f9f9f9 !important; /* Chat background */
 }
 
@@ -891,9 +891,8 @@
 }
 
 #yt-video-player-view.yt-char-live-mode .yt-player-chat-shell {
-    height: 60%;
-    min-height: 360px;
-    flex: 0 0 auto !important;
+    flex: 1 1 auto !important;
+    min-height: 0;
     background: #ffffff !important;
     border-radius: 22px 22px 0 0;
     margin-top: -14px;
@@ -904,9 +903,8 @@
 
 
 #yt-user-live-view .yt-user-live-chat-shell {
-    height: 60%;
-    min-height: 360px;
-    flex: 0 0 auto;
+    flex: 1 1 auto;
+    min-height: 0;
     overflow: hidden;
 }
 
@@ -1715,7 +1713,7 @@
     overscroll-behavior: contain;
 }
 
-/* YouTube chat keyboard stability: keep chat inputs in normal flex flow. */
+/* YouTube chat interface: match iMessage's root flex page + messages + composer model. */
 #yt-video-player-view,
 #yt-user-live-view,
 #yt-community-detail-view,
@@ -1729,8 +1727,16 @@
     padding: 0 !important;
     overflow: hidden;
     flex-direction: column;
+    overflow-anchor: none;
     transform: none !important;
     transition: none !important;
+}
+
+#yt-video-player-view.yt-chat-interface,
+#yt-user-live-view.yt-chat-interface,
+#yt-community-detail-view.yt-chat-interface,
+#yt-bubble-chat-view.yt-chat-interface {
+    display: none;
 }
 
 #yt-video-player-view.active,
@@ -1746,6 +1752,7 @@
 #yt-user-live-view .yt-user-live-chat-shell {
     display: flex !important;
     flex-direction: column;
+    flex: 1 1 auto;
     min-height: 0;
     overflow: hidden;
 }
@@ -1753,18 +1760,27 @@
 #yt-video-player-view #yt-player-chat-container,
 #yt-user-live-view #yt-user-live-chat-container,
 #yt-community-detail-view .yt-community-detail-content,
-#yt-bubble-chat-view .yt-bubble-chat-container {
+#yt-bubble-chat-view .yt-bubble-chat-container,
+#yt-video-player-view .yt-chat-messages,
+#yt-user-live-view .yt-chat-messages,
+#yt-community-detail-view .yt-chat-messages,
+#yt-bubble-chat-view .yt-chat-messages {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
+    overflow-anchor: none;
 }
 
-#yt-video-player-view .ins-chat-input-container,
-#yt-user-live-view .ins-chat-input-container,
-#yt-community-detail-view .ins-chat-input-container,
-#yt-bubble-chat-view .ins-chat-input-container {
+#yt-video-player-view > .ins-chat-input-container,
+#yt-user-live-view > .ins-chat-input-container,
+#yt-community-detail-view > .ins-chat-input-container,
+#yt-bubble-chat-view > .ins-chat-input-container,
+#yt-video-player-view .yt-chat-composer,
+#yt-user-live-view .yt-chat-composer,
+#yt-community-detail-view .yt-chat-composer,
+#yt-bubble-chat-view .yt-chat-composer {
     position: static !important;
     left: auto !important;
     right: auto !important;
@@ -1774,6 +1790,7 @@
     box-sizing: border-box;
     padding: 10px 16px max(12px, env(safe-area-inset-bottom, 0px)) !important;
     background: #ffffff;
+    overflow-anchor: none;
     transform: none !important;
     transition: background-color 0.2s ease;
 }
@@ -1786,14 +1803,14 @@
 #yt-user-live-view.yt-chat-keyboard-lock,
 #yt-community-detail-view.yt-chat-keyboard-lock,
 #yt-bubble-chat-view.yt-chat-keyboard-lock,
-#yt-video-player-view.keyboard-open .ins-chat-input-container,
-#yt-user-live-view.keyboard-open .ins-chat-input-container,
-#yt-community-detail-view.keyboard-open .ins-chat-input-container,
-#yt-bubble-chat-view.keyboard-open .ins-chat-input-container,
-#yt-video-player-view.yt-chat-keyboard-lock .ins-chat-input-container,
-#yt-user-live-view.yt-chat-keyboard-lock .ins-chat-input-container,
-#yt-community-detail-view.yt-chat-keyboard-lock .ins-chat-input-container,
-#yt-bubble-chat-view.yt-chat-keyboard-lock .ins-chat-input-container {
+#yt-video-player-view.keyboard-open > .ins-chat-input-container,
+#yt-user-live-view.keyboard-open > .ins-chat-input-container,
+#yt-community-detail-view.keyboard-open > .ins-chat-input-container,
+#yt-bubble-chat-view.keyboard-open > .ins-chat-input-container,
+#yt-video-player-view.yt-chat-keyboard-lock > .ins-chat-input-container,
+#yt-user-live-view.yt-chat-keyboard-lock > .ins-chat-input-container,
+#yt-community-detail-view.yt-chat-keyboard-lock > .ins-chat-input-container,
+#yt-bubble-chat-view.yt-chat-keyboard-lock > .ins-chat-input-container {
     bottom: auto !important;
     transform: none !important;
 }
