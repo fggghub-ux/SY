@@ -1694,7 +1694,7 @@
     padding: 0 16px 20px;
 }
 
-/* YouTube chat interface: fixed app-internal page + internal scroller + composer. */
+/* YouTube chat interface: app-internal pages with keyboard-safe outer scroll locking. */
 #yt-video-player-view,
 #yt-user-live-view,
 #yt-community-detail-view,
@@ -1755,17 +1755,6 @@
     overflow: hidden;
 }
 
-#yt-community-detail-view,
-#yt-bubble-chat-view {
-    min-height: 0;
-    overflow: hidden;
-}
-
-#yt-community-detail-view .yt-community-detail-header,
-#yt-bubble-chat-view .yt-bubble-chat-header {
-    flex: 0 0 auto;
-}
-
 #yt-video-player-view.yt-chat-portal-view #yt-player-video-area {
     flex: 0 1 auto;
     min-height: 0;
@@ -1811,10 +1800,7 @@
 #yt-user-live-view .yt-chat-composer,
 #yt-community-detail-view .yt-chat-composer,
 #yt-bubble-chat-view .yt-chat-composer {
-    position: static !important;
-    left: auto !important;
-    right: auto !important;
-    bottom: auto !important;
+    position: relative !important;
     flex: 0 0 auto;
     width: 100%;
     box-sizing: border-box;
@@ -1823,6 +1809,17 @@
     overflow-anchor: none;
     transform: none !important;
     transition: background-color 0.2s ease;
+}
+
+#yt-video-player-view.keyboard-open,
+#yt-user-live-view.keyboard-open,
+#yt-community-detail-view.keyboard-open,
+#yt-bubble-chat-view.keyboard-open,
+#yt-video-player-view.yt-chat-keyboard-lock,
+#yt-user-live-view.yt-chat-keyboard-lock,
+#yt-community-detail-view.yt-chat-keyboard-lock,
+#yt-bubble-chat-view.yt-chat-keyboard-lock {
+    transform: none !important;
 }
 
 .yt-form-sheet-portal {

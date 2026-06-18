@@ -589,8 +589,7 @@
             window.releaseYtChatKeyboardLock(view);
         }
 
-        view.classList.toggle('keyboard-open', !!isOpen);
-        view.classList.toggle('yt-chat-keyboard-lock', !!isOpen);
+        view.classList.remove('keyboard-open', 'yt-chat-keyboard-lock');
         delete view.dataset.ytKeyboardScrollTop;
     };
 
@@ -613,6 +612,10 @@
             view.classList.add('yt-chat-interface');
             composer.classList.add('yt-chat-composer');
             if (messages) messages.classList.add('yt-chat-messages');
+
+            if (composer.parentElement !== view) {
+                view.appendChild(composer);
+            }
         });
     }
     window.normalizeYtChatComposerLayout = normalizeYtChatComposerLayout;
@@ -634,6 +637,7 @@
             app.appendChild(view);
         }
 
+        normalizeYtChatComposerLayout(view);
         return view;
     };
 
@@ -749,6 +753,24 @@
         });
     }
 
+    function lockYtOuterScrollForInput(input, options = {}) {
+        if (!input || !input.dataset) return;
+        const state = captureYtOuterScrollState();
+        input.dataset.ytOuterScrollLock = 'true';
+
+        const restore = () => {
+            restoreYtOuterScrollState(state);
+            if (options.scrollSheet) scrollYtFormInputIntoSheet(input);
+        };
+
+        requestAnimationFrame(() => {
+            restore();
+            requestAnimationFrame(restore);
+            setTimeout(restore, 120);
+            setTimeout(restore, 320);
+        });
+    }
+
     function scrollYtFormInputIntoSheet(input) {
         if (!input || typeof input.closest !== 'function') return;
         const sheetScroll = input.closest('.detail-sheet-content, .sheet-content');
@@ -829,26 +851,27 @@
     document.addEventListener('focusin', (e) => {
         const input = e.target;
         if (!input || !input.matches || !input.matches('input, textarea, [contenteditable="true"]')) return;
-        if (isYtChatInput(input)) return;
+
+        if (isYtChatInput(input)) {
+            lockYtOuterScrollForInput(input);
+            return;
+        }
 
         const sheet = input.closest && input.closest('.yt-form-sheet-portal');
         if (!sheet) return;
 
-        const state = captureYtOuterScrollState();
-        input.dataset.ytOuterScrollLock = 'true';
-
-        requestAnimationFrame(() => {
-            restoreYtOuterScrollState(state);
-            scrollYtFormInputIntoSheet(input);
-            requestAnimationFrame(() => restoreYtOuterScrollState(state));
-        });
+        lockYtOuterScrollForInput(input, { scrollSheet: true });
     }, true);
 
     document.addEventListener('input', (e) => {
         const input = e.target;
         if (!input || !input.matches || !input.matches('input, textarea, [contenteditable="true"]')) return;
         if (!input.dataset || input.dataset.ytOuterScrollLock !== 'true') return;
-        if (isYtChatInput(input)) return;
+
+        if (isYtChatInput(input)) {
+            lockYtOuterScrollForInput(input);
+            return;
+        }
 
         const state = captureYtOuterScrollState();
         requestAnimationFrame(() => {
