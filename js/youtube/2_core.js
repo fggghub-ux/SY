@@ -589,7 +589,8 @@
             window.releaseYtChatKeyboardLock(view);
         }
 
-        view.classList.remove('keyboard-open', 'yt-chat-keyboard-lock');
+        view.classList.toggle('keyboard-open', !!isOpen);
+        view.classList.toggle('yt-chat-keyboard-lock', !!isOpen);
         delete view.dataset.ytKeyboardScrollTop;
     };
 
@@ -612,10 +613,6 @@
             view.classList.add('yt-chat-interface');
             composer.classList.add('yt-chat-composer');
             if (messages) messages.classList.add('yt-chat-messages');
-
-            if (composer.parentElement !== view) {
-                view.appendChild(composer);
-            }
         });
     }
     window.normalizeYtChatComposerLayout = normalizeYtChatComposerLayout;
@@ -637,7 +634,6 @@
             app.appendChild(view);
         }
 
-        normalizeYtChatComposerLayout(view);
         return view;
     };
 
@@ -659,6 +655,13 @@
             window.prepareYtChatPortalView(view);
         } else {
             normalizeYtChatComposerLayout(view);
+        }
+        if (input && document.activeElement !== input) {
+            try {
+                input.focus({ preventScroll: true });
+            } catch (e) {
+                input.focus();
+            }
         }
         if (typeof window.setYtChatKeyboardLock === 'function') {
             window.setYtChatKeyboardLock(view, true);
