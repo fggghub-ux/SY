@@ -94,7 +94,8 @@
                     ytEditVideoGuestName.textContent = selectedSub ? selectedSub.name : '无';
                 }
             });
-            ytGuestPickerSheet.classList.add('active');
+            if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(ytGuestPickerSheet);
+            else ytGuestPickerSheet.classList.add('active');
         });
     }
     
@@ -106,7 +107,8 @@
                     ytUserLiveGuestName.textContent = selectedSub ? selectedSub.name : '无';
                 }
             });
-            ytGuestPickerSheet.classList.add('active');
+            if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(ytGuestPickerSheet);
+            else ytGuestPickerSheet.classList.add('active');
         });
     }
 
@@ -128,7 +130,8 @@
                         ytEditVideoGuestName.textContent = tempGuestData ? tempGuestData.name : '无';
                     }
 
-                    ytEditVideoSheet.classList.add('active');
+                    if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(ytEditVideoSheet);
+                    else ytEditVideoSheet.classList.add('active');
                 }
             }
         });
@@ -511,7 +514,8 @@
             }, 10);
         }
         
-        sheet.classList.add('active');
+        if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(sheet);
+        else sheet.classList.add('active');
     }
 
     function openVideoPlayer(video) {

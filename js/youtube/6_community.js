@@ -510,7 +510,8 @@
                         dmDeleteFriendBtn.style.display = 'none';
                     }
                 }
-                if (dmSettingsSheet) dmSettingsSheet.classList.add('active');
+                if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(dmSettingsSheet);
+                else if (dmSettingsSheet) dmSettingsSheet.classList.add('active');
             } else {
                 // Group Settings
                 if (!currentSubChannelData.generatedContent || !currentSubChannelData.generatedContent.fanGroup) return;
@@ -536,7 +537,8 @@
                 if(ownerName) ownerName.textContent = currentSubChannelData.name;
                 if(ownerAvatar) ownerAvatar.src = typeof resolveYtChannelAvatar === 'function' ? resolveYtChannelAvatar(currentSubChannelData) : currentSubChannelData.avatar;
                 
-                if (groupSettingsSheet) groupSettingsSheet.classList.add('active');
+                if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(groupSettingsSheet);
+                else if (groupSettingsSheet) groupSettingsSheet.classList.add('active');
             }
         });
     }
@@ -783,7 +785,8 @@
             }, 0);
         }
 
-        sheet.classList.add('active');
+        if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(sheet);
+        else sheet.classList.add('active');
     }
 
     function processOfferCompletion(msg, sub, actionType) {

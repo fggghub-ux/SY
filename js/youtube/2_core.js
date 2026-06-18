@@ -550,6 +550,25 @@
         { viewId: 'yt-community-detail-view', inputId: 'yt-community-chat-input', messagesId: 'yt-community-detail-content' },
         { viewId: 'yt-bubble-chat-view', inputId: 'yt-bubble-chat-input', messagesId: 'yt-bubble-chat-container' }
     ];
+    const ytFormSheetIds = [
+        'yt-create-sheet',
+        'yt-edit-channel-sheet',
+        'yt-edit-video-sheet',
+        'yt-guest-picker-sheet',
+        'yt-user-live-setup-sheet',
+        'yt-user-live-summary-sheet',
+        'yt-data-center-sheet',
+        'yt-all-subs-sheet',
+        'yt-settings-sheet',
+        'yt-prompt-sheet',
+        'yt-summary-list-sheet',
+        'yt-summary-detail-sheet',
+        'yt-dm-settings-sheet',
+        'yt-group-settings-sheet',
+        'yt-offer-detail-sheet',
+        'add-yt-char-sheet',
+        'yt-char-all-content-sheet'
+    ];
 
     window.releaseYtChatKeyboardLock = function(nextView = null) {
         const active = document.activeElement;
@@ -629,6 +648,7 @@
             const active = document.activeElement;
             if (active && view.contains(active) && typeof active.blur === 'function') active.blur();
             view.classList.remove('active', 'keyboard-open', 'yt-chat-keyboard-lock');
+            if (id === 'yt-video-player-view') view.classList.remove('yt-char-live-mode');
             delete view.dataset.ytKeyboardScrollTop;
         });
     };
@@ -681,6 +701,173 @@
         if (delay > 0) setTimeout(run, delay);
         else run();
     };
+
+    function isYtChatInput(input) {
+        if (!input) return false;
+        return ytChatComposerConfigs.some(({ inputId }) => input.id === inputId);
+    }
+
+    function getYtOuterScrollTargets() {
+        const targets = [
+            window,
+            document.scrollingElement,
+            document.documentElement,
+            document.body,
+            document.getElementById('app'),
+            document.getElementById('youtube-view'),
+            document.querySelector('#youtube-view .yt-main-content')
+        ];
+        return targets.filter(Boolean);
+    }
+
+    function captureYtOuterScrollState() {
+        return getYtOuterScrollTargets().map((target) => {
+            if (target === window) {
+                return { target, left: window.scrollX || 0, top: window.scrollY || 0 };
+            }
+            return {
+                target,
+                left: typeof target.scrollLeft === 'number' ? target.scrollLeft : 0,
+                top: typeof target.scrollTop === 'number' ? target.scrollTop : 0
+            };
+        });
+    }
+
+    function restoreYtOuterScrollState(state) {
+        if (!Array.isArray(state)) return;
+        state.forEach(({ target, left, top }) => {
+            if (!target) return;
+            if (target === window) {
+                window.scrollTo(left || 0, top || 0);
+                return;
+            }
+            if (typeof target.scrollLeft === 'number') target.scrollLeft = left || 0;
+            if (typeof target.scrollTop === 'number') target.scrollTop = top || 0;
+        });
+    }
+
+    function scrollYtFormInputIntoSheet(input) {
+        if (!input || typeof input.closest !== 'function') return;
+        const sheetScroll = input.closest('.detail-sheet-content, .sheet-content');
+        if (!sheetScroll || typeof input.getBoundingClientRect !== 'function') return;
+
+        const inputRect = input.getBoundingClientRect();
+        const scrollRect = sheetScroll.getBoundingClientRect();
+        const topGap = inputRect.top - scrollRect.top;
+        const bottomGap = inputRect.bottom - scrollRect.bottom;
+
+        if (bottomGap > -24) {
+            sheetScroll.scrollTop += bottomGap + 40;
+        } else if (topGap < 24) {
+            sheetScroll.scrollTop += topGap - 40;
+        }
+    }
+
+    window.prepareYtFormSheetPortal = function(sheet) {
+        if (!sheet) return null;
+        const app = document.getElementById('app');
+        if (!app) return sheet;
+
+        sheet.classList.add('yt-form-sheet-portal');
+        const panel = sheet.querySelector('.bottom-sheet');
+        if (panel) panel.classList.add('yt-form-sheet-panel');
+
+        if (sheet.parentElement !== app) {
+            app.appendChild(sheet);
+        }
+
+        return sheet;
+    };
+
+    window.prepareYtFormSheetPortals = function() {
+        ytFormSheetIds.forEach((id) => {
+            const sheet = document.getElementById(id);
+            if (!sheet) return;
+            if (id === 'yt-sc-sheet') return;
+            window.prepareYtFormSheetPortal(sheet);
+        });
+    };
+
+    window.openYtFormSheet = function(sheet) {
+        const portalSheet = window.prepareYtFormSheetPortal(sheet);
+        if (portalSheet) portalSheet.classList.add('active');
+        return portalSheet;
+    };
+
+    window.closeYtFormSheetPortals = function() {
+        ytFormSheetIds.forEach((id) => {
+            const sheet = document.getElementById(id);
+            if (!sheet) return;
+            const active = document.activeElement;
+            if (active && sheet.contains(active) && typeof active.blur === 'function') active.blur();
+            sheet.classList.remove('active');
+        });
+    };
+
+    const ytFormSheetObserver = new MutationObserver((records) => {
+        records.forEach((record) => {
+            const target = record.target;
+            if (!target || !target.id || !ytFormSheetIds.includes(target.id)) return;
+            if (target.classList && target.classList.contains('active')) {
+                window.prepareYtFormSheetPortal(target);
+            }
+        });
+    });
+
+    function observeYtFormSheets() {
+        ytFormSheetIds.forEach((id) => {
+            const sheet = document.getElementById(id);
+            if (!sheet || sheet.dataset.ytFormSheetObserved === 'true') return;
+            sheet.dataset.ytFormSheetObserved = 'true';
+            ytFormSheetObserver.observe(sheet, { attributes: true, attributeFilter: ['class'] });
+        });
+    }
+
+    document.addEventListener('focusin', (e) => {
+        const input = e.target;
+        if (!input || !input.matches || !input.matches('input, textarea, [contenteditable="true"]')) return;
+        if (isYtChatInput(input)) return;
+
+        const sheet = input.closest && input.closest('.yt-form-sheet-portal');
+        if (!sheet) return;
+
+        const state = captureYtOuterScrollState();
+        input.dataset.ytOuterScrollLock = 'true';
+
+        requestAnimationFrame(() => {
+            restoreYtOuterScrollState(state);
+            scrollYtFormInputIntoSheet(input);
+            requestAnimationFrame(() => restoreYtOuterScrollState(state));
+        });
+    }, true);
+
+    document.addEventListener('input', (e) => {
+        const input = e.target;
+        if (!input || !input.matches || !input.matches('input, textarea, [contenteditable="true"]')) return;
+        if (!input.dataset || input.dataset.ytOuterScrollLock !== 'true') return;
+        if (isYtChatInput(input)) return;
+
+        const state = captureYtOuterScrollState();
+        requestAnimationFrame(() => {
+            restoreYtOuterScrollState(state);
+            scrollYtFormInputIntoSheet(input);
+        });
+    }, true);
+
+    document.addEventListener('focusout', (e) => {
+        const input = e.target;
+        if (input && input.dataset) delete input.dataset.ytOuterScrollLock;
+    }, true);
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            window.prepareYtFormSheetPortals();
+            observeYtFormSheets();
+        });
+    } else {
+        window.prepareYtFormSheetPortals();
+        observeYtFormSheets();
+    }
 
     // 2. DOM Elements
     const ytView = document.getElementById('youtube-view');
@@ -743,6 +930,7 @@
                 ytUserState = {};
             }
             syncYtProfile();
+            if (typeof window.prepareYtFormSheetPortals === 'function') window.prepareYtFormSheetPortals();
             if (window.openView) window.openView(ytView);
             else ytView.classList.add('active');
             renderSubscriptions();
@@ -753,6 +941,7 @@
     if (backBtn && ytView) {
         backBtn.addEventListener('click', () => {
             if (typeof window.closeYtChatPortalViews === 'function') window.closeYtChatPortalViews();
+            if (typeof window.closeYtFormSheetPortals === 'function') window.closeYtFormSheetPortals();
             if (window.closeView) window.closeView(ytView);
             else ytView.classList.remove('active');
         });
@@ -1140,7 +1329,8 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
 
     if(ytNavPlusBtn && ytCreateSheet) {
         ytNavPlusBtn.addEventListener('click', () => {
-            ytCreateSheet.classList.add('active');
+            if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(ytCreateSheet);
+            else ytCreateSheet.classList.add('active');
         });
 
         ytCreateSheet.addEventListener('mousedown', (e) => {
@@ -1155,10 +1345,12 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
                 ytCreateSheet.classList.remove('active');
                 if (idx === 0) {
                     const userLiveSetupSheet = document.getElementById('yt-user-live-setup-sheet');
-                    if (userLiveSetupSheet) userLiveSetupSheet.classList.add('active');
+                    if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(userLiveSetupSheet);
+                    else if (userLiveSetupSheet) userLiveSetupSheet.classList.add('active');
                 } else if (idx === 2) {
                     const addYtCharSheet = document.getElementById('add-yt-char-sheet');
                     if (window.openCustomCharSheet) window.openCustomCharSheet(null);
+                    else if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(addYtCharSheet);
                     else if (addYtCharSheet) addYtCharSheet.classList.add('active');
                 }
             });
@@ -1275,7 +1467,8 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
                     });
                     list.appendChild(item);
                 });
-                allSubsSheet.classList.add('active');
+                if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(allSubsSheet);
+                else allSubsSheet.classList.add('active');
             };
             
             allSubsSheet.addEventListener('mousedown', (e) => {
@@ -1389,7 +1582,8 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
             dataCenterBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if(window.renderDataCenter) window.renderDataCenter();
-                dataCenterSheet.classList.add('active');
+                if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(dataCenterSheet);
+                else dataCenterSheet.classList.add('active');
             });
         }
 
@@ -1462,7 +1656,8 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
             } else {
                 if(editBannerImg) editBannerImg.style.display = 'none';
             }
-            editChannelSheet.classList.add('active');
+            if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(editChannelSheet);
+            else editChannelSheet.classList.add('active');
         });
     }
 

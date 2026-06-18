@@ -66,7 +66,8 @@
     if (startLiveOptionBtn && userLiveSetupSheet) {
         startLiveOptionBtn.addEventListener('click', () => {
             if(ytCreateSheet) ytCreateSheet.classList.remove('active');
-            userLiveSetupSheet.classList.add('active');
+            if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(userLiveSetupSheet);
+            else userLiveSetupSheet.classList.add('active');
         });
         userLiveSetupSheet.addEventListener('mousedown', (e) => {
             if(e.target === userLiveSetupSheet) userLiveSetupSheet.classList.remove('active');
@@ -119,7 +120,8 @@
                     document.getElementById('yt-summary-subs').textContent = '+' + userLiveNewSubs;
                     document.getElementById('yt-summary-sc').textContent = '￥' + userLiveTotalSC;
                     
-                    if(userLiveSummarySheet) userLiveSummarySheet.classList.add('active');
+                    if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(userLiveSummarySheet);
+                    else if(userLiveSummarySheet) userLiveSummarySheet.classList.add('active');
                 }
             });
         });
@@ -225,7 +227,8 @@
             dataCenterBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 window.renderDataCenter();
-                dataCenterSheet.classList.add('active');
+                if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(dataCenterSheet);
+                else dataCenterSheet.classList.add('active');
             });
         }
     }, 500);

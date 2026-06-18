@@ -481,7 +481,8 @@
                 if(ytCharBannerImg) { ytCharBannerImg.src = ''; ytCharBannerImg.style.display = 'none'; }
             }
             
-            addYtCharSheet.classList.add('active');
+            if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(addYtCharSheet);
+            else addYtCharSheet.classList.add('active');
         }
     }
 
@@ -499,7 +500,8 @@
             updateYtBoundWorldBookLabel();
         }
         const ytSettingsSheet = document.getElementById('yt-settings-sheet');
-        if (ytSettingsSheet) ytSettingsSheet.classList.add('active');
+        if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(ytSettingsSheet);
+        else if (ytSettingsSheet) ytSettingsSheet.classList.add('active');
     };
 
     if (mainSearchBtn) mainSearchBtn.addEventListener('click', openCreateSheetHandler);

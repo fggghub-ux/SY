@@ -157,7 +157,8 @@ if (ytSummaryListBtn) {
             window.renderYtSummaryList();
         }
         const summarySheet = document.getElementById('yt-summary-list-sheet');
-        if (summarySheet) summarySheet.classList.add('active');
+        if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(summarySheet);
+        else if (summarySheet) summarySheet.classList.add('active');
         closeYtSettingsSheet();
     });
 }

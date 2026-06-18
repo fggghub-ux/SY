@@ -6,6 +6,10 @@
     display: flex;
     flex-direction: column;
     padding-top: 0; /* Reset default padding to handle custom header */
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    overscroll-behavior: contain;
 }
 
 /* 1. Header (Top Bar) */
@@ -131,13 +135,16 @@
 
 /* Main Content Area */
 .yt-main-content {
-    flex: 1;
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
     position: relative;
-    padding-bottom: calc(90px + var(--safe-bottom)); /* Space for bottom nav */
+    padding-bottom: 18px;
     padding-top: max(60px, calc(44px + var(--safe-top))); /* Make room for floating header */
     -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    overflow-anchor: none;
 }
 
 .yt-tab-content {
@@ -449,19 +456,22 @@
 
 /* 6. Floating Bottom Navigation (Glassmorphism) */
 .yt-bottom-nav-container {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: calc(18px + var(--safe-bottom));
+    position: relative;
+    left: auto;
+    right: auto;
+    bottom: auto;
     display: flex;
     justify-content: center;
     z-index: 200;
     background: transparent;
-    padding: 0 18px;
+    padding: 0 18px max(18px, calc(12px + var(--safe-bottom)));
     box-sizing: border-box;
     height: auto !important;
     pointer-events: none;
-    transition: bottom 0.25s ease;
+    flex: 0 0 auto;
+    transform: none !important;
+    transition: none;
+    overflow-anchor: none;
 }
 
 .yt-bottom-nav {
@@ -1856,4 +1866,50 @@
 #yt-bubble-chat-view.yt-chat-keyboard-lock > .ins-chat-input-container {
     bottom: auto !important;
     transform: none !important;
+}
+
+.yt-form-sheet-portal {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: flex-end !important;
+    transform: none !important;
+    overscroll-behavior: contain;
+    overflow-anchor: none;
+}
+
+.yt-form-sheet-portal .yt-form-sheet-panel {
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 0 !important;
+    max-height: 85% !important;
+    overflow: hidden !important;
+    flex: 0 1 auto;
+    transform: translateY(100%);
+    overflow-anchor: none;
+}
+
+.yt-form-sheet-portal.active .yt-form-sheet-panel {
+    transform: translateY(0);
+}
+
+.yt-form-sheet-portal .detail-sheet-content,
+.yt-form-sheet-portal .sheet-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    overflow-anchor: none;
+}
+
+#youtube-view,
+#youtube-view .yt-main-content,
+#youtube-view .yt-bottom-nav-container {
+    overflow-anchor: none;
 }
