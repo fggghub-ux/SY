@@ -2774,6 +2774,52 @@
                 </div>
             </div>
 
+<div class="bottom-sheet-overlay detail-sheet-overlay" id="bind-account-detail-sheet" style="z-index: 700;">
+                <div class="bottom-sheet bind-account-detail-bottom-sheet">
+                    <div class="sheet-handle"></div>
+                    <div class="sheet-title">绑定ID</div>
+                    <div class="detail-sheet-content bind-account-detail-content">
+                        <label class="bind-account-select-row">
+                            <span>绑定哪个ID</span>
+                            <select id="bind-account-detail-select"></select>
+                        </label>
+
+                        <div id="bind-account-detail-empty" class="bind-account-detail-empty">请选择要绑定的 ID</div>
+
+                        <div id="bind-account-detail-form" class="bind-account-detail-form" style="display:none;">
+                            <div class="bind-account-detail-avatar-section">
+                                <button type="button" id="bind-account-detail-avatar-btn" class="bind-account-detail-avatar-btn">
+                                    <img id="bind-account-detail-avatar-img" src="" alt="" style="display:none;">
+                                    <i id="bind-account-detail-avatar-icon" class="fas fa-user"></i>
+                                    <span class="bind-account-detail-avatar-plus"><i class="fas fa-plus"></i></span>
+                                </button>
+                                <input type="file" id="bind-account-detail-avatar-upload" accept="image/*" style="display:none;">
+                            </div>
+
+                            <div class="form-group fully-rounded bind-account-detail-fields">
+                                <div class="form-item">
+                                    <label>名字</label>
+                                    <input type="text" id="bind-account-detail-name-input" value="">
+                                </div>
+                                <div class="form-item">
+                                    <label>手机号</label>
+                                    <input type="tel" id="bind-account-detail-phone-input" value="" maxlength="11" pattern="[0-9]*" placeholder="输入手机号">
+                                </div>
+                                <div class="form-item">
+                                    <label>个签</label>
+                                    <input type="text" id="bind-account-detail-signature-input" placeholder="输入个性签名">
+                                </div>
+                            </div>
+
+                            <textarea id="bind-account-detail-persona-input" class="global-textarea bind-account-detail-persona" placeholder="输入人设..."></textarea>
+                        </div>
+                    </div>
+                    <div class="bind-account-detail-actions">
+                        <button type="button" id="bind-account-detail-save-btn" class="sheet-action confirm-action bind-account-detail-save">保存</button>
+                    </div>
+                </div>
+            </div>
+
 <div class="bottom-sheet-overlay detail-sheet-overlay" id="bind-stickers-sheet" style="z-index: 700;">
                 <div class="bottom-sheet" style="height: 80%; display: flex; flex-direction: column;">
                     <div class="sheet-handle"></div>
@@ -3543,7 +3589,6 @@
                                 <div class="settings-item" id="chat-bind-id-btn" style="position: relative;">
                                     <div class="settings-icon" style="background-color: #34c759;"><i class="fas fa-id-card"></i></div>
                                     <div class="settings-text">绑定ID</div>
-                                    <select id="chat-bind-id-select" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;"></select>
                                     <span id="chat-bind-id-label" style="font-size: 13px; color: #8e8e93; margin-right: 4px; pointer-events: none;"></span>
                                     <i class="fas fa-chevron-right arrow" style="pointer-events: none;"></i>
                                 </div>
@@ -3698,9 +3743,15 @@
                                         </label>
                                     </div>
                                 </div>
-                                <div class="settings-item" id="chat-memory-manual-summary-btn" style="border-bottom: none; cursor: pointer;">
+                                <div class="settings-item" id="chat-memory-manual-summary-btn" style="border-bottom: 1px solid var(--separator-color); cursor: pointer;">
                                     <div class="settings-icon" style="background-color: #007aff;"><i class="fas fa-wand-magic-sparkles"></i></div>
                                     <div class="settings-text">总结对话</div>
+                                    <i class="fas fa-chevron-right arrow"></i>
+                                </div>
+                                <div class="settings-item" id="chat-memory-autonomous-btn" style="border-bottom: none; cursor: pointer;">
+                                    <div class="settings-icon" style="background-color: #34c759;"><i class="fas fa-satellite-dish"></i></div>
+                                    <div class="settings-text">自主活动</div>
+                                    <span id="chat-memory-autonomous-status" style="margin-left:auto; color:#8e8e93; font-size:14px;">关闭</span>
                                     <i class="fas fa-chevron-right arrow"></i>
                                 </div>
                             </div>
@@ -3829,6 +3880,51 @@
                         </div>
                         <button type="button" id="chat-memory-summary-confirm" class="memory-summary-confirm-btn">确认</button>
                     </div>
+                </div>
+            </div>
+
+<div class="bottom-sheet-overlay detail-sheet-overlay" id="chat-memory-autonomous-sheet" style="z-index: 1300;">
+                <div class="bottom-sheet chat-memory-autonomous-sheet">
+                    <div class="sheet-handle"></div>
+                    <div class="sheet-title">自主活动</div>
+                    <div class="detail-sheet-content chat-memory-autonomous-content">
+                        <div class="settings-group fully-rounded chat-memory-autonomous-group chat-memory-autonomous-card">
+                            <div class="settings-item chat-memory-autonomous-toggle-row" style="justify-content: space-between; cursor: default;">
+                                <div style="display: flex; align-items: center;">
+                                    <div class="settings-icon" style="background-color: #34c759;"><i class="fas fa-comment-dots"></i></div>
+                                    <div class="settings-text">自动回复</div>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="chat-memory-autonomous-enabled-toggle">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <div class="chat-memory-autonomous-intervals">
+                                <label>最短间隔 <input type="number" id="chat-memory-autonomous-reply-min-input" min="1" value="30"> 分钟</label>
+                                <label>最长间隔 <input type="number" id="chat-memory-autonomous-reply-max-input" min="1" value="240"> 分钟</label>
+                            </div>
+                            <div class="chat-memory-autonomous-note" id="chat-memory-autonomous-next-label">关闭后不会主动发消息</div>
+                        </div>
+                        <div class="settings-group fully-rounded chat-memory-autonomous-group chat-memory-autonomous-card">
+                            <div class="settings-item chat-memory-autonomous-toggle-row" style="justify-content: space-between; cursor: default;">
+                                <div style="display: flex; align-items: center;">
+                                    <div class="settings-icon" style="background-color: #ff9500;"><i class="fas fa-images"></i></div>
+                                    <div class="settings-text">自动发朋友圈</div>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="chat-memory-autonomous-moment-toggle">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <div class="chat-memory-autonomous-intervals">
+                                <label>最短间隔 <input type="number" id="chat-memory-autonomous-moment-min-input" min="1" value="30"> 分钟</label>
+                                <label>最长间隔 <input type="number" id="chat-memory-autonomous-moment-max-input" min="1" value="240"> 分钟</label>
+                            </div>
+                            <div class="chat-memory-autonomous-note" id="chat-memory-autonomous-moment-next-label">关闭后不会自动发朋友圈</div>
+                        </div>
+                    </div>
+                    <div class="sheet-action confirm-action chat-memory-autonomous-save" id="chat-memory-autonomous-save-btn">保存</div>
+                    <div class="sheet-action chat-memory-autonomous-cancel" id="chat-memory-autonomous-close-btn">取消</div>
                 </div>
             </div>
 

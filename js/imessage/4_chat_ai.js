@@ -10,10 +10,105 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const aiReplyInFlight = new Set();
+    const autonomousActivityInFlight = new Set();
+    const autonomousMomentInFlight = new Set();
 
     function getFriendKey(friendOrId) {
         const rawId = friendOrId && typeof friendOrId === 'object' ? friendOrId.id : friendOrId;
         return rawId == null ? '' : String(rawId);
+    }
+
+    function normalizeAutonomousTask(task) {
+        return window.imApp?.normalizeAutonomousTask
+            ? window.imApp.normalizeAutonomousTask(task)
+            : {
+                enabled: !!task?.enabled,
+                minIntervalMinutes: Math.max(1, Math.round(Number(task?.minIntervalMinutes) || 30)),
+                maxIntervalMinutes: Math.max(
+                    Math.max(1, Math.round(Number(task?.minIntervalMinutes) || 30)),
+                    Math.round(Number(task?.maxIntervalMinutes) || 240)
+                ),
+                nextRunAt: Math.max(0, Number(task?.nextRunAt) || 0),
+                lastRunAt: Math.max(0, Number(task?.lastRunAt) || 0)
+            };
+    }
+
+    function normalizeAutonomousActivity(activity) {
+        return window.imApp?.normalizeAutonomousActivity
+            ? window.imApp.normalizeAutonomousActivity(activity)
+            : {
+                reply: normalizeAutonomousTask(activity?.reply || activity),
+                moment: normalizeAutonomousTask(activity?.moment)
+            };
+    }
+
+    function getAutonomousTask(activity, taskName) {
+        const normalized = normalizeAutonomousActivity(activity);
+        return normalizeAutonomousTask(normalized[taskName]);
+    }
+
+    function getRandomAutonomousDelay(task) {
+        const normalized = normalizeAutonomousTask(task);
+        const min = Math.max(1, Number(normalized.minIntervalMinutes) || 30);
+        const max = Math.max(min, Number(normalized.maxIntervalMinutes) || 240);
+        const minutes = min + Math.floor(Math.random() * (max - min + 1));
+        return minutes * 60 * 1000;
+    }
+
+    function formatAutonomousPromptTime(timestamp) {
+        const value = Number(timestamp) || 0;
+        if (value <= 0) return '未知';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '未知';
+        return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    }
+
+    function formatAutonomousPromptDuration(fromTimestamp, toTimestamp = Date.now()) {
+        const from = Number(fromTimestamp) || 0;
+        const to = Number(toTimestamp) || 0;
+        if (from <= 0 || to <= 0 || to < from) return '未知';
+        const totalMinutes = Math.max(0, Math.floor((to - from) / 60000));
+        if (totalMinutes < 1) return '不到1分钟';
+        if (totalMinutes < 60) return `${totalMinutes}分钟`;
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        if (hours < 24) return minutes ? `${hours}小时${minutes}分钟` : `${hours}小时`;
+        const days = Math.floor(hours / 24);
+        const restHours = hours % 24;
+        return restHours ? `${days}天${restHours}小时` : `${days}天`;
+    }
+
+    function getAutonomousMessageText(message) {
+        if (!message) return '';
+        if (message.type === 'sticker') return `[表情] ${message.stickerCategory ? `${message.stickerCategory} / ` : ''}${message.stickerName || message.text || ''}`.trim();
+        if (message.type === 'image') return `[图片] ${message.description || message.text || message.content || ''}`.trim();
+        if (message.type === 'voice_message') return `[语音] ${message.transcript || message.text || message.content || ''}`.trim();
+        if (message.type === 'pay_transfer') return `[转账] ${message.description || message.content || ''}`.trim();
+        return String(message.content || message.text || message.description || '').trim();
+    }
+
+    function buildAutonomousActivityPrompt(friend, now = Date.now()) {
+        const messages = Array.isArray(friend?.messages) ? friend.messages : [];
+        const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+        const lastUserMessage = messages.slice().reverse().find(msg => msg && msg.role === 'user') || null;
+        const lastAssistantMessage = messages.slice().reverse().find(msg => msg && msg.role === 'assistant') || null;
+        const userHasNotReplied = !!lastAssistantMessage && (!lastUserMessage || Number(lastAssistantMessage.timestamp) > Number(lastUserMessage.timestamp));
+        const charName = friend?.realName || friend?.nickname || '你';
+
+        return `【自主活动触发】
+这不是 User 刚刚发来的消息，而是 ${charName} 在自动回复开关开启后，间隔 30-240 分钟随机主动发起的一轮消息。
+当前真实时间：${formatAutonomousPromptTime(now)}
+上一条任意消息时间：${lastMessage ? formatAutonomousPromptTime(lastMessage.timestamp) : '暂无'}${lastMessage ? `，距现在约 ${formatAutonomousPromptDuration(lastMessage.timestamp, now)}` : ''}
+User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(lastUserMessage.timestamp) : '暂无'}${lastUserMessage ? `，距现在约 ${formatAutonomousPromptDuration(lastUserMessage.timestamp, now)}` : ''}
+你上一轮消息时间：${lastAssistantMessage ? formatAutonomousPromptTime(lastAssistantMessage.timestamp) : '暂无'}${lastAssistantMessage ? `，距现在约 ${formatAutonomousPromptDuration(lastAssistantMessage.timestamp, now)}` : ''}
+上一条消息来自：${lastMessage?.role === 'user' ? 'User' : (lastMessage?.role === 'assistant' ? charName : '未知')}
+上一条消息内容：${getAutonomousMessageText(lastMessage) || '暂无'}
+
+本轮要求：
+1. 必须注意上下文里的时间戳，先判断上一轮消息是什么时候、现在是什么时候、这段时间你可能在做什么。
+2. 如果 User 在你上一轮之后一直没回复，可以自然地问 User 在干嘛、怎么没回，或报备你现在正在做什么；不要像客服催促。
+3. 如果最近话题没有结束，要承接上一轮；如果间隔较久，可以开启自然的新话题或分享身边状态。
+4. 输出 2-8 条独立聊天气泡，必须继续遵守原本 <chat_json> JSON 输出格式。`;
     }
 
     function createApiRunId(friendId) {
@@ -130,6 +225,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!text) return;
 
         const liveFriend = getLiveFriendById(friend.id) || friend;
+        if (liveFriend.type === 'group' && Number(liveFriend.leftGroupAt) > 0) {
+            if (window.showToast) window.showToast('你已退出该群，不能发送消息');
+            return;
+        }
+
         const now = Date.now();
         const lastMsg = liveFriend.messages && liveFriend.messages.length > 0
             ? liveFriend.messages[liveFriend.messages.length - 1]
@@ -867,11 +967,245 @@ Output only valid JSON with this exact shape:
         }
     }
 
-    async function handleAiReply(friend, container, btnEl) {
-        console.log('handleAiReply invoked', { friend, btnEl });
+    async function scheduleAutonomousTaskNextRun(friendId, taskName, task, now = Date.now()) {
+        if (!window.imApp?.commitScopedFriendChange) return false;
+        return window.imApp.commitScopedFriendChange(friendId, (targetFriend) => {
+            targetFriend.memory = window.imApp.normalizeFriendData(targetFriend).memory;
+            const activity = normalizeAutonomousActivity(targetFriend.memory.autonomous);
+            const nextTask = normalizeAutonomousTask(activity[taskName] || task);
+            nextTask.nextRunAt = now + getRandomAutonomousDelay(nextTask);
+            activity[taskName] = nextTask;
+            targetFriend.memory.autonomous = activity;
+        }, { silent: true, immediate: true, metaOnly: true, syncActive: true, syncSettings: true });
+    }
+
+    function buildAutonomousMomentPrompt(friend, now = Date.now()) {
+        const charName = friend?.realName || friend?.nickname || 'TA';
+        const userName = (window.getUserState ? window.getUserState() : window.userState || {})?.name || 'User';
+        const relationshipText = Array.isArray(friend?.memory?.relationships) && friend.memory.relationships.length > 0
+            ? friend.memory.relationships.map(rel => {
+                const npc = (window.imData?.friends || []).find(item => String(item.id) === String(rel.npcId));
+                return `${npc ? npc.nickname : 'Unknown'}: ${rel.relation || ''}`;
+            }).join('\n')
+            : 'None';
+        const latestMessages = Array.isArray(friend?.messages)
+            ? friend.messages.slice(-8).map(msg => {
+                const speaker = msg.role === 'assistant' ? charName : userName;
+                return `[${formatAutonomousPromptTime(msg.timestamp)}] ${speaker}: ${getAutonomousMessageText(msg)}`;
+            }).join('\n')
+            : '';
+
+        return `你正在扮演 ${charName}，现在要为这个角色生成 1 条公开朋友圈文案。
+当前真实时间：${formatAutonomousPromptTime(now)}
+User 名称：${userName}
+角色人设：${friend?.persona || 'None'}
+角色签名：${friend?.signature || 'None'}
+关系和记忆：
+${friend?.memory?.overview || 'None'}
+
+关系网络：
+${relationshipText}
+
+最近聊天上下文：
+${latestMessages || 'None'}
+
+要求：
+1. 这是公开朋友圈，不是私聊，不是只给 User 看的话。
+2. 可以分享当下感悟、正在做的事、环境观察或生活片段。
+3. 不要写成碎碎念、连续私密独白、求回复、催 User、或过度暧昧告白。
+4. 只有在上下文或关系记忆中有明确恋爱/情侣/公开伴侣证据时，才可以把 User 写成公开恋人；否则如果提到 User，只能用小名、外号、某人、朋友等含蓄称呼。
+5. 不生成图片，不要输出 hashtag 堆砌，不要输出 markdown。
+6. 只输出合法 JSON：{"text":"朋友圈正文"}。`;
+    }
+
+    async function generateAutonomousMomentText(friend, apiConfig, now = Date.now()) {
+        const endpoint = resolveChatCompletionsEndpoint(apiConfig);
+        if (!endpoint) return '';
+        const response = await fetchChatCompletionWithTimeout(endpoint, apiConfig, [
+            {
+                role: 'system',
+                content: 'You generate one public social feed post for a fictional character. Output only valid JSON.'
+            },
+            {
+                role: 'user',
+                content: buildAutonomousMomentPrompt(friend, now)
+            }
+        ], 60000);
+
+        if (!response.ok) {
+            throw new Error(`${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        const parsed = parseJsonObjectFromText(getAiResponseContent(data));
+        return typeof parsed?.text === 'string' ? parsed.text.trim() : '';
+    }
+
+    async function runAutonomousActivityForFriend(friendOrId, reason = 'timer') {
+        const friendKey = getFriendKey(friendOrId);
+        if (!friendKey || autonomousActivityInFlight.has(friendKey) || aiReplyInFlight.has(friendKey)) return false;
+
+        let friend = getLiveFriendById(friendKey) || (friendOrId && typeof friendOrId === 'object' ? friendOrId : null);
+        if (!friend || friend.type === 'official' || friend.type === 'group') return false;
+
+        if (window.imApp?.ensureFriendMessagesLoaded) {
+            await window.imApp.ensureFriendMessagesLoaded(friend);
+            friend = getLiveFriendById(friendKey) || friend;
+        }
+
+        friend.memory = window.imApp.normalizeFriendData(friend).memory;
+        const replyTask = getAutonomousTask(friend.memory.autonomous, 'reply');
+        if (!replyTask.enabled) return false;
+
+        const currentApiConfig = window.getApiConfig ? window.getApiConfig() : (window.apiConfig || {});
+        if (!currentApiConfig.endpoint || !currentApiConfig.apiKey) {
+            await scheduleAutonomousTaskNextRun(friendKey, 'reply', replyTask, Date.now());
+            return false;
+        }
+
+        autonomousActivityInFlight.add(friendKey);
+        const now = Date.now();
+        try {
+            await window.imApp.commitScopedFriendChange(friendKey, (targetFriend) => {
+                targetFriend.memory = window.imApp.normalizeFriendData(targetFriend).memory;
+                const activity = normalizeAutonomousActivity(targetFriend.memory.autonomous);
+                const nextReplyTask = normalizeAutonomousTask(activity.reply);
+                nextReplyTask.lastRunAt = now;
+                nextReplyTask.nextRunAt = now + getRandomAutonomousDelay(nextReplyTask);
+                activity.reply = nextReplyTask;
+                targetFriend.memory.autonomous = activity;
+            }, { silent: true, immediate: true, metaOnly: true, syncActive: true, syncSettings: true });
+
+            const latestFriend = getLiveFriendById(friendKey) || friend;
+            const page = document.getElementById(`chat-interface-${friendKey}`);
+            const activeContainer = page ? page.querySelector('.ins-chat-messages') : null;
+            await handleAiReply(latestFriend, activeContainer, null, {
+                source: 'autonomous',
+                silent: true,
+                extraSystemPrompt: buildAutonomousActivityPrompt(latestFriend, now)
+            });
+            return true;
+        } catch (error) {
+            console.error('[iMessage autonomous activity] failed', { friendId: friendKey, reason, error });
+            return false;
+        } finally {
+            autonomousActivityInFlight.delete(friendKey);
+        }
+    }
+
+    async function runAutonomousMomentForFriend(friendOrId, reason = 'timer') {
+        const friendKey = getFriendKey(friendOrId);
+        if (!friendKey || autonomousMomentInFlight.has(friendKey)) return false;
+
+        let friend = getLiveFriendById(friendKey) || (friendOrId && typeof friendOrId === 'object' ? friendOrId : null);
+        if (!friend || friend.type === 'official' || friend.type === 'group') return false;
+
+        if (window.imApp?.ensureFriendMessagesLoaded) {
+            await window.imApp.ensureFriendMessagesLoaded(friend);
+            friend = getLiveFriendById(friendKey) || friend;
+        }
+        if (window.imApp?.ensureMomentsReady) {
+            await window.imApp.ensureMomentsReady();
+        }
+
+        friend.memory = window.imApp.normalizeFriendData(friend).memory;
+        const momentTask = getAutonomousTask(friend.memory.autonomous, 'moment');
+        if (!momentTask.enabled) return false;
+
+        const currentApiConfig = window.getApiConfig ? window.getApiConfig() : (window.apiConfig || {});
+        if (!currentApiConfig.endpoint || !currentApiConfig.apiKey) {
+            await scheduleAutonomousTaskNextRun(friendKey, 'moment', momentTask, Date.now());
+            return false;
+        }
+
+        autonomousMomentInFlight.add(friendKey);
+        const now = Date.now();
+        try {
+            await window.imApp.commitScopedFriendChange(friendKey, (targetFriend) => {
+                targetFriend.memory = window.imApp.normalizeFriendData(targetFriend).memory;
+                const activity = normalizeAutonomousActivity(targetFriend.memory.autonomous);
+                const nextMomentTask = normalizeAutonomousTask(activity.moment);
+                nextMomentTask.lastRunAt = now;
+                nextMomentTask.nextRunAt = now + getRandomAutonomousDelay(nextMomentTask);
+                activity.moment = nextMomentTask;
+                targetFriend.memory.autonomous = activity;
+            }, { silent: true, immediate: true, metaOnly: true, syncActive: true, syncSettings: true });
+
+            const latestFriend = getLiveFriendById(friendKey) || friend;
+            const text = await generateAutonomousMomentText(latestFriend, currentApiConfig, now);
+            if (!text) return false;
+
+            const newMoment = {
+                id: Date.now(),
+                userId: latestFriend.id,
+                name: latestFriend.nickname || latestFriend.realName || 'Friend',
+                avatar: latestFriend.avatarUrl || null,
+                text,
+                images: [],
+                time: Date.now(),
+                likes: [],
+                comments: [],
+                isPinned: false
+            };
+
+            const saved = window.imApp.commitMomentChange
+                ? await window.imApp.commitMomentChange(newMoment.id, () => {
+                    if (!Array.isArray(window.imData.moments)) window.imData.moments = [];
+                    window.imData.moments.unshift(newMoment);
+                }, { silent: true, immediate: true })
+                : false;
+
+            if (!saved) return false;
+            if (window.imApp.renderMoments) window.imApp.renderMoments();
+            if (window.showBannerNotification) {
+                window.showBannerNotification(latestFriend, '发布了一条朋友圈');
+            }
+            return true;
+        } catch (error) {
+            console.error('[iMessage autonomous moment] failed', { friendId: friendKey, reason, error });
+            return false;
+        } finally {
+            autonomousMomentInFlight.delete(friendKey);
+        }
+    }
+
+    async function checkAutonomousActivities(reason = 'timer') {
+        const friends = Array.isArray(window.imData?.friends) ? window.imData.friends : [];
+        const now = Date.now();
+        for (const friend of friends) {
+            if (!friend || friend.type === 'official' || friend.type === 'group') continue;
+            const normalizedFriend = window.imApp.normalizeFriendData(friend);
+            const activity = normalizeAutonomousActivity(normalizedFriend.memory?.autonomous);
+            const replyTask = normalizeAutonomousTask(activity.reply);
+            const momentTask = normalizeAutonomousTask(activity.moment);
+
+            if (replyTask.enabled) {
+                if (!replyTask.nextRunAt || replyTask.nextRunAt <= 0) {
+                    await scheduleAutonomousTaskNextRun(normalizedFriend.id, 'reply', replyTask, now);
+                } else if (replyTask.nextRunAt <= now) {
+                    await runAutonomousActivityForFriend(normalizedFriend, reason);
+                }
+            }
+
+            if (momentTask.enabled) {
+                if (!momentTask.nextRunAt || momentTask.nextRunAt <= 0) {
+                    await scheduleAutonomousTaskNextRun(normalizedFriend.id, 'moment', momentTask, now);
+                } else if (momentTask.nextRunAt <= now) {
+                    await runAutonomousMomentForFriend(normalizedFriend, reason);
+                }
+            }
+        }
+    }
+
+    function refreshAutonomousActivityTimers() {
+        void checkAutonomousActivities('refresh');
+    }
+
+    async function handleAiReply(friend, container, btnEl, options = {}) {
+        console.log('handleAiReply invoked', { friend, btnEl, source: options.source || 'manual' });
         const friendKey = getFriendKey(friend);
         if (aiReplyInFlight.has(friendKey)) {
-            if (window.showToast) window.showToast('正在生成中');
+            if (!options.silent && window.showToast) window.showToast('正在生成中');
             return;
         }
 
@@ -880,7 +1214,7 @@ Output only valid JSON with this exact shape:
         
         if (!currentApiConfig.endpoint || !currentApiConfig.apiKey) {
             console.warn('API config is missing!', currentApiConfig);
-            if(window.showToast) window.showToast('请先在设置中配置 API');
+            if(!options.silent && window.showToast) window.showToast('请先在设置中配置 API');
             return;
         }
 
@@ -894,15 +1228,17 @@ Output only valid JSON with this exact shape:
             }
             friend = getLiveFriendById(friend.id) || friend;
 
-            typingRow = document.createElement('div');
-            typingRow.className = 'chat-row ai-row typing-row';
-            typingRow.innerHTML = `
-                <div class="typing-indicator">
-                    <div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>
-                </div>
-            `;
-            container.appendChild(typingRow);
-            window.imChat.scrollToBottom(container);
+            if (container) {
+                typingRow = document.createElement('div');
+                typingRow.className = 'chat-row ai-row typing-row';
+                typingRow.innerHTML = `
+                    <div class="typing-indicator">
+                        <div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>
+                    </div>
+                `;
+                container.appendChild(typingRow);
+                window.imChat.scrollToBottom(container);
+            }
 
             if(btnEl) btnEl.style.opacity = '0.5';
 
@@ -1146,6 +1482,15 @@ ${pendingRegenerateContext.previousReply || 'None'}` : '';
         }
 
         let systemPrompt = '';
+        let isGroupAfterUserLeft = false;
+        let groupExitPrompt = '';
+        const dynamicActionNarrationEnabled = !!friend.dynamicActionNarrationEnabled;
+        const dynamicActionNarrationSubject = friend.type === 'group'
+            ? '当前发言成员或群聊现场'
+            : `${friend.nickname || friend.realName || '角色'}`;
+        const dynamicActionNarrationRequirement = dynamicActionNarrationEnabled
+            ? `\n\n【动描额外输出】\n- 本轮必须额外输出 1 个动作/环境氛围旁白对象，放在 <chat_json> JSON 数组中，建议放在第一条或最后一条。\n- 格式：{"type":"action_narration","text":"约20字，第三人称，描写${dynamicActionNarrationSubject}的外显动作、环境声或氛围，不写心理活动，不写台词"}。\n- text 只写旁白正文，不要写“旁白：”，不要超过35字。`
+            : '';
         const effectiveUserPersona = window.imApp?.getEffectivePersonaForFriend
             ? window.imApp.getEffectivePersonaForFriend(friend)
             : (currentUserState.persona || '');
@@ -1178,6 +1523,17 @@ ${pendingRegenerateContext.previousReply || 'None'}` : '';
         if (friend.type === 'group') {
             const groupMembers = window.imChat.getGroupMemberFriends(friend);
             const allowedSpeakerNames = groupMembers.map(member => member.nickname).filter(Boolean);
+            isGroupAfterUserLeft = Number(friend.leftGroupAt) > 0;
+            if (isGroupAfterUserLeft) {
+                const leftAtText = formatDetailedTime(friend.leftGroupAt);
+                const snapshot = Array.isArray(friend.leftGroupMemberSnapshot) && friend.leftGroupMemberSnapshot.length > 0
+                    ? friend.leftGroupMemberSnapshot
+                    : (window.imApp?.createGroupMemberSnapshot ? window.imApp.createGroupMemberSnapshot(friend) : []);
+                const memberSnapshotText = snapshot.length > 0
+                    ? snapshot.map(item => `${item.nickname || item.realName || item.id}(${item.id})`).join('、')
+                    : (allowedSpeakerNames.length > 0 ? allowedSpeakerNames.join('、') : 'None');
+                groupExitPrompt = `\n【当前群状态｜User 已退出】\n- ${currentUserState.name || 'User'} 已在 ${leftAtText || '刚刚'} 退出这个群聊，现在不能发言，也不会看到接下来的群聊内容。\n- 当前群成员快照：${memberSnapshotText}。\n- 接下来的回复必须表现为群成员之间继续聊天，不要对 User 说话、不要等待 User 回复、不要让 User 发送消息。\n- 已挂载的单聊记忆仍然只属于对应成员本人：某个成员可以基于自己和 User 的私聊经历自然表达态度，其他成员默认不知道这些私聊内容，除非该成员主动在群里说出。`;
+            }
             
             // 处理成员的挂载单聊记忆：先确保开启挂载的成员单聊历史已从持久化存储加载
             const groupMemorySettings = friend.memory?.mountSettings || {};
@@ -1248,8 +1604,8 @@ ${pendingRegenerateContext.previousReply || 'None'}` : '';
                 }).join('\n\n')
                 : 'None';
 
-            systemPrompt = `${systemDepthWorldBookContext ? `系统深度规则（最高优先级）：\n${systemDepthWorldBookContext}\n\n` : ''}${beforeRoleWorldBookContext ? `角色前规则：\n${beforeRoleWorldBookContext}\n\n` : ''}你正在模拟一个名为 "${friend.nickname}" 的群聊。
-你正在与 ${currentUserState.name || 'User'} 聊天，其人设为: ${effectiveUserPersona || '一个普通用户'}。
+            systemPrompt = `${systemDepthWorldBookContext ? `系统深度规则（最高优先级）：\n${systemDepthWorldBookContext}\n\n` : ''}${beforeRoleWorldBookContext ? `角色前规则：\n${beforeRoleWorldBookContext}\n\n` : ''}你正在模拟一个名为 "${friend.nickname}" 的群聊。${groupExitPrompt}
+${isGroupAfterUserLeft ? `${currentUserState.name || 'User'} 曾在这个群聊中，其人设为: ${effectiveUserPersona || '一个普通用户'}。` : `你正在与 ${currentUserState.name || 'User'} 聊天，其人设为: ${effectiveUserPersona || '一个普通用户'}。`}
 
 此群内允许发言的成员名单（除用户外）：
 ${membersInfo}
@@ -1275,7 +1631,7 @@ ${allowedSpeakerNames.length > 0 ? allowedSpeakerNames.join('、') : 'None'}${af
 12. 【心声要求】：thought 字段必须填写该发言成员此刻的真实心理活动或未说出口的话，字数严格在10-30字之间。${languageRequirement}
 
 群聊的背景与关系记忆:
-${commonMemorySections || 'None'}`;
+${commonMemorySections || 'None'}${dynamicActionNarrationRequirement}`;
 
         } else {
             const timeAware = friend.timeAware !== false;
@@ -1359,7 +1715,7 @@ Reply naturally as your character in a chat app.
 11. 你必须额外输出 1 个 <profile_panel>...</profile_panel>，用于更新角色资料卡。${languageRequirement}
 
 Character Memory:
-${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequirement}${lovesSpaceRequirement}${lovesActionRequirement}${familyCardRequirement}`;
+${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequirement}${lovesSpaceRequirement}${lovesActionRequirement}${familyCardRequirement}${dynamicActionNarrationRequirement}`;
         }
 
         const messages = [{ role: 'system', content: systemPrompt }];
@@ -1382,7 +1738,20 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                 messages.push(...formattedContextMsgs);
             }
         }
-        if (messages.length === 1) messages.push({ role: 'user', content: 'Hello' });
+        if (isGroupAfterUserLeft) {
+            messages.push({
+                role: 'system',
+                content: options.source === 'left_group_continue'
+                    ? '本次触发来自退出态底部的“AI继续”：请让群成员在 User 已退出且看不到的前提下继续群聊。'
+                    : '当前 User 已退出群聊：后续回复不要把 User 当作在线参与者。'
+            });
+        }
+        if (!messages.some(message => message.role !== 'system')) {
+            messages.push({
+                role: 'user',
+                content: isGroupAfterUserLeft ? '请继续 User 退出后的群聊。' : 'Hello'
+            });
+        }
 
         const trailingContexts = [];
         let cherishedXml = '';
@@ -1403,6 +1772,13 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
             messages.push({
                 role: 'system',
                 content: trailingContexts.join('\n\n')
+            });
+        }
+
+        if (options.extraSystemPrompt) {
+            messages.push({
+                role: 'system',
+                content: String(options.extraSystemPrompt)
             });
         }
 
@@ -1681,6 +2057,21 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                         return { kind: 'call' };
                     }
 
+                    if (itemType === 'action_narration' || itemType === 'dynamic_action' || itemType === 'action_notice') {
+                        const text = typeof item.text === 'string'
+                            ? item.text.trim()
+                            : (typeof item.description === 'string'
+                                ? item.description.trim()
+                                : (typeof item.action === 'string' ? item.action.trim() : ''));
+                        if (!text) return null;
+
+                        return {
+                            kind: 'action_narration',
+                            text: text.slice(0, 60),
+                            speaker: typeof item.speaker === 'string' ? item.speaker.trim() : ''
+                        };
+                    }
+
                     if (itemType === 'voice') {
                         const text = typeof item.text === 'string' ? item.text.trim() : '';
                         if (!text) return null;
@@ -1831,6 +2222,21 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                 }));
             }
 
+            if (dynamicActionNarrationEnabled && !queueItems.some(item => item && item.kind === 'action_narration')) {
+                const fallbackName = friend.type === 'group'
+                    ? (friend.nickname || '群聊')
+                    : (friend.nickname || friend.realName || 'TA');
+                const fallbackAction = nextProfilePanel?.action || '';
+                const fallbackLocation = nextProfilePanel?.location || '';
+                const fallbackText = friend.type === 'group'
+                    ? '群里安静片刻，消息光标轻轻闪动。'
+                    : `${fallbackName}${fallbackAction ? fallbackAction : '垂下眼'}，${fallbackLocation ? `${fallbackLocation}的` : ''}空气静了静。`;
+                queueItems.unshift({
+                    kind: 'action_narration',
+                    text: fallbackText.slice(0, 35)
+                });
+            }
+
             if (queueItems.length === 0) {
                 if(btnEl) btnEl.style.opacity = '1';
                 await flushFriendPersistence(friend.id, { silent: true });
@@ -1866,6 +2272,46 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
 
             async function processNextSentence() {
                 const currentItem = queueItems[qIndex] || {};
+
+                if (currentItem.kind === 'action_narration') {
+                    const activeFriend = getLiveFriendById(friend.id) || friend;
+                    const narrationText = typeof currentItem.text === 'string' ? currentItem.text.trim() : '';
+                    if (!narrationText) {
+                        qIndex++;
+                        return true;
+                    }
+
+                    const nowMsg = Date.now();
+                    const narrationMsg = {
+                        id: window.imChat.createMessageId('notice'),
+                        role: 'system',
+                        type: 'system_notice',
+                        noticeKind: 'narration',
+                        content: narrationText,
+                        text: narrationText,
+                        timestamp: nowMsg,
+                        apiRunId
+                    };
+
+                    const freshContainer = getSafeContainer();
+                    const isUserStillLooking = window.imData.currentActiveFriend && String(window.imData.currentActiveFriend.id) === String(activeFriend.id) && freshContainer;
+                    const appended = window.imApp.appendFriendMessage
+                        ? await window.imApp.appendFriendMessage(activeFriend.id || friend.id, narrationMsg, { silent: true })
+                        : false;
+
+                    if (!appended) {
+                        if (!options.silent && window.showToast) window.showToast('动描保存失败');
+                        if (btnEl) btnEl.style.opacity = '1';
+                        return false;
+                    }
+
+                    if (isUserStillLooking && window.imChat.renderSystemNoticeBubble) {
+                        window.imChat.renderSystemNoticeBubble(narrationMsg, activeFriend, freshContainer, nowMsg);
+                    }
+
+                    qIndex++;
+                    return true;
+                }
 
                 if (currentItem.kind === 'call') {
                     const activeFriend = getLiveFriendById(friend.id) || friend;
@@ -2296,7 +2742,7 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                     if (rollbackContainer && window.imChat.rerenderChatContainer) {
                         window.imChat.rerenderChatContainer(rollbackFriend, rollbackContainer, { scroll: true });
                     }
-                    if (window.showToast) window.showToast('AI 消息保存失败');
+                    if (!options.silent && window.showToast) window.showToast('AI 消息保存失败');
                     if (btnEl) btnEl.style.opacity = '1';
                     return false;
                 }
@@ -2346,7 +2792,7 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                 ? 'API 请求超时，请检查接口地址/网络/模型'
                 : `API 请求失败${error && error.message ? `：${error.message}` : ''}`;
 
-            if (window.showToast) window.showToast(message);
+            if (!options.silent && window.showToast) window.showToast(message);
             console.error('[iMessage API] request failed', error);
             if (btnEl) btnEl.style.opacity = '1';
         } finally {
@@ -2486,5 +2932,24 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
     window.imChat.handleAiReply = handleAiReply;
     window.imChat.regenerateLastAiReply = regenerateLastAiReply;
     window.imChat.runLinkedAccountBotNow = runLinkedAccountBotNow;
+    window.imChat.runAutonomousActivityForFriend = runAutonomousActivityForFriend;
+    window.imChat.runAutonomousMomentForFriend = runAutonomousMomentForFriend;
+    window.imChat.refreshAutonomousActivityTimers = refreshAutonomousActivityTimers;
+
+    window.addEventListener('u2:background-activity-tick', () => {
+        void checkAutonomousActivities('background-tick');
+    });
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) void checkAutonomousActivities('visibility');
+    });
+    window.addEventListener('pageshow', () => {
+        void checkAutonomousActivities('pageshow');
+    });
+    setInterval(() => {
+        void checkAutonomousActivities('interval');
+    }, 60000);
+    setTimeout(() => {
+        void checkAutonomousActivities('startup');
+    }, 3000);
 
 });

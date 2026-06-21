@@ -541,6 +541,38 @@
             });
         }
 
+        window.updateAccountById = function(id, mutatorOrPatch = {}) {
+            const acc = accounts.find(a => String(a.id) === String(id));
+            if (!acc) return false;
+
+            const previousAvatarUrl = acc.avatarUrl || null;
+
+            if (typeof mutatorOrPatch === 'function') {
+                mutatorOrPatch(acc);
+            } else if (mutatorOrPatch && typeof mutatorOrPatch === 'object') {
+                Object.assign(acc, mutatorOrPatch);
+            }
+
+            const avatarChanged = previousAvatarUrl !== (acc.avatarUrl || null);
+
+            if (String(currentAccountId) === String(acc.id)) {
+                syncUserStateFromCurrentAccount();
+            }
+
+            saveGlobalData();
+            if (window.syncUIs) window.syncUIs();
+            window.dispatchEvent(new CustomEvent('account-updated', {
+                detail: {
+                    account: clonePlainData(acc),
+                    accountId: acc.id,
+                    avatarChanged
+                }
+            }));
+            notifyUserStateUpdated({ avatarChanged });
+            renderAccountList();
+            return true;
+        };
+
         // Add New Account
         document.getElementById('add-account-btn')?.addEventListener('click', () => {
             isCreatingNewAccount = true;

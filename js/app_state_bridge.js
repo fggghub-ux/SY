@@ -103,6 +103,28 @@
         return JSON.parse(JSON.stringify(value));
     }
 
+    function stripVolatileBlobUrls(value, seen = new WeakSet()) {
+        if (typeof value === 'string') {
+            return value.startsWith('blob:') ? null : value;
+        }
+        if (value == null || typeof value !== 'object') return value;
+        if (seen.has(value)) return undefined;
+        seen.add(value);
+
+        if (Array.isArray(value)) {
+            return value
+                .map((item) => stripVolatileBlobUrls(item, seen))
+                .filter((item) => item !== undefined);
+        }
+
+        const result = {};
+        Object.keys(value).forEach((key) => {
+            const nextValue = stripVolatileBlobUrls(value[key], seen);
+            if (nextValue !== undefined) result[key] = nextValue;
+        });
+        return result;
+    }
+
     function isPlainObject(value) {
         return value && typeof value === 'object' && !Array.isArray(value);
     }
@@ -201,12 +223,12 @@
     function saveLocalAppState() {
         try {
             if (window.StorageManager && typeof window.StorageManager.save === 'function') {
-                window.StorageManager.save(APP_STATE_KEY, appState);
+                window.StorageManager.save(APP_STATE_KEY, stripVolatileBlobUrls(appState));
                 hasLocalAppState = true;
                 return;
             }
             if (window.localStorage) {
-                window.localStorage.setItem(APP_STATE_KEY, JSON.stringify(appState));
+                window.localStorage.setItem(APP_STATE_KEY, JSON.stringify(stripVolatileBlobUrls(appState)));
                 hasLocalAppState = true;
             }
         } catch (error) {
@@ -217,7 +239,7 @@
     function buildGlobalDataForSave(base = {}) {
         return {
             ...(isPlainObject(base) ? base : {}),
-            appState: normalizeAppState(appState)
+            appState: stripVolatileBlobUrls(normalizeAppState(appState))
         };
     }
 

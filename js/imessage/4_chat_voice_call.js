@@ -40,10 +40,17 @@
     }
 
     function getCallSpeakerName(message, friend = callFriend) {
-        if (!message || !message.isSelf) {
-            return friend?.nickname || friend?.realName || 'Char';
+        if (message?.senderName) {
+            return message.senderName;
         }
-        return window.userState?.name || window.userState?.realName || 'User';
+        if (message?.isSelf) {
+            return window.userState?.name || window.userState?.realName || 'User';
+        }
+        if (friend?.type === 'group' && message?.senderId) {
+            const member = (window.imData?.friends || []).find(item => String(item.id) === String(message.senderId));
+            if (member) return member.nickname || member.realName || 'Member';
+        }
+        return friend?.nickname || friend?.realName || 'Char';
     }
 
     function formatCallLineText(text) {
@@ -773,6 +780,7 @@ ${recentMessages}`;
     let groupCallTarget = null;
     let groupCallMessages = [];
     let activeGroupMembers = [];
+    let groupCallMessageSeq = 0;
 
     function startGroupTimer(statusEl, minTimeTextEl) {
         groupCallSeconds = 0;
@@ -793,98 +801,61 @@ ${recentMessages}`;
         }
     }
 
-    function addGroupCallBubble(text, senderId, messagesArea, actionText = '') {
-        if (actionText) {
-            const actionDiv = document.createElement('div');
-            actionDiv.style.textAlign = 'center';
-            actionDiv.style.fontSize = '12px';
-            actionDiv.style.color = 'rgba(255,255,255,0.6)';
-            actionDiv.style.marginBottom = '10px';
-            actionDiv.innerText = actionText;
-            if (messagesArea) {
-                messagesArea.appendChild(actionDiv);
-            }
-        }
+    function addGroupCallBubble(text, senderId, messagesArea, actionText = '', translationText = '') {
+        if (!text && !actionText) return null;
 
-        if (!text) return;
-        
-        let isSelf = (senderId === '__user__' || !senderId);
+        let isSelf = (senderId === '__user__' || senderId == null);
         let senderName = isSelf ? (window.userState?.name || 'User') : 'Member';
         let senderAvatar = '';
+        let senderFriend = null;
         
         if (!isSelf && groupCallTarget) {
             const friend = window.imData.friends.find(f => f.id === senderId);
             if (friend) {
                 senderName = friend.nickname;
                 senderAvatar = friend.avatarUrl;
+                senderFriend = friend;
             }
         }
 
-        const bubbleWrap = document.createElement('div');
-        bubbleWrap.style.display = 'flex';
-        bubbleWrap.style.flexDirection = 'column';
-        bubbleWrap.style.alignItems = isSelf ? 'flex-end' : 'flex-start';
-        bubbleWrap.style.marginBottom = '10px';
+        const turnId = `group-call-msg-${Date.now()}-${++groupCallMessageSeq}`;
+        const message = {
+            text: text,
+            actionText: actionText,
+            thoughtText: '',
+            translationText: translationText,
+            senderId: senderId == null ? '__user__' : senderId,
+            senderName: senderName,
+            senderAvatarUrl: senderAvatar || '',
+            isSelf: isSelf,
+            timestamp: Date.now(),
+            callTurnId: turnId
+        };
+        groupCallMessages.push(message);
 
-        const nameLabel = document.createElement('div');
-        nameLabel.style.fontSize = '12px';
-        nameLabel.style.color = 'rgba(255,255,255,0.6)';
-        nameLabel.style.marginBottom = '4px';
-        nameLabel.innerText = senderName;
-
-        const bubbleRow = document.createElement('div');
-        bubbleRow.style.display = 'flex';
-        bubbleRow.style.gap = '8px';
-        bubbleRow.style.alignItems = 'flex-start';
-
-        const bubble = document.createElement('div');
-        bubble.style.maxWidth = '240px';
-        bubble.style.fontSize = '14px';
-        bubble.style.lineHeight = '1.4';
-        bubble.style.wordBreak = 'break-word';
-        bubble.style.color = '#fff';
-        bubble.style.padding = '4px 0'; // 稍微留点上下间距，但不做气泡内边距
-
-        if (isSelf) {
-            bubbleRow.appendChild(bubble);
-        } else {
-            const avatarEl = document.createElement('div');
-            avatarEl.style.width = '32px';
-            avatarEl.style.height = '32px';
-            avatarEl.style.borderRadius = '50%';
-            avatarEl.style.background = '#e5e5ea';
-            avatarEl.style.overflow = 'hidden';
-            avatarEl.style.display = 'flex';
-            avatarEl.style.justifyContent = 'center';
-            avatarEl.style.alignItems = 'center';
-            avatarEl.style.color = '#8e8e93';
-            if (senderAvatar) {
-                avatarEl.innerHTML = `<img src="${senderAvatar}" style="width:100%;height:100%;object-fit:cover;">`;
-            } else {
-                avatarEl.innerHTML = `<i class="fas fa-user"></i>`;
-            }
-            
-            bubbleRow.appendChild(avatarEl);
-            bubbleRow.appendChild(bubble);
+        if (actionText && messagesArea) {
+            messagesArea.appendChild(createCallNovelLine(actionText, {
+                callTurnId: turnId,
+                callLineType: 'action'
+            }));
         }
 
-        bubble.innerText = '「 ' + text + ' 」';
-        bubbleWrap.appendChild(nameLabel);
-        bubbleWrap.appendChild(bubbleRow);
-        
+        if (text && messagesArea) {
+            messagesArea.appendChild(createCallNovelLine(formatCallLineText(text), {
+                voiceButton: isSelf ? null : createCallVoiceButton(text, message, senderFriend || groupCallTarget),
+                callTurnId: turnId,
+                callLineType: 'text',
+                speakerName: senderName,
+                isSelf: isSelf,
+                translationText: translationText
+            }));
+        }
+
         if (messagesArea) {
-            messagesArea.appendChild(bubbleWrap);
             messagesArea.scrollTop = messagesArea.scrollHeight;
         }
 
-        groupCallMessages.push({
-            text: text,
-            actionText: actionText,
-            senderId: senderId || '__user__',
-            senderName: senderName,
-            isSelf: isSelf,
-            timestamp: Date.now()
-        });
+        return message;
     }
 
     window.imChat.openGroupVoiceCall = function(group, memberIds) {
@@ -898,6 +869,7 @@ ${recentMessages}`;
         groupCallTarget = group;
         activeGroupMembers = memberIds;
         groupCallMessages = [];
+        groupCallMessageSeq = 0;
 
         // UI Elements
         const hangupBtn = newView.querySelector('#group-call-hangup-btn');
@@ -1043,7 +1015,13 @@ ${recentMessages}`;
             if (groupCallTarget && window.imApp && window.imApp.appendFriendMessage) {
                 let callTranscript = '';
                 if (finalMessages.length > 0) {
-                    callTranscript = finalMessages.map(m => `${m.senderName}: ${m.text}`).join('\n  ');
+                    callTranscript = finalMessages.map(m => {
+                        const parts = [];
+                        if (m.actionText) parts.push(`动作：${m.actionText}`);
+                        if (m.text) parts.push(`${m.senderName}: ${m.text}`);
+                        if (m.translationText) parts.push(`翻译：${m.translationText}`);
+                        return parts.join(' / ');
+                    }).filter(Boolean).join('\n  ');
                 } else {
                     callTranscript = '无对话';
                 }
@@ -1189,7 +1167,14 @@ ${recentMessages}`;
                     
                     const effectiveUserPersona = window.imApp?.getEffectivePersonaForFriend ? window.imApp.getEffectivePersonaForFriend(groupCallTarget) : (userState?.persona || '普通用户');
                     
-                    const recentMsgs = groupCallMessages.slice(-20).map(m => `${m.senderName}: ${m.text}`).join('\n');
+                    const recentMsgs = groupCallMessages.slice(-20).map(m => {
+                        const parts = [];
+                        if (m.actionText) parts.push(`动作：${m.actionText}`);
+                        if (m.text) parts.push(`发言：${m.text}`);
+                        if (m.translationText) parts.push(`翻译：${m.translationText}`);
+                        return `${m.senderName}: ${parts.join(' / ')}`;
+                    }).join('\n');
+                    const activeSpeakerNames = groupMembers.map(m => m.nickname || m.realName).filter(Boolean);
                     
                     let systemPrompt = '';
                     if (systemDepth) systemPrompt += `【系统规则 (System Depth)】\n${systemDepth}\n\n`;
@@ -1210,10 +1195,13 @@ ${recentMsgs || '无'}
 systemPrompt += `\n【!!!重要指示!!!】:
 你现在正处于真实的群聊实时语音通话中。
 【要求】:
-1. 请根据最新的语音聊天记录、成员设定（尤其是单聊挂载记忆）及群聊场景，选择 1 到 3 个最合适的群成员发言回应。
-2. 每个被选中的人说2-5简短自然的语音回复（务必口语化，像真人在打电话，不要长篇大论），并且提供相应的动作、环境或心理描写。
-3. 严禁虚构名单外的人发言。
-4. 【输出格式】：必须返回纯 JSON 数组，格式为：[{"senderName": "成员名", "action": "动作或心理描写，如：轻轻叹了口气 / 听起来很开心", "text": "发言内容"}]。`;
+1. 本轮必须让所有已接入的非 User 群成员各发言一次，不能遗漏，也不要额外添加名单外的人。
+2. 已接入成员名单：${activeSpeakerNames.length > 0 ? activeSpeakerNames.join('、') : 'None'}。
+3. 每个成员只输出 1 条简短自然的语音回复，务必口语化，像真人在打电话，不要长篇大论。
+4. action 必须是能被通话感知到的动作、环境声或语气描写，必须包含该成员名字，不要写心声、内心、心理活动。
+5. text 是该成员真正说出口的原文台词；translation 必须是 text 对应的自然中文翻译，即使 text 本身是中文也要给出中文复述，不要留空。
+6. 严禁输出 thought、inner、心声、心理活动等字段；即使想表达情绪，也只能放在 action 的外显动作或语气里。
+7. 【输出格式】：必须返回纯 JSON 数组，格式为：[{"senderName":"成员名","action":"动作/环境描写","text":"原文台词","translation":"中文翻译"}]。`;
                     let endpoint = apiConfig.endpoint;
                     if(endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
                     if(!endpoint.endsWith('/chat/completions')) {
@@ -1282,12 +1270,12 @@ systemPrompt += `\n【!!!重要指示!!!】:
 
                             if (friend) {
                                 setTimeout(() => {
-                                    addGroupCallBubble(msgObj.text || '', friend.id, messagesArea, msgObj.action || '');
+                                    addGroupCallBubble(msgObj.text || '', friend.id, messagesArea, msgObj.action || '', msgObj.translation || '');
                                 }, 500); // slight delay
                             } else {
                                 // 极端情况依然没找到，强行以纯文本显示
                                 setTimeout(() => {
-                                    addGroupCallBubble(msgObj.text || '', null, messagesArea, msgObj.action || '');
+                                    addGroupCallBubble(msgObj.text || '', null, messagesArea, msgObj.action || '', msgObj.translation || '');
                                 }, 500);
                             }
                         }

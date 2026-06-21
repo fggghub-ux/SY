@@ -10,11 +10,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function escapeHtml(value) {
         return String(value == null ? '' : value)
-            .replace(/&/g, '&')
-            .replace(/</g, '<')
-            .replace(/>/g, '>')
-            .replace(/"/g, '"')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
             .replace(/'/g, '&#039;');
+    }
+
+    function getEffectiveUserProfile(friend = null) {
+        const boundAccount = window.imApp?.getBoundAccountByFriend
+            ? window.imApp.getBoundAccountByFriend(friend)
+            : null;
+        const source = boundAccount || window.userState || userState || {};
+
+        return {
+            name: source.name || source.realName || source.nickname || 'User',
+            avatarUrl: source.avatarUrl || 'assets/moren.jpg'
+        };
     }
 
     function resolvePayTransferParties(msg = {}, friend = null) {
@@ -27,7 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const payKind = msg.payKind || (msg.role === 'user' ? 'user_to_char' : 'char_received');
-        const userName = userState?.name || userState?.realName || userState?.nickname || 'User';
+        const userName = getEffectiveUserProfile(friend).name;
         const charName = msg.speaker || msg.charName || friend?.nickname || friend?.realName || friend?.name || 'Char';
         const targetName = msg.targetName || '';
         const charToUserKinds = ['char_to_user_pending', 'char_to_user_claimed', 'user_received_from_char', 'user_rejected_from_char'];
@@ -78,8 +90,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const ampmTimeStr = date.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true });
         
         if (isUser) {
-            const userName = window.userState?.name || window.userState?.realName || 'User';
-            const userAvatar = window.userState?.avatarUrl || 'assets/moren.jpg';
+            const userProfile = getEffectiveUserProfile(friend);
+            const userName = userProfile.name;
+            const userAvatar = userProfile.avatarUrl;
             return `
                 <div class="chat-message-header user-header" style="display: flex; justify-content: flex-end; width: 100%; margin-bottom: 4px; padding-right: 0px; align-items: flex-start;">
                     <div class="chat-header-info" style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center; padding-right: 25px; margin-bottom: 0px; margin-right: -20px; padding-bottom: 0px;">
@@ -108,18 +121,137 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+async function updateNarrationNoticeMessage(friend, msg, container, nextText) {
+        const narrationText = String(nextText || '').trim();
+        if (!friend || !msg || !narrationText) return false;
+
+        const friendId = friend.id;
+        const liveFriend = (window.imData?.friends || [])
+            .find(item => String(item.id) === String(friendId)) || friend;
+        const descriptor = {
+            id: msg.id || null,
+            timestamp: msg.timestamp || null
+        };
+
+        const saved = window.imApp?.updateFriendMessage
+            ? await window.imApp.updateFriendMessage(friendId, descriptor, (targetMsg) => {
+                if (!targetMsg) return;
+                targetMsg.type = 'system_notice';
+                targetMsg.noticeKind = 'narration';
+                targetMsg.role = 'system';
+                targetMsg.content = narrationText;
+                targetMsg.text = narrationText;
+            }, { silent: true })
+            : false;
+
+        if (!saved) {
+            if (window.showToast) window.showToast('旁白保存失败');
+            return false;
+        }
+
+        const updatedFriend = (window.imData?.friends || [])
+            .find(item => String(item.id) === String(friendId)) || liveFriend;
+        if (container && window.imChat.rerenderChatContainer) {
+            window.imChat.rerenderChatContainer(updatedFriend, container, { scroll: true });
+        }
+        if (window.imChat.renderChatsList) {
+            window.imChat.renderChatsList();
+        }
+        return true;
+    }
+
+function openNarrationNoticeEditor(msg, friend, container) {
+        if (!msg || msg.noticeKind !== 'narration') return;
+        const currentText = msg.content || msg.text || '';
+
+        const resetPromptLayout = () => {
+            const inputGroup = document.getElementById('modal-input-group');
+            const textareaGroup = document.getElementById('modal-textarea-group');
+            const textarea = document.getElementById('modal-textarea');
+            if (inputGroup) inputGroup.style.display = 'block';
+            if (textareaGroup) textareaGroup.style.display = 'none';
+            if (textarea) textarea.value = '';
+        };
+
+        if (!window.showCustomModal) {
+            const nextText = window.prompt ? window.prompt('编辑旁白', currentText) : null;
+            if (nextText !== null) {
+                void updateNarrationNoticeMessage(friend, msg, container, nextText);
+            }
+            return;
+        }
+
+        window.showCustomModal({
+            type: 'prompt',
+            title: '编辑旁白',
+            placeholder: '修改旁白...',
+            confirmText: '保存',
+            defaultValue: currentText,
+            onCancel: resetPromptLayout,
+            onConfirm: async (newValue) => {
+                const textarea = document.getElementById('modal-textarea');
+                const textareaGroup = document.getElementById('modal-textarea-group');
+                const finalValue = textarea && textareaGroup && textareaGroup.style.display !== 'none'
+                    ? textarea.value
+                    : newValue;
+                if (!String(finalValue || '').trim()) {
+                    if (window.showToast) window.showToast('请输入旁白内容');
+                    resetPromptLayout();
+                    return;
+                }
+                await updateNarrationNoticeMessage(friend, msg, container, finalValue);
+                resetPromptLayout();
+            }
+        });
+
+        setTimeout(() => {
+            const inputGroup = document.getElementById('modal-input-group');
+            const textareaGroup = document.getElementById('modal-textarea-group');
+            const textarea = document.getElementById('modal-textarea');
+            if (inputGroup) inputGroup.style.display = 'none';
+            if (textareaGroup) textareaGroup.style.display = 'block';
+            if (textarea) {
+                textarea.placeholder = '修改旁白...';
+                textarea.value = currentText;
+                textarea.focus();
+            }
+        }, 10);
+    }
+
 function renderSystemNoticeBubble(msg, friend, container, timestamp = Date.now()) {
         const row = document.createElement('div');
         row.className = 'chat-system-row';
         row.setAttribute('data-timestamp', timestamp);
         row.setAttribute('data-message-id', window.imChat.ensureMessageId(msg, 'notice'));
+        const noticeKind = msg.noticeKind || '';
+        const noticeText = msg.text || msg.content || '系统提示';
+        const iconMap = {
+            group_left: { icon: 'fa-sign-out-alt', color: '#ff3b30' },
+            group_rejoined: { icon: 'fa-sign-in-alt', color: '#34c759' },
+            narration: { icon: 'fa-quote-left', color: '#5856d6' },
+            red_packet_claim: { icon: 'fa-envelope-open-text', color: '#ff9500' }
+        };
+        const iconMeta = iconMap[noticeKind] || { icon: 'fa-info-circle', color: '#8e8e93' };
+        const textAlign = noticeKind === 'narration' ? 'left' : 'center';
         row.innerHTML = `
-            <div style="width:100%; display:flex; justify-content:center; padding:2px 0;">
-                <div style="max-width:80%; padding:7px 12px; border-radius:999px; background:rgba(142,142,147,0.16); color:#8e8e93; font-size:12px; line-height:1.35; text-align:center;">
-                    ${msg.text || '系统提示'}
+            <div style="width:100%; display:flex; justify-content:center; padding:2px 0; margin:10px 0;">
+                <div class="voice-call-record-card im-card-content system-notice-card system-notice-${escapeHtml(noticeKind || 'default')}" style="max-width:80%; padding:10px 16px; border-radius:18px; background:rgba(0,0,0,0.05); color:#000; font-size:13px; line-height:1.4; text-align:${textAlign}; display:flex; align-items:flex-start; gap:8px; white-space:pre-wrap; word-break:break-word; ${noticeKind === 'narration' ? 'cursor:pointer;' : ''}">
+                    <i class="fas ${iconMeta.icon}" style="color:${iconMeta.color}; line-height:1.4; flex-shrink:0;"></i>
+                    <span>${escapeHtml(noticeText)}</span>
                 </div>
             </div>
         `;
+        if (noticeKind === 'narration') {
+            const card = row.querySelector('.system-notice-card');
+            if (card) {
+                card.title = '点击编辑旁白';
+                card.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openNarrationNoticeEditor(msg, friend, container);
+                });
+            }
+        }
         container.appendChild(row);
         window.imChat.scrollToBottom(container);
     }
@@ -172,7 +304,7 @@ function renderGroupRedPacketBubble(msg, friend, container, timestamp = Date.now
             : (msg.isFinished ? `${claimedCount}/${packetCount} 已领取` : '点击领取红包');
 
         const contentHtml = `
-            <div class="group-red-packet-card" style="width:100%; min-width:0; max-width:268px; border-radius:18px; padding:12px 14px; background:#fff; color:#111;  border:1px solid rgba(0,0,0,0.08); cursor:pointer;">
+            <div class="group-red-packet-card im-card-content" style="width:100%; min-width:0; max-width:268px; border-radius:18px; padding:12px 14px; background:#fff; color:#111;  border:1px solid rgba(0,0,0,0.08); cursor:pointer;">
                 <div style="display:flex; align-items:center; gap:12px;">
                     <div style="width:40px; height:40px; border-radius:14px; background:#111; color:#fff; display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0;">
                         <i class="fas fa-gift"></i>
@@ -202,7 +334,7 @@ function renderGroupRedPacketBubble(msg, friend, container, timestamp = Date.now
                 <div style="flex: 1; display: flex; flex-direction: column; min-width: 0;">
                     ${headerHtml}
                     <div style="display: flex; justify-content: flex-end; align-items: flex-end; width: 100%;">
-                        <div class="chat-bubble user-bubble pay-transfer-bubble group-red-packet-bubble" style="padding:6px;">${contentHtml}${metaHtml}</div>
+                        <div class="chat-bubble user-bubble im-card-bubble pay-transfer-bubble group-red-packet-bubble" style="padding:6px;">${contentHtml}${metaHtml}</div>
                     </div>
                 </div>
             `;
@@ -221,12 +353,12 @@ function renderGroupRedPacketBubble(msg, friend, container, timestamp = Date.now
                         ${sameSpeaker ? '' : `<div class="group-ai-speaker-name">${speakerName}</div>`}
                         <div class="group-ai-bubble-row">
                             <div class="group-ai-avatar-slot">${sameSpeaker ? '<div class="group-ai-avatar-placeholder"></div>' : avatarImg}</div>
-                            <div class="chat-bubble ai-bubble pay-transfer-bubble group-red-packet-bubble" style="padding:6px;">${contentHtml}${metaHtml}</div>
+                            <div class="chat-bubble ai-bubble im-card-bubble pay-transfer-bubble group-red-packet-bubble" style="padding:6px;">${contentHtml}${metaHtml}</div>
                         </div>
                     </div>
                 `;
             } else {
-                bubbleWrapperHtml = `<div class="chat-bubble ai-bubble pay-transfer-bubble group-red-packet-bubble" style="padding:6px;">${contentHtml}${metaHtml}</div>`;
+                bubbleWrapperHtml = `<div class="chat-bubble ai-bubble im-card-bubble pay-transfer-bubble group-red-packet-bubble" style="padding:6px;">${contentHtml}${metaHtml}</div>`;
             }
 
             row.innerHTML = `
@@ -835,7 +967,7 @@ function renderImageBubble(msg, friend, container, timestamp = Date.now()) {
         })();
 
         const metaHtml = "";
-        const bubbleHtml = `<div class="chat-bubble ${isUser ? 'user-bubble' : 'ai-bubble'}" style="padding: 0; background: transparent; ">${contentHtml}${metaHtml}</div>`;
+        const bubbleHtml = `<div class="chat-bubble ${isUser ? 'user-bubble' : 'ai-bubble'} im-card-bubble image-message-bubble" style="padding: 0; background: transparent; ">${contentHtml}${metaHtml}</div>`;
         let bubbleWrapperHtml = bubbleHtml;
 
             if (isGroupMessage) {
@@ -875,7 +1007,7 @@ function renderImageBubble(msg, friend, container, timestamp = Date.now()) {
                 event.preventDefault();
                 event.stopPropagation();
                 const senderName = isUser
-                    ? (window.userState?.name || '我')
+                    ? getEffectiveUserProfile(friend).name
                     : (speakerName || friend?.nickname || friend?.realName || 'Char');
                 openChatImageDetail(msg, friend, timestamp, senderName);
             });
@@ -946,8 +1078,8 @@ function renderPayTransferBubble(msg, friend, container, timestamp = Date.now())
                 <div class="chat-checkbox-wrapper" style="display: ${window.imData.batchSelectMode ? 'flex' : 'none'}; width: 40px; justify-content: center; align-items: flex-end; padding-bottom: 10px; flex-shrink: 0; cursor: pointer; transition: all 0.2s;">
                     <i class="far fa-circle chat-checkbox" data-timestamp="${timestamp}" style="color: #c7c7cc; font-size: 22px;"></i>
                 </div>
-                <div style="width:100%; display:flex; justify-content:center; padding:10px 0;">
-                    <div style="width:280px; background:#fff; border-radius:12px; padding:16px;  display:flex; flex-direction:column; align-items:center;">
+                    <div style="width:100%; display:flex; justify-content:center; padding:10px 0;">
+                    <div class="im-card-content pay-receipt-card" style="width:280px; background:#fff; border-radius:12px; padding:16px;  display:flex; flex-direction:column; align-items:center;">
                         <div style="font-size:14px; color:#111; margin-bottom:8px;">${description}</div>
                         <div style="font-size:28px; font-weight:bold; color:#111; margin-bottom:12px;">${sign}¥${amount.toFixed(2)}</div>
                           <div style="background:#f2f2f7; border-radius:16px; padding:4px 12px; font-size:12px; color:#8e8e93; margin-bottom:16px;">
@@ -962,7 +1094,7 @@ function renderPayTransferBubble(msg, friend, container, timestamp = Date.now())
             `;
         } else {
             const contentHtml = `
-                <div class="pay-transfer-card${extraClass}">
+                <div class="pay-transfer-card im-card-content${extraClass}">
                     <div class="pay-transfer-card-top">
                         <div class="pay-transfer-card-icon"><i class="fas fa-wallet"></i></div>
                         <div class="pay-transfer-card-meta">
@@ -984,7 +1116,7 @@ function renderPayTransferBubble(msg, friend, container, timestamp = Date.now())
                     <div style="flex: 1; display: flex; flex-direction: column; min-width: 0;">
                         ${headerHtml}
                         <div style="display: flex; justify-content: flex-end; align-items: flex-end; width: 100%;">
-                            <div class="chat-bubble user-bubble pay-transfer-bubble">${contentHtml}${metaHtml}</div>
+                            <div class="chat-bubble user-bubble im-card-bubble pay-transfer-bubble">${contentHtml}${metaHtml}</div>
                         </div>
                     </div>
                 `;
@@ -997,7 +1129,7 @@ function renderPayTransferBubble(msg, friend, container, timestamp = Date.now())
                     <div style="flex: 1; display: flex; flex-direction: column; min-width: 0;">
                         ${headerHtml}
                         <div style="display: flex; justify-content: flex-start; align-items: flex-end; width: 100%;">
-                            <div class="chat-bubble ai-bubble pay-transfer-bubble">${contentHtml}${metaHtml}</div>
+                            <div class="chat-bubble ai-bubble im-card-bubble pay-transfer-bubble">${contentHtml}${metaHtml}</div>
                         </div>
                     </div>
                 `;
@@ -1076,7 +1208,7 @@ function renderMomentForwardBubble(msg, friend, container, timestamp = Date.now(
         row.setAttribute('data-message-id', window.imChat.ensureMessageId(msg, 'moment'));
         
         const contentHtml = `
-            <div class="moment-forward-bubble" style="cursor: pointer; background: #fff; border-radius: 16px; padding: 12px;  border: 1px solid rgba(0,0,0,0.04); display: flex; align-items: center; gap: 12px; width: 220px; text-align: left; margin: 4px 0;">
+            <div class="moment-forward-bubble im-card-content" style="cursor: pointer; background: #fff; border-radius: 16px; padding: 12px;  border: 1px solid rgba(0,0,0,0.04); display: flex; align-items: center; gap: 12px; width: 220px; text-align: left; margin: 4px 0;">
                 <div style="width: 44px; height: 44px; border-radius: 12px; background: #1c1c1e; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #fff; font-size: 20px;">
                     <i class="far fa-images"></i>
                 </div>
@@ -1204,7 +1336,7 @@ function renderVoiceMessageBubble(msg, friend, container, timestamp = Date.now()
             ${metaHtml}
         `;
 
-        const bubbleHtml = `<div class="chat-bubble ${isUser ? 'user-bubble' : 'ai-bubble'} voice-message-bubble">${contentHtml}</div>`;
+        const bubbleHtml = `<div class="chat-bubble ${isUser ? 'user-bubble' : 'ai-bubble'} im-card-bubble voice-message-bubble">${contentHtml}</div>`;
         let bubbleWrapperHtml = bubbleHtml;
         if (isGroupMessage) {
             const avatarInitial = String(speakerName).trim().charAt(0) || '?';
@@ -1415,7 +1547,7 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
                 <div style="flex: 1; display: flex; flex-direction: column; min-width: 0;">
                     ${headerHtml}
                     <div style="display: flex; justify-content: flex-end; align-items: flex-end; width: 100%;">
-                        <div class="chat-bubble html-bubble" style="position: relative; background: transparent; padding: 0;">
+                        <div class="chat-bubble html-bubble im-card-bubble" style="position: relative; background: transparent; padding: 0;">
                             ${contentHtml}
                             <div style="position: absolute; bottom: 8px; right: -30px;">${metaHtml}</div>
                         </div>
@@ -1431,7 +1563,7 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
                 <div style="flex: 1; display: flex; flex-direction: column; min-width: 0;">
                     ${headerHtml}
                     <div style="display: flex; justify-content: flex-start; align-items: flex-end; width: 100%;">
-                        <div class="chat-bubble html-bubble" style="position: relative; background: transparent; padding: 0;">
+                        <div class="chat-bubble html-bubble im-card-bubble" style="position: relative; background: transparent; padding: 0;">
                             ${contentHtml}
                             <div style="position: absolute; bottom: 8px; right: -25px;">${metaHtml}</div>
                         </div>
@@ -1456,7 +1588,7 @@ function renderVoiceCallRecordBubble(msg, friend, container, timestamp = Date.no
             row.setAttribute('data-message-id', window.imChat.ensureMessageId(msg, 'notice'));
             row.innerHTML = `
                 <div style="width:100%; display:flex; justify-content:center; padding:2px 0; margin: 10px 0; cursor: pointer;">
-                    <div class="voice-call-record-card" style="max-width:80%; padding:10px 16px; border-radius:18px; background:rgba(0,0,0,0.05); color:#000; font-size:13px; line-height:1.4; text-align:center; display: flex; align-items: center; gap: 8px;">
+                    <div class="voice-call-record-card im-card-content" style="max-width:80%; padding:10px 16px; border-radius:18px; background:rgba(0,0,0,0.05); color:#000; font-size:13px; line-height:1.4; text-align:center; display: flex; align-items: center; gap: 8px;">
                         <i class="fas fa-phone-alt" style="color: #34c759;"></i>
                         <span>${msg.statusText || '群通话记录'}</span>
                     </div>
@@ -1499,7 +1631,7 @@ function renderVoiceCallRecordBubble(msg, friend, container, timestamp = Date.no
         }
 
         const contentHtml = `
-            <div class="voice-call-record-card" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: ${isUser ? '#e5e5ea' : '#f2f2f7'}; border-radius: 18px; cursor: pointer; color: #111;">
+            <div class="voice-call-record-card im-card-content" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: ${isUser ? '#e5e5ea' : '#f2f2f7'}; border-radius: 18px; cursor: pointer; color: #111;">
                 <div style="width: 32px; height: 32px; border-radius: 16px; background: ${statusText === '已拒绝' || statusText === '已取消' ? '#ff3b30' : '#34c759'}; color: #fff; display: flex; justify-content: center; align-items: center; flex-shrink: 0;">
                     <i class="fas fa-phone-alt"></i>
                 </div>
@@ -1527,7 +1659,7 @@ function renderVoiceCallRecordBubble(msg, friend, container, timestamp = Date.no
                 <div style="flex: 1; display: flex; flex-direction: column; min-width: 0;">
                     ${headerHtml}
                     <div style="display: flex; justify-content: flex-end; align-items: flex-end; width: 100%;">
-                        <div class="chat-bubble user-bubble" style="padding: 0; background: transparent;">${contentHtml}${metaHtml}</div>
+                        <div class="chat-bubble user-bubble im-card-bubble voice-call-record-bubble" style="padding: 0; background: transparent;">${contentHtml}${metaHtml}</div>
                     </div>
                 </div>
             `;
@@ -1537,7 +1669,7 @@ function renderVoiceCallRecordBubble(msg, friend, container, timestamp = Date.no
                 <div style="flex: 1; display: flex; flex-direction: column; min-width: 0;">
                     ${headerHtml}
                     <div style="display: flex; justify-content: flex-start; align-items: flex-end; width: 100%;">
-                        <div class="chat-bubble ai-bubble" style="padding: 0; background: transparent;">${contentHtml}${metaHtml}</div>
+                        <div class="chat-bubble ai-bubble im-card-bubble voice-call-record-bubble" style="padding: 0; background: transparent;">${contentHtml}${metaHtml}</div>
                     </div>
                 </div>
             `;

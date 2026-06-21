@@ -68,6 +68,7 @@
     function sanitizePersistentValue(value, seen = new WeakSet()) {
         if (value == null) return value;
         if (typeof value === 'function' || typeof value === 'symbol') return undefined;
+        if (typeof value === 'string' && isBlobUrl(value)) return null;
         if (typeof value !== 'object') return value;
         if (isDomNode(value)) return undefined;
         if (value instanceof Date) return value.toISOString();
@@ -121,7 +122,7 @@
     }
 
     function setLocalStorageJson(key, value) {
-        setLocalStorageRaw(key, JSON.stringify(value));
+        setLocalStorageRaw(key, JSON.stringify(sanitizePersistentValue(value)));
     }
 
     function collectManagedLocalStorageSnapshot() {
@@ -169,7 +170,16 @@
 
         rows.forEach((row) => {
             if (!row || !isManagedLocalStorageKey(row.key)) return;
-            setLocalStorageRaw(row.key, row.value);
+            const rawValue = String(row.value ?? '');
+            let restoredValue = rawValue;
+
+            try {
+                restoredValue = JSON.stringify(sanitizePersistentValue(JSON.parse(rawValue)));
+            } catch (error) {
+                restoredValue = isBlobUrl(rawValue) ? '' : rawValue;
+            }
+
+            setLocalStorageRaw(row.key, restoredValue);
             restored += 1;
         });
 
@@ -633,7 +643,7 @@
     }
 
     async function setSetting(key, value) {
-        return putRecord(STORES.settings, { key, value: cloneDeep(value) });
+        return putRecord(STORES.settings, { key, value: sanitizePersistentValue(cloneDeep(value)) });
     }
 
     async function saveAssetFromDataUrl(assetId, dataUrl, extra = {}) {
@@ -698,6 +708,7 @@
             order: resolvedOrder,
             role: safe.role || 'assistant',
             type: safe.type || 'text',
+            noticeKind: typeof safe.noticeKind === 'string' ? safe.noticeKind : '',
             content: typeof safe.content === 'string' ? safe.content : '',
             text: typeof safe.text === 'string' ? safe.text : '',
             transcript: typeof safe.transcript === 'string' ? safe.transcript : '',
@@ -754,6 +765,7 @@
             id: row.id,
             role: row.role,
             type: row.type,
+            noticeKind: row.noticeKind || '',
             content: row.content,
             text: row.text,
             transcript: row.transcript,
@@ -918,6 +930,16 @@
                 previewText = `[转账] ${lastMessage.description || ''}`.trim();
             } else if (lastMessage.type === 'group_red_packet') {
                 previewText = `[群红包] ${lastMessage.description || ''}`.trim();
+            } else if (lastMessage.type === 'system_notice') {
+                if (lastMessage.noticeKind === 'group_left') {
+                    previewText = '你已退出群聊';
+                } else if (lastMessage.noticeKind === 'group_rejoined') {
+                    previewText = '你重新进入群聊';
+                } else if (lastMessage.noticeKind === 'narration') {
+                    previewText = `[旁白] ${lastMessage.content || lastMessage.text || ''}`.trim();
+                } else {
+                    previewText = lastMessage.content || lastMessage.text || '';
+                }
             } else {
                 previewText = lastMessage.content || lastMessage.text || '';
             }

@@ -6,10 +6,6 @@
     display: flex;
     flex-direction: column;
     padding-top: 0; /* Reset default padding to handle custom header */
-    height: 100%;
-    min-height: 0;
-    overflow: hidden;
-    overscroll-behavior: contain;
 }
 
 /* 1. Header (Top Bar) */
@@ -135,16 +131,13 @@
 
 /* Main Content Area */
 .yt-main-content {
-    flex: 1 1 auto;
-    min-height: 0;
+    flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
     position: relative;
-    padding-bottom: 18px;
+    padding-bottom: calc(90px + var(--safe-bottom)); /* Space for bottom nav */
     padding-top: max(60px, calc(44px + var(--safe-top))); /* Make room for floating header */
     -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain;
-    overflow-anchor: none;
 }
 
 .yt-tab-content {
@@ -456,22 +449,19 @@
 
 /* 6. Floating Bottom Navigation (Glassmorphism) */
 .yt-bottom-nav-container {
-    position: relative;
-    left: auto;
-    right: auto;
-    bottom: auto;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(18px + var(--safe-bottom));
     display: flex;
     justify-content: center;
     z-index: 200;
     background: transparent;
-    padding: 0 18px max(18px, calc(12px + var(--safe-bottom)));
+    padding: 0 18px;
     box-sizing: border-box;
     height: auto !important;
     pointer-events: none;
-    flex: 0 0 auto;
-    transform: none !important;
-    transition: none;
-    overflow-anchor: none;
+    transition: bottom 0.25s ease;
 }
 
 .yt-bottom-nav {
@@ -816,7 +806,7 @@
 }
 
 /* Light Theme Chat Area */
-#yt-video-player-view .yt-player-chat-shell {
+#yt-video-player-view > div:last-child {
     background-color: #f9f9f9 !important; /* Chat background */
 }
 
@@ -883,7 +873,7 @@
     width: 100%;
     aspect-ratio: auto !important;
     margin-top: 0 !important;
-    min-height: 0;
+    min-height: 40%;
 }
 
 
@@ -901,11 +891,12 @@
 }
 
 #yt-video-player-view.yt-char-live-mode .yt-player-chat-shell {
-    flex: 1 1 auto !important;
-    min-height: 0;
+    height: 60%;
+    min-height: 360px;
+    flex: 0 0 auto !important;
     background: #ffffff !important;
     border-radius: 22px 22px 0 0;
-    margin-top: 0;
+    margin-top: -14px;
     position: relative;
     z-index: 6;
     overflow: hidden !important;
@@ -913,10 +904,10 @@
 
 
 #yt-user-live-view .yt-user-live-chat-shell {
-    flex: 1 1 auto;
-    min-height: 0;
+    height: 60%;
+    min-height: 360px;
+    flex: 0 0 auto;
     overflow: hidden;
-    margin-top: 0 !important;
 }
 
 
@@ -1286,22 +1277,18 @@
 /* --- Community Detail View --- */
 .yt-community-detail-view {
     position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    min-height: 0;
+    top: 0;
+    left: 0;
     background-color: var(--screen-bg, #ffffff);
     z-index: 300; /* Higher than sub-channel-view */
-    display: none;
+    display: flex;
     flex-direction: column;
-    overflow: hidden;
-    transform: none;
-    transition: none;
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 .yt-community-detail-view.active {
-    display: flex;
-    transform: none;
+    transform: translateY(0);
 }
 
 .yt-community-detail-header {
@@ -1347,22 +1334,18 @@
 /* --- Bubble Chat View (Fan Group - Ins Style) --- */
 .yt-bubble-chat-view {
     position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    min-height: 0;
+    top: 0;
+    left: 0;
     background-color: var(--screen-bg, #ffffff); /* White background for Ins style */
     z-index: 300;
-    display: none;
+    display: flex;
     flex-direction: column;
-    overflow: hidden;
-    transform: none;
-    transition: none;
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 .yt-bubble-chat-view.active {
-    display: flex;
-    transform: none;
+    transform: translateY(0);
 }
 
 .yt-bubble-chat-header {
@@ -1694,176 +1677,53 @@
     padding: 0 16px 20px;
 }
 
-/* YouTube chat interface: app-internal pages with keyboard-safe outer scroll locking. */
 #yt-video-player-view,
 #yt-user-live-view,
 #yt-community-detail-view,
 #yt-bubble-chat-view {
-    display: none;
-    position: absolute;
-    inset: 0 !important;
+    inset: 0;
+    height: 100%;
     width: 100%;
-    height: 100% !important;
-    min-height: 0;
-    padding: 0 !important;
-    overflow: hidden;
-    flex-direction: column;
-    overflow-anchor: none;
-    transform: none !important;
-    transition: none !important;
-}
-
-#yt-video-player-view.yt-chat-portal-view,
-#yt-user-live-view.yt-chat-portal-view,
-#yt-community-detail-view.yt-chat-portal-view,
-#yt-bubble-chat-view.yt-chat-portal-view {
-    position: absolute !important;
-    inset: 0 !important;
-    z-index: 950 !important;
-    height: 100% !important;
-    min-height: 0 !important;
-    max-height: none !important;
-    overflow: hidden !important;
-    padding: 0 !important;
-    transform: none !important;
-    transition: none !important;
-    background-clip: padding-box;
-}
-
-#yt-video-player-view.yt-chat-interface,
-#yt-user-live-view.yt-chat-interface,
-#yt-community-detail-view.yt-chat-interface,
-#yt-bubble-chat-view.yt-chat-interface {
-    display: none;
-}
-
-#yt-video-player-view.active,
-#yt-user-live-view.active,
-#yt-community-detail-view.active,
-#yt-bubble-chat-view.active {
-    display: flex !important;
-    flex-direction: column;
-    transform: none !important;
+    padding-top: 0;
+    padding-bottom: 0;
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 #yt-video-player-view .yt-player-chat-shell,
-#yt-user-live-view .yt-user-live-chat-shell {
-    display: flex !important;
-    flex-direction: column;
-    flex: 1 1 auto;
+#yt-user-live-view .yt-user-live-chat-shell,
+#yt-community-detail-view,
+#yt-bubble-chat-view {
     min-height: 0;
     overflow: hidden;
-}
-
-#yt-video-player-view.yt-chat-portal-view #yt-player-video-area {
-    flex: 0 1 auto;
-    min-height: 0;
-    max-height: 42%;
-    margin-top: max(52px, calc(44px + env(safe-area-inset-top, 0px))) !important;
-}
-
-#yt-video-player-view.yt-chat-portal-view.yt-char-live-mode #yt-player-video-area,
-#yt-user-live-view.yt-chat-portal-view #yt-user-live-video-area {
-    flex: 1 1 40%;
-    min-height: 0;
-    max-height: 50%;
-}
-
-#yt-video-player-view.yt-chat-portal-view .yt-player-meta-panel {
-    flex: 0 0 auto;
-}
-
-#yt-video-player-view.yt-chat-portal-view .yt-player-chat-shell,
-#yt-user-live-view.yt-chat-portal-view .yt-user-live-chat-shell {
-    flex: 1 1 auto !important;
-    min-height: 0 !important;
-    margin-top: 0 !important;
 }
 
 #yt-video-player-view #yt-player-chat-container,
 #yt-user-live-view #yt-user-live-chat-container,
 #yt-community-detail-view .yt-community-detail-content,
-#yt-bubble-chat-view .yt-bubble-chat-container,
-#yt-video-player-view .yt-chat-messages,
-#yt-user-live-view .yt-chat-messages,
-#yt-community-detail-view .yt-chat-messages,
-#yt-bubble-chat-view .yt-chat-messages {
-    flex: 1 1 auto;
+#yt-bubble-chat-view .yt-bubble-chat-container {
     min-height: 0;
-    overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
-    overflow-anchor: none;
 }
 
-#yt-video-player-view .yt-chat-composer,
-#yt-user-live-view .yt-chat-composer,
-#yt-community-detail-view .yt-chat-composer,
-#yt-bubble-chat-view .yt-chat-composer {
-    position: relative !important;
+#yt-video-player-view .ins-chat-input-container,
+#yt-user-live-view .ins-chat-input-container,
+#yt-community-detail-view .ins-chat-input-container,
+#yt-bubble-chat-view .ins-chat-input-container {
     flex: 0 0 auto;
-    width: 100%;
-    box-sizing: border-box;
-    padding: 10px 16px max(12px, env(safe-area-inset-bottom, 0px)) !important;
+    padding: 10px 16px max(12px, env(safe-area-inset-bottom, 0px));
     background: #ffffff;
-    overflow-anchor: none;
-    transform: none !important;
-    transition: background-color 0.2s ease;
-}
-
-#yt-video-player-view.keyboard-open,
-#yt-user-live-view.keyboard-open,
-#yt-community-detail-view.keyboard-open,
-#yt-bubble-chat-view.keyboard-open,
-#yt-video-player-view.yt-chat-keyboard-lock,
-#yt-user-live-view.yt-chat-keyboard-lock,
-#yt-community-detail-view.yt-chat-keyboard-lock,
-#yt-bubble-chat-view.yt-chat-keyboard-lock {
     transform: none !important;
 }
 
-.yt-form-sheet-portal {
-    position: fixed !important;
-    inset: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
-    min-height: 0 !important;
-    overflow: hidden !important;
-    display: flex !important;
-    flex-direction: column !important;
-    justify-content: flex-end !important;
+#yt-video-player-view.keyboard-open .ins-chat-input-container,
+#yt-user-live-view.keyboard-open .ins-chat-input-container,
+#yt-community-detail-view.keyboard-open .ins-chat-input-container,
+#yt-bubble-chat-view.keyboard-open .ins-chat-input-container,
+#yt-video-player-view.yt-chat-keyboard-lock .ins-chat-input-container,
+#yt-user-live-view.yt-chat-keyboard-lock .ins-chat-input-container,
+#yt-community-detail-view.yt-chat-keyboard-lock .ins-chat-input-container,
+#yt-bubble-chat-view.yt-chat-keyboard-lock .ins-chat-input-container {
+    padding: 10px 16px max(12px, env(safe-area-inset-bottom, 0px));
     transform: none !important;
-    overscroll-behavior: contain;
-    overflow-anchor: none;
-}
-
-.yt-form-sheet-portal .yt-form-sheet-panel {
-    display: flex !important;
-    flex-direction: column !important;
-    min-height: 0 !important;
-    max-height: 85% !important;
-    overflow: hidden !important;
-    flex: 0 1 auto;
-    transform: translateY(100%);
-    overflow-anchor: none;
-}
-
-.yt-form-sheet-portal.active .yt-form-sheet-panel {
-    transform: translateY(0);
-}
-
-.yt-form-sheet-portal .detail-sheet-content,
-.yt-form-sheet-portal .sheet-content {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain;
-    overflow-anchor: none;
-}
-
-#youtube-view,
-#youtube-view .yt-main-content,
-#youtube-view .yt-bottom-nav-container {
-    overflow-anchor: none;
 }

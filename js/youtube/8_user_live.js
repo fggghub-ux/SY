@@ -66,8 +66,7 @@
     if (startLiveOptionBtn && userLiveSetupSheet) {
         startLiveOptionBtn.addEventListener('click', () => {
             if(ytCreateSheet) ytCreateSheet.classList.remove('active');
-            if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(userLiveSetupSheet);
-            else userLiveSetupSheet.classList.add('active');
+            userLiveSetupSheet.classList.add('active');
         });
         userLiveSetupSheet.addEventListener('mousedown', (e) => {
             if(e.target === userLiveSetupSheet) userLiveSetupSheet.classList.remove('active');
@@ -98,7 +97,6 @@
                 window.openYtUserLiveView();
                 return;
             }
-            if (typeof window.prepareYtChatPortalView === 'function') window.prepareYtChatPortalView(userLiveView);
             userLiveView.classList.add('active');
         });
     }
@@ -120,8 +118,7 @@
                     document.getElementById('yt-summary-subs').textContent = '+' + userLiveNewSubs;
                     document.getElementById('yt-summary-sc').textContent = '￥' + userLiveTotalSC;
                     
-                    if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(userLiveSummarySheet);
-                    else if(userLiveSummarySheet) userLiveSummarySheet.classList.add('active');
+                    if(userLiveSummarySheet) userLiveSummarySheet.classList.add('active');
                 }
             });
         });
@@ -227,8 +224,7 @@
             dataCenterBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 window.renderDataCenter();
-                if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(dataCenterSheet);
-                else dataCenterSheet.classList.add('active');
+                dataCenterSheet.classList.add('active');
             });
         }
     }, 500);
@@ -406,7 +402,6 @@
         if (typeof window.releaseYtChatKeyboardLock === 'function') window.releaseYtChatKeyboardLock(userLiveView);
         const playerView = document.getElementById('yt-video-player-view');
         if (playerView) playerView.classList.remove('active', 'yt-char-live-mode');
-        if (typeof window.prepareYtChatPortalView === 'function') window.prepareYtChatPortalView(userLiveView);
         if (userLiveView) userLiveView.classList.add('active');
     };
 
@@ -446,16 +441,12 @@
 
     if (userLiveChatInput) {
         userLiveChatInput.addEventListener('focus', () => {
-            if (typeof window.stabilizeYtChatFocus === 'function') {
-                window.stabilizeYtChatFocus(userLiveView, userLiveChatInput, userLiveChatContainer);
-            } else {
-                if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(userLiveView, true);
-                if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(userLiveChatContainer, 80);
-            }
+            if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(userLiveView, true);
+            else if (userLiveView) userLiveView.classList.add('keyboard-open');
         });
         userLiveChatInput.addEventListener('blur', () => {
             if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(userLiveView, false);
-            else if (userLiveView) userLiveView.classList.remove('keyboard-open', 'yt-chat-keyboard-lock');
+            else if (userLiveView) userLiveView.classList.remove('keyboard-open');
         });
     }
 

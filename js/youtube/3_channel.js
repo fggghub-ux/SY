@@ -198,7 +198,6 @@
                     if (typeof window.openYtUserLiveView === 'function') window.openYtUserLiveView();
                     else {
                         const userLiveView = document.getElementById('yt-user-live-view');
-                        if (typeof window.prepareYtChatPortalView === 'function') window.prepareYtChatPortalView(userLiveView);
                         if (userLiveView) userLiveView.classList.add('active');
                     }
                 });
@@ -481,8 +480,7 @@
                 if(ytCharBannerImg) { ytCharBannerImg.src = ''; ytCharBannerImg.style.display = 'none'; }
             }
             
-            if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(addYtCharSheet);
-            else addYtCharSheet.classList.add('active');
+            addYtCharSheet.classList.add('active');
         }
     }
 
@@ -500,8 +498,7 @@
             updateYtBoundWorldBookLabel();
         }
         const ytSettingsSheet = document.getElementById('yt-settings-sheet');
-        if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(ytSettingsSheet);
-        else if (ytSettingsSheet) ytSettingsSheet.classList.add('active');
+        if (ytSettingsSheet) ytSettingsSheet.classList.add('active');
     };
 
     if (mainSearchBtn) mainSearchBtn.addEventListener('click', openCreateSheetHandler);

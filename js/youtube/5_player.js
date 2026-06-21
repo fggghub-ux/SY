@@ -94,8 +94,7 @@
                     ytEditVideoGuestName.textContent = selectedSub ? selectedSub.name : '无';
                 }
             });
-            if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(ytGuestPickerSheet);
-            else ytGuestPickerSheet.classList.add('active');
+            ytGuestPickerSheet.classList.add('active');
         });
     }
     
@@ -107,8 +106,7 @@
                     ytUserLiveGuestName.textContent = selectedSub ? selectedSub.name : '无';
                 }
             });
-            if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(ytGuestPickerSheet);
-            else ytGuestPickerSheet.classList.add('active');
+            ytGuestPickerSheet.classList.add('active');
         });
     }
 
@@ -130,8 +128,7 @@
                         ytEditVideoGuestName.textContent = tempGuestData ? tempGuestData.name : '无';
                     }
 
-                    if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(ytEditVideoSheet);
-                    else ytEditVideoSheet.classList.add('active');
+                    ytEditVideoSheet.classList.add('active');
                 }
             }
         });
@@ -514,8 +511,7 @@
             }, 10);
         }
         
-        if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(sheet);
-        else sheet.classList.add('active');
+        sheet.classList.add('active');
     }
 
     function openVideoPlayer(video) {
@@ -620,7 +616,6 @@
                 }
             }
 
-            if (typeof window.prepareYtChatPortalView === 'function') window.prepareYtChatPortalView(playerView);
             playerView.classList.add('active');
         } catch (e) {
             console.error("Error opening video player:", e);
@@ -1201,16 +1196,12 @@
 
     if (chatInput) {
         chatInput.addEventListener('focus', () => {
-            if (typeof window.stabilizeYtChatFocus === 'function') {
-                window.stabilizeYtChatFocus(playerView, chatInput, ytPlayerChatContainer);
-            } else {
-                if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(playerView, true);
-                if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(ytPlayerChatContainer, 80);
-            }
+            if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(playerView, true);
+            else if (playerView) playerView.classList.add('keyboard-open');
         });
         chatInput.addEventListener('blur', () => {
             if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(playerView, false);
-            else if (playerView) playerView.classList.remove('keyboard-open', 'yt-chat-keyboard-lock');
+            else if (playerView) playerView.classList.remove('keyboard-open');
         });
     }
 
@@ -1234,7 +1225,6 @@
             const effectiveYtUser = getCurrentYtViewer();
             addChatMessage(effectiveYtUser.name || '我', text, isLive);
             chatInput.value = '';
-            if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(ytPlayerChatContainer);
             
             if (!currentVideoData) return;
             
@@ -1254,8 +1244,7 @@
                     loadingDiv.style.fontSize = '12px';
                     loadingDiv.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> 回复生成中...';
                     chatContainer.appendChild(loadingDiv);
-                    if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(chatContainer);
-                    else chatContainer.scrollTop = chatContainer.scrollHeight;
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
                 }
                 
                 const responseObj = await getVODResponse(text);

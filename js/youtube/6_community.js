@@ -44,16 +44,12 @@
 
     if (postChatInput) {
         postChatInput.addEventListener('focus', () => {
-            if (typeof window.stabilizeYtChatFocus === 'function') {
-                window.stabilizeYtChatFocus(communityDetailView, postChatInput, communityDetailContent);
-            } else {
-                if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(communityDetailView, true);
-                if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(communityDetailContent, 80);
-            }
+            if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(communityDetailView, true);
+            else if (communityDetailView) communityDetailView.classList.add('keyboard-open');
         });
         postChatInput.addEventListener('blur', () => {
             if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(communityDetailView, false);
-            else if (communityDetailView) communityDetailView.classList.remove('keyboard-open', 'yt-chat-keyboard-lock');
+            else if (communityDetailView) communityDetailView.classList.remove('keyboard-open');
         });
     }
 
@@ -90,7 +86,6 @@
         }
 
         renderPostComments();
-        if (typeof window.prepareYtChatPortalView === 'function') window.prepareYtChatPortalView(communityDetailView);
         communityDetailView.classList.add('active');
     }
 
@@ -166,7 +161,6 @@
 
         // Re-render
         renderPostComments();
-        if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(communityDetailContent);
     }
 
     if (postChatSend && postChatInput) {
@@ -191,7 +185,6 @@
                 loadingDiv.style.fontSize = '12px';
                 loadingDiv.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> 回复生成中...';
                 container.appendChild(loadingDiv);
-                if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(communityDetailContent);
             }
 
             try {
@@ -261,16 +254,12 @@
 
     if (groupChatInput) {
         groupChatInput.addEventListener('focus', () => {
-            if (typeof window.stabilizeYtChatFocus === 'function') {
-                window.stabilizeYtChatFocus(groupChatView, groupChatInput, groupChatContainer);
-            } else {
-                if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(groupChatView, true);
-                if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(groupChatContainer, 80);
-            }
+            if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(groupChatView, true);
+            else if (groupChatView) groupChatView.classList.add('keyboard-open');
         });
         groupChatInput.addEventListener('blur', () => {
             if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(groupChatView, false);
-            else if (groupChatView) groupChatView.classList.remove('keyboard-open', 'yt-chat-keyboard-lock');
+            else if (groupChatView) groupChatView.classList.remove('keyboard-open');
         });
     }
 
@@ -291,7 +280,6 @@
 
         saveYoutubeData();
         addGroupChatMessageToUI(userMsg);
-        if (typeof window.scrollYtChatToBottom === 'function') window.scrollYtChatToBottom(groupChatContainer);
         if (groupChatInput) groupChatInput.value = '';
         return true;
     }
@@ -510,8 +498,7 @@
                         dmDeleteFriendBtn.style.display = 'none';
                     }
                 }
-                if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(dmSettingsSheet);
-                else if (dmSettingsSheet) dmSettingsSheet.classList.add('active');
+                if (dmSettingsSheet) dmSettingsSheet.classList.add('active');
             } else {
                 // Group Settings
                 if (!currentSubChannelData.generatedContent || !currentSubChannelData.generatedContent.fanGroup) return;
@@ -537,8 +524,7 @@
                 if(ownerName) ownerName.textContent = currentSubChannelData.name;
                 if(ownerAvatar) ownerAvatar.src = typeof resolveYtChannelAvatar === 'function' ? resolveYtChannelAvatar(currentSubChannelData) : currentSubChannelData.avatar;
                 
-                if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(groupSettingsSheet);
-                else if (groupSettingsSheet) groupSettingsSheet.classList.add('active');
+                if (groupSettingsSheet) groupSettingsSheet.classList.add('active');
             }
         });
     }
@@ -621,7 +607,6 @@
         }
 
         renderGroupChatHistory(false);
-        if (typeof window.prepareYtChatPortalView === 'function') window.prepareYtChatPortalView(groupChatView);
         groupChatView.classList.add('active');
         
         setTimeout(() => {
@@ -637,7 +622,6 @@
         }
 
         renderGroupChatHistory(true);
-        if (typeof window.prepareYtChatPortalView === 'function') window.prepareYtChatPortalView(groupChatView);
         groupChatView.classList.add('active');
         
         setTimeout(() => {
@@ -785,8 +769,7 @@
             }, 0);
         }
 
-        if (typeof window.openYtFormSheet === 'function') window.openYtFormSheet(sheet);
-        else sheet.classList.add('active');
+        sheet.classList.add('active');
     }
 
     function processOfferCompletion(msg, sub, actionType) {

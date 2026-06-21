@@ -208,6 +208,18 @@ function createAttachmentSheet(page) {
                                 </div>
                                 <div class="attachment-more-offline-label">线下</div>
                             </div>
+                            <div class="attachment-more-narration-entry">
+                                <div class="attachment-more-narration-icon">
+                                    <i class="fas fa-quote-left"></i>
+                                </div>
+                                <div class="attachment-more-narration-label">旁白</div>
+                            </div>
+                            <div class="attachment-more-dynamic-action-entry">
+                                <div class="attachment-more-dynamic-action-icon">
+                                    <i class="fas fa-running"></i>
+                                </div>
+                                <div class="attachment-more-dynamic-action-label">动描</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -219,6 +231,8 @@ function createAttachmentSheet(page) {
 
                         .attachment-more-pay-entry,
                         .attachment-more-voice-entry,
+                        .attachment-more-narration-entry,
+                        .attachment-more-dynamic-action-entry,
                         .attachment-more-offline-entry {
                             cursor: pointer;
                             transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.2s;
@@ -229,6 +243,8 @@ function createAttachmentSheet(page) {
                         }
                         .attachment-more-pay-entry:active,
                         .attachment-more-voice-entry:active,
+                        .attachment-more-narration-entry:active,
+                        .attachment-more-dynamic-action-entry:active,
                         .attachment-more-offline-entry:active {
                             transform: scale(0.85);
                             opacity: 0.7;
@@ -415,6 +431,20 @@ function createAttachmentSheet(page) {
                     </div>
                 </div>
             </div>
+            <div class="narration-form-overlay" style="position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,0.18); z-index: 22; padding: 20px;">
+                <div class="narration-form-card" style="width: 100%; max-width: 348px; border-radius: 30px; background: rgba(255,255,255,0.98); padding: 18px 16px 16px; box-sizing: border-box;">
+                    <div style="display:flex; align-items:center; justify-content:center; gap:8px; font-size:18px; font-weight:800; color:#111; text-align:center; margin-bottom:12px;">
+                        <i class="fas fa-quote-left" style="color:#5856d6;"></i>
+                        <span>旁白</span>
+                    </div>
+                    <textarea class="narration-message-input" placeholder="输入旁白，例如：窗外雨声慢慢停了" style="width:100%; min-height:120px; max-height:200px; resize:none; border:none; outline:none; border-radius:20px; background:#f7f7fa; padding:13px 14px; box-sizing:border-box; font-size:15px; line-height:1.45; color:#111; font-family:inherit;"></textarea>
+                    <div style="font-size:12px; color:#8e8e93; line-height:1.45; margin:10px 2px 0;">会作为居中事件进入聊天上下文，不会自动触发 AI。</div>
+                    <div class="narration-form-actions" style="display:flex; gap:8px; margin-top:16px;">
+                        <div class="narration-cancel-btn" style="flex:1; height:44px; border-radius:16px; background:#f2f2f7; color:#666; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:700; cursor:pointer;">取消</div>
+                        <div class="narration-submit-btn" style="flex:1; height:44px; border-radius:16px; background:#111; color:#fff; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:800; cursor:pointer;">发送</div>
+                    </div>
+                </div>
+            </div>
         `;
         page.appendChild(attachmentSheet);
 
@@ -426,6 +456,9 @@ function createAttachmentSheet(page) {
         const payEntry = attachmentSheet.querySelector('.attachment-more-pay-entry');
         const regenerateEntry = attachmentSheet.querySelector('.attachment-more-regenerate-entry');
         const voiceEntry = attachmentSheet.querySelector('.attachment-more-voice-entry');
+        const narrationEntry = attachmentSheet.querySelector('.attachment-more-narration-entry');
+        const dynamicActionEntry = attachmentSheet.querySelector('.attachment-more-dynamic-action-entry');
+        const dynamicActionLabel = attachmentSheet.querySelector('.attachment-more-dynamic-action-label');
         const offlineEntry = attachmentSheet.querySelector('.attachment-more-offline-entry');
         const offlineLabel = attachmentSheet.querySelector('.attachment-more-offline-label');
         const payFormOverlay = attachmentSheet.querySelector('.pay-transfer-form-overlay');
@@ -433,6 +466,10 @@ function createAttachmentSheet(page) {
         const voiceTranscriptInput = attachmentSheet.querySelector('.voice-message-transcript-input');
         const voiceCancelBtn = attachmentSheet.querySelector('.voice-message-cancel-btn');
         const voiceSubmitBtn = attachmentSheet.querySelector('.voice-message-submit-btn');
+        const narrationFormOverlay = attachmentSheet.querySelector('.narration-form-overlay');
+        const narrationInput = attachmentSheet.querySelector('.narration-message-input');
+        const narrationCancelBtn = attachmentSheet.querySelector('.narration-cancel-btn');
+        const narrationSubmitBtn = attachmentSheet.querySelector('.narration-submit-btn');
         const stickersList = attachmentSheet.querySelector('.sheet-stickers-list');
         const stickerCategoryTabs = attachmentSheet.querySelector('.sheet-sticker-category-tabs');
         const payAmountInput = attachmentSheet.querySelector('.pay-transfer-amount-input');
@@ -914,6 +951,39 @@ function createAttachmentSheet(page) {
             if (offlineEntry) offlineEntry.classList.toggle('active', isOffline);
         };
 
+        const syncDynamicActionEntry = () => {
+            const activeFriend = window.imData.currentActiveFriend;
+            const isEnabled = !!activeFriend?.dynamicActionNarrationEnabled;
+            if (dynamicActionLabel) dynamicActionLabel.textContent = isEnabled ? '关闭' : '动描';
+            if (dynamicActionEntry) dynamicActionEntry.classList.toggle('active', isEnabled);
+        };
+
+        const toggleDynamicActionNarration = async () => {
+            const activeFriend = window.imData.currentActiveFriend;
+            if (!activeFriend) {
+                if (window.showToast) window.showToast('当前聊天不存在');
+                return;
+            }
+
+            const nextEnabled = !activeFriend.dynamicActionNarrationEnabled;
+            const saved = await commitSheetFriendChange(activeFriend.id, (targetFriend) => {
+                if (!targetFriend) return;
+                targetFriend.dynamicActionNarrationEnabled = nextEnabled;
+            }, {
+                silent: true,
+                metaOnly: true
+            });
+
+            if (!saved) {
+                if (window.showToast) window.showToast('动描设置保存失败');
+                return;
+            }
+
+            activeFriend.dynamicActionNarrationEnabled = nextEnabled;
+            syncDynamicActionEntry();
+            if (window.showToast) window.showToast(nextEnabled ? '动描已开启' : '动描已关闭');
+        };
+
         window.addEventListener('u2:stickers-binding-changed', () => {
             if (attachmentSheet.style.display === 'flex') {
                 const activeTab = attachmentSheet.querySelector('.sheet-tab-item.active');
@@ -993,7 +1063,10 @@ function createAttachmentSheet(page) {
 
                 // 3. Switch View Panels
                 const targetTab = item.getAttribute('data-tab');
-                if (targetTab === 'more') syncOfflineMeetEntry();
+                if (targetTab === 'more') {
+                    syncOfflineMeetEntry();
+                    syncDynamicActionEntry();
+                }
                 sheetViews.forEach(view => {
                     if (view.classList.contains(`view-${targetTab}`)) {
                         if (targetTab === 'gallery') {
@@ -1154,6 +1227,12 @@ function createAttachmentSheet(page) {
             if (voiceTranscriptInput) voiceTranscriptInput.value = '';
         };
 
+        const closeNarrationForm = () => {
+            if (!narrationFormOverlay) return;
+            narrationFormOverlay.style.display = 'none';
+            if (narrationInput) narrationInput.value = '';
+        };
+
         const renderPayMethodSelection = (requiredAmount, callback) => {
             const sheet = document.getElementById('pay-method-selection-sheet');
             const listEl = document.getElementById('pay-method-selection-list');
@@ -1258,6 +1337,19 @@ function createAttachmentSheet(page) {
             if (voiceTranscriptInput) {
                 voiceTranscriptInput.value = '';
                 setTimeout(() => voiceTranscriptInput.focus(), 30);
+            }
+        };
+
+        const openNarrationForm = () => {
+            if (!narrationFormOverlay) return;
+
+            if (content) content.style.transform = 'translateY(100%)';
+            if (overlay) overlay.style.opacity = '0';
+
+            narrationFormOverlay.style.display = 'flex';
+            if (narrationInput) {
+                narrationInput.value = '';
+                setTimeout(() => narrationInput.focus(), 30);
             }
         };
 
@@ -1985,6 +2077,7 @@ function createAttachmentSheet(page) {
             closeLinkedAccountModal();
             closePayTransferForm();
             closeVoiceMessageForm();
+            closeNarrationForm();
             overlay.style.opacity = '0';
             content.style.transform = 'translateY(100%)';
             setTimeout(() => {
@@ -2002,6 +2095,64 @@ function createAttachmentSheet(page) {
             closeVoiceMessageForm();
             closeSheet();
             await window.imChat.sendVoiceMessage(transcript);
+        };
+
+        const submitNarrationMessage = async () => {
+            const narrationText = String(narrationInput ? narrationInput.value : '').trim();
+            if (!narrationText) {
+                if (window.showToast) window.showToast('请输入旁白内容');
+                return;
+            }
+
+            const activeFriend = window.imData.currentActiveFriend;
+            if (!activeFriend) {
+                if (window.showToast) window.showToast('当前聊天不存在');
+                return;
+            }
+
+            if (activeFriend.type === 'group' && Number(activeFriend.leftGroupAt) > 0) {
+                if (window.showToast) window.showToast('已退出该群，不能添加旁白');
+                return;
+            }
+
+            const activePage = document.getElementById(`chat-interface-${activeFriend.id}`);
+            const activeContainer = activePage ? activePage.querySelector('.ins-chat-messages') : null;
+            const now = Date.now();
+            const narrationMsg = {
+                id: window.imChat.createMessageId ? window.imChat.createMessageId('notice') : `notice-${now}`,
+                role: 'system',
+                type: 'system_notice',
+                noticeKind: 'narration',
+                content: narrationText,
+                text: narrationText,
+                timestamp: now
+            };
+
+            const saved = window.imApp.appendFriendMessage
+                ? await window.imApp.appendFriendMessage(activeFriend.id, narrationMsg, { silent: true })
+                : await commitSheetFriendChange(activeFriend, (targetFriend) => {
+                    if (!targetFriend.messages) targetFriend.messages = [];
+                    targetFriend.messages.push(narrationMsg);
+                }, { silent: true });
+
+            if (!saved) {
+                if (window.showToast) window.showToast('旁白保存失败');
+                return;
+            }
+
+            closeNarrationForm();
+            closeSheet();
+
+            const latestFriend = (window.imData.friends || [])
+                .find(item => String(item.id) === String(activeFriend.id)) || activeFriend;
+            if (activeContainer) {
+                const appended = window.imChat.appendMessageToContainer
+                    ? window.imChat.appendMessageToContainer(latestFriend, activeContainer, narrationMsg, { scroll: true })
+                    : false;
+                if (!appended && window.imChat.rerenderChatContainer) {
+                    window.imChat.rerenderChatContainer(latestFriend, activeContainer, { scroll: true });
+                }
+            }
         };
 
         const submitPayTransfer = async () => {
@@ -2194,6 +2345,18 @@ function createAttachmentSheet(page) {
             });
         }
 
+        if (narrationEntry) {
+            narrationEntry.addEventListener('click', () => {
+                openNarrationForm();
+            });
+        }
+
+        if (dynamicActionEntry) {
+            dynamicActionEntry.addEventListener('click', async () => {
+                await toggleDynamicActionNarration();
+            });
+        }
+
         if (regenerateEntry) {
             regenerateEntry.addEventListener('click', async () => {
                 if (regenerateEntry.dataset.busy === 'true') return;
@@ -2273,6 +2436,14 @@ function createAttachmentSheet(page) {
             });
         }
 
+        if (narrationFormOverlay) {
+            narrationFormOverlay.addEventListener('click', (e) => {
+                if (e.target === narrationFormOverlay) {
+                    closeSheet();
+                }
+            });
+        }
+
         if (voiceCancelBtn) {
             voiceCancelBtn.addEventListener('click', () => {
                 closeSheet();
@@ -2282,6 +2453,18 @@ function createAttachmentSheet(page) {
         if (voiceSubmitBtn) {
             voiceSubmitBtn.addEventListener('click', async () => {
                 await submitVoiceMessage();
+            });
+        }
+
+        if (narrationCancelBtn) {
+            narrationCancelBtn.addEventListener('click', () => {
+                closeSheet();
+            });
+        }
+
+        if (narrationSubmitBtn) {
+            narrationSubmitBtn.addEventListener('click', async () => {
+                await submitNarrationMessage();
             });
         }
 
@@ -2316,6 +2499,16 @@ function createAttachmentSheet(page) {
                 if ((e.ctrlKey || e.metaKey) && (e.key === 'Enter' || e.keyCode === 13)) {
                     e.preventDefault();
                     submitVoiceMessage();
+                }
+            });
+        }
+
+        if (narrationInput) {
+            narrationInput.addEventListener('keydown', (e) => {
+                if (e.isComposing || e.keyCode === 229) return;
+                if ((e.ctrlKey || e.metaKey) && (e.key === 'Enter' || e.keyCode === 13)) {
+                    e.preventDefault();
+                    submitNarrationMessage();
                 }
             });
         }
@@ -2604,9 +2797,14 @@ function openAttachmentSheet() {
         if (!sheet) return;
         const entry = sheet.querySelector('.attachment-more-offline-entry');
         const label = sheet.querySelector('.attachment-more-offline-label');
+        const dynamicEntry = sheet.querySelector('.attachment-more-dynamic-action-entry');
+        const dynamicLabel = sheet.querySelector('.attachment-more-dynamic-action-label');
         const isOffline = !!window.imData.currentActiveFriend?.offlineMeetEnabled;
+        const isDynamicActionEnabled = !!window.imData.currentActiveFriend?.dynamicActionNarrationEnabled;
         if (label) label.textContent = isOffline ? '退出线下' : '线下';
         if (entry) entry.classList.toggle('active', isOffline);
+        if (dynamicLabel) dynamicLabel.textContent = isDynamicActionEnabled ? '关闭' : '动描';
+        if (dynamicEntry) dynamicEntry.classList.toggle('active', isDynamicActionEnabled);
     };
     window.imChat.identifyChatImage = identifyChatImage;
     window.imChat.sendImageMessage = sendImageMessage;

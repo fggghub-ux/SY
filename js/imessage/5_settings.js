@@ -22,9 +22,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const bindAccountList = document.getElementById('bind-account-list');
     const bindAccountEmpty = document.getElementById('bind-account-empty');
     const confirmBindAccountBtn = document.getElementById('confirm-bind-account-btn');
+    const bindAccountDetailSheet = document.getElementById('bind-account-detail-sheet');
+    const bindAccountDetailSelect = document.getElementById('bind-account-detail-select');
+    const bindAccountDetailEmpty = document.getElementById('bind-account-detail-empty');
+    const bindAccountDetailForm = document.getElementById('bind-account-detail-form');
+    const bindAccountDetailAvatarBtn = document.getElementById('bind-account-detail-avatar-btn');
+    const bindAccountDetailAvatarUpload = document.getElementById('bind-account-detail-avatar-upload');
+    const bindAccountDetailAvatarImg = document.getElementById('bind-account-detail-avatar-img');
+    const bindAccountDetailAvatarIcon = document.getElementById('bind-account-detail-avatar-icon');
+    const bindAccountDetailNameInput = document.getElementById('bind-account-detail-name-input');
+    const bindAccountDetailPhoneInput = document.getElementById('bind-account-detail-phone-input');
+    const bindAccountDetailSignatureInput = document.getElementById('bind-account-detail-signature-input');
+    const bindAccountDetailPersonaInput = document.getElementById('bind-account-detail-persona-input');
+    const bindAccountDetailSaveBtn = document.getElementById('bind-account-detail-save-btn');
     
     let tempSelectedBookIds = [];
     let tempSelectedAccountId = null;
+    let bindAccountDetailAvatarUrl = null;
     
     const editCharPersonaSheet = document.getElementById('edit-char-persona-sheet');
     const relationshipSheet = document.getElementById('relationship-sheet');
@@ -596,19 +610,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!chatBindIdLabel) return;
         const boundAccount = getBoundAccountByFriend(friend);
         chatBindIdLabel.textContent = boundAccount ? (boundAccount.name || '已绑定') : '';
-        
-        const chatBindIdSelect = document.getElementById('chat-bind-id-select');
-        if (chatBindIdSelect) {
-            const accounts = getAvailableAccounts();
-            chatBindIdSelect.innerHTML = '<option value="none">不绑定</option>';
-            accounts.forEach(acc => {
-                const opt = document.createElement('option');
-                opt.value = acc.id;
-                opt.textContent = acc.name || '未命名ID';
-                chatBindIdSelect.appendChild(opt);
-            });
-            chatBindIdSelect.value = friend && friend.boundAccountId ? friend.boundAccountId : 'none';
-        }
     }
 
     function renderBindAccountList(friend) {
@@ -676,6 +677,126 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             bindAccountList.appendChild(item);
+        });
+    }
+
+    function setBindAccountDetailAvatar(url) {
+        bindAccountDetailAvatarUrl = url || null;
+
+        if (bindAccountDetailAvatarImg) {
+            bindAccountDetailAvatarImg.src = bindAccountDetailAvatarUrl || '';
+            bindAccountDetailAvatarImg.style.display = bindAccountDetailAvatarUrl ? 'block' : 'none';
+        }
+
+        if (bindAccountDetailAvatarIcon) {
+            bindAccountDetailAvatarIcon.style.display = bindAccountDetailAvatarUrl ? 'none' : 'block';
+        }
+    }
+
+    function getAccountById(accountId) {
+        if (!accountId || accountId === 'none') return null;
+        return getAvailableAccounts().find(acc => String(acc.id) === String(accountId)) || null;
+    }
+
+    function renderBindAccountDetailSelect(friend) {
+        if (!bindAccountDetailSelect) return;
+
+        const accounts = getAvailableAccounts();
+        bindAccountDetailSelect.innerHTML = '<option value="none">不绑定</option>';
+
+        accounts.forEach(acc => {
+            const option = document.createElement('option');
+            option.value = acc.id;
+            option.textContent = acc.name || '未命名ID';
+            bindAccountDetailSelect.appendChild(option);
+        });
+
+        const selectedAccount = getBoundAccountByFriend(friend);
+        bindAccountDetailSelect.value = selectedAccount ? String(selectedAccount.id) : 'none';
+    }
+
+    function renderBindAccountDetailForm(friend) {
+        const selectedAccountId = bindAccountDetailSelect ? bindAccountDetailSelect.value : (friend?.boundAccountId || 'none');
+        const account = getAccountById(selectedAccountId);
+        const hasAccounts = getAvailableAccounts().length > 0;
+
+        if (!account) {
+            if (bindAccountDetailForm) bindAccountDetailForm.style.display = 'none';
+            if (bindAccountDetailEmpty) {
+                bindAccountDetailEmpty.style.display = 'block';
+                bindAccountDetailEmpty.textContent = hasAccounts
+                    ? '当前未绑定 ID，选择一个 ID 后可快捷编辑资料'
+                    : '暂无可用 ID，请先在系统设置的 Apple ID 中创建账号';
+            }
+            if (bindAccountDetailSaveBtn) bindAccountDetailSaveBtn.style.display = 'none';
+            setBindAccountDetailAvatar(null);
+            return;
+        }
+
+        if (bindAccountDetailEmpty) bindAccountDetailEmpty.style.display = 'none';
+        if (bindAccountDetailForm) bindAccountDetailForm.style.display = 'block';
+        if (bindAccountDetailSaveBtn) bindAccountDetailSaveBtn.style.display = 'flex';
+
+        if (bindAccountDetailNameInput) bindAccountDetailNameInput.value = account.name || '';
+        if (bindAccountDetailPhoneInput) bindAccountDetailPhoneInput.value = account.phone || '';
+        if (bindAccountDetailSignatureInput) bindAccountDetailSignatureInput.value = account.signature || '';
+        if (bindAccountDetailPersonaInput) bindAccountDetailPersonaInput.value = account.persona || '';
+        setBindAccountDetailAvatar(account.avatarUrl || null);
+    }
+
+    function openBindAccountDetailSheet(friend) {
+        if (!friend || !bindAccountDetailSheet) return;
+
+        renderBindAccountDetailSelect(friend);
+        renderBindAccountDetailForm(friend);
+        openView(bindAccountDetailSheet);
+    }
+
+    async function saveBindAccountSelection(nextBoundAccountId) {
+        const friend = window.imData.currentSettingsFriend;
+        if (!friend) return false;
+
+        const normalizedAccountId = nextBoundAccountId && nextBoundAccountId !== 'none'
+            ? nextBoundAccountId
+            : null;
+        const saved = await commitSettingsFriendChange((targetFriend) => {
+            targetFriend.boundAccountId = normalizedAccountId;
+        }, { silent: true });
+
+        if (!saved) {
+            showToast('角色绑定ID保存失败');
+            return false;
+        }
+
+        updateChatBindIdLabel(window.imData.currentSettingsFriend);
+        if (window.updateBindRoleEntryPoints) window.updateBindRoleEntryPoints();
+        refreshChatPageForFriend(window.imData.currentSettingsFriend);
+        return true;
+    }
+
+    function refreshChatPageForFriend(friendOrId) {
+        const friend = window.imApp.getFriendById
+            ? window.imApp.getFriendById(friendOrId)
+            : friendOrId;
+        if (!friend) return false;
+
+        const page = document.getElementById(`chat-interface-${friend.id}`);
+        if (!page) return false;
+
+        const msgContainer = page.querySelector('.ins-chat-messages');
+        if (msgContainer && window.imChat?.rerenderChatContainer) {
+            window.imChat.rerenderChatContainer(friend, msgContainer, { scroll: false });
+            return true;
+        }
+
+        return false;
+    }
+
+    function refreshChatPagesBoundToAccount(accountId) {
+        if (!accountId) return;
+
+        getFriendsBoundToAccount(accountId).forEach(friend => {
+            refreshChatPageForFriend(friend);
         });
     }
 
@@ -1450,6 +1571,109 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    if (bindAccountDetailSheet) {
+        bindAccountDetailSheet.addEventListener('click', (e) => {
+            if (e.target === bindAccountDetailSheet) {
+                closeView(bindAccountDetailSheet);
+            }
+        });
+    }
+
+    if (chatBindIdBtn) {
+        chatBindIdBtn.addEventListener('click', () => {
+            if (!window.imData.currentSettingsFriend) return;
+            openBindAccountDetailSheet(window.imData.currentSettingsFriend);
+        });
+    }
+
+    if (bindAccountDetailSelect) {
+        bindAccountDetailSelect.addEventListener('change', async (e) => {
+            const previousValue = window.imData.currentSettingsFriend?.boundAccountId || 'none';
+            const nextValue = e.target.value || 'none';
+            const saved = await saveBindAccountSelection(nextValue);
+
+            if (!saved) {
+                e.target.value = previousValue || 'none';
+                renderBindAccountDetailForm(window.imData.currentSettingsFriend);
+                return;
+            }
+
+            renderBindAccountDetailForm(window.imData.currentSettingsFriend);
+            showToast(nextValue !== 'none' ? '角色绑定ID已更新' : '已取消绑定ID');
+        });
+    }
+
+    if (bindAccountDetailAvatarBtn && bindAccountDetailAvatarUpload) {
+        bindAccountDetailAvatarBtn.addEventListener('click', () => {
+            if (bindAccountDetailSelect && bindAccountDetailSelect.value !== 'none') {
+                bindAccountDetailAvatarUpload.click();
+            }
+        });
+
+        bindAccountDetailAvatarUpload.addEventListener('change', async (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+
+            try {
+                if (typeof window.readImageAsCompressedDataUrl !== 'function') {
+                    showToast('头像上传组件不可用');
+                    return;
+                }
+
+                const url = await window.readImageAsCompressedDataUrl(file, {
+                    maxWidth: 256,
+                    maxHeight: 256,
+                    quality: 0.72
+                });
+                setBindAccountDetailAvatar(url);
+            } catch (error) {
+                console.error('Failed to process bound account avatar', error);
+                showToast('头像处理失败');
+            } finally {
+                e.target.value = '';
+            }
+        });
+    }
+
+    if (bindAccountDetailSaveBtn) {
+        bindAccountDetailSaveBtn.addEventListener('click', () => {
+            const accountId = bindAccountDetailSelect ? bindAccountDetailSelect.value : 'none';
+            if (!accountId || accountId === 'none') {
+                showToast('请先选择要绑定的 ID');
+                return;
+            }
+
+            if (typeof window.updateAccountById !== 'function') {
+                showToast('账号保存组件不可用');
+                return;
+            }
+
+            const saved = window.updateAccountById(accountId, {
+                name: (bindAccountDetailNameInput?.value || '').trim() || '未命名ID',
+                phone: (bindAccountDetailPhoneInput?.value || '').trim(),
+                signature: (bindAccountDetailSignatureInput?.value || '').trim(),
+                persona: (bindAccountDetailPersonaInput?.value || '').trim(),
+                avatarUrl: bindAccountDetailAvatarUrl || null
+            });
+
+            if (!saved) {
+                showToast('ID资料保存失败');
+                return;
+            }
+
+            updateChatBindIdLabel(window.imData.currentSettingsFriend);
+            renderBindAccountDetailSelect(window.imData.currentSettingsFriend);
+            if (bindAccountDetailSelect) bindAccountDetailSelect.value = String(accountId);
+            renderBindAccountDetailForm(window.imData.currentSettingsFriend);
+            if (window.updateBindRoleEntryPoints) window.updateBindRoleEntryPoints();
+            if (window.imApp.renderFriendsList) window.imApp.renderFriendsList();
+            if (window.imApp.renderChatsList) window.imApp.renderChatsList();
+            if (window.imApp.updateChatsView) window.imApp.updateChatsView();
+            refreshChatPagesBoundToAccount(accountId);
+            showToast('ID资料已同步');
+        });
+    }
+
 
     if (worldBookBtn) {
         worldBookBtn.addEventListener('click', () => {
@@ -1478,28 +1702,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (window.renderWorldBooks) window.renderWorldBooks();
                 showToast('世界书绑定已更新');
             });
-        });
-    }
-
-    const chatBindIdSelect = document.getElementById('chat-bind-id-select');
-    if (chatBindIdSelect) {
-        chatBindIdSelect.addEventListener('change', async (e) => {
-            const friend = window.imData.currentSettingsFriend;
-            if (!friend) return;
-            
-            const nextBoundAccountId = e.target.value === 'none' ? null : e.target.value;
-            const saved = await commitSettingsFriendChange((targetFriend) => {
-                targetFriend.boundAccountId = nextBoundAccountId;
-            }, { silent: true });
-
-            if (!saved) {
-                showToast('角色绑定ID保存失败');
-                return;
-            }
-
-            updateChatBindIdLabel(friend);
-            if (window.updateBindRoleEntryPoints) window.updateBindRoleEntryPoints();
-            showToast(friend.boundAccountId ? '角色绑定ID已更新' : '已取消绑定ID');
         });
     }
 
@@ -2204,6 +2406,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 limit: friend.memory?.summary?.limit || 80,
                 prompt: friend.memory?.summary?.prompt || ''
             },
+            autonomous: window.imApp.normalizeAutonomousActivity
+                ? window.imApp.normalizeAutonomousActivity(friend.memory?.autonomous)
+                : { enabled: false, minIntervalMinutes: 30, maxIntervalMinutes: 240, nextRunAt: 0, lastRunAt: 0 },
             longTerm: friend.memory?.longTerm || '',
             shortTermEntries: Array.isArray(friend.memory?.shortTermEntries) ? friend.memory.shortTermEntries : [],
             cherished: chatMemoryCherishedInput ? chatMemoryCherishedInput.value : (friend.memory?.cherished || ''),
@@ -2222,7 +2427,13 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         const saved = await commitNamedFriendChange(friend, (targetFriend) => {
-            targetFriend.memory = nextMemory;
+            const preservedAutonomous = window.imApp.normalizeAutonomousActivity
+                ? window.imApp.normalizeAutonomousActivity(targetFriend.memory?.autonomous || nextMemory.autonomous)
+                : nextMemory.autonomous;
+            targetFriend.memory = {
+                ...nextMemory,
+                autonomous: preservedAutonomous
+            };
         }, commitOptions);
 
         if (!saved) {
@@ -2290,6 +2501,168 @@ document.addEventListener('DOMContentLoaded', () => {
     const manualSummaryConfirm = document.getElementById('chat-memory-summary-confirm');
     const manualSummaryCountInput = document.getElementById('chat-memory-summary-count-input');
     const manualSummaryUnsummarizedCount = document.getElementById('chat-memory-unsummarized-count');
+    const autonomousBtn = document.getElementById('chat-memory-autonomous-btn');
+    const autonomousSheet = document.getElementById('chat-memory-autonomous-sheet');
+    const autonomousClose = document.getElementById('chat-memory-autonomous-close-btn');
+    const autonomousSaveBtn = document.getElementById('chat-memory-autonomous-save-btn');
+    const autonomousToggle = document.getElementById('chat-memory-autonomous-enabled-toggle');
+    const autonomousStatus = document.getElementById('chat-memory-autonomous-status');
+    const autonomousNextLabel = document.getElementById('chat-memory-autonomous-next-label');
+    const autonomousReplyMinInput = document.getElementById('chat-memory-autonomous-reply-min-input');
+    const autonomousReplyMaxInput = document.getElementById('chat-memory-autonomous-reply-max-input');
+    const autonomousMomentToggle = document.getElementById('chat-memory-autonomous-moment-toggle');
+    const autonomousMomentMinInput = document.getElementById('chat-memory-autonomous-moment-min-input');
+    const autonomousMomentMaxInput = document.getElementById('chat-memory-autonomous-moment-max-input');
+    const autonomousMomentNextLabel = document.getElementById('chat-memory-autonomous-moment-next-label');
+
+    function setAutonomousCardExpanded(toggleEl, expanded) {
+        const card = toggleEl?.closest?.('.chat-memory-autonomous-card');
+        if (card) card.classList.toggle('is-enabled', !!expanded);
+    }
+
+    function normalizeAutonomousActivity(activity) {
+        return window.imApp.normalizeAutonomousActivity
+            ? window.imApp.normalizeAutonomousActivity(activity)
+            : {
+                reply: normalizeAutonomousTask(activity?.reply || activity),
+                moment: normalizeAutonomousTask(activity?.moment)
+            };
+    }
+
+    function normalizeAutonomousTask(task) {
+        return window.imApp.normalizeAutonomousTask
+            ? window.imApp.normalizeAutonomousTask(task)
+            : {
+                enabled: !!task?.enabled,
+                minIntervalMinutes: Math.max(1, Math.round(Number(task?.minIntervalMinutes) || 30)),
+                maxIntervalMinutes: Math.max(
+                    Math.max(1, Math.round(Number(task?.minIntervalMinutes) || 30)),
+                    Math.round(Number(task?.maxIntervalMinutes) || 240)
+                ),
+                nextRunAt: Math.max(0, Number(task?.nextRunAt) || 0),
+                lastRunAt: Math.max(0, Number(task?.lastRunAt) || 0)
+            };
+    }
+
+    function getRandomAutonomousDelay(task) {
+        const normalized = normalizeAutonomousTask(task);
+        const min = Math.max(1, Number(normalized.minIntervalMinutes) || 30);
+        const max = Math.max(min, Number(normalized.maxIntervalMinutes) || 240);
+        const minutes = min + Math.floor(Math.random() * (max - min + 1));
+        return minutes * 60 * 1000;
+    }
+
+    function formatAutonomousNextTime(timestamp) {
+        const value = Number(timestamp) || 0;
+        if (value <= 0) return '等待下次随机触发';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '等待下次随机触发';
+        return `下次约 ${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    }
+
+    function getAutonomousIntervalValues(minInput, maxInput, fallbackTask) {
+        const fallback = normalizeAutonomousTask(fallbackTask);
+        const minValue = Math.max(1, Math.round(Number(minInput?.value) || fallback.minIntervalMinutes || 30));
+        const maxValue = Math.max(minValue, Math.round(Number(maxInput?.value) || fallback.maxIntervalMinutes || 240));
+        return { minIntervalMinutes: minValue, maxIntervalMinutes: maxValue };
+    }
+
+    function setAutonomousIntervalInputs(task, minInput, maxInput) {
+        const normalized = normalizeAutonomousTask(task);
+        if (minInput) minInput.value = String(normalized.minIntervalMinutes);
+        if (maxInput) maxInput.value = String(normalized.maxIntervalMinutes);
+    }
+
+    function buildAutonomousTaskFromControls(task, enabled, minInput, maxInput) {
+        const nextTask = normalizeAutonomousTask(task);
+        const intervalValues = getAutonomousIntervalValues(minInput, maxInput, nextTask);
+        nextTask.enabled = !!enabled;
+        nextTask.minIntervalMinutes = intervalValues.minIntervalMinutes;
+        nextTask.maxIntervalMinutes = intervalValues.maxIntervalMinutes;
+        if (nextTask.enabled) {
+            nextTask.nextRunAt = Date.now() + getRandomAutonomousDelay(nextTask);
+        } else {
+            nextTask.nextRunAt = 0;
+        }
+        return nextTask;
+    }
+
+    function updateAutonomousActivityControls(friend) {
+        const activity = normalizeAutonomousActivity(friend?.memory?.autonomous);
+        const replyTask = normalizeAutonomousTask(activity.reply);
+        const momentTask = normalizeAutonomousTask(activity.moment);
+        if (autonomousStatus) {
+            autonomousStatus.textContent = replyTask.enabled && momentTask.enabled
+                ? '全部开启'
+                : (replyTask.enabled ? '回复开启' : (momentTask.enabled ? '朋友圈开启' : '关闭'));
+            autonomousStatus.style.color = replyTask.enabled || momentTask.enabled ? '#34c759' : '#8e8e93';
+        }
+        if (autonomousToggle) autonomousToggle.checked = !!replyTask.enabled;
+        if (autonomousMomentToggle) autonomousMomentToggle.checked = !!momentTask.enabled;
+        setAutonomousCardExpanded(autonomousToggle, replyTask.enabled);
+        setAutonomousCardExpanded(autonomousMomentToggle, momentTask.enabled);
+        setAutonomousIntervalInputs(replyTask, autonomousReplyMinInput, autonomousReplyMaxInput);
+        setAutonomousIntervalInputs(momentTask, autonomousMomentMinInput, autonomousMomentMaxInput);
+        if (autonomousNextLabel) {
+            autonomousNextLabel.textContent = replyTask.enabled
+                ? formatAutonomousNextTime(replyTask.nextRunAt)
+                : '关闭后不会主动发消息';
+        }
+        if (autonomousMomentNextLabel) {
+            autonomousMomentNextLabel.textContent = momentTask.enabled
+                ? formatAutonomousNextTime(momentTask.nextRunAt)
+                : '关闭后不会自动发朋友圈';
+        }
+    }
+
+    function openAutonomousActivitySheet(friend) {
+        if (!friend || !autonomousSheet) return;
+        friend.memory = window.imApp.normalizeFriendData(friend).memory;
+        updateAutonomousActivityControls(friend);
+        if (window.openView) {
+            window.openView(autonomousSheet);
+        } else {
+            autonomousSheet.classList.add('active');
+            autonomousSheet.style.display = 'flex';
+        }
+    }
+
+    async function saveAutonomousActivitySettings() {
+        const friend = window.imData.currentSettingsFriend;
+        if (!friend || !autonomousSaveBtn) return;
+        const replyEnabled = !!autonomousToggle?.checked;
+        const momentEnabled = !!autonomousMomentToggle?.checked;
+        autonomousSaveBtn.textContent = '保存中...';
+        autonomousSaveBtn.style.pointerEvents = 'none';
+
+        try {
+            const saved = await commitNamedFriendChange(friend, (targetFriend) => {
+                targetFriend.memory = window.imApp.normalizeFriendData(targetFriend).memory;
+                const activity = normalizeAutonomousActivity(targetFriend.memory.autonomous);
+                activity.reply = buildAutonomousTaskFromControls(activity.reply, replyEnabled, autonomousReplyMinInput, autonomousReplyMaxInput);
+                activity.moment = buildAutonomousTaskFromControls(activity.moment, momentEnabled, autonomousMomentMinInput, autonomousMomentMaxInput);
+                targetFriend.memory.autonomous = activity;
+            }, { silent: true, immediate: true });
+
+            if (!saved) {
+                showToast('自主活动保存失败');
+                return;
+            }
+
+            const latestFriend = window.imData.friends.find(item => String(item.id) === String(friend.id)) || friend;
+            latestFriend.memory = window.imApp.normalizeFriendData(latestFriend).memory;
+            window.imData.currentSettingsFriend = latestFriend;
+            updateAutonomousActivityControls(latestFriend);
+            if (window.imChat?.refreshAutonomousActivityTimers) {
+                window.imChat.refreshAutonomousActivityTimers();
+            }
+            showToast(replyEnabled || momentEnabled ? '自主活动已保存' : '自主活动已关闭');
+            if (autonomousSheet && window.closeView) window.closeView(autonomousSheet);
+        } finally {
+            autonomousSaveBtn.textContent = '保存';
+            autonomousSaveBtn.style.pointerEvents = '';
+        }
+    }
 
     function getChatSummaryMessageCount(friend) {
         return Array.isArray(friend?.messages) ? friend.messages.length : 0;
@@ -2502,6 +2875,54 @@ document.addEventListener('DOMContentLoaded', () => {
         manualSummaryClose.addEventListener('click', () => closeView(manualSummaryModal));
     }
 
+    if (autonomousBtn) {
+        autonomousBtn.addEventListener('click', () => {
+            if (window.imData.currentSettingsFriend) {
+                openAutonomousActivitySheet(window.imData.currentSettingsFriend);
+            }
+        });
+    }
+
+    if (autonomousClose && autonomousSheet) {
+        autonomousClose.addEventListener('click', () => {
+            if (window.closeView) window.closeView(autonomousSheet);
+        });
+    }
+
+    if (autonomousSheet) {
+        autonomousSheet.addEventListener('click', (event) => {
+            if (event.target === autonomousSheet && window.closeView) {
+                window.closeView(autonomousSheet);
+            }
+        });
+    }
+
+    if (autonomousToggle) {
+        autonomousToggle.addEventListener('change', () => {
+            setAutonomousCardExpanded(autonomousToggle, autonomousToggle.checked);
+            if (autonomousNextLabel) {
+                autonomousNextLabel.textContent = autonomousToggle.checked
+                    ? '保存后将按当前间隔随机触发'
+                    : '关闭后不会主动发消息';
+            }
+        });
+    }
+
+    if (autonomousMomentToggle) {
+        autonomousMomentToggle.addEventListener('change', () => {
+            setAutonomousCardExpanded(autonomousMomentToggle, autonomousMomentToggle.checked);
+            if (autonomousMomentNextLabel) {
+                autonomousMomentNextLabel.textContent = autonomousMomentToggle.checked
+                    ? '保存后将按当前间隔随机发朋友圈'
+                    : '关闭后不会自动发朋友圈';
+            }
+        });
+    }
+
+    if (autonomousSaveBtn) {
+        autonomousSaveBtn.addEventListener('click', saveAutonomousActivitySettings);
+    }
+
     if (manualSummaryConfirm) {
         manualSummaryConfirm.addEventListener('click', async () => {
             const friend = window.imData.currentSettingsFriend;
@@ -2600,6 +3021,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chatMemoryScheduleWake) chatMemoryScheduleWake.value = friend.memory.schedule ? (friend.memory.schedule.wakeTime || '07:00') : '07:00';
 
         bindChatSettingsMemoryPersistence(friend);
+        updateAutonomousActivityControls(friend);
         updateChatBindIdLabel(friend);
 
         const tsToggle = document.getElementById('timestamp-toggle');

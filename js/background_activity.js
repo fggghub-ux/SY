@@ -121,7 +121,20 @@
             offset += bytesPerSample;
         }
 
-        keepAliveAudioUrl = URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+        if (location.protocol === 'file:') {
+            const bytes = new Uint8Array(buffer);
+            const chunkSize = 0x8000;
+            let binary = '';
+
+            for (let index = 0; index < bytes.length; index += chunkSize) {
+                binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+            }
+
+            keepAliveAudioUrl = `data:audio/wav;base64,${btoa(binary)}`;
+        } else {
+            keepAliveAudioUrl = URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+        }
+
         return keepAliveAudioUrl;
     }
 

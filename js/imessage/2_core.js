@@ -207,12 +207,63 @@ window.imApp.applyGlobalChatCss = function(themeState = window.u2ThemeState || {
         : '';
 };
 
+window.imApp.createDefaultAutonomousTask = function() {
+    return {
+        enabled: false,
+        minIntervalMinutes: 30,
+        maxIntervalMinutes: 240,
+        nextRunAt: 0,
+        lastRunAt: 0
+    };
+};
+
+window.imApp.normalizeAutonomousTask = function(task) {
+    const defaultTask = window.imApp.createDefaultAutonomousTask();
+    const source = task && typeof task === 'object' ? task : {};
+    const minInterval = Number(source.minIntervalMinutes);
+    const maxInterval = Number(source.maxIntervalMinutes);
+    const normalizedMin = Number.isFinite(minInterval)
+        ? Math.max(1, Math.round(minInterval))
+        : defaultTask.minIntervalMinutes;
+    const normalizedMax = Number.isFinite(maxInterval)
+        ? Math.max(normalizedMin, Math.round(maxInterval))
+        : Math.max(normalizedMin, defaultTask.maxIntervalMinutes);
+
+    return {
+        enabled: !!source.enabled,
+        minIntervalMinutes: normalizedMin,
+        maxIntervalMinutes: normalizedMax,
+        nextRunAt: Math.max(0, Number(source.nextRunAt) || defaultTask.nextRunAt),
+        lastRunAt: Math.max(0, Number(source.lastRunAt) || defaultTask.lastRunAt)
+    };
+};
+
+window.imApp.createDefaultAutonomousActivity = function() {
+    return {
+        reply: window.imApp.createDefaultAutonomousTask(),
+        moment: window.imApp.createDefaultAutonomousTask()
+    };
+};
+
+window.imApp.normalizeAutonomousActivity = function(activity) {
+    const source = activity && typeof activity === 'object' ? activity : {};
+    const hasNestedTasks = source.reply && typeof source.reply === 'object'
+        || source.moment && typeof source.moment === 'object';
+    const legacyReplySource = hasNestedTasks ? source.reply : source;
+
+    return {
+        reply: window.imApp.normalizeAutonomousTask(legacyReplySource),
+        moment: window.imApp.normalizeAutonomousTask(source.moment)
+    };
+};
+
 window.imApp.createDefaultMemory = function() {
     return {
         overview: '',
         anniversaries: '',
         context: { enabled: true, limit: 80, notes: '' },
         summary: { enabled: false, limit: 80, prompt: '' },
+        autonomous: window.imApp.createDefaultAutonomousActivity(),
         longTerm: '',
         shortTermEntries: [],
         cherished: '',
@@ -396,11 +447,22 @@ window.imApp.normalizeFriendData = function(friend) {
     normalized.unreadCount = Math.max(0, Number(normalized.unreadCount) || 0);
     normalized.showTimestamp = !!normalized.showTimestamp;
     normalized.timeAware = normalized.timeAware !== false;
+    normalized.dynamicActionNarrationEnabled = !!normalized.dynamicActionNarrationEnabled;
     normalized.timestampPosition = normalized.timestampPosition === 'outside' ? 'outside' : 'inside';
     normalized.boundBooks = Array.isArray(normalized.boundBooks) ? normalized.boundBooks : [];
     normalized.momentsCover = normalized.momentsCover || null;
     normalized.momentsCoverAssetId = normalized.momentsCoverAssetId || null;
     normalized.members = Array.isArray(normalized.members) ? normalized.members : [];
+    normalized.leftGroupAt = isGroupChat ? (Number(normalized.leftGroupAt) || 0) : 0;
+    normalized.leftGroupMemberSnapshot = isGroupChat && Array.isArray(normalized.leftGroupMemberSnapshot)
+        ? normalized.leftGroupMemberSnapshot
+            .filter(item => item && item.id != null)
+            .map(item => ({
+                id: item.id,
+                nickname: item.nickname || '',
+                realName: item.realName || ''
+            }))
+        : [];
     normalized.memberProfiles = (friend.memberProfiles && typeof friend.memberProfiles === 'object') ? friend.memberProfiles : {};
     normalized.botEnabled = !!normalized.botEnabled;
     // offlineMeetEnabled is deprecated
@@ -433,6 +495,7 @@ window.imApp.normalizeFriendData = function(friend) {
             limit: Number(memory.summary?.limit) > 0 ? Number(memory.summary.limit) : defaultMemory.summary.limit,
             prompt: memory.summary?.prompt || defaultMemory.summary.prompt
         },
+        autonomous: window.imApp.normalizeAutonomousActivity(memory.autonomous),
         longTerm: memory.longTerm || defaultMemory.longTerm,
         shortTermEntries: Array.isArray(memory.shortTermEntries)
             ? memory.shortTermEntries.map((entry, index) => ({
@@ -497,6 +560,19 @@ window.imApp.normalizeFriendData = function(friend) {
     return normalized;
 };
 
+window.imApp.createGroupMemberSnapshot = function(group) {
+    if (!group || group.type !== 'group') return [];
+    const memberIds = Array.isArray(group.members) ? group.members : [];
+    return memberIds.map((memberId) => {
+        const member = (window.imData?.friends || []).find(item => String(item.id) === String(memberId));
+        return {
+            id: memberId,
+            nickname: member?.nickname || '',
+            realName: member?.realName || ''
+        };
+    });
+};
+
 window.imApp.getContextLimit = function(friend) {
     const normalizedFriend = window.imApp.normalizeFriendData(friend || {});
     const defaultContextLimit = normalizedFriend.type === 'group' ? 100 : 100;
@@ -517,11 +593,36 @@ window.imApp.getRecentContextMessages = function(friend) {
     return contextLimit > 0 ? allMessages.slice(-contextLimit) : [];
 };
 
+window.imApp.formatSystemNoticeForApiContext = function(message) {
+    const normalizedMessage = message || {};
+    const noticeKind = normalizedMessage.noticeKind || '';
+    const noticeText = normalizedMessage.content || normalizedMessage.text || '';
+
+    if (noticeKind === 'group_left') {
+        return '[系统事件：User 已退出群聊。]';
+    }
+    if (noticeKind === 'group_rejoined') {
+        return '[系统事件：User 重新进入群聊。]';
+    }
+    if (noticeKind === 'narration') {
+        return `[旁白：${noticeText}]`;
+    }
+
+    return noticeText ? `[系统事件：${noticeText}]` : '[系统事件]';
+};
+
 window.imApp.formatMessageForApiContext = function(message, friend, options = {}) {
     const normalizedFriend = window.imApp.normalizeFriendData(friend || {});
     const normalizedMessage = message || {};
     const isGroupChat = normalizedFriend.type === 'group';
     let apiContent = normalizedMessage.content || '';
+
+    if (normalizedMessage.type === 'system_notice') {
+        return {
+            role: 'system',
+            content: window.imApp.formatSystemNoticeForApiContext(normalizedMessage)
+        };
+    }
 
     if (normalizedMessage.type === 'voice_message') {
         const voiceText = normalizedMessage.transcript || normalizedMessage.text || '';
@@ -810,6 +911,14 @@ window.imApp.getFriendMessagePreview = function(message) {
     }
     if (targetMessage.type === 'voice_call_record') {
         return targetMessage.text || `[语音通话记录] ${targetMessage.statusText || ''}`.trim();
+    }
+    if (targetMessage.type === 'system_notice') {
+        const noticeKind = targetMessage.noticeKind || '';
+        const noticeText = targetMessage.content || targetMessage.text || '';
+        if (noticeKind === 'group_left') return '你已退出群聊';
+        if (noticeKind === 'group_rejoined') return '你重新进入群聊';
+        if (noticeKind === 'narration') return `[旁白] ${noticeText}`.trim();
+        return noticeText;
     }
     if (targetMessage.type === 'html') {
         return targetMessage.text || '[卡片消息]';

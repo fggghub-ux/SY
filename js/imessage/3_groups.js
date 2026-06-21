@@ -906,22 +906,56 @@ document.addEventListener('DOMContentLoaded', () => {
                 confirmText: '退出',
                 isDestructive: true,
                 onConfirm: async () => {
-                    await window.imApp.appendFriendMessage(currentViewingGroup.id, {
+                    const groupId = currentViewingGroup.id;
+                    const leftAt = Date.now();
+                    const saved = window.imApp.commitScopedFriendChange
+                        ? await window.imApp.commitScopedFriendChange(groupId, (targetGroup) => {
+                            if (!targetGroup) return;
+                            targetGroup.leftGroupAt = leftAt;
+                            targetGroup.leftGroupMemberSnapshot = window.imApp.createGroupMemberSnapshot
+                                ? window.imApp.createGroupMemberSnapshot(targetGroup)
+                                : [];
+                        }, {
+                            syncActive: true,
+                            syncSettings: true,
+                            metaOnly: true,
+                            silent: true
+                        })
+                        : false;
+
+                    if (!saved) {
+                        if (window.showToast) window.showToast('退出群聊失败');
+                        return;
+                    }
+
+                    const latestGroup = (window.imData.friends || []).find(item => String(item.id) === String(groupId)) || currentViewingGroup;
+                    currentViewingGroup = latestGroup;
+
+                    const groupLeftNotice = {
                         id: `sys-${Date.now()}`,
                         role: 'system',
+                        type: 'system_notice',
+                        noticeKind: 'group_left',
                         content: '你已退出群聊',
+                        text: '你已退出群聊',
                         timestamp: Date.now()
-                    });
+                    };
+                    await window.imApp.appendFriendMessage(groupId, groupLeftNotice, { silent: true });
                     if (window.showToast) window.showToast('已退出群聊');
                     window.closeView(document.getElementById('group-context-settings-sheet'));
                     window.closeView(document.getElementById('group-details-sheet'));
-                    if (window.imData.currentActiveFriend && window.imData.currentActiveFriend.id === currentViewingGroup.id) {
-                        window.imData.currentActiveFriend = null;
-                        if (window.imChat && window.imChat.updateChatsView) {
-                            window.imChat.updateChatsView();
+                    if (window.imData.currentActiveFriend && String(window.imData.currentActiveFriend.id) === String(groupId)) {
+                        window.imData.currentActiveFriend = latestGroup;
+                        const page = document.getElementById(`chat-interface-${groupId}`);
+                        if (page && window.imChat?.syncGroupExitState) {
+                            window.imChat.syncGroupExitState(latestGroup, page);
+                        }
+                        const msgContainer = page ? page.querySelector('.ins-chat-messages') : null;
+                        if (msgContainer && window.imChat?.rerenderChatContainer) {
+                            window.imChat.rerenderChatContainer(latestGroup, msgContainer, { scroll: true });
                         }
                     }
-                    if (window.imApp.openChatTab) window.imApp.openChatTab(currentViewingGroup);
+                    if (window.imApp.openChatTab) window.imApp.openChatTab(latestGroup);
                 }
             });
         });

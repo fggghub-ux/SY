@@ -48,6 +48,106 @@ document.addEventListener('DOMContentLoaded', () => {
         return true;
     };
 
+    function getLiveGroup(groupOrId) {
+        const groupId = groupOrId && typeof groupOrId === 'object' ? groupOrId.id : groupOrId;
+        if (groupId == null) return groupOrId && typeof groupOrId === 'object' ? groupOrId : null;
+        return (window.imData?.friends || []).find(item => String(item.id) === String(groupId))
+            || (groupOrId && typeof groupOrId === 'object' ? groupOrId : null);
+    }
+
+    function isLeftGroup(group) {
+        return group && group.type === 'group' && Number(group.leftGroupAt) > 0;
+    }
+
+    async function rejoinGroupChat(group, page) {
+        const liveGroup = getLiveGroup(group);
+        if (!liveGroup || liveGroup.type !== 'group') return false;
+
+        const saved = window.imApp?.commitScopedFriendChange
+            ? await window.imApp.commitScopedFriendChange(liveGroup.id, (targetGroup) => {
+                if (!targetGroup) return;
+                targetGroup.leftGroupAt = 0;
+                targetGroup.leftGroupMemberSnapshot = [];
+            }, {
+                syncActive: true,
+                metaOnly: true,
+                silent: true
+            })
+            : false;
+
+        if (!saved) {
+            if (window.showToast) window.showToast('重新进入失败');
+            return false;
+        }
+
+        const groupRejoinedNotice = {
+            id: `sys-${Date.now()}`,
+            role: 'system',
+            type: 'system_notice',
+            noticeKind: 'group_rejoined',
+            content: '你重新进入群聊',
+            text: '你重新进入群聊',
+            timestamp: Date.now()
+        };
+        await window.imApp.appendFriendMessage(liveGroup.id, groupRejoinedNotice, { silent: true });
+
+        const latestGroup = getLiveGroup(liveGroup) || liveGroup;
+        if (window.showToast) window.showToast('已重新进入群聊');
+        if (page) imChat.syncGroupExitState(latestGroup, page);
+        const msgContainer = page ? page.querySelector('.ins-chat-messages') : null;
+        if (msgContainer && window.imChat?.rerenderChatContainer) {
+            window.imChat.rerenderChatContainer(latestGroup, msgContainer, { scroll: true });
+        }
+        if (window.imApp.openChatTab) window.imApp.openChatTab(latestGroup);
+        return true;
+    }
+
+    imChat.syncGroupExitState = function(groupOrId, page) {
+        const group = getLiveGroup(groupOrId);
+        if (!group || group.type !== 'group' || !page) return false;
+
+        const left = isLeftGroup(group);
+        const inputWrapper = page.querySelector('.ins-chat-input-wrapper');
+        const leftBar = page.querySelector('.im-left-group-bar');
+        const input = page.querySelector('.chat-input');
+        const replyPreview = page.querySelector('.reply-preview-container');
+        const mentionList = page.querySelector('.at-mention-list');
+
+        if (inputWrapper) inputWrapper.style.display = left ? 'none' : 'flex';
+        if (leftBar) leftBar.style.display = left ? 'flex' : 'none';
+        if (input) {
+            input.disabled = left;
+            input.value = left ? '' : input.value;
+        }
+        if (left && replyPreview) replyPreview.style.display = 'none';
+        if (left && mentionList) mentionList.style.display = 'none';
+
+        const rejoinBtn = leftBar ? leftBar.querySelector('.im-left-group-rejoin-btn') : null;
+        const aiBtn = leftBar ? leftBar.querySelector('.im-left-group-ai-btn') : null;
+        const msgContainer = page.querySelector('.ins-chat-messages');
+
+        if (rejoinBtn) {
+            rejoinBtn.onclick = (e) => {
+                e.preventDefault();
+                void rejoinGroupChat(group, page);
+            };
+        }
+
+        if (aiBtn) {
+            aiBtn.onclick = (e) => {
+                e.preventDefault();
+                if (!window.imChat?.handleAiReply) {
+                    if (window.showToast) window.showToast('无法调用 AI 接口');
+                    return;
+                }
+                const latestGroup = getLiveGroup(group) || group;
+                window.imChat.handleAiReply(latestGroup, msgContainer, aiBtn, { source: 'left_group_continue' });
+            };
+        }
+
+        return true;
+    };
+
 async function openChatTab(friend) {
         const chatsContent = document.getElementById('chats-content');
         const navChatsBtn = document.getElementById('nav-chats-btn');
@@ -216,6 +316,15 @@ async function openChatTab(friend) {
                             <div class="send-btn-icon mic-btn"><i class="fas ${isNpcChat ? 'fa-magic' : 'fa-microphone'}"></i></div>
                         </div>
                     </div>
+                    ${isGroupChat ? `
+                    <div class="im-left-group-bar" style="display:none; align-items:center; justify-content:space-between; gap:10px; margin:0 10px; padding:8px 10px; border-radius:22px; background:#f2f2f7; border:1px solid #e5e5ea;">
+                        <div style="font-size:14px; color:#8e8e93; font-weight:600; white-space:nowrap;">已退出该群</div>
+                        <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+                            <button type="button" class="im-left-group-rejoin-btn" style="border:0; border-radius:18px; background:#007aff; color:#fff; height:34px; padding:0 12px; font-size:14px; font-weight:700; cursor:pointer; white-space:nowrap;">重新进入</button>
+                            <button type="button" class="im-left-group-ai-btn" style="border:0; border-radius:18px; background:#1c1c1e; color:#fff; height:34px; padding:0 12px; font-size:14px; font-weight:700; cursor:pointer; white-space:nowrap;">AI继续</button>
+                        </div>
+                    </div>
+                    ` : ''}
                     <div class="chat-batch-action-bar" style="display:none; justify-content: space-between; align-items: center; padding: 15px 40px; padding-bottom: 15px; background: rgba(242, 242, 247, 0.95);   border-top: 1px solid rgba(0,0,0,0.1); position: absolute; bottom: 0; left: 0; width: 100%; z-index: 100; box-sizing: border-box;">
                         <i class="fas fa-share batch-forward-btn" style="font-size: 22px; color: #8e8e93; cursor: pointer;"></i>
                         <i class="far fa-star batch-star-btn" style="font-size: 22px; color: #8e8e93; cursor: pointer;"></i>
@@ -853,6 +962,9 @@ async function openChatTab(friend) {
             
             // Re-apply status bar css
             if(window.imApp.applyFriendStatusBarCss) window.imApp.applyFriendStatusBarCss(friend);
+            if (isGroupChat && window.imChat.syncGroupExitState) {
+                window.imChat.syncGroupExitState(friend, page);
+            }
         }
 
         if (navChatsBtn) {
