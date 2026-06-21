@@ -607,6 +607,9 @@ window.imApp.formatSystemNoticeForApiContext = function(message) {
     if (noticeKind === 'narration') {
         return `[旁白：${noticeText}]`;
     }
+    if (noticeKind === 'offline_meeting_active') {
+        return '[系统事件：User 和 Char 正在进行线下见面。]';
+    }
 
     return noticeText ? `[系统事件：${noticeText}]` : '[系统事件]';
 };
@@ -636,6 +639,11 @@ window.imApp.formatMessageForApiContext = function(message, friend, options = {}
         apiContent = normalizedMessage.role === 'user'
             ? `[用户发了一个表情包：${stickerLabel}]`
             : `[你发了一个表情包：${stickerLabel}]`;
+    } else if (normalizedMessage.type === 'offline_meeting_record') {
+        const dateText = normalizedMessage.dateText || '';
+        const title = normalizedMessage.title || '见面记录';
+        const summary = normalizedMessage.summary || normalizedMessage.content || '';
+        apiContent = `[见面记录]\n日期：${dateText || '未知'}\n标题：${title}\n内容：${summary}\n（该线下见面已经结束，这条记录可作为后续线上聊天上下文参考。）`;
     } else if (normalizedMessage.type === 'voice_call_record') {
         const duration = normalizedMessage.duration || 0;
         const callDurationText = `${Math.floor(duration / 60)}分${duration % 60}秒`;
@@ -912,12 +920,16 @@ window.imApp.getFriendMessagePreview = function(message) {
     if (targetMessage.type === 'voice_call_record') {
         return targetMessage.text || `[语音通话记录] ${targetMessage.statusText || ''}`.trim();
     }
+    if (targetMessage.type === 'offline_meeting_record') {
+        return `[见面记录] ${targetMessage.title || '见面记录'}`.trim();
+    }
     if (targetMessage.type === 'system_notice') {
         const noticeKind = targetMessage.noticeKind || '';
         const noticeText = targetMessage.content || targetMessage.text || '';
         if (noticeKind === 'group_left') return '你已退出群聊';
         if (noticeKind === 'group_rejoined') return '你重新进入群聊';
         if (noticeKind === 'narration') return `[旁白] ${noticeText}`.trim();
+        if (noticeKind === 'offline_meeting_active') return '见面中';
         return noticeText;
     }
     if (targetMessage.type === 'html') {

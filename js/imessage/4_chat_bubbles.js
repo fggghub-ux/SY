@@ -229,7 +229,8 @@ function renderSystemNoticeBubble(msg, friend, container, timestamp = Date.now()
             group_left: { icon: 'fa-sign-out-alt', color: '#ff3b30' },
             group_rejoined: { icon: 'fa-sign-in-alt', color: '#34c759' },
             narration: { icon: 'fa-quote-left', color: '#5856d6' },
-            red_packet_claim: { icon: 'fa-envelope-open-text', color: '#ff9500' }
+            red_packet_claim: { icon: 'fa-envelope-open-text', color: '#ff9500' },
+            offline_meeting_active: { icon: 'fa-user-friends', color: '#34c759' }
         };
         const iconMeta = iconMap[noticeKind] || { icon: 'fa-info-circle', color: '#8e8e93' };
         const textAlign = noticeKind === 'narration' ? 'left' : 'center';
@@ -406,6 +407,10 @@ function renderMessageBubble(msg, friend, container, timestamp = Date.now()) {
         }
         if (msg.type === 'voice_call_record') {
             window.imChat.renderVoiceCallRecordBubble(msg, friend, container, msgTime);
+            return true;
+        }
+        if (msg.type === 'offline_meeting_record') {
+            window.imChat.renderOfflineMeetingRecordBubble(msg, friend, container, msgTime);
             return true;
         }
         if (msg.type === 'voice_message') {
@@ -1496,7 +1501,228 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
         window.imChat.scrollToBottom(container);
     }
 
+    function formatOfflineMeetingRecordText(msg = {}) {
+        const dateText = msg.dateText || '';
+        const title = msg.title || '见面记录';
+        const summary = msg.summary || msg.content || '';
+        return [dateText, title, summary].filter(Boolean).join('\n\n');
+    }
+
+    function formatOfflineMeetingTimestamp(timestamp) {
+        const value = Number(timestamp) || Date.now();
+        const date = new Date(value);
+        const pad = (num) => String(num).padStart(2, '0');
+        return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    function getOfflineMeetingSpeakerName(message, friend) {
+        if (message?.role === 'assistant') {
+            return friend?.nickname || friend?.realName || friend?.name || 'Char';
+        }
+        return window.userState?.name || 'User';
+    }
+
+    function renderOfflineMeetingDetailReadMode(contentEl, msg, friend) {
+        const messages = Array.isArray(msg.meetingMessages) ? msg.meetingMessages : [];
+        const transcriptHtml = messages.length > 0
+            ? messages.map((item, index) => `
+                <div style="padding:10px 0; border-top:1px solid #f2f2f7;">
+                    <div style="font-size:12px; color:#8e8e93; margin-bottom:4px;">#${index + 1} · ${escapeHtml(getOfflineMeetingSpeakerName(item, friend))}</div>
+                    <div style="white-space:pre-wrap; word-break:break-word; line-height:1.6;">${escapeHtml(item.content || '')}</div>
+                </div>
+            `).join('')
+            : '<div style="color:#8e8e93; font-size:13px;">没有逐楼记录。</div>';
+
+        contentEl.innerHTML = `
+            <div style="display:flex; flex-direction:column; gap:12px;">
+                <div>
+                    <div style="font-size:12px; color:#8e8e93; margin-bottom:4px;">${escapeHtml(msg.dateText || formatOfflineMeetingTimestamp(msg.timestamp))}</div>
+                    <div style="font-size:19px; font-weight:800; color:#111;">${escapeHtml(msg.title || '见面记录')}</div>
+                </div>
+                <div style="white-space:pre-wrap; word-break:break-word; line-height:1.65; color:#111;">${escapeHtml(msg.summary || msg.content || '')}</div>
+                <div style="font-size:13px; font-weight:800; color:#111; margin-top:6px;">楼层</div>
+                <div>${transcriptHtml}</div>
+            </div>
+        `;
+    }
+
+    function renderOfflineMeetingDetailEditMode(contentEl, msg) {
+        contentEl.innerHTML = `
+            <div style="display:flex; flex-direction:column; gap:10px;">
+                <input id="offline-meeting-detail-date" type="text" value="${escapeHtml(msg.dateText || formatOfflineMeetingTimestamp(msg.timestamp))}" style="width:100%; box-sizing:border-box; border:1px solid #d1d1d6; border-radius:10px; padding:10px 12px; font-size:14px; outline:none;">
+                <input id="offline-meeting-detail-title" type="text" value="${escapeHtml(msg.title || '见面记录')}" style="width:100%; box-sizing:border-box; border:1px solid #d1d1d6; border-radius:10px; padding:10px 12px; font-size:16px; font-weight:700; outline:none;">
+                <textarea id="offline-meeting-detail-summary" style="width:100%; min-height:320px; box-sizing:border-box; border:1px solid #d1d1d6; border-radius:12px; padding:12px; font-size:15px; line-height:1.6; outline:none; resize:vertical; font-family:inherit;">${escapeHtml(msg.summary || msg.content || '')}</textarea>
+            </div>
+        `;
+        const titleInput = document.getElementById('offline-meeting-detail-title');
+        if (titleInput) titleInput.focus();
+    }
+
+    function ensureOfflineMeetingDetailModal() {
+        let modal = document.getElementById('offline-meeting-detail-modal');
+        if (modal) return modal;
+
+        modal = document.createElement('div');
+        modal.id = 'offline-meeting-detail-modal';
+        modal.className = 'bottom-sheet-overlay detail-sheet-overlay';
+        modal.style.zIndex = '1060';
+        modal.innerHTML = `
+            <div class="bottom-sheet" style="max-height:85%; height:78%; display:flex; flex-direction:column;">
+                <div class="sheet-handle"></div>
+                <div style="display:flex; align-items:center; justify-content:space-between; padding:0 16px 10px;">
+                    <button id="offline-meeting-detail-close-btn" type="button" style="border:none; background:transparent; color:#007aff; font-size:16px; font-weight:700; cursor:pointer;">关闭</button>
+                    <div style="font-size:17px; font-weight:800;">见面记录</div>
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <button id="offline-meeting-detail-edit-btn" type="button" style="border:none; background:transparent; color:#007aff; font-size:16px; font-weight:700; cursor:pointer;">编辑</button>
+                        <button id="offline-meeting-detail-cancel-btn" type="button" style="display:none; border:none; background:transparent; color:#8e8e93; font-size:16px; font-weight:700; cursor:pointer;">取消</button>
+                        <button id="offline-meeting-detail-save-btn" type="button" style="display:none; border:none; background:transparent; color:#007aff; font-size:16px; font-weight:800; cursor:pointer;">保存</button>
+                    </div>
+                </div>
+                <div id="offline-meeting-detail-content" class="detail-sheet-content" style="flex:1; overflow-y:auto; padding:0 18px 24px;"></div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        return modal;
+    }
+
+    window.imChat.openOfflineMeetingDetail = function(msg, friend = null) {
+        const detailModal = ensureOfflineMeetingDetailModal();
+        const detailContent = document.getElementById('offline-meeting-detail-content');
+        const closeBtn = document.getElementById('offline-meeting-detail-close-btn');
+        const editBtn = document.getElementById('offline-meeting-detail-edit-btn');
+        const saveBtn = document.getElementById('offline-meeting-detail-save-btn');
+        const cancelBtn = document.getElementById('offline-meeting-detail-cancel-btn');
+        const detailFriend = friend || window.imData?.currentActiveFriend || null;
+        if (!detailModal || !detailContent) return;
+
+        let isEditing = false;
+        const setEditMode = (nextEditing) => {
+            isEditing = nextEditing;
+            if (editBtn) editBtn.style.display = isEditing ? 'none' : 'block';
+            if (saveBtn) saveBtn.style.display = isEditing ? 'block' : 'none';
+            if (cancelBtn) cancelBtn.style.display = isEditing ? 'block' : 'none';
+            if (isEditing) renderOfflineMeetingDetailEditMode(detailContent, msg);
+            else renderOfflineMeetingDetailReadMode(detailContent, msg, detailFriend);
+        };
+
+        if (closeBtn) {
+            closeBtn.onclick = () => {
+                if (window.closeView) window.closeView(detailModal);
+                else detailModal.style.display = 'none';
+            };
+        }
+        if (editBtn) editBtn.onclick = () => setEditMode(true);
+        if (cancelBtn) cancelBtn.onclick = () => setEditMode(false);
+        if (saveBtn) {
+            saveBtn.onclick = async () => {
+                const dateInput = document.getElementById('offline-meeting-detail-date');
+                const titleInput = document.getElementById('offline-meeting-detail-title');
+                const summaryInput = document.getElementById('offline-meeting-detail-summary');
+                const nextDate = String(dateInput?.value || '').trim() || formatOfflineMeetingTimestamp(msg.timestamp);
+                const nextTitle = String(titleInput?.value || '').trim() || '见面记录';
+                const nextSummary = String(summaryInput?.value || '').trim();
+                const nextText = formatOfflineMeetingRecordText({
+                    dateText: nextDate,
+                    title: nextTitle,
+                    summary: nextSummary
+                });
+
+                msg.dateText = nextDate;
+                msg.title = nextTitle;
+                msg.summary = nextSummary;
+                msg.content = nextText;
+                msg.text = `见面记录：${nextTitle}`;
+                msg.updatedAt = new Date().toISOString();
+
+                let saved = true;
+                if (detailFriend?.id && window.imApp?.updateFriendMessage) {
+                    saved = await window.imApp.updateFriendMessage(detailFriend.id, {
+                        id: msg.id || null,
+                        timestamp: msg.timestamp || null
+                    }, (targetMsg, targetFriend) => {
+                        targetMsg.dateText = nextDate;
+                        targetMsg.title = nextTitle;
+                        targetMsg.summary = nextSummary;
+                        targetMsg.content = nextText;
+                        targetMsg.text = `见面记录：${nextTitle}`;
+                        targetMsg.updatedAt = msg.updatedAt;
+
+                        if (Array.isArray(targetFriend.offlineMeetingSessions)) {
+                            const targetSession = targetFriend.offlineMeetingSessions.find(session => String(session.id) === String(msg.offlineSessionId));
+                            if (targetSession) {
+                                targetSession.dateText = nextDate;
+                                targetSession.title = nextTitle;
+                                targetSession.summary = nextSummary;
+                                targetSession.updatedAt = msg.updatedAt;
+                            }
+                        }
+                    }, { silent: true });
+                }
+
+                if (!saved) {
+                    if (window.showToast) window.showToast('见面记录保存失败');
+                    return;
+                }
+
+                const page = detailFriend?.id ? document.getElementById(`chat-interface-${detailFriend.id}`) : null;
+                const msgContainer = page ? page.querySelector('.ins-chat-messages') : null;
+                if (msgContainer && window.imChat.rerenderChatContainer) {
+                    const latestFriend = (window.imData?.friends || []).find(item => String(item.id) === String(detailFriend.id)) || detailFriend;
+                    window.imChat.rerenderChatContainer(latestFriend, msgContainer, { scroll: false });
+                }
+                if (window.showToast) window.showToast('见面记录已更新');
+                setEditMode(false);
+            };
+        }
+
+        setEditMode(false);
+        if (window.openView) window.openView(detailModal);
+        else detailModal.style.display = 'flex';
+    };
+
+    function renderOfflineMeetingRecordBubble(msg, friend, container, timestamp = Date.now()) {
+        const row = document.createElement('div');
+        row.className = 'chat-system-row';
+        row.setAttribute('data-timestamp', timestamp);
+        row.setAttribute('data-message-id', window.imChat.ensureMessageId(msg, 'meeting'));
+
+        const dateText = msg.dateText || formatOfflineMeetingTimestamp(timestamp);
+        const title = msg.title || '见面记录';
+        const summary = String(msg.summary || msg.content || '').replace(/\s+/g, ' ').trim();
+        const preview = summary ? summary.slice(0, 72) : '点击查看本次线下见面总结';
+
+        row.innerHTML = `
+            <div style="width:100%; display:flex; justify-content:center; padding:2px 0; margin:10px 0; cursor:pointer;">
+                <div class="voice-call-record-card im-card-content offline-meeting-record-card" style="max-width:84%; padding:11px 15px; border-radius:18px; background:rgba(0,0,0,0.05); color:#000; display:flex; align-items:flex-start; gap:10px; text-align:left;">
+                    <div style="width:32px; height:32px; border-radius:16px; background:#34c759; color:#fff; display:flex; justify-content:center; align-items:center; flex-shrink:0;">
+                        <i class="fas fa-user-friends"></i>
+                    </div>
+                    <div style="min-width:0;">
+                        <div style="font-size:15px; font-weight:800; line-height:1.25;">${escapeHtml(title)}</div>
+                        <div style="font-size:12px; color:#8e8e93; margin-top:2px;">${escapeHtml(dateText)}</div>
+                        <div style="font-size:13px; color:#3a3a3c; margin-top:5px; line-height:1.4; word-break:break-word;">${escapeHtml(preview)}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const clickableCard = row.querySelector('.offline-meeting-record-card');
+        if (clickableCard) {
+            clickableCard.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (window.imChat?.openOfflineMeetingDetail) {
+                    window.imChat.openOfflineMeetingDetail(msg, friend);
+                }
+            });
+        }
+
+        container.appendChild(row);
+        window.imChat.scrollToBottom(container);
+    }
+
     window.imChat.renderSystemNoticeBubble = renderSystemNoticeBubble;
+    window.imChat.renderOfflineMeetingRecordBubble = renderOfflineMeetingRecordBubble;
     window.imChat.renderGroupRedPacketBubble = renderGroupRedPacketBubble;
     window.imChat.renderStickerMessageBubble = renderStickerMessageBubble;
     window.imChat.renderMessageBubble = renderMessageBubble;
