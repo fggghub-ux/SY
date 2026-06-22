@@ -1170,6 +1170,68 @@ function createAttachmentSheet(page) {
             return !!(messageTime && endedAt && Math.abs(messageTime - endedAt) <= 1000 && messageTitle && messageTitle === sessionTitle);
         };
 
+        const buildOfflineMeetingRecordContent = (session, summary) => {
+            return [
+                session?.dateText || formatOfflineMeetingDate(session?.endedAt),
+                session?.title || '见面记录',
+                String(summary || '')
+            ].filter(Boolean).join('\n\n');
+        };
+
+        const buildOfflineMeetingRawSummary = (session, summary) => {
+            return [
+                session?.dateText || formatOfflineMeetingDate(session?.endedAt),
+                `标题：${session?.title || '见面记录'}`,
+                `见面内容：${String(summary || '')}`
+            ].join('\n');
+        };
+
+        const updateOfflineMeetingSessionSummary = async (activeFriend, session, nextSummary) => {
+            if (!activeFriend?.id || !session?.id) return false;
+            if (window.imApp?.ensureFriendMessagesLoaded) {
+                await window.imApp.ensureFriendMessagesLoaded(activeFriend);
+            }
+
+            const sessionId = String(session.id);
+            const summaryText = String(nextSummary || '').trim();
+            const updatedRawSummary = buildOfflineMeetingRawSummary(session, summaryText);
+            const updatedContent = buildOfflineMeetingRecordContent(session, summaryText);
+            const saved = await commitSheetFriendChange(activeFriend, (targetFriend) => {
+                if (!targetFriend) return;
+                targetFriend.offlineMeetingSessions = (Array.isArray(targetFriend.offlineMeetingSessions) ? targetFriend.offlineMeetingSessions : []).map(item => {
+                    if (String(item?.id || '') !== sessionId) return item;
+                    return {
+                        ...item,
+                        summary: summaryText,
+                        rawSummary: updatedRawSummary,
+                        updatedAt: Date.now()
+                    };
+                });
+
+                if (Array.isArray(targetFriend.messages)) {
+                    targetFriend.messages.forEach((message) => {
+                        if (!isOfflineMeetingRecordForSession(message, session)) return;
+                        message.summary = summaryText;
+                        message.rawSummary = updatedRawSummary;
+                        message.content = updatedContent;
+                        message.text = `见面记录：${session.title || '见面记录'}`;
+                    });
+                    if (window.imApp?.syncFriendMessageSummary) window.imApp.syncFriendMessageSummary(targetFriend);
+                    if (window.imApp?.clearFriendRuntimeMessageContext) window.imApp.clearFriendRuntimeMessageContext(targetFriend);
+                    if (window.imApp?.syncActiveFriendReference) window.imApp.syncActiveFriendReference(targetFriend);
+                    if (window.imApp?.syncSettingsFriendReference) window.imApp.syncSettingsFriendReference(targetFriend);
+                }
+            }, { silent: true, includeMessages: true });
+
+            if (!saved) return false;
+            const latestFriend = (window.imData?.friends || []).find(item => String(item.id) === String(activeFriend.id)) || activeFriend;
+            if (window.imData?.currentActiveFriend && String(window.imData.currentActiveFriend.id) === String(latestFriend.id)) {
+                window.imData.currentActiveFriend = latestFriend;
+            }
+            rerenderOnlineChatForFriend(latestFriend, { scroll: false });
+            return true;
+        };
+
         const deleteOfflineMeetingSession = async (activeFriend, session) => {
             if (!activeFriend?.id || !session?.id) return false;
             if (window.imApp?.ensureFriendMessagesLoaded) {
@@ -2490,6 +2552,86 @@ function createAttachmentSheet(page) {
             });
         }
 
+        function renderOfflineHistoricalSummary(activeFriend, session) {
+            const contentArea = document.getElementById('offline-tavern-content');
+            if (!contentArea || !session) return;
+
+            const card = document.createElement('div');
+            card.className = 'offline-tavern-history-detail-summary';
+            const summaryText = String(session.summary || session.rawSummary || '').trim();
+            card.innerHTML = `
+                <div class="offline-tavern-history-detail-summary-head">
+                    <div>
+                        <div class="offline-tavern-history-detail-summary-title">见面总结</div>
+                        <div class="offline-tavern-history-detail-summary-meta">${escapeSheetHtml(session.dateText || formatOfflineMeetingDate(session.endedAt))}</div>
+                    </div>
+                    <button type="button" class="offline-tavern-history-summary-edit" aria-label="编辑总结" title="编辑总结"><i class="fas fa-pen"></i></button>
+                </div>
+                <div class="offline-tavern-history-detail-summary-text">${summaryText ? escapeSheetHtml(summaryText) : '暂无总结'}</div>
+                <textarea class="offline-tavern-history-summary-textarea" aria-label="见面总结">${escapeSheetHtml(summaryText)}</textarea>
+                <div class="offline-tavern-history-summary-actions">
+                    <button type="button" class="offline-tavern-history-summary-cancel">取消</button>
+                    <button type="button" class="offline-tavern-history-summary-save">保存</button>
+                </div>
+            `;
+
+            const textEl = card.querySelector('.offline-tavern-history-detail-summary-text');
+            const textarea = card.querySelector('.offline-tavern-history-summary-textarea');
+            const actionsEl = card.querySelector('.offline-tavern-history-summary-actions');
+            const editBtn = card.querySelector('.offline-tavern-history-summary-edit');
+            const cancelBtn = card.querySelector('.offline-tavern-history-summary-cancel');
+            const saveBtn = card.querySelector('.offline-tavern-history-summary-save');
+            let isEditing = false;
+
+            const setEditing = (editing) => {
+                isEditing = editing;
+                card.classList.toggle('is-editing', editing);
+                if (textarea) textarea.value = editing ? String(session.summary || session.rawSummary || '').trim() : textarea.value;
+                if (editing) setTimeout(() => textarea?.focus(), 30);
+            };
+
+            editBtn?.addEventListener('click', () => setEditing(true));
+            cancelBtn?.addEventListener('click', () => setEditing(false));
+            saveBtn?.addEventListener('click', async () => {
+                if (!isEditing || !textarea) return;
+                const nextSummary = textarea.value.trim();
+                saveBtn.disabled = true;
+                cancelBtn.disabled = true;
+                try {
+                    const saved = await updateOfflineMeetingSessionSummary(activeFriend, session, nextSummary);
+                    if (!saved) {
+                        if (window.showToast) window.showToast('总结保存失败');
+                        return;
+                    }
+                    session.summary = nextSummary;
+                    session.rawSummary = buildOfflineMeetingRawSummary(session, nextSummary);
+                    if (textEl) textEl.textContent = nextSummary || '暂无总结';
+                    setEditing(false);
+                    if (window.showToast) window.showToast('总结已保存');
+                } catch (error) {
+                    console.error('Update offline meeting summary failed', error);
+                    if (window.showToast) window.showToast('总结保存失败');
+                } finally {
+                    saveBtn.disabled = false;
+                    cancelBtn.disabled = false;
+                }
+            });
+
+            textarea?.addEventListener('keydown', (event) => {
+                if (event.isComposing || event.keyCode === 229) return;
+                if ((event.ctrlKey || event.metaKey) && (event.key === 'Enter' || event.keyCode === 13)) {
+                    event.preventDefault();
+                    saveBtn?.click();
+                }
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    setEditing(false);
+                }
+            });
+
+            contentArea.appendChild(card);
+        }
+
         function renderOfflineHistoricalSession(activeFriend, session) {
             const contentArea = document.getElementById('offline-tavern-content');
             if (!contentArea || !session) return;
@@ -2508,6 +2650,8 @@ function createAttachmentSheet(page) {
             messages.forEach((message, index) => {
                 renderOfflineTavernBubble(message, message.role === 'user', { floor: index + 1, readOnly: true });
             });
+            renderOfflineHistoricalSummary(activeFriend, session);
+            contentArea.scrollTop = contentArea.scrollHeight;
         }
 
         function ensureOfflineBarrageView() {
@@ -2771,11 +2915,12 @@ function createAttachmentSheet(page) {
             ];
         };
 
-        const requestOfflineAssistantReply = async (apiMessages, streamingBubble = null) => {
+        const requestOfflineAssistantReply = async (apiMessages, streamingBubble = null, options = {}) => {
             const currentApiConfig = window.getApiConfig ? window.getApiConfig() : (window.apiConfig || {});
             if (!currentApiConfig.endpoint || !currentApiConfig.apiKey) {
                 throw new Error('API config missing');
             }
+            const signal = options.signal || null;
 
             let endpoint = currentApiConfig.endpoint;
             if (endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
@@ -2783,20 +2928,36 @@ function createAttachmentSheet(page) {
                 endpoint = endpoint.endsWith('/v1') ? `${endpoint}/chat/completions` : `${endpoint}/v1/chat/completions`;
             }
 
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${currentApiConfig.apiKey}`
-                },
-                body: JSON.stringify({
-                    model: currentApiConfig.model || '',
-                    messages: apiMessages,
-                    temperature: parseFloat(currentApiConfig.temperature) || 0.7,
-                    stream: true,
-                    stream_options: { include_usage: true }
-                })
-            });
+            const finishStream = (content, completionTokens = 0, aborted = false) => {
+                const finalText = streamingBubble ? streamingBubble.getFullText() : content;
+                const tokens = completionTokens || estimateOfflineTextTokens(finalText);
+                if (streamingBubble?.setTokens) streamingBubble.setTokens(tokens);
+                return { content: finalText, tokens, aborted };
+            };
+
+            let response = null;
+            try {
+                response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${currentApiConfig.apiKey}`
+                    },
+                    body: JSON.stringify({
+                        model: currentApiConfig.model || '',
+                        messages: apiMessages,
+                        temperature: parseFloat(currentApiConfig.temperature) || 0.7,
+                        stream: true,
+                        stream_options: { include_usage: true }
+                    }),
+                    signal: signal || undefined
+                });
+            } catch (error) {
+                if (signal?.aborted || error?.name === 'AbortError') {
+                    return finishStream('', 0, true);
+                }
+                throw error;
+            }
 
             if (!response.ok) {
                 throw new Error(`HTTP Error: ${response.status}`);
@@ -2807,9 +2968,20 @@ function createAttachmentSheet(page) {
             let done = false;
             let fullText = '';
             let completionTokens = 0;
+            let aborted = false;
 
             while (!done) {
-                const { value, done: readerDone } = await reader.read();
+                let readResult = null;
+                try {
+                    readResult = await reader.read();
+                } catch (error) {
+                    if (signal?.aborted || error?.name === 'AbortError') {
+                        aborted = true;
+                        break;
+                    }
+                    throw error;
+                }
+                const { value, done: readerDone } = readResult;
                 done = readerDone;
                 if (!value) continue;
                 const chunkStr = decoder.decode(value, { stream: !done });
@@ -2830,12 +3002,18 @@ function createAttachmentSheet(page) {
                         // Ignore incomplete streaming JSON chunks.
                     }
                 }
+                if (signal?.aborted) {
+                    aborted = true;
+                    try {
+                        await reader.cancel();
+                    } catch (error) {
+                        // The fetch may already be closed by the abort signal.
+                    }
+                    break;
+                }
             }
 
-            const finalText = streamingBubble ? streamingBubble.getFullText() : fullText;
-            const tokens = completionTokens || estimateOfflineTextTokens(finalText);
-            if (streamingBubble?.setTokens) streamingBubble.setTokens(tokens);
-            return { content: finalText, tokens };
+            return finishStream(fullText, completionTokens, aborted || !!signal?.aborted);
         };
 
         const formatOfflineMeetingTranscript = (activeFriend, messages) => {
@@ -3300,10 +3478,11 @@ Do not jump into omniscient summary. If private information matters, reveal it t
             {
                 id: 'barrage_comments',
                 name: '弹幕评论',
-                enabled: false,
-                presetVersion: 2,
+                enabled: true,
+                presetVersion: 3,
                 content: `<barrage_comment_rules>
-Once this rule is enabled, keep using it in every later offline reply for this character unless the user explicitly edits the setting.
+This rule is enabled by default, but the user may turn it off in the offline settings.
+When enabled, keep using it in every later offline reply for this character unless the user disables the setting.
 Output only barrage comment text. The frontend will create exactly one barrage button after the prose and will generate random likes.
 After all prose is finished, add one plain text section headed exactly:
 【弹幕】
@@ -3481,9 +3660,11 @@ Keep the thinking concise, specific, and usable for drafting. The正文 must exe
                     if (['barrage_comments', 'player_choices', 'format_rules'].includes(id) && oldStructuredPrompt) {
                         item.content = defaultPrompt.content;
                     }
-                    if (id === 'barrage_comments' && (prompt.alwaysEnabled || prompt.enabled === true)) {
-                        item.enabled = true;
-                        item.alwaysEnabled = true;
+                    if (id === 'barrage_comments') {
+                        item.alwaysEnabled = false;
+                        item.enabled = sourcePresetVersion < targetPresetVersion
+                            ? true
+                            : (typeof prompt.enabled === 'boolean' ? prompt.enabled : item.enabled);
                     }
                     item.presetVersion = targetPresetVersion;
                     normalized.push(item);
@@ -3855,13 +4036,6 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     checkbox.checked = !!prompt.enabled;
                     checkbox.addEventListener('change', () => {
                         prompt.enabled = checkbox.checked;
-                        if (prompt.id === 'barrage_comments' && checkbox.checked) {
-                            prompt.alwaysEnabled = true;
-                            prompt.enabled = true;
-                            scheduleOfflinePromptsPersist(activeFriend, prompts);
-                            renderOfflineTavernSettingsEditor(listEl, activeFriend);
-                            return;
-                        }
                         scheduleOfflinePromptsPersist(activeFriend, prompts);
                     });
 
@@ -4159,6 +4333,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             const tavernView = document.getElementById('offline-tavern-view');
 
             let isGenerating = false;
+            let currentGenerationController = null;
             
             if (attachmentBtn && actionSheet) {
                 attachmentBtn.addEventListener('click', () => {
@@ -4217,7 +4392,16 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             
             if (sendBtn && inputField) {
                 const handleSend = async () => {
-                    if (isGenerating) return;
+                    if (isGenerating) {
+                        if (currentGenerationController && !currentGenerationController.signal.aborted) {
+                            currentGenerationController.abort();
+                            sendBtn.classList.remove('is-generating');
+                            sendBtn.classList.add('is-stopping');
+                            sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                            sendBtn.title = '正在暂停';
+                        }
+                        return;
+                    }
                     const text = inputField.value.trim();
                     if (!text) return;
                     
@@ -4234,9 +4418,15 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     {
                         inputField.value = '';
                         isGenerating = true;
+                        const generationController = new AbortController();
+                        currentGenerationController = generationController;
                         inputField.disabled = true;
                         const sendOriginalBtnContent = sendBtn.innerHTML;
-                        sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                        const sendOriginalTitle = sendBtn.title || '';
+                        sendBtn.classList.add('is-generating');
+                        sendBtn.classList.remove('is-stopping');
+                        sendBtn.innerHTML = '<i class="fas fa-pause"></i>';
+                        sendBtn.title = '暂停生成';
 
                         try {
                             await ensureOfflineMeetingState(activeFriend);
@@ -4252,8 +4442,9 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                             renderOfflineCurrentMessages(activeFriend);
 
                             const aiTimestamp = Date.now();
+                            const aiMessageId = createOfflineTavernId('offline-ai');
                             const streamingBubble = createStreamingBubble('', false, {
-                                id: createOfflineTavernId('offline-ai'),
+                                id: aiMessageId,
                                 floor: messagesWithUser.length + 1,
                                 timestamp: aiTimestamp
                             });
@@ -4262,27 +4453,34 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                             }
 
                             const apiMessages = buildOfflineApiMessages(activeFriend, messagesWithUser);
-                            const { content: finalReplyContent, tokens } = await requestOfflineAssistantReply(apiMessages, streamingBubble);
+                            const { content: finalReplyContent, tokens, aborted } = await requestOfflineAssistantReply(apiMessages, streamingBubble, {
+                                signal: generationController.signal
+                            });
 
-                            if (finalReplyContent) {
-                                const latestMessages = normalizeOfflineMessagesForFriend(activeFriend);
-                                const aiMsgObj = {
-                                    id: createOfflineTavernId('offline-ai'),
-                                    role: 'assistant',
-                                    content: finalReplyContent,
-                                    timestamp: aiTimestamp,
-                                    tokens
-                                };
-                                await persistOfflineMessages(activeFriend, latestMessages.concat(aiMsgObj));
-                                renderOfflineCurrentMessages(activeFriend);
+                            const latestMessages = normalizeOfflineMessagesForFriend(activeFriend);
+                            const aiMsgObj = {
+                                id: aiMessageId,
+                                role: 'assistant',
+                                content: finalReplyContent || '',
+                                timestamp: aiTimestamp,
+                                tokens: Math.max(0, Number(tokens) || 0)
+                            };
+                            await persistOfflineMessages(activeFriend, latestMessages.concat(aiMsgObj));
+                            renderOfflineCurrentMessages(activeFriend);
+
+                            if (aborted && window.showToast) {
+                                window.showToast(finalReplyContent ? '已暂停生成' : '已暂停生成，可重回空白楼层');
                             }
                         } catch (error) {
                             console.error("Offline Tavern API Error:", error);
                             if (window.showToast) window.showToast('请求失败，请检查网络或 API 配置');
                         } finally {
                             isGenerating = false;
+                            currentGenerationController = null;
                             inputField.disabled = false;
+                            sendBtn.classList.remove('is-generating', 'is-stopping');
                             sendBtn.innerHTML = sendOriginalBtnContent;
+                            sendBtn.title = sendOriginalTitle;
                             setTimeout(() => inputField.focus(), 50);
                         }
                     }

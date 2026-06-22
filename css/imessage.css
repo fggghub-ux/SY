@@ -1988,6 +1988,117 @@
     overflow: hidden;
 }
 
+.offline-tavern-history-detail-summary {
+    width: 100%;
+    max-width: 348px;
+    align-self: center;
+    box-sizing: border-box;
+    border-radius: 14px;
+    background: #fff;
+    border: 1px solid #e5e5ea;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.offline-tavern-history-detail-summary-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.offline-tavern-history-detail-summary-title {
+    font-size: 15px;
+    font-weight: 800;
+    color: #111;
+}
+
+.offline-tavern-history-detail-summary-meta {
+    margin-top: 2px;
+    font-size: 12px;
+    color: #8e8e93;
+}
+
+.offline-tavern-history-summary-edit {
+    width: 30px;
+    height: 30px;
+    border: none;
+    border-radius: 15px;
+    background: #f2f2f7;
+    color: #111;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.offline-tavern-history-detail-summary-text {
+    font-size: 14px;
+    line-height: 1.55;
+    color: #2c2c2e;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.offline-tavern-history-summary-textarea {
+    display: none;
+    width: 100%;
+    min-height: 132px;
+    box-sizing: border-box;
+    border: 1px solid #007aff;
+    border-radius: 12px;
+    outline: none;
+    resize: vertical;
+    padding: 10px 12px;
+    background: #f8f8fb;
+    color: #111;
+    font: inherit;
+    font-size: 14px;
+    line-height: 1.55;
+}
+
+.offline-tavern-history-summary-actions {
+    display: none;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.offline-tavern-history-summary-actions button {
+    border: none;
+    border-radius: 12px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.offline-tavern-history-summary-cancel {
+    background: #f2f2f7;
+    color: #3a3a3c;
+}
+
+.offline-tavern-history-summary-save {
+    background: #111;
+    color: #fff;
+}
+
+.offline-tavern-history-detail-summary.is-editing .offline-tavern-history-detail-summary-text,
+.offline-tavern-history-detail-summary.is-editing .offline-tavern-history-summary-edit {
+    display: none;
+}
+
+.offline-tavern-history-detail-summary.is-editing .offline-tavern-history-summary-textarea {
+    display: block;
+}
+
+.offline-tavern-history-detail-summary.is-editing .offline-tavern-history-summary-actions {
+    display: flex;
+}
+
 .offline-tavern-paragraph {
     margin: 0 0 0.9em;
 }
@@ -2265,6 +2376,14 @@
     margin-left: 8px;
     margin-bottom: 1px;
     font-size: 14px;
+}
+
+.offline-tavern-send.is-generating {
+    background: #ff9500;
+}
+
+.offline-tavern-send.is-stopping {
+    background: #8e8e93;
 }
 
 .offline-tavern-attachment {
