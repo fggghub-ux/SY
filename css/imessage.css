@@ -1835,7 +1835,7 @@
 
 .offline-tavern-inline-editor {
     width: 100%;
-    min-height: 120px;
+    min-height: 100%;
     border: none;
     outline: none;
     resize: vertical;
@@ -1845,6 +1845,23 @@
     line-height: 1.5;
     padding: 0;
     box-sizing: border-box;
+}
+
+.offline-tavern-bubble-text[data-editing="true"] {
+    display: block !important;
+}
+
+.offline-tavern-bubble-text[data-editing="true"] .offline-tavern-inline-editor {
+    display: block;
+    min-height: inherit;
+}
+
+.offline-tavern-reroll-placeholder {
+    min-height: 64px;
+    display: flex;
+    align-items: center;
+    color: #8e8e93;
+    font-weight: 700;
 }
 
 .offline-tavern-history-card,

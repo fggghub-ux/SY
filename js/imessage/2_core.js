@@ -608,7 +608,7 @@ window.imApp.formatSystemNoticeForApiContext = function(message) {
         return `[旁白：${noticeText}]`;
     }
     if (noticeKind === 'offline_meeting_active') {
-        return '[系统事件：User 和 Char 正在进行线下见面。]';
+        return '';
     }
 
     return noticeText ? `[系统事件：${noticeText}]` : '[系统事件]';
@@ -830,10 +830,11 @@ window.imApp.ensureFriendMessagesLoaded = async function(friendOrId, options = {
         targetFriend.messageCount = targetFriend.messages.length;
 
         if (targetFriend.messages.length > 0) {
-            const lastMessage = targetFriend.messages[targetFriend.messages.length - 1];
+            const visibleMessages = targetFriend.messages.filter(message => window.imApp.getFriendMessagePreview(message));
+            const lastMessage = visibleMessages.length > 0 ? visibleMessages[visibleMessages.length - 1] : null;
             targetFriend.lastMessageTimestamp = Number(lastMessage?.timestamp) || targetFriend.lastMessageTimestamp || 0;
             targetFriend.lastMessagePreview =
-                window.imApp.getFriendMessagePreview(lastMessage) ||
+                (lastMessage ? window.imApp.getFriendMessagePreview(lastMessage) : '') ||
                 targetFriend.lastMessagePreview ||
                 '';
         }
@@ -921,7 +922,7 @@ window.imApp.getFriendMessagePreview = function(message) {
         return targetMessage.text || `[语音通话记录] ${targetMessage.statusText || ''}`.trim();
     }
     if (targetMessage.type === 'offline_meeting_record') {
-        return `[见面记录] ${targetMessage.title || '见面记录'}`.trim();
+        return '[见面记录]';
     }
     if (targetMessage.type === 'system_notice') {
         const noticeKind = targetMessage.noticeKind || '';
@@ -929,7 +930,7 @@ window.imApp.getFriendMessagePreview = function(message) {
         if (noticeKind === 'group_left') return '你已退出群聊';
         if (noticeKind === 'group_rejoined') return '你重新进入群聊';
         if (noticeKind === 'narration') return `[旁白] ${noticeText}`.trim();
-        if (noticeKind === 'offline_meeting_active') return '见面中';
+        if (noticeKind === 'offline_meeting_active') return '';
         return noticeText;
     }
     if (targetMessage.type === 'html') {
@@ -942,7 +943,8 @@ window.imApp.syncFriendMessageSummary = function(friend) {
     if (!friend) return null;
 
     const messages = Array.isArray(friend.messages) ? friend.messages : [];
-    const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+    const visibleMessages = messages.filter(message => window.imApp.getFriendMessagePreview(message));
+    const lastMessage = visibleMessages.length > 0 ? visibleMessages[visibleMessages.length - 1] : null;
 
     friend.messages = messages;
     friend.messagesLoaded = true;

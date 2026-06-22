@@ -526,18 +526,68 @@ function createAttachmentSheet(page) {
 
         const isLikelyChineseText = (value) => /[\u3400-\u9fff]/.test(String(value || ''));
 
+        const wrapOfflineSpeechDisplayText = (value) => {
+            const text = String(value || '').trim();
+            if (!text) return '';
+            if (text.startsWith('「') && text.endsWith('」')) return text;
+            return `「${text}」`;
+        };
+
         const getOfflineSpeechDisplayText = (original, translation = '') => {
             const source = String(original || '').trim();
             const translated = String(translation || '').trim();
             if (!source) return '';
             if (translated && translated !== source && !isLikelyChineseText(source)) {
-                return `${source}（${translated}）`;
+                return wrapOfflineSpeechDisplayText(`${source}（${translated}）`);
             }
-            return source;
+            return wrapOfflineSpeechDisplayText(source);
         };
+
+        const normalizeOfflineSectionHeading = (value) => String(value || '').trim().replace(/[ \t]/g, '');
+
+        const isOfflineSectionHeading = (line, names) => {
+            const normalized = normalizeOfflineSectionHeading(line);
+            return names.some(name => (
+                normalized === `【${name}】` ||
+                normalized === `[${name}]` ||
+                normalized === `${name}:` ||
+                normalized === `${name}：`
+            ));
+        };
+
+        const isOfflineBarrageSectionHeading = (line) => isOfflineSectionHeading(line, ['弹幕', '弹幕评论', '观众弹幕']);
+        const isOfflineChoiceSectionHeading = (line) => isOfflineSectionHeading(line, ['选项', '玩家选项', '后续选项', '可选行动', '选择']);
+
+        const normalizeOfflineListLine = (value) => String(value || '')
+            .replace(/<[^>]+>/g, '')
+            .replace(/^[\s\-*•·]+/, '')
+            .replace(/^(?:\d+|[①②③④⑤⑥⑦⑧⑨]|[A-Za-z])[\).、:：-]?\s*/, '')
+            .trim();
+
+        const parseOfflineBarrageTextBlock = (value) => String(value || '')
+            .split(/\r?\n/)
+            .map(line => normalizeOfflineListLine(line))
+            .filter(Boolean)
+            .map((line, index) => {
+                const match = line.match(/^([^:：|]{1,16})[:：|]\s*(.*?)\s*(?:\|\s*(\d+)\s*)?$/);
+                if (match && match[2]) {
+                    return {
+                        name: match[1].trim() || `观众${index + 1}`,
+                        text: match[2].trim(),
+                        likes: Math.max(0, Number(match[3]) || 0)
+                    };
+                }
+                return {
+                    name: `观众${index + 1}`,
+                    text: line,
+                    likes: 0
+                };
+            })
+            .filter(item => item.text);
 
         const parseOfflineBarrageBlocks = (value) => {
             const barragesByParagraph = [];
+            const plainBarrageSections = [];
             const cleanText = String(value || '').replace(/<barrages?\b[^>]*>([\s\S]*?)<\/barrages?>/gi, (fullMatch, body) => {
                 const items = [];
                 String(body || '').replace(/<barrage\b([^>]*)>([\s\S]*?)<\/barrage>/gi, (_, attrText, commentText) => {
@@ -566,14 +616,46 @@ function createAttachmentSheet(page) {
                 return '\n\n';
             });
 
-            return { cleanText, barragesByParagraph };
+            const keptLines = [];
+            let captureBuffer = null;
+            const flushPlainBarrage = () => {
+                if (!captureBuffer) return;
+                const items = parseOfflineBarrageTextBlock(captureBuffer.join('\n'));
+                if (items.length > 0) plainBarrageSections.push(items);
+                captureBuffer = null;
+            };
+
+            cleanText.split(/\r?\n/).forEach((line) => {
+                if (isOfflineBarrageSectionHeading(line)) {
+                    flushPlainBarrage();
+                    captureBuffer = [];
+                    return;
+                }
+
+                if (captureBuffer && isOfflineChoiceSectionHeading(line)) {
+                    flushPlainBarrage();
+                    keptLines.push(line);
+                    return;
+                }
+
+                if (captureBuffer) {
+                    captureBuffer.push(line);
+                    return;
+                }
+
+                keptLines.push(line);
+            });
+            flushPlainBarrage();
+
+            return {
+                cleanText: keptLines.join('\n').replace(/\n{3,}/g, '\n\n').trim(),
+                barragesByParagraph,
+                plainBarrageSections
+            };
         };
 
-        const normalizeOfflineChoiceText = (value) => String(value || '')
-            .replace(/<[^>]+>/g, '')
-            .replace(/^[\s\-*•·]+/, '')
+        const normalizeOfflineChoiceText = (value) => normalizeOfflineListLine(value)
             .replace(/^(?:选项|选择|Choice)\s*\d*\s*[:：.、-]?\s*/i, '')
-            .replace(/^(?:\d+|[①②③④⑤⑥⑦⑧⑨]|[A-Ca-c])[\).、:：-]?\s*/, '')
             .trim();
 
         const parseOfflineChoiceBlocks = (value) => {
@@ -596,6 +678,45 @@ function createAttachmentSheet(page) {
                 choices = choices.concat(parsed);
                 return '\n\n';
             });
+
+            const keptLines = [];
+            const plainChoices = [];
+            let captureBuffer = null;
+            const flushPlainChoices = () => {
+                if (!captureBuffer) return;
+                captureBuffer
+                    .map(line => normalizeOfflineChoiceText(line))
+                    .filter(Boolean)
+                    .forEach(choice => plainChoices.push(choice));
+                captureBuffer = null;
+            };
+
+            cleanText.split(/\r?\n/).forEach((line) => {
+                if (isOfflineChoiceSectionHeading(line)) {
+                    flushPlainChoices();
+                    captureBuffer = [];
+                    return;
+                }
+
+                if (captureBuffer && isOfflineBarrageSectionHeading(line)) {
+                    flushPlainChoices();
+                    keptLines.push(line);
+                    return;
+                }
+
+                if (captureBuffer) {
+                    captureBuffer.push(line);
+                    return;
+                }
+
+                keptLines.push(line);
+            });
+            flushPlainChoices();
+
+            if (plainChoices.length > 0) {
+                choices = choices.concat(plainChoices);
+                cleanText = keptLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+            }
 
             if (choices.length === 0) {
                 const fallbackMatch = cleanText.match(/(?:^|\n)\s*(?:玩家选项|可选行动|后续选项|选项|选择)\s*[:：]\s*\n([\s\S]*?)$/);
@@ -661,17 +782,17 @@ function createAttachmentSheet(page) {
                 return escapeSheetHtml(text).replace(/\n/g, '<br>');
             }
 
-            const quoteRegex = /“([^”\n]{1,180})”|"([^"\n]{1,180})"/g;
+            const quoteRegex = /「([^」\n]{1,180})」|“([^”\n]{1,180})”|"([^"\n]{1,180})"/g;
             let html = '';
             let lastIndex = 0;
             let match = null;
             while ((match = quoteRegex.exec(text)) !== null) {
-                const original = String(match[1] || match[2] || '').trim();
+                const original = String(match[1] || match[2] || match[3] || '').trim();
                 if (!original) continue;
                 html += escapeSheetHtml(text.slice(lastIndex, match.index)).replace(/\n/g, '<br>');
                 const speechIndex = speechItems.length;
                 speechItems.push({ original, translation: '' });
-                html += `<span class="offline-tavern-speech">“${escapeSheetHtml(original)}”<button type="button" class="offline-tavern-voice-btn" data-offline-speech-index="${speechIndex}" title="播放语音" aria-label="播放语音"><i class="fas fa-volume-up"></i></button></span>`;
+                html += `<span class="offline-tavern-speech">${escapeSheetHtml(match[0])}<button type="button" class="offline-tavern-voice-btn" data-offline-speech-index="${speechIndex}" title="播放语音" aria-label="播放语音"><i class="fas fa-volume-up"></i></button></span>`;
                 lastIndex = match.index + match[0].length;
             }
             html += escapeSheetHtml(text.slice(lastIndex)).replace(/\n/g, '<br>');
@@ -724,7 +845,7 @@ function createAttachmentSheet(page) {
             }
 
             const speechItems = [];
-            const { cleanText, barragesByParagraph } = parseOfflineBarrageBlocks(text);
+            const { cleanText, barragesByParagraph, plainBarrageSections } = parseOfflineBarrageBlocks(text);
             const choiceParseResult = parseOfflineChoiceBlocks(cleanText);
             const choices = choiceParseResult.choices;
             const normalizedText = choiceParseResult.cleanText
@@ -735,16 +856,25 @@ function createAttachmentSheet(page) {
                 .split(/\n{2,}/)
                 .map(part => part.trim())
                 .filter(Boolean);
+            const mergedBarragesByParagraph = barragesByParagraph.map(items => Array.isArray(items) ? items.slice() : []);
+            (plainBarrageSections || []).forEach((items, sectionIndex) => {
+                if (!Array.isArray(items) || items.length === 0) return;
+                const targetIndex = (plainBarrageSections || []).length === 1
+                    ? Math.max(0, paragraphs.length - 1)
+                    : Math.min(sectionIndex, Math.max(0, paragraphs.length - 1));
+                if (!mergedBarragesByParagraph[targetIndex]) mergedBarragesByParagraph[targetIndex] = [];
+                mergedBarragesByParagraph[targetIndex] = mergedBarragesByParagraph[targetIndex].concat(items);
+            });
 
             if (messageId) {
-                offlineBarrageRuntimeStore.set(messageId, barragesByParagraph);
+                offlineBarrageRuntimeStore.set(messageId, mergedBarragesByParagraph);
                 offlineChoiceRuntimeStore.set(messageId, choices);
             }
 
             const paragraphHtml = paragraphs
                 .map((part, index) => {
                     const paragraphHtml = renderOfflineParagraphText(part, speechItems, enableVoice);
-                    const barrageItems = Array.isArray(barragesByParagraph[index]) ? barragesByParagraph[index].filter(item => item && item.text) : [];
+                    const barrageItems = Array.isArray(mergedBarragesByParagraph[index]) ? mergedBarragesByParagraph[index].filter(item => item && item.text) : [];
                     const barrageButtonHtml = enableBarrage && barrageItems.length > 0
                         ? `<button type="button" class="offline-tavern-barrage-btn" data-offline-barrage-index="${index}" title="查看弹幕" aria-label="查看弹幕"><i class="fas fa-comment-dots"></i><span>${barrageItems.length}</span></button>`
                         : '';
@@ -2186,7 +2316,7 @@ function createAttachmentSheet(page) {
                 }, { silent: true, metaOnly: true });
             }
 
-            await upsertOfflineMeetingActiveNotice(activeFriend);
+            await removeOfflineMeetingActiveNotice(activeFriend);
             return activeFriend.offlineCurrentSessionId;
         };
 
@@ -2357,9 +2487,12 @@ function createAttachmentSheet(page) {
             const originalText = messages[index].content || '';
             const originalHtml = textEl.innerHTML;
             const originalDisplay = textEl.style.display;
+            const originalMinHeight = textEl.style.minHeight;
             const originalActionsHtml = actionsEl ? actionsEl.innerHTML : '';
+            const measuredHeight = Math.ceil(textEl.getBoundingClientRect().height || 0);
             textEl.dataset.editing = 'true';
             textEl.style.display = '';
+            if (measuredHeight > 0) textEl.style.minHeight = `${measuredHeight}px`;
             textEl.innerHTML = `<textarea class="offline-tavern-inline-editor">${escapeSheetHtml(originalText)}</textarea>`;
 
             if (actionsEl) {
@@ -2374,6 +2507,11 @@ function createAttachmentSheet(page) {
                 textEl.dataset.editing = 'false';
                 textEl.innerHTML = originalHtml;
                 textEl.style.display = originalDisplay;
+                textEl.style.minHeight = originalMinHeight;
+                textEl.querySelectorAll('[data-bound]').forEach((control) => {
+                    delete control.dataset.bound;
+                });
+                bindOfflineTavernTextControls(bubble, messages[index], activeFriend, index + 1);
                 if (actionsEl) {
                     actionsEl.innerHTML = originalActionsHtml;
                     actionsEl.querySelectorAll('[data-offline-action]').forEach((button) => {
@@ -2788,29 +2926,115 @@ function createAttachmentSheet(page) {
             const messages = normalizeOfflineMessagesForFriend(activeFriend);
             const targetIndex = messages.findIndex(message => String(message.id) === String(messageId));
             if (targetIndex < 0 || messages[targetIndex].role !== 'assistant') return;
+            const originalMessage = messages[targetIndex];
+            const bubble = Array.from(document.querySelectorAll('.offline-tavern-bubble'))
+                .find(item => String(item.getAttribute('data-message-id') || '') === String(messageId));
+            const textEl = bubble ? bubble.querySelector('.offline-tavern-bubble-text') : null;
+            const metaEl = bubble ? bubble.querySelector('.offline-tavern-bubble-meta') : null;
+            const actionsEl = bubble ? bubble.querySelector('.offline-tavern-bubble-actions') : null;
+            const originalHtml = textEl ? textEl.innerHTML : '';
+            const originalDisplay = textEl ? textEl.style.display : '';
+            const originalMeta = metaEl ? metaEl.textContent : '';
+            const actionButtons = actionsEl ? Array.from(actionsEl.querySelectorAll('button')) : [];
+            const rerollTimestamp = Date.now();
+
+            let streamText = '';
+            const getVisibleStreamText = () => {
+                let displayText = streamText;
+                const startIndex = displayText.indexOf('<thinking>');
+                if (startIndex >= 0) {
+                    const endIndex = displayText.indexOf('</thinking>', startIndex);
+                    displayText = endIndex >= 0
+                        ? `${displayText.slice(0, startIndex)}${displayText.slice(endIndex + '</thinking>'.length)}`
+                        : displayText.slice(0, startIndex);
+                }
+                return displayText.trim();
+            };
+            const renderStreamText = () => {
+                if (!textEl || !bubble) return;
+                const displayText = getVisibleStreamText();
+                textEl.style.display = '';
+                textEl.innerHTML = displayText
+                    ? buildOfflineTavernTextHtml(displayText, {
+                        messageId,
+                        enableVoice: true,
+                        enableBarrage: isOfflineBarragePromptEnabled(activeFriend),
+                        enableChoices: isOfflineChoicesPromptEnabled(activeFriend)
+                    })
+                    : '<div class="offline-tavern-reroll-placeholder">正在重新思考...</div>';
+                bindOfflineTavernTextControls(bubble, {
+                    ...originalMessage,
+                    content: displayText,
+                    timestamp: rerollTimestamp
+                }, activeFriend, targetIndex + 1);
+                const contentArea = document.getElementById('offline-tavern-content');
+                if (contentArea) {
+                    const bubbleTop = bubble.offsetTop;
+                    if (bubbleTop < contentArea.scrollTop || bubbleTop > contentArea.scrollTop + contentArea.clientHeight - 120) {
+                        contentArea.scrollTop = Math.max(0, bubbleTop - 24);
+                    }
+                }
+            };
+            const streamingBubble = textEl ? {
+                appendChunk: (chunk) => {
+                    streamText += chunk;
+                    renderStreamText();
+                },
+                setTokens: (tokens) => {
+                    if (metaEl) {
+                        const safeTokens = Math.max(0, Number(tokens) || 0);
+                        metaEl.textContent = `#${targetIndex + 1} · ${safeTokens || estimateOfflineTextTokens(streamText)} tokens · ${formatOfflineBubbleTime(rerollTimestamp)}`;
+                    }
+                },
+                getFullText: () => streamText
+            } : null;
+
             if (button) {
                 button.disabled = true;
                 button.style.opacity = '0.45';
+            }
+            actionButtons.forEach(actionButton => {
+                actionButton.disabled = true;
+                actionButton.style.opacity = '0.45';
+            });
+            if (textEl) {
+                textEl.dataset.rerolling = 'true';
+                textEl.style.display = '';
+                textEl.innerHTML = '<div class="offline-tavern-reroll-placeholder">正在重新思考...</div>';
             }
 
             try {
                 const contextMessages = messages.slice(0, targetIndex);
                 const apiMessages = buildOfflineApiMessages(activeFriend, contextMessages);
-                const { content, tokens } = await requestOfflineAssistantReply(apiMessages, null);
+                const { content, tokens } = await requestOfflineAssistantReply(apiMessages, streamingBubble);
                 const nextMessages = messages.slice();
                 nextMessages[targetIndex] = {
                     ...nextMessages[targetIndex],
                     content,
                     tokens,
-                    timestamp: Date.now(),
+                    timestamp: rerollTimestamp,
                     updatedAt: new Date().toISOString()
                 };
                 await persistOfflineMessages(activeFriend, nextMessages);
                 renderOfflineCurrentMessages(activeFriend);
             } catch (error) {
+                if (textEl) {
+                    textEl.dataset.rerolling = 'false';
+                    textEl.innerHTML = originalHtml;
+                    textEl.style.display = originalDisplay;
+                    textEl.querySelectorAll('[data-bound]').forEach((control) => {
+                        delete control.dataset.bound;
+                    });
+                    bindOfflineTavernTextControls(bubble, originalMessage, activeFriend, targetIndex + 1);
+                }
+                if (metaEl) metaEl.textContent = originalMeta;
                 console.error('Offline reroll failed', error);
                 if (window.showToast) window.showToast('重回失败，请检查 API 配置或网络');
             } finally {
+                actionButtons.forEach(actionButton => {
+                    actionButton.disabled = false;
+                    actionButton.style.opacity = '';
+                });
                 if (button) {
                     button.disabled = false;
                     button.style.opacity = '';
@@ -2967,10 +3191,11 @@ Do not jump into omniscient summary. If private information matters, reveal it t
                 name: '弹幕评论',
                 enabled: false,
                 content: `<barrage_comment_rules>
-When this rule is enabled, each narrative paragraph must be followed by a matching <barrages> block.
-For every paragraph, generate at least 10 audience-style comments. Comments should sound like viewers reading a novel or watching a film: praise the protagonist, guess what may happen next, react to tension, notice details, or lightly tease the plot.
-Each comment must use this exact format:
-<barrage name="观众名" likes="非负整数">评论内容</barrage>
+When this rule is enabled, output only barrage comment text. The frontend will create the barrage button and barrage view.
+After the prose, add one plain text section headed exactly:
+【弹幕】
+Then write 5 to 10 short audience-style comments, one comment per line. Do not output XML, HTML, JSON, buttons, labels, likes, or UI instructions.
+Comments should sound like viewers reading a novel or watching a film: react to tension, notice details, guess what may happen next, praise the protagonist, or lightly tease the plot.
 Do not let barrage comments change the story. They are UI reactions only, not canon and not dialogue.
 </barrage_comment_rules>`,
                 editable: true,
@@ -2981,15 +3206,12 @@ Do not let barrage comments change the story. They are UI reactions only, not ca
                 name: '玩家选项',
                 enabled: true,
                 content: `<player_choice_rules>
-After the final narrative paragraph, generate exactly 3 short choices for the player.
+After the final narrative paragraph and any barrage section, output only choice button text. The frontend will create all buttons and option UI.
+Add one plain text section headed exactly:
+【选项】
+Then write exactly 3 short choices, one choice per line. Do not output XML, HTML, JSON, button markup, numbering requirements, or UI instructions.
 Each choice should be about 10 Chinese characters, actionable, and able to lead naturally into the next scene or deepen the current tension.
 Do not make choices generic. Tie them to the current scene, relationship, objects, and unresolved momentum.
-Use this exact format after the prose:
-<choices>
-<choice>选项一</choice>
-<choice>选项二</choice>
-<choice>选项三</choice>
-</choices>
 </player_choice_rules>`,
                 editable: true,
                 deletable: false
@@ -3024,9 +3246,10 @@ System managed. Vectorized Char short-term, long-term, and cherished memories ar
                 content: `<formatting_rules>
 Output narrative prose only. Do not output JSON or Markdown code fences.
 Use normal paragraph prose with a blank line between paragraphs.
-Wrap every Char spoken line in <speech original="spoken text" translation="Chinese translation if spoken text is not Chinese">spoken text</speech>. If the spoken text is Chinese, translation may be empty.
-If barrage comments are enabled, write each paragraph as <paragraph>...</paragraph> followed by its <barrages>...</barrages> block.
-If player choices are enabled, append exactly one <choices> block after all prose and barrages, containing exactly three <choice>...</choice> items.
+Every spoken line from Char must be wrapped in Chinese corner quotes, for example: 「我在这里。」 Do not write bare Char dialogue and do not use "Char: dialogue" labels.
+If barrage comments are enabled, append a plain 【弹幕】 section containing only comment text lines.
+If player choices are enabled, append a plain 【选项】 section containing exactly three choice text lines.
+Do not output XML tags such as <speech>, <barrages>, <barrage>, <choices>, or <choice>; the frontend owns all UI.
 If a <thinking> block is produced for the frontend, put it before the prose and keep the final prose outside it.
 </formatting_rules>`,
                 editable: true,
@@ -3130,8 +3353,9 @@ Do not expose detailed chain-of-thought. If the frontend requires a visible <thi
                     item.content = item.systemManaged
                         ? defaultPrompt.content
                         : ((!isLegacyDefault && typeof prompt.content === 'string') ? prompt.content : defaultPrompt.content);
-                    if (id === 'format_rules' && !/<speech\b/i.test(item.content || '')) {
-                        item.content = `${item.content.trim()}\n\n<speech_markup_rules>\nWrap every Char spoken line in <speech original="spoken text" translation="Chinese translation if spoken text is not Chinese">spoken text</speech>. If the spoken text is Chinese, translation may be empty. Minimax voice playback uses only the original value.\n</speech_markup_rules>`;
+                    const oldStructuredPrompt = /<speech\b|<barrages?\b|<barrage\b|<choices?\b|<choice\b/i.test(item.content || '');
+                    if (['barrage_comments', 'player_choices', 'format_rules'].includes(id) && oldStructuredPrompt) {
+                        item.content = defaultPrompt.content;
                     }
                     normalized.push(item);
                     usedIds.add(id);
