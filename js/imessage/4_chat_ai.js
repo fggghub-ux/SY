@@ -222,7 +222,14 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
 
     async function handleSend(friend, inputEl, container) {
         const text = inputEl.value.trim();
-        if (!text) return;
+        if (!text) {
+            const liveFriend = getLiveFriendById(friend.id) || friend;
+            await handleAiReply(liveFriend, container, null, {
+                source: 'empty_user_continue',
+                continueWithoutUser: true
+            });
+            return;
+        }
 
         const liveFriend = getLiveFriendById(friend.id) || friend;
         if (liveFriend.type === 'group' && Number(liveFriend.leftGroupAt) > 0) {
@@ -1093,6 +1100,20 @@ ${latestMessages || 'None'}
         }
     }
 
+    function buildContinueWithoutUserPrompt(friend, options = {}) {
+        const isGroupAfterUserLeft = !!options.isGroupAfterUserLeft;
+        const charName = friend.nickname || friend.realName || 'Char';
+        if (isGroupAfterUserLeft) {
+            return '【本轮触发：User 没有回复】User 已退出或没有发送新消息。请让群成员基于最近群聊上下文继续自然说话，不要等待 User，不要让 User 发言，不要输出空内容；仍必须输出合法 <chat_json> JSON 数组。';
+        }
+
+        if (friend.type === 'group') {
+            return '【本轮触发：User 没有回复】User 没有发送新消息。请让群成员基于最近群聊上下文继续自然说话，可以承接上一句、回应沉默、成员互相接话或开启符合关系的新话题；不要等待 User，不要输出空内容；仍必须输出合法 <chat_json> JSON 数组。';
+        }
+
+        return `【本轮触发：User 没有回复】User 没有发送新消息。请以 ${charName} 的身份主动继续说话，可以承接上一轮、补充没说完的话、分享身边状态、回应沉默或自然开启新话题；不要说“用户没有输入”，不要等待 User，不要输出空内容；仍必须输出合法 <chat_json> JSON 数组。`;
+    }
+
     async function runAutonomousMomentForFriend(friendOrId, reason = 'timer') {
         const friendKey = getFriendKey(friendOrId);
         if (!friendKey || autonomousMomentInFlight.has(friendKey)) return false;
@@ -1628,7 +1649,8 @@ ${allowedSpeakerNames.length > 0 ? allowedSpeakerNames.join('、') : 'None'}${af
 9. speaker 必须且只能使用以上允许发言名单中的完整准确名字。
 10. translation 只能翻译当前这一条 text；如果 text 不是中文，translation 必须填写自然中文翻译；如果 text 本身是中文，translation 必须是空字符串。
 11. quote 只有在你确实想引用用户或上一条消息时才填写，否则必须是空字符串。
-12. 【心声要求】：thought 字段必须填写该发言成员此刻的真实心理活动或未说出口的话，字数严格在10-30字之间。${languageRequirement}
+12. 【心声要求】：thought 字段必须填写该发言成员此刻的真实心理活动或未说出口的话，字数严格在10-30字之间。
+13. 【User 未回复也必须继续】：如果本轮没有 User 新发言，或触发来源是 AI继续/空输入/自动续写/角色主动说话，你仍然必须让群成员继续自然聊天；不要等待 User、不要输出空内容、不要说“用户没有输入”，可以承接上一句、回应沉默、成员互相接话或开启符合当前关系的新话题。${languageRequirement}
 
 群聊的背景与关系记忆:
 ${commonMemorySections || 'None'}${dynamicActionNarrationRequirement}`;
@@ -1688,7 +1710,8 @@ ${commonMemorySections || 'None'}${dynamicActionNarrationRequirement}`;
 - 如果 User 一上来表现得过分熟络，而你的记忆与设定里没有对应关系依据，请按你的人设自然产生疑惑、警惕、好奇、礼貌确认或拉开边界，而不是立刻配合亲密。
 - 你的态度必须从人设、性格、经历、当前状态、与 User 的关系阶段和共同记忆中自然生长。你可以有符合人设的反对意见，不需要永远顺从 User；如果 User 无理取闹、不尊重你或越过边界，你可以感到疲惫、委屈甚至愤怒，并用符合关系与性格的方式表达。
 - 你会受到现实日程和状态影响：忙碌、疲惫、低落、分心、困倦、开心、期待、吃醋、敏感或想独处，都可以真实影响你的回复密度、语气和主动性。
-- 回复时自然感知：我是谁？我的人设底色是什么？我目前和 User 的关系处于什么阶段？User 这些话背后的真实情绪和潜台词是什么？这些话是否让我想起了某些共同记忆或私人记忆？`;
+- 回复时自然感知：我是谁？我的人设底色是什么？我目前和 User 的关系处于什么阶段？User 这些话背后的真实情绪和潜台词是什么？这些话是否让我想起了某些共同记忆或私人记忆？
+- 【User 未回复也必须继续】：如果本轮没有 User 新发言，或触发来源是 AI继续/空输入/自动续写/角色主动说话，你仍然必须以角色身份主动生成回复；可以承接上一轮、补充没说完的话、分享身边状态、回应沉默、表达等待后的反应或开启符合关系的新话题。不要说“用户没有输入”，不要等待 User，不要输出空内容。`;
 
             systemPrompt = `${systemDepthWorldBookContext ? `System Depth Rules (Highest Priority):\n${systemDepthWorldBookContext}\n\n` : ''}${beforeRoleWorldBookContext ? `Before Role Rules:\n${beforeRoleWorldBookContext}\n\n` : ''}You are playing the role of ${friend.realName || friend.nickname}. 
 【核心设定/Core Persona】：${friend.persona || 'No specific persona'}。
@@ -1746,10 +1769,19 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                     : '当前 User 已退出群聊：后续回复不要把 User 当作在线参与者。'
             });
         }
-        if (!messages.some(message => message.role !== 'system')) {
+
+        const dialogueMessages = messages.filter(message => message && message.role !== 'system');
+        const latestDialogueMessage = dialogueMessages.length > 0 ? dialogueMessages[dialogueMessages.length - 1] : null;
+        const shouldContinueWithoutUser = !!options.continueWithoutUser
+            || options.source === 'empty_user_continue'
+            || options.source === 'left_group_continue'
+            || !latestDialogueMessage
+            || latestDialogueMessage.role !== 'user';
+
+        if (shouldContinueWithoutUser) {
             messages.push({
                 role: 'user',
-                content: isGroupAfterUserLeft ? '请继续 User 退出后的群聊。' : 'Hello'
+                content: buildContinueWithoutUserPrompt(friend, { isGroupAfterUserLeft })
             });
         }
 

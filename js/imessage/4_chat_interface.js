@@ -310,10 +310,10 @@ async function openChatTab(friend) {
                     </div>
                     <div class="ins-chat-input-wrapper">
                         ${isNpcChat ? '' : '<div class="ins-input-icon plus-btn"><i class="fas fa-plus"></i></div>'}
-                        <input type="text" placeholder="发送消息..." class="ins-message-input chat-input">
+                        <input type="text" placeholder="imessage..." class="ins-message-input chat-input">
                         <div class="im-chat-input-actions">
                             <div class="send-btn-icon send-btn"><i class="fas fa-paper-plane"></i></div>
-                            <div class="send-btn-icon mic-btn"><i class="fas ${isNpcChat ? 'fa-magic' : 'fa-microphone'}"></i></div>
+                            <div class="send-btn-icon mic-btn"><i class="fas fa-arrow-down"></i></div>
                         </div>
                     </div>
                     ${isGroupChat ? `

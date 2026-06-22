@@ -522,7 +522,7 @@ window.imApp.normalizeFriendData = function(friend) {
         cherishedEntries: Array.isArray(memory.cherishedEntries)
             ? memory.cherishedEntries.map((entry, index) => ({
                 id: entry?.id != null ? entry.id : `cherished-${index}`,
-                title: entry?.title || '下载项',
+                title: entry?.title || '长期记忆',
                 content: entry?.content || '',
                 detail: entry?.detail || '',
                 reason: entry?.reason || '',
@@ -536,7 +536,7 @@ window.imApp.normalizeFriendData = function(friend) {
             ? memory.socialAccounts
                 .map((account, index) => ({
                     platform: account?.platform || '',
-                    label: account?.label || account?.platform || '社交帐号',
+                    label: account?.label || account?.platform || '社交账号',
                     handle: account?.handle || '',
                     url: account?.url || '',
                     ytChannelId: account?.ytChannelId || account?.channelId || '',
@@ -3950,16 +3950,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Bottom Nav Logic ---
     const navHomeBtn = document.getElementById('nav-home-btn');
     const navChatsBtn = document.getElementById('nav-chats-btn');
-    const navMemoryBtn = document.getElementById('nav-memory-btn');
     const navMomentsBtn = document.getElementById('nav-moments-btn');
     const lineNavIndicator = document.getElementById('line-nav-indicator');
     const imBottomNavContainer = document.querySelector('.line-bottom-nav-container');
     
     const imContent = document.querySelector('.line-content'); 
     const chatsContent = document.getElementById('chats-content');
-    const memoryContent = document.getElementById('memory-content');
-    const memoryTopFriendsScroll = document.getElementById('memory-top-friends-scroll');
-    const memorySelectedName = document.getElementById('memory-selected-name');
     const memoryLocationSheet = document.getElementById('memory-location-sheet');
     const memoryLocationSheetContent = document.getElementById('memory-location-sheet-content');
     const memoryEntryDetailModal = document.getElementById('memory-entry-detail-modal');
@@ -3971,7 +3967,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const memoryEntryDetailClose = document.getElementById('memory-entry-detail-close');
     const momentsContent = document.getElementById('moments-content');
     let currentMemoryFriendId = null;
-    let memoryProgrammaticScrollUntil = 0;
+    let currentMemoryLocation = 'iphone';
 
     function updateLineNavIndicator(activeItem) {
         if (!activeItem || !lineNavIndicator) return;
@@ -3992,10 +3988,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return allFriends.filter(f => f && f.type !== 'group' && f.type !== 'npc');
     }
 
-    function getMemoryFriendName(friend) {
-        return friend?.nickname || friend?.realname || friend?.realName || 'Unknown';
-    }
-
     function escapeMemoryHtml(value) {
         return String(value == null ? '' : value)
             .replace(/&/g, '&amp;')
@@ -4005,84 +3997,33 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/'/g, '&#39;');
     }
 
-    function setActiveMemoryFriend(friend) {
+    function setMemoryFriendSelection(friend) {
         if (!friend) return;
         currentMemoryFriendId = friend.id;
-        if (memorySelectedName) memorySelectedName.textContent = getMemoryFriendName(friend);
-
-        if (memoryTopFriendsScroll) {
-            const items = memoryTopFriendsScroll.querySelectorAll('.memory-friend-story-item');
-            items.forEach(item => {
-                const isActive = String(item.dataset.friendId) === String(friend.id);
-                item.classList.toggle('active', isActive);
-            });
-        }
-        
-        // Re-render location sheet when active friend changes
-        if (memoryLocationSheetContent && memoryLocationSheetContent.innerHTML !== '') {
-            renderMemoryLocationSheet('iphone');
-        }
     }
 
     function renderMemoryView() {
-        if (!memoryTopFriendsScroll) return;
-
-        const validFriends = getMemoryFriends();
-        memoryTopFriendsScroll.innerHTML = '';
-
-        if (validFriends.length === 0) {
-            currentMemoryFriendId = null;
-            if (memorySelectedName) memorySelectedName.textContent = '';
-            memoryTopFriendsScroll.innerHTML = '<div class="memory-empty-state">暂无好友</div>';
-            return;
-        }
-
-        let activeFriend = validFriends.find(f => String(f.id) === String(currentMemoryFriendId)) || validFriends[0];
-
-        validFriends.forEach(friend => {
-            const item = document.createElement('div');
-            item.className = 'memory-friend-story-item';
-            item.dataset.friendId = friend.id;
-
-            const avatarWrapper = document.createElement('div');
-            avatarWrapper.className = 'memory-friend-story-avatar-wrapper';
-
-            if (friend.avatarUrl) {
-                const img = document.createElement('img');
-                img.src = friend.avatarUrl;
-                img.alt = '';
-                img.className = 'memory-friend-story-avatar-img';
-                avatarWrapper.appendChild(img);
-            } else {
-                const icon = document.createElement('i');
-                icon.className = 'fas fa-user memory-friend-story-avatar-icon';
-                avatarWrapper.appendChild(icon);
-            }
-
-            const nameEl = document.createElement('div');
-            nameEl.className = 'memory-friend-story-name';
-            nameEl.textContent = getMemoryFriendName(friend);
-
-            item.appendChild(avatarWrapper);
-            item.appendChild(nameEl);
-            item.addEventListener('click', () => setActiveMemoryFriend(friend));
-            memoryTopFriendsScroll.appendChild(item);
-        });
-
-        setActiveMemoryFriend(activeFriend);
-    }
-
-    function openMemoryLocationSheet() {
-        const location = this?.dataset?.memoryLocation || '';
-        if (memoryLocationSheet && window.openView) {
-            renderMemoryLocationSheet(location);
-            window.openView(memoryLocationSheet);
+        if (memoryLocationSheetContent && memoryLocationSheetContent.innerHTML !== '') {
+            renderMemoryLocationSheet(currentMemoryLocation || 'iphone');
         }
     }
 
     function renderScheduleModal() {
         const friend = getCurrentMemoryFriend();
-        if (!friend || !friend.memory || !friend.memory.schedule) return;
+        if (!friend) return;
+
+        const normalizedFriend = window.imApp.normalizeFriendData
+            ? window.imApp.normalizeFriendData(friend)
+            : friend;
+        friend.memory = normalizedFriend.memory || friend.memory || window.imApp.createDefaultMemory?.() || {};
+        if (!friend.memory.schedule) {
+            friend.memory.schedule = window.imApp.createDefaultMemory?.().schedule || {
+                enabled: false,
+                sleepTime: '23:00',
+                wakeTime: '07:00',
+                events: []
+            };
+        }
 
         const enabledToggle = document.getElementById('chat-memory-schedule-enabled-toggle');
         const sleepText = document.getElementById('chat-memory-schedule-sleep-text');
@@ -4369,30 +4310,13 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderMemoryLocationSheet(location) {
         if (!memoryLocationSheetContent) return;
 
-        const friend = getCurrentMemoryFriend();
-        
-        if (location === 'icloud') {
-            memoryLocationSheetContent.innerHTML = `
-                <div class="memory-sheet-title">iCloud 云盘</div>
-                <div class="memory-short-list">
-                    <button type="button" class="memory-short-item" id="memory-schedule-btn">
-                        <span>日程作息</span>
-                        <i class="fas fa-chevron-right"></i>
-                    </button>
-                </div>
-            `;
-            
-            const scheduleBtn = memoryLocationSheetContent.querySelector('#memory-schedule-btn');
-            if (scheduleBtn) {
-                scheduleBtn.addEventListener('click', () => {
-                    if (scheduleModal && window.openView) {
-                        renderScheduleModal();
-                        window.openView(scheduleModal);
-                    }
-                });
-            }
-            return;
+        location = location || 'iphone';
+        if (location === 'social') {
+            location = 'deleted';
         }
+        currentMemoryLocation = location;
+
+        const friend = getCurrentMemoryFriend();
 
         const normalizedFriend = friend ? window.imApp.normalizeFriendData(friend) : null;
 
@@ -4403,16 +4327,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (socialAccounts.length === 0) {
                 memoryLocationSheetContent.innerHTML = `
-                    <div class="memory-sheet-title">社交帐号</div>
+                    <div class="memory-sheet-title">社交账号</div>
                     <div class="memory-short-list">
-                        <div class="memory-short-empty">暂无社交帐号</div>
+                        <div class="memory-short-empty">暂无社交账号</div>
                     </div>
                 `;
                 return;
             }
 
             memoryLocationSheetContent.innerHTML = `
-                <div class="memory-sheet-title">社交帐号</div>
+                <div class="memory-sheet-title">社交账号</div>
                 <div class="memory-short-list">
                     ${socialAccounts.map(account => `
                         <div class="memory-short-item" style="gap:12px;">
@@ -4420,7 +4344,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <i class="${account.platform === 'youtube' ? 'fab fa-youtube' : (account.platform === 'tiktok' ? 'fab fa-tiktok' : 'fas fa-link')}" style="color:#fff; font-size:15px;"></i>
                             </span>
                             <span style="display:flex; flex-direction:column; min-width:0; flex:1; gap:2px;">
-                                <span style="font-size:15px; color:#111; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeMemoryHtml(account.handle || account.label || '社交帐号')}</span>
+                                <span style="font-size:15px; color:#111; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeMemoryHtml(account.handle || account.label || '社交账号')}</span>
                                 <span style="font-size:12px; color:#8e8e93; font-weight:400; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeMemoryHtml(account.url || '')}</span>
                             </span>
                         </div>
@@ -4437,20 +4361,20 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (cherishedEntries.length === 0) {
                 memoryLocationSheetContent.innerHTML = `
-                    <div class="memory-sheet-title">下载项</div>
+                    <div class="memory-sheet-title">长期记忆</div>
                     <div class="memory-short-list">
-                        <div class="memory-short-empty">暂无下载项</div>
+                        <div class="memory-short-empty">暂无长期记忆</div>
                     </div>
                 `;
                 return;
             }
 
             memoryLocationSheetContent.innerHTML = `
-                <div class="memory-sheet-title">下载项</div>
+                <div class="memory-sheet-title">长期记忆</div>
                 <div class="chat-memory-modal-cherished-list" style="padding: 0 16px;">
                     ${cherishedEntries.slice().reverse().map(entry => `
                         <button type="button" class="chat-memory-modal-cherished-card" data-entry-id="${entry.id}">
-                            <div class="chat-memory-modal-cherished-card-title">${escapeMemoryHtml(entry.title || '下载项')}</div>
+                            <div class="chat-memory-modal-cherished-card-title">${escapeMemoryHtml(entry.title || '长期记忆')}</div>
                             <div class="chat-memory-modal-cherished-card-time">${escapeMemoryHtml(entry.createdAt || '点击查看详情')}</div>
                         </button>
                     `).join('')}
@@ -4474,14 +4398,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // "我的 iPhone" acts as the short-term memory library for manually generated chat summaries.
+        // Short-term memory library for manually generated chat summaries.
         const entries = Array.isArray(normalizedFriend?.memory?.shortTermEntries)
             ? normalizedFriend.memory.shortTermEntries
             : [];
 
         if (entries.length === 0) {
             memoryLocationSheetContent.innerHTML = `
-                <div class="memory-sheet-title">我的 iPhone</div>
+                <div class="memory-sheet-title">短期记忆</div>
                 <div class="memory-short-list">
                     <div class="memory-short-empty">暂无短期记忆</div>
                 </div>
@@ -4490,7 +4414,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         memoryLocationSheetContent.innerHTML = `
-            <div class="memory-sheet-title">我的 iPhone</div>
+            <div class="memory-sheet-title">短期记忆</div>
             <div class="memory-short-list">
                 ${entries.slice().reverse().map(entry => `
                     <div class="memory-short-item memory-short-summary-item" role="button" tabindex="0" data-memory-entry-id="${entry.id}">
@@ -4536,9 +4460,39 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    document.querySelectorAll('.memory-file-row').forEach(row => {
-        row.addEventListener('click', openMemoryLocationSheet);
-    });
+    window.imApp.openMemoryLocationForFriend = function(friendOrId, location) {
+        const friend = window.imApp.getFriendById
+            ? window.imApp.getFriendById(friendOrId)
+            : ((window.imData.friends || []).find(item => String(item.id) === String(friendOrId?.id ?? friendOrId)));
+        if (!friend) return false;
+        setMemoryFriendSelection(friend);
+        renderMemoryLocationSheet(location);
+        if (memoryLocationSheet && window.openView) {
+            window.openView(memoryLocationSheet);
+            return true;
+        }
+        return false;
+    };
+
+    window.imApp.openMemoryScheduleForFriend = function(friendOrId) {
+        const friend = window.imApp.getFriendById
+            ? window.imApp.getFriendById(friendOrId)
+            : ((window.imData.friends || []).find(item => String(item.id) === String(friendOrId?.id ?? friendOrId)));
+        if (!friend) return false;
+        setMemoryFriendSelection(friend);
+        if (scheduleModal && window.openView) {
+            renderScheduleModal();
+            window.openView(scheduleModal);
+            return true;
+        }
+        return false;
+    };
+
+    window.imApp.getCurrentMemoryFriend = getCurrentMemoryFriend;
+
+    window.imApp.refreshMemoryLocationSheet = function(location) {
+        renderMemoryLocationSheet(location || currentMemoryLocation || 'iphone');
+    };
 
     if (memoryEntryDetailClose && memoryEntryDetailModal) {
         memoryEntryDetailClose.addEventListener('click', () => {
@@ -4557,12 +4511,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function hideAllTabs() {
         if(imContent) imContent.style.display = 'none';
         if(chatsContent) chatsContent.style.display = 'none';
-        if(memoryContent) memoryContent.style.display = 'none';
         if(momentsContent) momentsContent.style.display = 'none';
         
         if(navHomeBtn) navHomeBtn.classList.remove('active');
         if(navChatsBtn) navChatsBtn.classList.remove('active');
-        if(navMemoryBtn) navMemoryBtn.classList.remove('active');
         if(navMomentsBtn) navMomentsBtn.classList.remove('active');
         
         const imHeaderRight = document.querySelector('.line-header-right');
@@ -4591,21 +4543,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             navChatsBtn.classList.add('active');
             updateLineNavIndicator(navChatsBtn);
-            if (window.imApp.updateChatsUnreadBadges) window.imApp.updateChatsUnreadBadges();
-        });
-    }
-
-    if (navMemoryBtn) {
-        navMemoryBtn.addEventListener('click', () => {
-            hideAllTabs();
-            if(memoryContent) {
-                memoryContent.style.display = 'flex';
-                memoryContent.style.flexDirection = 'column';
-                renderMemoryView();
-            }
-            if(imBottomNavContainer) imBottomNavContainer.style.display = 'flex';
-            navMemoryBtn.classList.add('active');
-            updateLineNavIndicator(navMemoryBtn);
             if (window.imApp.updateChatsUnreadBadges) window.imApp.updateChatsUnreadBadges();
         });
     }

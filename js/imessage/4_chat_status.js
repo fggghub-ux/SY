@@ -464,7 +464,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 let saved = false;
                 if (action === 'confirm-memory-request') {
                     saved = await window.imChat.confirmMemoryRequestEvent(latestFriend, eventId);
-                    if (saved && window.showToast) window.showToast('已写入下载项');
+                    if (saved && window.showToast) window.showToast('已写入长期记忆');
                 } else if (action === 'cancel-memory-request') {
                     saved = await window.imChat.cancelMemoryRequestEvent(latestFriend, eventId);
                 }

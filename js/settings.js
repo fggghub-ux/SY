@@ -1112,17 +1112,30 @@
   font-size: 14px;
 }
 
-/* 右侧发送与麦克风图标 */
+/* 右侧发送与 API 续写图标 */
+.im-chat-input-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .send-btn-icon {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   display: flex;
   justify-content: center;
   align-items: center;
   cursor: pointer;
-  color: #007aff;
-  font-size: 18px;
+  font-size: 14px;
+}
+.send-btn {
+  background: transparent;
+  color: #8e8e93;
+  font-size: 16px;
+}
+.mic-btn {
+  background: #111111;
+  color: #fff;
 }`;
                 navigator.clipboard.writeText(chatTemplate).then(() => {
                     if (window.showToast) window.showToast('已复制 Chat 源码结构');

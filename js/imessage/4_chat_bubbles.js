@@ -160,6 +160,50 @@ async function updateNarrationNoticeMessage(friend, msg, container, nextText) {
         return true;
     }
 
+async function deleteNarrationNoticeMessage(friend, msg, container) {
+        if (!friend || !msg) return false;
+
+        const friendId = friend.id;
+        const liveFriend = (window.imData?.friends || [])
+            .find(item => String(item.id) === String(friendId)) || friend;
+        const descriptor = {
+            id: msg.id || null,
+            timestamp: msg.timestamp || null
+        };
+
+        let saved = false;
+        if (window.imApp?.removeFriendMessages) {
+            saved = await window.imApp.removeFriendMessages(friendId, descriptor, { silent: true });
+        } else if (window.imApp?.commitScopedFriendChange) {
+            saved = await window.imApp.commitScopedFriendChange(liveFriend, (targetFriend) => {
+                if (!Array.isArray(targetFriend.messages)) return;
+                targetFriend.messages = targetFriend.messages.filter((targetMsg) => {
+                    if (msg.id && targetMsg?.id) return String(targetMsg.id) !== String(msg.id);
+                    if (msg.timestamp && targetMsg?.timestamp) return String(targetMsg.timestamp) !== String(msg.timestamp);
+                    return targetMsg !== msg;
+                });
+                if (window.imApp.clearFriendRuntimeMessageContext) {
+                    window.imApp.clearFriendRuntimeMessageContext(targetFriend);
+                }
+            }, { silent: true });
+        }
+
+        if (!saved) {
+            if (window.showToast) window.showToast('删除失败');
+            return false;
+        }
+
+        const updatedFriend = (window.imData?.friends || [])
+            .find(item => String(item.id) === String(friendId)) || liveFriend;
+        if (container && window.imChat.rerenderChatContainer) {
+            window.imChat.rerenderChatContainer(updatedFriend, container, { scroll: true });
+        }
+        if (window.imChat.renderChatsList) {
+            window.imChat.renderChatsList();
+        }
+        return true;
+    }
+
 function openNarrationNoticeEditor(msg, friend, container) {
         if (!msg || msg.noticeKind !== 'narration') return;
         const currentText = msg.content || msg.text || '';
@@ -168,13 +212,15 @@ function openNarrationNoticeEditor(msg, friend, container) {
             const inputGroup = document.getElementById('modal-input-group');
             const textareaGroup = document.getElementById('modal-textarea-group');
             const textarea = document.getElementById('modal-textarea');
+            const deleteBtn = document.getElementById('modal-narration-delete-btn');
             if (inputGroup) inputGroup.style.display = 'block';
             if (textareaGroup) textareaGroup.style.display = 'none';
             if (textarea) textarea.value = '';
+            if (deleteBtn) deleteBtn.remove();
         };
 
         if (!window.showCustomModal) {
-            const nextText = window.prompt ? window.prompt('编辑旁白', currentText) : null;
+            const nextText = window.prompt ? window.prompt('编辑旁白/动描', currentText) : null;
             if (nextText !== null) {
                 void updateNarrationNoticeMessage(friend, msg, container, nextText);
             }
@@ -183,8 +229,8 @@ function openNarrationNoticeEditor(msg, friend, container) {
 
         window.showCustomModal({
             type: 'prompt',
-            title: '编辑旁白',
-            placeholder: '修改旁白...',
+            title: '编辑旁白/动描',
+            placeholder: '修改旁白/动描...',
             confirmText: '保存',
             defaultValue: currentText,
             onCancel: resetPromptLayout,
@@ -195,7 +241,7 @@ function openNarrationNoticeEditor(msg, friend, container) {
                     ? textarea.value
                     : newValue;
                 if (!String(finalValue || '').trim()) {
-                    if (window.showToast) window.showToast('请输入旁白内容');
+                    if (window.showToast) window.showToast('请输入旁白/动描内容');
                     resetPromptLayout();
                     return;
                 }
@@ -211,9 +257,39 @@ function openNarrationNoticeEditor(msg, friend, container) {
             if (inputGroup) inputGroup.style.display = 'none';
             if (textareaGroup) textareaGroup.style.display = 'block';
             if (textarea) {
-                textarea.placeholder = '修改旁白...';
+                textarea.placeholder = '修改旁白/动描...';
                 textarea.value = currentText;
                 textarea.focus();
+            }
+
+            const modalTitle = document.getElementById('modal-title');
+            const modalHeader = modalTitle?.closest('.wb-centered-modal-header') || null;
+            if (modalHeader && !document.getElementById('modal-narration-delete-btn')) {
+                modalHeader.style.position = 'relative';
+                const deleteBtn = document.createElement('button');
+                deleteBtn.id = 'modal-narration-delete-btn';
+                deleteBtn.type = 'button';
+                deleteBtn.setAttribute('aria-label', '删除旁白/动描');
+                deleteBtn.title = '删除旁白/动描';
+                deleteBtn.style.cssText = 'position:absolute; right:16px; top:50%; transform:translateY(-50%); width:32px; height:32px; border:none; border-radius:16px; background:#ffe5e5; color:#ff3b30; display:flex; align-items:center; justify-content:center; font-size:15px; cursor:pointer;';
+                deleteBtn.innerHTML = '<i class="fas fa-trash-alt"></i>';
+                deleteBtn.addEventListener('click', async (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (window.confirm && !window.confirm('确定删除这条旁白/动描并清理上下文吗？')) return;
+                    deleteBtn.style.pointerEvents = 'none';
+                    deleteBtn.style.opacity = '0.65';
+                    const saved = await deleteNarrationNoticeMessage(friend, msg, container);
+                    if (saved) {
+                        resetPromptLayout();
+                        if (window.closeCustomModal) window.closeCustomModal(false);
+                        if (window.showToast) window.showToast('已删除旁白/动描');
+                        return;
+                    }
+                    deleteBtn.style.pointerEvents = '';
+                    deleteBtn.style.opacity = '';
+                });
+                modalHeader.appendChild(deleteBtn);
             }
         }, 10);
     }

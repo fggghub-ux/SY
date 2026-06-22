@@ -815,6 +815,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         
         if (tabName === 'memory' && window.imData.currentSettingsFriend) {
+            bindChatMemoryPanelButtons();
             renderChatMemoryOverviewStats(window.imData.currentSettingsFriend);
         }
     }
@@ -826,6 +827,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const normalizedFriend = window.imApp.normalizeFriendData(friend);
         const memory = normalizedFriend.memory || window.imApp.createDefaultMemory();
         const messageCount = Array.isArray(normalizedFriend.messages) ? normalizedFriend.messages.length : 0;
+        const shortTermEntries = Array.isArray(memory.shortTermEntries) ? memory.shortTermEntries : [];
+        const longTermEntries = Array.isArray(memory.cherishedEntries) ? memory.cherishedEntries : [];
+        const socialAccounts = Array.isArray(memory.socialAccounts) ? memory.socialAccounts : [];
+        const schedule = memory.schedule || {};
             
         // Re-calculate tokenCount realistically
         let tokenCount = 0;
@@ -887,6 +892,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
         `;
+
+        const setCountText = (id, value) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = value > 0 ? `${value}项` : '';
+        };
+        setCountText('chat-memory-shortterm-count', shortTermEntries.length);
+        setCountText('chat-memory-longterm-count', longTermEntries.length);
+        setCountText('chat-memory-social-count', socialAccounts.length);
+
+        const scheduleStatus = document.getElementById('chat-memory-schedule-status');
+        if (scheduleStatus) {
+            scheduleStatus.textContent = schedule.enabled ? '开启' : '关闭';
+        }
     }
 
     function ensureChatMemoryModalUi() {
@@ -1157,6 +1175,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function bindChatMemoryPanelButtons() {
         const panelNames = ['overview', 'longterm', 'cherished'];
+        const getCurrentFriend = () => window.imData.currentSettingsFriend || window.imData.currentActiveFriend || null;
 
         panelNames.forEach((panelName) => {
             const btn = document.getElementById(`chat-memory-${panelName}-btn`);
@@ -1164,11 +1183,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
             btn.dataset.memoryPanelBound = 'true';
             btn.addEventListener('click', () => {
-                const currentFriend = window.imData.currentSettingsFriend;
+                const currentFriend = getCurrentFriend();
                 if (!currentFriend) return;
                 showChatMemoryModal(panelName, currentFriend);
             });
         });
+
+        const bindMemoryLocationButton = (id, location) => {
+            const btn = document.getElementById(id);
+            if (!btn || btn.dataset.memoryPanelBound === 'true') return;
+            btn.dataset.memoryPanelBound = 'true';
+            btn.addEventListener('click', () => {
+                const currentFriend = getCurrentFriend();
+                if (!currentFriend) return;
+                if (!window.imApp.openMemoryLocationForFriend || !window.imApp.openMemoryLocationForFriend(currentFriend, location)) {
+                    if (window.showToast) window.showToast('记忆功能暂不可用');
+                }
+            });
+        };
+
+        bindMemoryLocationButton('chat-memory-shortterm-btn', 'iphone');
+        bindMemoryLocationButton('chat-memory-longterm-library-btn', 'downloads');
+        bindMemoryLocationButton('chat-memory-social-btn', 'social');
+
+        const scheduleBtn = document.getElementById('chat-memory-schedule-entry-btn');
+        if (scheduleBtn && scheduleBtn.dataset.memoryPanelBound !== 'true') {
+            scheduleBtn.dataset.memoryPanelBound = 'true';
+            scheduleBtn.addEventListener('click', () => {
+                const currentFriend = getCurrentFriend();
+                if (!currentFriend) return;
+                if (!window.imApp.openMemoryScheduleForFriend || !window.imApp.openMemoryScheduleForFriend(currentFriend)) {
+                    if (window.showToast) window.showToast('日程作息暂不可用');
+                }
+            });
+        }
     }
 
     function initChatSettingsInteractions() {
@@ -1183,6 +1231,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         ensureChatMemoryModalUi();
+        bindChatMemoryPanelButtons();
     }
 
     if (editCharPersonaSheet) {
@@ -2190,7 +2239,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <button type="button" class="chat-memory-cherished-detail-close" aria-label="关闭" style="position:absolute; right:15px; top:15px; border:none; background:transparent; font-size:18px; color:#8e8e93; cursor:pointer;">
                         <i class="fas fa-times"></i>
                     </button>
-                    <div class="chat-memory-cherished-detail-label" style="font-size:12px; color:#007aff; font-weight:700; margin-bottom:10px;">下载项详情</div>
+                    <div class="chat-memory-cherished-detail-label" style="font-size:12px; color:#007aff; font-weight:700; margin-bottom:10px;">长期记忆详情</div>
                     <div id="chat-memory-cherished-detail-title" class="chat-memory-cherished-detail-title" style="font-size:18px; font-weight:700; color:#111; margin-bottom:8px;">标题</div>
                     <div id="chat-memory-cherished-detail-time" class="chat-memory-cherished-detail-time" style="font-size:13px; color:#8e8e93; margin-bottom:16px;"></div>
                     <div id="chat-memory-cherished-detail-content" class="chat-memory-cherished-detail-content" style="font-size:15px; color:#333; line-height:1.6; margin-bottom:16px;"></div>
@@ -2198,7 +2247,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div id="chat-memory-cherished-detail-thought" class="chat-memory-cherished-detail-thought" style="font-size:14px; color:#666; background:#f2f2f7; padding:12px; border-radius:12px; margin-bottom:16px;"></div>
                     <div style="margin-top: 10px;">
                         <button type="button" id="chat-memory-cherished-detail-delete-btn" style="width: 100%; padding: 12px; border-radius: 12px; background: #ffe5e5; color: #ff3b30; border: none; font-size: 15px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
-                            <i class="fas fa-trash-alt"></i> 删除这条下载项
+                            <i class="fas fa-trash-alt"></i> 删除这条长期记忆
                         </button>
                     </div>
                 </div>
@@ -2226,17 +2275,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const entryId = deleteBtn.getAttribute('data-entry-id');
                     if (!entryId) return;
 
-                    // 从当前所有可能正在查看的上下文里获取 Friend
-                    let friend = window.imData.currentSettingsFriend;
-                    if (!friend) {
-                        // 回退方案：通过 currentActiveFriend (如果从 core.js 里下载项面板触发)
-                        // 在 core 里渲染下载项时会去查当前选中的 memory friend
-                        // 但为了安全，我们可能需要从 DOM 层反推当前的 friend
-                        const currentMemoryFriendId = document.querySelector('.memory-friend-story-item.active')?.dataset?.friendId;
-                        if (currentMemoryFriendId) {
-                            friend = window.imData.friends.find(f => String(f.id) === String(currentMemoryFriendId));
-                        }
-                    }
+                    const friend = window.imData.currentSettingsFriend || window.imApp.getCurrentMemoryFriend?.();
 
                     if (!friend) return;
 
@@ -2262,7 +2301,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }, { silent: true, syncActive: true, syncSettings: true });
 
                     if (saved) {
-                        if (window.showToast) window.showToast('已删除下载项');
+                        if (window.showToast) window.showToast('已删除长期记忆');
                         hideCherishedMemoryDetail();
                         const latestFriend = window.imApp.getFriendById
                             ? (window.imApp.getFriendById(friend.id) || friend)
@@ -2272,50 +2311,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             chatMemoryCherishedInput.value = latestFriend.memory?.cherished || '';
                         }
                         
-                        // Update memory location sheet (Downloads) if it's open
-                        const memoryLocationSheet = document.getElementById('memory-location-sheet');
-                        if (memoryLocationSheet && memoryLocationSheet.style.transform === 'translateY(0px)') {
-                            const memoryLocationSheetContent = document.getElementById('memory-location-sheet-content');
-                            if (memoryLocationSheetContent && memoryLocationSheetContent.innerHTML.includes('下载项')) {
-                                // re-render downloads
-                                const cherishedEntries = Array.isArray(latestFriend.memory?.cherishedEntries) ? latestFriend.memory.cherishedEntries : [];
-                                
-                                const escapeCherishedListHtml = (value) => String(value || '')
-                                    .replace(/&/g, '&amp;')
-                                    .replace(/</g, '&lt;')
-                                    .replace(/>/g, '&gt;')
-                                    .replace(/"/g, '&quot;')
-                                    .replace(/'/g, '&#39;');
-
-                                if (cherishedEntries.length === 0) {
-                                    memoryLocationSheetContent.innerHTML = `
-                                        <div class="memory-sheet-title">下载项</div>
-                                        <div class="memory-short-list">
-                                            <div class="memory-short-empty">暂无下载项</div>
-                                        </div>
-                                    `;
-                                } else {
-                                    memoryLocationSheetContent.innerHTML = `
-                                        <div class="memory-sheet-title">下载项</div>
-                                        <div class="chat-memory-modal-cherished-list" style="padding: 0 16px;">
-                                            ${cherishedEntries.slice().reverse().map(e => `
-                                                <button type="button" class="chat-memory-modal-cherished-card" data-entry-id="${e.id}">
-                                                    <div class="chat-memory-modal-cherished-card-title">${escapeCherishedListHtml(e.title || '下载项')}</div>
-                                                    <div class="chat-memory-modal-cherished-card-time">${escapeCherishedListHtml(e.createdAt || '点击查看详情')}</div>
-                                                </button>
-                                            `).join('')}
-                                        </div>
-                                    `;
-                                    
-                                    memoryLocationSheetContent.querySelectorAll('.chat-memory-modal-cherished-card').forEach(btn => {
-                                        btn.addEventListener('click', () => {
-                                            const clickedId = btn.getAttribute('data-entry-id');
-                                            const target = cherishedEntries.find(ent => String(ent.id) === String(clickedId));
-                                            if (target) showCherishedMemoryDetail(target);
-                                        });
-                                    });
-                                }
-                            }
+                        if (window.imApp.refreshMemoryLocationSheet) {
+                            window.imApp.refreshMemoryLocationSheet('downloads');
                         }
                         
                     } else {
@@ -2342,7 +2339,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const thoughtEl = document.getElementById('chat-memory-cherished-detail-thought');
         const deleteBtn = document.getElementById('chat-memory-cherished-detail-delete-btn');
 
-        if (titleEl) titleEl.textContent = entry.title || '下载项';
+        if (titleEl) titleEl.textContent = entry.title || '长期记忆';
         if (timeEl) timeEl.textContent = entry.createdAt || '';
         if (contentEl) contentEl.textContent = entry.content || '';
         if (reasonEl) {
@@ -2957,7 +2954,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     window.imData.currentSettingsFriend = latestFriend;
                     if (window.imApp.renderMemoryView) window.imApp.renderMemoryView();
                     closeView(manualSummaryModal);
-                    showToast('总结已存入我的 iPhone');
+                    showToast('总结已存入短期记忆');
                 } else {
                     showToast('总结保存失败');
                 }

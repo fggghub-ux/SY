@@ -1385,59 +1385,13 @@
                         <div class="ins-chat-input-container">
                             <div class="ins-chat-input-wrapper">
                                 <div class="ins-input-icon" id="plus-msg-btn"><i class="fas fa-plus"></i></div>
-                                <input type="text" placeholder="发送消息..." class="ins-message-input" id="chat-message-input">
-                                <div style="display: flex; gap: 8px; align-items: center;">
-                                    <div class="send-btn-icon" id="send-msg-btn"><i class="fas fa-paper-plane"></i></div>
-                                    <div class="send-btn-icon" id="mic-msg-btn"><i class="fas fa-microphone"></i></div>
+                                <input type="text" placeholder="imessage..." class="ins-message-input" id="chat-message-input">
+                                <div class="im-chat-input-actions">
+                                    <div class="send-btn-icon send-btn" id="send-msg-btn"><i class="fas fa-paper-plane"></i></div>
+                                    <div class="send-btn-icon mic-btn" id="mic-msg-btn"><i class="fas fa-arrow-down"></i></div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </div>
-
-                <!-- Memory View (Hidden by default) -->
-                <div class="memory-content" id="memory-content">
-                    <div class="memory-top-friends-scroll" id="memory-top-friends-scroll">
-                        <!-- Friend avatars will be injected here -->
-                    </div>
-
-                    <div class="memory-library-scroll">
-                        <div class="memory-selected-name" id="memory-selected-name"></div>
-
-                        <div class="memory-search-bar">
-                            <i class="fas fa-search"></i>
-                            <span>搜索</span>
-                        </div>
-
-                        <div class="memory-section-title">位置</div>
-                        <div class="memory-files-group">
-                            <div class="memory-file-row" data-memory-location="icloud">
-                                <i class="fas fa-cloud memory-file-icon"></i>
-                                <span>iCloud 云盘</span>
-                                <i class="fas fa-chevron-right memory-file-chevron"></i>
-                            </div>
-                            <div class="memory-file-row" data-memory-location="iphone">
-                                <i class="fas fa-mobile-alt memory-file-icon"></i>
-                                <span>我的 iPhone</span>
-                                <i class="fas fa-chevron-right memory-file-chevron"></i>
-                            </div>
-                            <div class="memory-file-row" data-memory-location="deleted">
-                                <i class="fas fa-user-circle memory-file-icon"></i>
-                                <span>社交帐号</span>
-                                <i class="fas fa-chevron-right memory-file-chevron"></i>
-                            </div>
-                        </div>
-
-                        <div class="memory-section-title">个人收藏</div>
-                        <div class="memory-files-group">
-                            <div class="memory-file-row" data-memory-location="downloads">
-                                <i class="fas fa-arrow-down memory-file-icon memory-download-icon"></i>
-                                <span>下载项</span>
-                                <i class="fas fa-chevron-right memory-file-chevron"></i>
-                            </div>
-                        </div>
-
-                        <div class="memory-section-title">标签</div>
                     </div>
                 </div>
 
@@ -1680,10 +1634,6 @@
                         <div class="line-nav-item" id="nav-chats-btn">
                             <i class="fas fa-comment"></i>
                             <span>Chats</span>
-                        </div>
-                        <div class="line-nav-item" id="nav-memory-btn">
-                            <i class="fas fa-brain"></i>
-                            <span>Memory</span>
                         </div>
                         <div class="line-nav-item" id="nav-moments-btn">
                             <i class="far fa-compass"></i>
@@ -3755,6 +3705,33 @@
                                     <div class="settings-icon" style="background-color: #34c759;"><i class="fas fa-satellite-dish"></i></div>
                                     <div class="settings-text">自主活动</div>
                                     <span id="chat-memory-autonomous-status" style="margin-left:auto; color:#8e8e93; font-size:14px;">关闭</span>
+                                    <i class="fas fa-chevron-right arrow"></i>
+                                </div>
+                            </div>
+
+                            <div class="settings-group fully-rounded" id="chat-memory-library-group" style="margin: 20px 16px 10px;">
+                                <div class="settings-item" id="chat-memory-shortterm-btn" style="border-bottom: 1px solid var(--separator-color); cursor: pointer;">
+                                    <div class="settings-icon" style="background-color: #007aff;"><i class="fas fa-mobile-alt"></i></div>
+                                    <div class="settings-text">短期记忆</div>
+                                    <span id="chat-memory-shortterm-count" style="margin-left:auto; color:#8e8e93; font-size:14px;"></span>
+                                    <i class="fas fa-chevron-right arrow"></i>
+                                </div>
+                                <div class="settings-item" id="chat-memory-longterm-library-btn" style="border-bottom: 1px solid var(--separator-color); cursor: pointer;">
+                                    <div class="settings-icon" style="background-color: #5856d6;"><i class="fas fa-archive"></i></div>
+                                    <div class="settings-text">长期记忆</div>
+                                    <span id="chat-memory-longterm-count" style="margin-left:auto; color:#8e8e93; font-size:14px;"></span>
+                                    <i class="fas fa-chevron-right arrow"></i>
+                                </div>
+                                <div class="settings-item" id="chat-memory-social-btn" style="border-bottom: 1px solid var(--separator-color); cursor: pointer;">
+                                    <div class="settings-icon" style="background-color: #ff2d55;"><i class="fas fa-user-circle"></i></div>
+                                    <div class="settings-text">社交账号</div>
+                                    <span id="chat-memory-social-count" style="margin-left:auto; color:#8e8e93; font-size:14px;"></span>
+                                    <i class="fas fa-chevron-right arrow"></i>
+                                </div>
+                                <div class="settings-item" id="chat-memory-schedule-entry-btn" style="border-bottom: none; cursor: pointer;">
+                                    <div class="settings-icon" style="background-color: #ff9500;"><i class="fas fa-calendar-alt"></i></div>
+                                    <div class="settings-text">日程作息</div>
+                                    <span id="chat-memory-schedule-status" style="margin-left:auto; color:#8e8e93; font-size:14px;"></span>
                                     <i class="fas fa-chevron-right arrow"></i>
                                 </div>
                             </div>
