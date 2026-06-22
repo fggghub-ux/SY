@@ -4278,6 +4278,57 @@ document.addEventListener('DOMContentLoaded', () => {
         return friends.find(f => String(f.id) === String(currentMemoryFriendId)) || friends[0] || null;
     }
 
+    async function deleteShortTermMemoryEntry(entry, options = {}) {
+        if (!entry) return false;
+        const friend = getCurrentMemoryFriend();
+        if (!friend) return false;
+
+        const saved = await window.imApp.commitScopedFriendChange(friend, (targetFriend) => {
+            if (!targetFriend) return;
+            targetFriend.memory = targetFriend.memory || window.imApp.createDefaultMemory();
+            if (!Array.isArray(targetFriend.memory.shortTermEntries)) targetFriend.memory.shortTermEntries = [];
+            const entries = Array.isArray(targetFriend.memory.shortTermEntries) ? targetFriend.memory.shortTermEntries : [];
+            const nextEntries = entries.filter(e => String(e.id) !== String(entry.id));
+            targetFriend.memory.shortTermEntries = nextEntries;
+            targetFriend.memory.lastSummaryMessageCount = nextEntries.reduce((max, item) => {
+                return Math.max(max, Number(item?.sourceEndMessageCount) || 0);
+            }, 0);
+            if (window.imApp.clearFriendRuntimeMessageContext) {
+                window.imApp.clearFriendRuntimeMessageContext(targetFriend);
+            }
+        }, { silent: true });
+
+        if (!saved) return false;
+        if (options.closeDetail && window.closeView && memoryEntryDetailModal) {
+            window.closeView(memoryEntryDetailModal);
+        }
+        renderMemoryLocationSheet('iphone');
+        renderMemoryView();
+        return true;
+    }
+
+    function confirmDeleteShortTermMemoryEntry(entry, options = {}) {
+        const runDelete = async () => {
+            const saved = await deleteShortTermMemoryEntry(entry, options);
+            if (window.showToast) window.showToast(saved ? '已删除短期记忆' : '删除失败');
+        };
+
+        if (window.showCustomModal) {
+            window.showCustomModal({
+                title: '删除已总结记录',
+                message: '确定彻底删除这条已总结记录吗？这会同时从角色记忆上下文中移除，无法恢复。',
+                confirmText: '删除',
+                isDestructive: true,
+                onConfirm: runDelete
+            });
+            return;
+        }
+
+        if (window.confirm('确定彻底删除这条已总结记录吗？这会同时从角色记忆上下文中移除，无法恢复。')) {
+            runDelete();
+        }
+    }
+
     function showMemoryEntryDetail(entry) {
         if (!entry || !memoryEntryDetailModal || !memoryEntryDetailBody) return;
         if (memoryEntryDetailTitle) memoryEntryDetailTitle.textContent = entry.title || '记忆详情';
@@ -4307,22 +4358,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const deleteBtn = document.getElementById('memory-entry-detail-delete-btn');
         if (deleteBtn) {
-            deleteBtn.addEventListener('click', async () => {
-                const friend = getCurrentMemoryFriend();
-                if (!friend) return;
-                
-                const saved = await window.imApp.commitScopedFriendChange(friend, (targetFriend) => {
-                    if (!targetFriend || !targetFriend.memory || !Array.isArray(targetFriend.memory.shortTermEntries)) return;
-                    targetFriend.memory.shortTermEntries = targetFriend.memory.shortTermEntries.filter(e => String(e.id) !== String(entry.id));
-                }, { silent: true });
-
-                if (saved) {
-                    if (window.showToast) window.showToast('已删除短期记忆');
-                    if (window.closeView) window.closeView(memoryEntryDetailModal);
-                    renderMemoryLocationSheet('iphone'); // Re-render the list
-                } else {
-                    if (window.showToast) window.showToast('删除失败');
-                }
+            deleteBtn.addEventListener('click', () => {
+                confirmDeleteShortTermMemoryEntry(entry, { closeDetail: true });
             });
         }
         
@@ -4456,20 +4493,46 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="memory-sheet-title">我的 iPhone</div>
             <div class="memory-short-list">
                 ${entries.slice().reverse().map(entry => `
-                    <button type="button" class="memory-short-item" data-memory-entry-id="${entry.id}">
-                        <span>${escapeMemoryHtml(entry.title || '对话总结')}</span>
-                        <i class="fas fa-chevron-right"></i>
-                    </button>
+                    <div class="memory-short-item memory-short-summary-item" role="button" tabindex="0" data-memory-entry-id="${entry.id}">
+                        <span class="memory-short-summary-title">${escapeMemoryHtml(entry.title || '对话总结')}</span>
+                        <div class="memory-short-actions">
+                            <button type="button" class="memory-short-delete-btn" aria-label="删除已总结记录" title="删除已总结记录"><i class="fas fa-trash-alt"></i></button>
+                            <i class="fas fa-chevron-right"></i>
+                        </div>
+                    </div>
                 `).join('')}
             </div>
         `;
 
-        memoryLocationSheetContent.querySelectorAll('.memory-short-item').forEach(btn => {
-            btn.addEventListener('click', () => {
+        memoryLocationSheetContent.querySelectorAll('.memory-short-summary-item').forEach(btn => {
+            const openEntry = () => {
                 const entryId = btn.getAttribute('data-memory-entry-id');
                 const target = entries.find(entry => String(entry.id) === String(entryId));
                 if (target) showMemoryEntryDetail(target);
+            };
+            btn.addEventListener('click', (event) => {
+                const targetEl = event.target instanceof Element ? event.target : null;
+                if (targetEl?.closest('.memory-short-delete-btn')) return;
+                openEntry();
             });
+            btn.addEventListener('keydown', (event) => {
+                const targetEl = event.target instanceof Element ? event.target : null;
+                if (targetEl?.closest('.memory-short-delete-btn')) return;
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    openEntry();
+                }
+            });
+            const deleteBtn = btn.querySelector('.memory-short-delete-btn');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const entryId = btn.getAttribute('data-memory-entry-id');
+                    const target = entries.find(entry => String(entry.id) === String(entryId));
+                    if (target) confirmDeleteShortTermMemoryEntry(target);
+                });
+            }
         });
     }
 
