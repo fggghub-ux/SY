@@ -6,14 +6,36 @@ document.addEventListener('DOMContentLoaded', () => {
     const { apiConfig, userState } = window;
     window.imChat = window.imChat || {};
     const imChat = window.imChat;
+    const isAndroid = /Android/i.test(navigator.userAgent || '');
     let keyboardRestoreTimers = [];
-    let largestChatViewportHeight = Math.round(window.visualViewport?.height || window.innerHeight || 0);
-    let lastChatViewportWidth = Math.round(window.visualViewport?.width || window.innerWidth || 0);
-    let chatViewportWasReduced = false;
+    let androidRestingViewportHeight = 0;
+    let androidViewportWidth = 0;
+    let androidKeyboardWasOpen = false;
 
     function isChatInputFocused(page) {
         const input = page?.querySelector('.chat-input');
         return !!input && document.activeElement === input;
+    }
+
+    function getAndroidViewportMetrics() {
+        const viewport = window.visualViewport;
+        return {
+            height: Math.round(viewport?.height || window.innerHeight || 0),
+            width: Math.round(viewport?.width || window.innerWidth || 0)
+        };
+    }
+
+    function captureAndroidRestingViewport() {
+        if (!isAndroid) return;
+        const metrics = getAndroidViewportMetrics();
+        if (metrics.width > 0 && Math.abs(metrics.width - androidViewportWidth) > 48) {
+            androidViewportWidth = metrics.width;
+            androidRestingViewportHeight = metrics.height;
+            androidKeyboardWasOpen = false;
+            return;
+        }
+        androidViewportWidth = metrics.width || androidViewportWidth;
+        androidRestingViewportHeight = Math.max(androidRestingViewportHeight, metrics.height);
     }
 
     function clearKeyboardRestoreTimers() {
@@ -21,71 +43,65 @@ document.addEventListener('DOMContentLoaded', () => {
         keyboardRestoreTimers = [];
     }
 
-    function restoreChatViewport(page, msgContainer, options = {}) {
-        if (!page || page.style.display === 'none') return;
+    function restoreAndroidChatViewport(page, msgContainer) {
+        if (!isAndroid || !page || page.style.display === 'none') return;
 
-        if (typeof window.syncAppViewportHeight === 'function') {
-            window.syncAppViewportHeight({ resetScroll: !!options.resetWindowScroll });
-        }
+        page.classList.remove('keyboard-open');
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
 
-        if (options.resetWindowScroll && !isChatInputFocused(page)) {
-            window.scrollTo(0, 0);
-            document.documentElement.scrollTop = 0;
-            document.body.scrollTop = 0;
-        }
-
-        if (options.pinToBottom && msgContainer) {
-            msgContainer.scrollTop = msgContainer.scrollHeight;
-        }
+        requestAnimationFrame(() => {
+            if (msgContainer) msgContainer.scrollTop = msgContainer.scrollHeight;
+        });
     }
 
-    function scheduleChatViewportRestore(page, msgContainer, options = {}) {
+    function scheduleAndroidChatViewportRestore(page, msgContainer) {
+        if (!isAndroid) return;
         clearKeyboardRestoreTimers();
         [0, 60, 180, 360].forEach(delay => {
             keyboardRestoreTimers.push(setTimeout(() => {
-                restoreChatViewport(page, msgContainer, options);
+                restoreAndroidChatViewport(page, msgContainer);
             }, delay));
         });
     }
 
-    if (!imChat._viewportListenersBound) {
-        imChat._viewportListenersBound = true;
+    captureAndroidRestingViewport();
+
+    if (isAndroid && window.visualViewport && !imChat._androidViewportListenersBound) {
+        imChat._androidViewportListenersBound = true;
         const handleViewportChange = () => {
             const page = document.querySelector('.active-chat-interface[style*="display: flex"]');
             if (!page) return;
 
-            const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight || 0);
-            const viewportWidth = Math.round(window.visualViewport?.width || window.innerWidth || 0);
-            if (Math.abs(viewportWidth - lastChatViewportWidth) > 48) {
-                largestChatViewportHeight = viewportHeight;
-                lastChatViewportWidth = viewportWidth;
-                chatViewportWasReduced = false;
-            } else {
-                largestChatViewportHeight = Math.max(largestChatViewportHeight, viewportHeight);
+            const metrics = getAndroidViewportMetrics();
+            if (Math.abs(metrics.width - androidViewportWidth) > 48) {
+                androidViewportWidth = metrics.width;
+                androidRestingViewportHeight = metrics.height;
+                androidKeyboardWasOpen = false;
+                return;
             }
 
             const msgContainer = page.querySelector('.ins-chat-messages');
             const inputFocused = isChatInputFocused(page);
-            if (largestChatViewportHeight - viewportHeight > 100) {
-                chatViewportWasReduced = true;
+            if (!inputFocused && !androidKeyboardWasOpen) {
+                androidRestingViewportHeight = Math.max(androidRestingViewportHeight, metrics.height);
             }
-            const keyboardClosedByViewport = chatViewportWasReduced
-                && viewportHeight >= largestChatViewportHeight - 72;
-            if (keyboardClosedByViewport) {
-                chatViewportWasReduced = false;
-                page.classList.remove('keyboard-open');
+
+            if (androidRestingViewportHeight - metrics.height > 100) {
+                androidKeyboardWasOpen = true;
+                return;
             }
-            restoreChatViewport(page, msgContainer, {
-                resetWindowScroll: keyboardClosedByViewport || !inputFocused,
-                pinToBottom: keyboardClosedByViewport || page.classList.contains('keyboard-open')
-            });
+
+            if (androidKeyboardWasOpen && metrics.height >= androidRestingViewportHeight - 72) {
+                androidKeyboardWasOpen = false;
+                androidRestingViewportHeight = Math.max(androidRestingViewportHeight, metrics.height);
+                scheduleAndroidChatViewportRestore(page, msgContainer);
+            }
         };
 
-        window.addEventListener('resize', handleViewportChange, { passive: true });
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', handleViewportChange, { passive: true });
-            window.visualViewport.addEventListener('scroll', handleViewportChange, { passive: true });
-        }
+        window.visualViewport.addEventListener('resize', handleViewportChange, { passive: true });
+        window.visualViewport.addEventListener('scroll', handleViewportChange, { passive: true });
     }
 
     function closeStaleGroupCallSheets() {
@@ -826,7 +842,13 @@ async function openChatTab(friend) {
             }
 
             if (input) {
+                if (isAndroid) {
+                    input.addEventListener('pointerdown', captureAndroidRestingViewport, { passive: true });
+                    input.addEventListener('touchstart', captureAndroidRestingViewport, { passive: true });
+                }
+
                 input.addEventListener('focus', () => {
+                    captureAndroidRestingViewport();
                     page.classList.add('keyboard-open');
                     const attachmentSheet = document.getElementById('chat-attachment-sheet');
                     if (attachmentSheet) {
@@ -838,19 +860,15 @@ async function openChatTab(friend) {
                     }
 
                     setTimeout(() => {
-                        if (typeof window.syncAppViewportHeight === 'function') {
-                            window.syncAppViewportHeight();
-                        }
                         if (msgContainer) msgContainer.scrollTop = msgContainer.scrollHeight;
                     }, 100);
                 });
 
                 input.addEventListener('blur', () => {
                     page.classList.remove('keyboard-open');
-                    scheduleChatViewportRestore(page, msgContainer, {
-                        resetWindowScroll: true,
-                        pinToBottom: true
-                    });
+                    if (isAndroid && !window.visualViewport) {
+                        scheduleAndroidChatViewportRestore(page, msgContainer);
+                    }
                 });
             }
 
@@ -972,10 +990,6 @@ async function openChatTab(friend) {
                 window.imChat.handleSend(currentFriend, input, msgContainer);
                 const listContainer = page.querySelector('.at-mention-list');
                 if (listContainer) listContainer.style.display = 'none';
-                scheduleChatViewportRestore(page, msgContainer, {
-                    resetWindowScroll: false,
-                    pinToBottom: true
-                });
             });
 
             let lastSendTouchAt = 0;
