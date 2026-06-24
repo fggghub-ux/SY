@@ -403,6 +403,7 @@
         const playerView = document.getElementById('yt-video-player-view');
         if (playerView) playerView.classList.remove('active', 'yt-char-live-mode');
         if (userLiveView) userLiveView.classList.add('active');
+        window.resetYtViewportOffset?.();
     };
 
     [
@@ -447,6 +448,7 @@
         userLiveChatInput.addEventListener('blur', () => {
             if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(userLiveView, false);
             else if (userLiveView) userLiveView.classList.remove('keyboard-open');
+            window.resetYtViewportOffset?.();
         });
     }
 

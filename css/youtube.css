@@ -1728,20 +1728,35 @@
     transform: none !important;
 }
 
-/*
- * Temporary iOS WebKit keyboard-offset verification:
- * remove transforms from active YouTube input views so WebKit does not
- * calculate focus scrolling through nested transformed fullscreen layers.
- */
 @supports (-webkit-touch-callout: none) {
     @media (hover: none) and (pointer: coarse) {
-        #yt-video-player-view.active,
-        #yt-user-live-view.active,
-        #yt-community-detail-view.active {
+        #youtube-view {
+            contain: paint;
+            overflow: hidden;
+        }
+
+        @supports (overflow: clip) {
+            #youtube-view {
+                overflow: clip;
+            }
+        }
+
+        #sub-channel-view,
+        #yt-community-detail-view,
+        #yt-bubble-chat-view {
             -webkit-transform: none !important;
             transform: none !important;
             -webkit-transition: none !important;
             transition: none !important;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        #sub-channel-view.active,
+        #yt-community-detail-view.active,
+        #yt-bubble-chat-view.active {
+            visibility: visible;
+            pointer-events: auto;
         }
     }
 }

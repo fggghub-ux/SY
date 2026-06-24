@@ -50,6 +50,7 @@
         postChatInput.addEventListener('blur', () => {
             if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(communityDetailView, false);
             else if (communityDetailView) communityDetailView.classList.remove('keyboard-open');
+            window.resetYtViewportOffset?.();
         });
     }
 
@@ -262,6 +263,7 @@
         groupChatInput.addEventListener('blur', () => {
             if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(groupChatView, false);
             else if (groupChatView) groupChatView.classList.remove('keyboard-open');
+            window.resetYtViewportOffset?.();
         });
     }
 

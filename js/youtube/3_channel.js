@@ -71,6 +71,7 @@
             }
 
             subChannelView.classList.add('active');
+            window.resetYtViewportOffset?.();
             
             if(sub.generatedContent) {
                 renderGeneratedContent('live');
@@ -100,6 +101,7 @@
     if (subChannelBackBtn) {
         subChannelBackBtn.addEventListener('click', () => {
             if (subChannelView) subChannelView.classList.remove('active');
+            window.resetYtViewportOffset?.();
         });
     }
 

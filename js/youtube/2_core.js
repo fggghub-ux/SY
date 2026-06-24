@@ -544,6 +544,62 @@
         'yt-community-detail-view',
         'yt-bubble-chat-view'
     ];
+    const isYtIOSWebKit = (() => {
+        const ua = navigator.userAgent || '';
+        const isIOSDevice = /iPad|iPhone|iPod/i.test(ua)
+            || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        return isIOSDevice && /AppleWebKit/i.test(ua);
+    })();
+    let ytViewportResetTimers = [];
+
+    function hasFocusedYtTextInput() {
+        const active = document.activeElement;
+        if (!active || !active.matches?.('input, textarea, [contenteditable="true"]')) return false;
+        return !!document.getElementById('youtube-view')?.contains(active);
+    }
+
+    function clearYtViewportResetTimers() {
+        ytViewportResetTimers.forEach((timer) => clearTimeout(timer));
+        ytViewportResetTimers = [];
+    }
+
+    function resetYtScrollPositions() {
+        const app = document.getElementById('app');
+        const youtubeView = document.getElementById('youtube-view');
+
+        [app, youtubeView].forEach((element) => {
+            if (!element) return;
+            element.scrollTop = 0;
+            element.scrollLeft = 0;
+        });
+
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.documentElement.scrollLeft = 0;
+        document.body.scrollTop = 0;
+        document.body.scrollLeft = 0;
+    }
+
+    window.resetYtViewportOffset = function() {
+        if (!isYtIOSWebKit) return;
+
+        clearYtViewportResetTimers();
+        resetYtScrollPositions();
+
+        const deferredReset = () => {
+            if (hasFocusedYtTextInput()) return;
+            resetYtScrollPositions();
+        };
+
+        requestAnimationFrame(() => {
+            deferredReset();
+            requestAnimationFrame(deferredReset);
+        });
+
+        [60, 180, 360].forEach((delay) => {
+            ytViewportResetTimers.push(setTimeout(deferredReset, delay));
+        });
+    };
 
     window.releaseYtChatKeyboardLock = function(nextView = null) {
         const active = document.activeElement;

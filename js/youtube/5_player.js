@@ -249,6 +249,7 @@
             if (typeof window.releaseYtChatKeyboardLock === 'function') window.releaseYtChatKeyboardLock();
             playerView.classList.remove('active');
             playerView.classList.remove('yt-char-live-mode');
+            window.resetYtViewportOffset?.();
             if(chatInterval) clearInterval(chatInterval);
             
             if (window.ytLiveTimeouts) {
@@ -1202,6 +1203,7 @@
         chatInput.addEventListener('blur', () => {
             if (typeof window.setYtChatKeyboardLock === 'function') window.setYtChatKeyboardLock(playerView, false);
             else if (playerView) playerView.classList.remove('keyboard-open');
+            window.resetYtViewportOffset?.();
         });
     }
 
