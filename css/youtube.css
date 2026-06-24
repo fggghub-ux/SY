@@ -1727,3 +1727,21 @@
     padding: 10px 16px max(12px, env(safe-area-inset-bottom, 0px));
     transform: none !important;
 }
+
+/*
+ * Temporary iOS WebKit keyboard-offset verification:
+ * remove transforms from active YouTube input views so WebKit does not
+ * calculate focus scrolling through nested transformed fullscreen layers.
+ */
+@supports (-webkit-touch-callout: none) {
+    @media (hover: none) and (pointer: coarse) {
+        #yt-video-player-view.active,
+        #yt-user-live-view.active,
+        #yt-community-detail-view.active {
+            -webkit-transform: none !important;
+            transform: none !important;
+            -webkit-transition: none !important;
+            transition: none !important;
+        }
+    }
+}
