@@ -222,14 +222,7 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
 
     async function handleSend(friend, inputEl, container) {
         const text = inputEl.value.trim();
-        if (!text) {
-            const liveFriend = getLiveFriendById(friend.id) || friend;
-            await handleAiReply(liveFriend, container, null, {
-                source: 'empty_user_continue',
-                continueWithoutUser: true
-            });
-            return;
-        }
+        if (!text) return false;
 
         const liveFriend = getLiveFriendById(friend.id) || friend;
         if (liveFriend.type === 'group' && Number(liveFriend.leftGroupAt) > 0) {
