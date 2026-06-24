@@ -2948,12 +2948,13 @@ ${worldbook || 'None'}`;
             sendDmUserMessage();
         });
         document.getElementById('x-dm-chat-api-btn')?.addEventListener('click', generateDmApiReply);
-        document.getElementById('x-dm-chat-input')?.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.isComposing && event.keyCode !== 229) {
-                event.preventDefault();
-                sendDmUserMessage();
-                event.target.blur();
-            }
+        window.mobileInputCompat?.register({
+            input: document.getElementById('x-dm-chat-input'),
+            root: dmChatView,
+            scrollContainer: dmChatMessagesEl,
+            onSend: sendDmUserMessage,
+            allowEmpty: true,
+            blurAfterSend: true
         });
         document.getElementById('x-image-preview-close')?.addEventListener('click', closeImagePreview);
         document.getElementById('x-reply-submit-btn')?.addEventListener('click', submitReply);

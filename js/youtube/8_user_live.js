@@ -619,11 +619,13 @@
         };
 
         userLiveChatSend.addEventListener('click', sendAction);
-        userLiveChatInput.addEventListener('keydown', (e) => {
-            if(e.key === 'Enter') {
-                e.preventDefault();
-                sendAction();
-            }
+        window.mobileInputCompat?.register({
+            input: userLiveChatInput,
+            root: userLiveView,
+            scrollContainer: userLiveChatContainer,
+            onSend: sendAction,
+            allowEmpty: true,
+            openClasses: ['keyboard-open', 'yt-chat-keyboard-lock']
         });
     }
 

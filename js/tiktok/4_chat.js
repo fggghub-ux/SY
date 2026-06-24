@@ -1026,11 +1026,12 @@ JSON example:
 
     if (wtSendBtn && wtChatInput) {
         wtSendBtn.addEventListener('click', sendWtMessage);
-        wtChatInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                sendWtMessage();
-            }
+        window.mobileInputCompat?.register({
+            input: wtChatInput,
+            root: document.getElementById('tk-watch-together-bubble'),
+            scrollContainer: wtChatContainer,
+            onSend: sendWtMessage,
+            allowEmpty: true
         });
     }
 
@@ -1856,11 +1857,12 @@ ${tkMountedWorldBookContext ? `\nTikTok Mounted World Book:\n${tkMountedWorldBoo
             // Note: Auto reply removed. Use the mic button for AI generation.
         });
 
-        chatInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                chatSendBtn.click();
-            }
+        window.mobileInputCompat?.register({
+            input: chatInput,
+            root: chatView,
+            scrollContainer: messagesContainer,
+            onSend: () => chatSendBtn.click(),
+            allowEmpty: true
         });
         
         // Show send button when typing

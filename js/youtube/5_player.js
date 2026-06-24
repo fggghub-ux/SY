@@ -1253,12 +1253,13 @@
         };
 
         chatSend.addEventListener('click', sendAction);
-        
-        chatInput.addEventListener('keydown', (e) => {
-            if(e.key === 'Enter') {
-                e.preventDefault();
-                sendAction();
-            }
+        window.mobileInputCompat?.register({
+            input: chatInput,
+            root: playerView,
+            scrollContainer: ytPlayerChatContainer,
+            onSend: sendAction,
+            allowEmpty: true,
+            openClasses: ['keyboard-open', 'yt-chat-keyboard-lock']
         });
     }
 

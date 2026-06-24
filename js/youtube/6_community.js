@@ -194,11 +194,13 @@
                 if(loadingId) { const el = document.getElementById(loadingId); if(el) el.remove(); }
             }
         });
-        postChatInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                postChatSend.click();
-            }
+        window.mobileInputCompat?.register({
+            input: postChatInput,
+            root: communityDetailView,
+            scrollContainer: communityDetailContent,
+            onSend: () => postChatSend.click(),
+            allowEmpty: true,
+            openClasses: ['keyboard-open', 'yt-chat-keyboard-lock']
         });
     }
 
@@ -961,33 +963,14 @@
             sendGroupChatMessageOnly(groupChatInput.value.trim());
         });
         
-        groupChatInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                sendGroupChatMessageOnly(groupChatInput.value.trim());
-                return;
-                const text = groupChatInput.value.trim();
-                if (text) {
-                    const effectiveYtUser = getCurrentYtCommunityUser();
-                    const userMsg = { type: 'user', name: effectiveYtUser.name || '我', text: text };
-                    
-                    const isDM = groupChatTitle.textContent === currentSubChannelData.name;
-                    if (isDM) {
-                        if (!currentSubChannelData.dmHistory) currentSubChannelData.dmHistory = [];
-                        currentSubChannelData.dmHistory.push(userMsg);
-                    } else {
-                        if (!currentSubChannelData.groupChatHistory) currentSubChannelData.groupChatHistory = [];
-                        currentSubChannelData.groupChatHistory.push(userMsg);
-                    }
-                    
-                    saveYoutubeData();
-                    addGroupChatMessageToUI(userMsg);
-                    groupChatInput.value = '';
-                }
-            }
+        window.mobileInputCompat?.register({
+            input: groupChatInput,
+            root: groupChatView,
+            scrollContainer: groupChatContainer,
+            onSend: () => sendGroupChatMessageOnly(groupChatInput.value.trim()),
+            allowEmpty: true,
+            openClasses: ['keyboard-open', 'yt-chat-keyboard-lock']
         });
-
-        groupChatInput.setAttribute('enterkeyhint', 'send');
     }
 
     if (groupChatApiBtn && groupChatInput) {
