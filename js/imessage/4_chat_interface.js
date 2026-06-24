@@ -6,6 +6,87 @@ document.addEventListener('DOMContentLoaded', () => {
     const { apiConfig, userState } = window;
     window.imChat = window.imChat || {};
     const imChat = window.imChat;
+    let keyboardRestoreTimers = [];
+    let largestChatViewportHeight = Math.round(window.visualViewport?.height || window.innerHeight || 0);
+    let lastChatViewportWidth = Math.round(window.visualViewport?.width || window.innerWidth || 0);
+    let chatViewportWasReduced = false;
+
+    function isChatInputFocused(page) {
+        const input = page?.querySelector('.chat-input');
+        return !!input && document.activeElement === input;
+    }
+
+    function clearKeyboardRestoreTimers() {
+        keyboardRestoreTimers.forEach(timer => clearTimeout(timer));
+        keyboardRestoreTimers = [];
+    }
+
+    function restoreChatViewport(page, msgContainer, options = {}) {
+        if (!page || page.style.display === 'none') return;
+
+        if (typeof window.syncAppViewportHeight === 'function') {
+            window.syncAppViewportHeight({ resetScroll: !!options.resetWindowScroll });
+        }
+
+        if (options.resetWindowScroll && !isChatInputFocused(page)) {
+            window.scrollTo(0, 0);
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
+        }
+
+        if (options.pinToBottom && msgContainer) {
+            msgContainer.scrollTop = msgContainer.scrollHeight;
+        }
+    }
+
+    function scheduleChatViewportRestore(page, msgContainer, options = {}) {
+        clearKeyboardRestoreTimers();
+        [0, 60, 180, 360].forEach(delay => {
+            keyboardRestoreTimers.push(setTimeout(() => {
+                restoreChatViewport(page, msgContainer, options);
+            }, delay));
+        });
+    }
+
+    if (!imChat._viewportListenersBound) {
+        imChat._viewportListenersBound = true;
+        const handleViewportChange = () => {
+            const page = document.querySelector('.active-chat-interface[style*="display: flex"]');
+            if (!page) return;
+
+            const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight || 0);
+            const viewportWidth = Math.round(window.visualViewport?.width || window.innerWidth || 0);
+            if (Math.abs(viewportWidth - lastChatViewportWidth) > 48) {
+                largestChatViewportHeight = viewportHeight;
+                lastChatViewportWidth = viewportWidth;
+                chatViewportWasReduced = false;
+            } else {
+                largestChatViewportHeight = Math.max(largestChatViewportHeight, viewportHeight);
+            }
+
+            const msgContainer = page.querySelector('.ins-chat-messages');
+            const inputFocused = isChatInputFocused(page);
+            if (largestChatViewportHeight - viewportHeight > 100) {
+                chatViewportWasReduced = true;
+            }
+            const keyboardClosedByViewport = chatViewportWasReduced
+                && viewportHeight >= largestChatViewportHeight - 72;
+            if (keyboardClosedByViewport) {
+                chatViewportWasReduced = false;
+                page.classList.remove('keyboard-open');
+            }
+            restoreChatViewport(page, msgContainer, {
+                resetWindowScroll: keyboardClosedByViewport || !inputFocused,
+                pinToBottom: keyboardClosedByViewport || page.classList.contains('keyboard-open')
+            });
+        };
+
+        window.addEventListener('resize', handleViewportChange, { passive: true });
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', handleViewportChange, { passive: true });
+            window.visualViewport.addEventListener('scroll', handleViewportChange, { passive: true });
+        }
+    }
 
     function closeStaleGroupCallSheets() {
         ['group-call-invite-sheet', 'group-more-sheet'].forEach((id) => {
@@ -310,7 +391,7 @@ async function openChatTab(friend) {
                     </div>
                     <div class="ins-chat-input-wrapper">
                         ${isNpcChat ? '' : '<div class="ins-input-icon plus-btn"><i class="fas fa-plus"></i></div>'}
-                        <input type="text" placeholder="imessage..." class="ins-message-input chat-input">
+                        <input type="text" placeholder="imessage..." class="ins-message-input chat-input" inputmode="text" enterkeyhint="send" autocomplete="off">
                         <div class="im-chat-input-actions">
                             <div class="send-btn-icon send-btn"><i class="fas fa-paper-plane"></i></div>
                             <div class="send-btn-icon mic-btn"><i class="fas fa-arrow-down"></i></div>
@@ -757,12 +838,19 @@ async function openChatTab(friend) {
                     }
 
                     setTimeout(() => {
+                        if (typeof window.syncAppViewportHeight === 'function') {
+                            window.syncAppViewportHeight();
+                        }
                         if (msgContainer) msgContainer.scrollTop = msgContainer.scrollHeight;
                     }, 100);
                 });
 
                 input.addEventListener('blur', () => {
                     page.classList.remove('keyboard-open');
+                    scheduleChatViewportRestore(page, msgContainer, {
+                        resetWindowScroll: true,
+                        pinToBottom: true
+                    });
                 });
             }
 
@@ -875,17 +963,19 @@ async function openChatTab(friend) {
                 }
             });
 
-            input.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    if (e.shiftKey || e.ctrlKey || e.altKey) {
-                        return; // 允许在多行文本框中换行（如果适用）或忽略修饰键
-                    }
-                    e.preventDefault();
-                    const currentFriend = window.imData.currentActiveFriend || friend;
-                    window.imChat.handleSend(currentFriend, input, msgContainer);
-                    const listContainer = page.querySelector('.at-mention-list');
-                    if (listContainer) listContainer.style.display = 'none';
-                }
+            input.addEventListener('keydown', (e) => {
+                if (e.isComposing || e.keyCode === 229) return;
+                if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
+
+                e.preventDefault();
+                const currentFriend = window.imData.currentActiveFriend || friend;
+                window.imChat.handleSend(currentFriend, input, msgContainer);
+                const listContainer = page.querySelector('.at-mention-list');
+                if (listContainer) listContainer.style.display = 'none';
+                scheduleChatViewportRestore(page, msgContainer, {
+                    resetWindowScroll: false,
+                    pinToBottom: true
+                });
             });
 
             let lastSendTouchAt = 0;
