@@ -551,6 +551,10 @@
         return isIOSDevice && /AppleWebKit/i.test(ua);
     })();
     let ytViewportResetTimers = [];
+    let ytKeyboardViewportTimers = [];
+    let ytKeyboardViewportFrames = [];
+    let activeYtKeyboardView = null;
+    let ytVisualViewportListenersBound = false;
 
     function hasFocusedYtTextInput() {
         const active = document.activeElement;
@@ -563,7 +567,7 @@
         ytViewportResetTimers = [];
     }
 
-    function resetYtScrollPositions() {
+    function resetYtManagedContainerScroll() {
         const app = document.getElementById('app');
         const youtubeView = document.getElementById('youtube-view');
 
@@ -572,6 +576,10 @@
             element.scrollTop = 0;
             element.scrollLeft = 0;
         });
+    }
+
+    function resetYtScrollPositions() {
+        resetYtManagedContainerScroll();
 
         window.scrollTo(0, 0);
         document.documentElement.scrollTop = 0;
@@ -601,6 +609,95 @@
         });
     };
 
+    function clearYtKeyboardViewportSchedule() {
+        ytKeyboardViewportTimers.forEach((timer) => clearTimeout(timer));
+        ytKeyboardViewportFrames.forEach((frame) => cancelAnimationFrame(frame));
+        ytKeyboardViewportTimers = [];
+        ytKeyboardViewportFrames = [];
+    }
+
+    function clearYtKeyboardViewState(view) {
+        if (!view) return;
+        view.classList.remove('keyboard-open', 'yt-chat-keyboard-lock');
+        delete view.dataset.ytKeyboardScrollTop;
+    }
+
+    function syncYtKeyboardViewport() {
+        if (!isYtIOSWebKit || !activeYtKeyboardView?.isConnected) return;
+
+        const youtubeView = document.getElementById('youtube-view');
+        if (!youtubeView) return;
+
+        const visualViewport = window.visualViewport;
+        const fallbackHeight = window.innerHeight || document.documentElement.clientHeight;
+        const viewportHeight = Number.isFinite(visualViewport?.height)
+            ? Math.max(1, visualViewport.height)
+            : Math.max(1, fallbackHeight);
+        const viewportTop = Number.isFinite(visualViewport?.offsetTop)
+            ? Math.max(0, visualViewport.offsetTop)
+            : 0;
+
+        youtubeView.classList.add('yt-ios-keyboard-managed');
+        youtubeView.style.setProperty('--yt-visual-viewport-height', `${viewportHeight}px`);
+        youtubeView.style.setProperty('--yt-visual-viewport-top', `${viewportTop}px`);
+        activeYtKeyboardView.classList.add('keyboard-open', 'yt-chat-keyboard-lock');
+
+        // While the keyboard is opening, do not fight WebKit's visual viewport by
+        // scrolling window. Only prevent the app containers from accumulating offset.
+        resetYtManagedContainerScroll();
+    }
+
+    function scheduleYtKeyboardViewportSync() {
+        if (!isYtIOSWebKit || !activeYtKeyboardView) return;
+
+        clearYtKeyboardViewportSchedule();
+        syncYtKeyboardViewport();
+        ytKeyboardViewportFrames.push(requestAnimationFrame(syncYtKeyboardViewport));
+        [50, 150].forEach((delay) => {
+            ytKeyboardViewportTimers.push(setTimeout(syncYtKeyboardViewport, delay));
+        });
+    }
+
+    function bindYtVisualViewportListeners() {
+        if (ytVisualViewportListenersBound || !window.visualViewport) return;
+
+        window.visualViewport.addEventListener('resize', scheduleYtKeyboardViewportSync, { passive: true });
+        window.visualViewport.addEventListener('scroll', scheduleYtKeyboardViewportSync, { passive: true });
+        ytVisualViewportListenersBound = true;
+    }
+
+    function stopYtKeyboardViewport(restoreViewport = true) {
+        clearYtKeyboardViewportSchedule();
+        activeYtKeyboardView = null;
+
+        ytChatKeyboardViewIds.forEach((id) => {
+            clearYtKeyboardViewState(document.getElementById(id));
+        });
+
+        const youtubeView = document.getElementById('youtube-view');
+        if (youtubeView) {
+            youtubeView.classList.remove('yt-ios-keyboard-managed');
+            youtubeView.style.removeProperty('--yt-visual-viewport-height');
+            youtubeView.style.removeProperty('--yt-visual-viewport-top');
+        }
+
+        if (restoreViewport) window.resetYtViewportOffset();
+    }
+
+    function startYtKeyboardViewport(view) {
+        if (!isYtIOSWebKit) return;
+
+        if (activeYtKeyboardView && activeYtKeyboardView !== view) {
+            stopYtKeyboardViewport(false);
+        } else {
+            clearYtKeyboardViewportSchedule();
+        }
+
+        activeYtKeyboardView = view;
+        bindYtVisualViewportListeners();
+        scheduleYtKeyboardViewportSync();
+    }
+
     window.releaseYtChatKeyboardLock = function(nextView = null) {
         const active = document.activeElement;
         const keepView = nextView || null;
@@ -609,22 +706,31 @@
             const view = document.getElementById(id);
             if (!view || view === keepView) return;
             if (active && view.contains(active) && typeof active.blur === 'function') active.blur();
-            view.classList.remove('keyboard-open', 'yt-chat-keyboard-lock');
-            delete view.dataset.ytKeyboardScrollTop;
+            clearYtKeyboardViewState(view);
         });
+
+        if (isYtIOSWebKit && activeYtKeyboardView && activeYtKeyboardView !== keepView) {
+            stopYtKeyboardViewport(true);
+        }
     };
 
     window.setYtChatKeyboardLock = function(view, isOpen) {
         if (!view) return;
         if (isOpen) {
             window.releaseYtChatKeyboardLock(view);
-            view.classList.remove('keyboard-open', 'yt-chat-keyboard-lock');
-            delete view.dataset.ytKeyboardScrollTop;
+            if (isYtIOSWebKit) {
+                startYtKeyboardViewport(view);
+            } else {
+                clearYtKeyboardViewState(view);
+            }
             return;
         }
 
-        view.classList.remove('keyboard-open', 'yt-chat-keyboard-lock');
-        delete view.dataset.ytKeyboardScrollTop;
+        if (isYtIOSWebKit && activeYtKeyboardView === view) {
+            stopYtKeyboardViewport(true);
+        } else {
+            clearYtKeyboardViewState(view);
+        }
     };
 
     // 2. DOM Elements

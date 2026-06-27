@@ -469,6 +469,7 @@
 
     if (userLiveMinimizeBtn) {
         userLiveMinimizeBtn.addEventListener('click', () => {
+            if (typeof window.releaseYtChatKeyboardLock === 'function') window.releaseYtChatKeyboardLock();
             if(userLiveView) userLiveView.classList.remove('active');
             if(window.showToast) window.showToast('直播已最小化并在后台运行');
             

@@ -39,6 +39,7 @@
     if (communityDetailBackBtn) {
         communityDetailBackBtn.addEventListener('click', () => {
             if (postChatInput && document.activeElement === postChatInput) postChatInput.blur();
+            if (typeof window.releaseYtChatKeyboardLock === 'function') window.releaseYtChatKeyboardLock();
         });
     }
 
@@ -69,6 +70,7 @@
 
     function openPostDetail(post) {
         if (!communityDetailView || !communityDetailContent || !currentSubChannelData) return;
+        if (typeof window.releaseYtChatKeyboardLock === 'function') window.releaseYtChatKeyboardLock(communityDetailView);
         currentActivePost = post;
         if (postChatInput) {
             postChatInput.value = '';
@@ -252,6 +254,7 @@
     if (groupChatBackBtn) {
         groupChatBackBtn.addEventListener('click', () => {
             if (groupChatInput && document.activeElement === groupChatInput) groupChatInput.blur();
+            if (typeof window.releaseYtChatKeyboardLock === 'function') window.releaseYtChatKeyboardLock();
         });
     }
 
@@ -605,6 +608,7 @@
 
     function openFanGroupChat(groupData) {
         if (!groupChatView || !currentSubChannelData) return;
+        if (typeof window.releaseYtChatKeyboardLock === 'function') window.releaseYtChatKeyboardLock(groupChatView);
         
         if (groupChatTitle) {
             groupChatTitle.textContent = `${groupData.name} (${groupData.memberCount || '3000'})`;
@@ -620,6 +624,7 @@
 
     function openDMChat(subData) {
         if (!groupChatView || !currentSubChannelData) return;
+        if (typeof window.releaseYtChatKeyboardLock === 'function') window.releaseYtChatKeyboardLock(groupChatView);
         
         if (groupChatTitle) {
             groupChatTitle.textContent = `${subData.name}`;

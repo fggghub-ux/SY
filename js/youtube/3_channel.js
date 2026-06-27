@@ -70,6 +70,7 @@
                 }
             }
 
+            if (typeof window.releaseYtChatKeyboardLock === 'function') window.releaseYtChatKeyboardLock();
             subChannelView.classList.add('active');
             window.resetYtViewportOffset?.();
             
@@ -100,6 +101,7 @@
 
     if (subChannelBackBtn) {
         subChannelBackBtn.addEventListener('click', () => {
+            if (typeof window.releaseYtChatKeyboardLock === 'function') window.releaseYtChatKeyboardLock();
             if (subChannelView) subChannelView.classList.remove('active');
             window.resetYtViewportOffset?.();
         });
