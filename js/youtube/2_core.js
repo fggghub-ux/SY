@@ -551,15 +551,12 @@
         return isIOSDevice && /AppleWebKit/i.test(ua);
     })();
     let ytViewportResetTimers = [];
-    let ytKeyboardViewportTimers = [];
-    let ytKeyboardViewportFrames = [];
-    let activeYtKeyboardView = null;
-    let ytVisualViewportListenersBound = false;
+    let ytRootScrollGuardBound = false;
 
-    function hasFocusedYtTextInput() {
+    function hasFocusedTextInput() {
         const active = document.activeElement;
         if (!active || !active.matches?.('input, textarea, [contenteditable="true"]')) return false;
-        return !!document.getElementById('youtube-view')?.contains(active);
+        return true;
     }
 
     function clearYtViewportResetTimers() {
@@ -576,6 +573,41 @@
             element.scrollTop = 0;
             element.scrollLeft = 0;
         });
+    }
+
+    function guardYtRootScroll() {
+        if (!isYtIOSWebKit) return;
+        const app = document.getElementById('app');
+        if (!app?.classList.contains('yt-ios-scroll-locked')) return;
+        resetYtManagedContainerScroll();
+    }
+
+    function bindYtRootScrollGuard() {
+        if (!isYtIOSWebKit || ytRootScrollGuardBound) return;
+        const app = document.getElementById('app');
+        const youtubeView = document.getElementById('youtube-view');
+
+        [app, youtubeView].forEach((element) => {
+            element?.addEventListener('scroll', guardYtRootScroll, { passive: true });
+        });
+        ytRootScrollGuardBound = true;
+    }
+
+    function setYtIOSAppScrollLock(isLocked) {
+        if (!isYtIOSWebKit) return;
+        const app = document.getElementById('app');
+        if (!app) return;
+
+        if (isLocked) {
+            app.classList.add('yt-ios-scroll-locked');
+            bindYtRootScrollGuard();
+            resetYtManagedContainerScroll();
+            requestAnimationFrame(resetYtManagedContainerScroll);
+            return;
+        }
+
+        resetYtManagedContainerScroll();
+        app.classList.remove('yt-ios-scroll-locked');
     }
 
     function resetYtScrollPositions() {
@@ -595,7 +627,9 @@
         resetYtScrollPositions();
 
         const deferredReset = () => {
-            if (hasFocusedYtTextInput()) return;
+            // Never let a delayed YouTube cleanup disturb an input that was
+            // subsequently focused in iMessage or another app.
+            if (hasFocusedTextInput()) return;
             resetYtScrollPositions();
         };
 
@@ -609,93 +643,10 @@
         });
     };
 
-    function clearYtKeyboardViewportSchedule() {
-        ytKeyboardViewportTimers.forEach((timer) => clearTimeout(timer));
-        ytKeyboardViewportFrames.forEach((frame) => cancelAnimationFrame(frame));
-        ytKeyboardViewportTimers = [];
-        ytKeyboardViewportFrames = [];
-    }
-
     function clearYtKeyboardViewState(view) {
         if (!view) return;
         view.classList.remove('keyboard-open', 'yt-chat-keyboard-lock');
         delete view.dataset.ytKeyboardScrollTop;
-    }
-
-    function syncYtKeyboardViewport() {
-        if (!isYtIOSWebKit || !activeYtKeyboardView?.isConnected) return;
-
-        const youtubeView = document.getElementById('youtube-view');
-        if (!youtubeView) return;
-
-        const visualViewport = window.visualViewport;
-        const fallbackHeight = window.innerHeight || document.documentElement.clientHeight;
-        const viewportHeight = Number.isFinite(visualViewport?.height)
-            ? Math.max(1, visualViewport.height)
-            : Math.max(1, fallbackHeight);
-        const viewportTop = Number.isFinite(visualViewport?.offsetTop)
-            ? Math.max(0, visualViewport.offsetTop)
-            : 0;
-
-        youtubeView.classList.add('yt-ios-keyboard-managed');
-        youtubeView.style.setProperty('--yt-visual-viewport-height', `${viewportHeight}px`);
-        youtubeView.style.setProperty('--yt-visual-viewport-top', `${viewportTop}px`);
-        activeYtKeyboardView.classList.add('keyboard-open', 'yt-chat-keyboard-lock');
-
-        // While the keyboard is opening, do not fight WebKit's visual viewport by
-        // scrolling window. Only prevent the app containers from accumulating offset.
-        resetYtManagedContainerScroll();
-    }
-
-    function scheduleYtKeyboardViewportSync() {
-        if (!isYtIOSWebKit || !activeYtKeyboardView) return;
-
-        clearYtKeyboardViewportSchedule();
-        syncYtKeyboardViewport();
-        ytKeyboardViewportFrames.push(requestAnimationFrame(syncYtKeyboardViewport));
-        [50, 150].forEach((delay) => {
-            ytKeyboardViewportTimers.push(setTimeout(syncYtKeyboardViewport, delay));
-        });
-    }
-
-    function bindYtVisualViewportListeners() {
-        if (ytVisualViewportListenersBound || !window.visualViewport) return;
-
-        window.visualViewport.addEventListener('resize', scheduleYtKeyboardViewportSync, { passive: true });
-        window.visualViewport.addEventListener('scroll', scheduleYtKeyboardViewportSync, { passive: true });
-        ytVisualViewportListenersBound = true;
-    }
-
-    function stopYtKeyboardViewport(restoreViewport = true) {
-        clearYtKeyboardViewportSchedule();
-        activeYtKeyboardView = null;
-
-        ytChatKeyboardViewIds.forEach((id) => {
-            clearYtKeyboardViewState(document.getElementById(id));
-        });
-
-        const youtubeView = document.getElementById('youtube-view');
-        if (youtubeView) {
-            youtubeView.classList.remove('yt-ios-keyboard-managed');
-            youtubeView.style.removeProperty('--yt-visual-viewport-height');
-            youtubeView.style.removeProperty('--yt-visual-viewport-top');
-        }
-
-        if (restoreViewport) window.resetYtViewportOffset();
-    }
-
-    function startYtKeyboardViewport(view) {
-        if (!isYtIOSWebKit) return;
-
-        if (activeYtKeyboardView && activeYtKeyboardView !== view) {
-            stopYtKeyboardViewport(false);
-        } else {
-            clearYtKeyboardViewportSchedule();
-        }
-
-        activeYtKeyboardView = view;
-        bindYtVisualViewportListeners();
-        scheduleYtKeyboardViewportSync();
     }
 
     window.releaseYtChatKeyboardLock = function(nextView = null) {
@@ -708,10 +659,6 @@
             if (active && view.contains(active) && typeof active.blur === 'function') active.blur();
             clearYtKeyboardViewState(view);
         });
-
-        if (isYtIOSWebKit && activeYtKeyboardView && activeYtKeyboardView !== keepView) {
-            stopYtKeyboardViewport(true);
-        }
     };
 
     window.setYtChatKeyboardLock = function(view, isOpen) {
@@ -719,18 +666,16 @@
         if (isOpen) {
             window.releaseYtChatKeyboardLock(view);
             if (isYtIOSWebKit) {
-                startYtKeyboardViewport(view);
+                view.classList.add('keyboard-open', 'yt-chat-keyboard-lock');
+                resetYtManagedContainerScroll();
             } else {
                 clearYtKeyboardViewState(view);
             }
             return;
         }
 
-        if (isYtIOSWebKit && activeYtKeyboardView === view) {
-            stopYtKeyboardViewport(true);
-        } else {
-            clearYtKeyboardViewState(view);
-        }
+        clearYtKeyboardViewState(view);
+        if (isYtIOSWebKit) window.resetYtViewportOffset();
     };
 
     // 2. DOM Elements
@@ -794,8 +739,10 @@
                 ytUserState = {};
             }
             syncYtProfile();
+            setYtIOSAppScrollLock(true);
             if (window.openView) window.openView(ytView);
             else ytView.classList.add('active');
+            resetYtManagedContainerScroll();
             renderSubscriptions();
             renderVideos();
         });
@@ -803,8 +750,11 @@
 
     if (backBtn && ytView) {
         backBtn.addEventListener('click', () => {
+            window.releaseYtChatKeyboardLock?.();
             if (window.closeView) window.closeView(ytView);
             else ytView.classList.remove('active');
+            window.resetYtViewportOffset?.();
+            setYtIOSAppScrollLock(false);
         });
     }
 

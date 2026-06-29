@@ -1730,15 +1730,42 @@
 
 @supports (-webkit-touch-callout: none) {
     @media (hover: none) and (pointer: coarse) {
+        #app.yt-ios-scroll-locked {
+            overflow: hidden !important;
+        }
+
         #youtube-view {
             contain: paint;
             overflow: hidden;
         }
 
         @supports (overflow: clip) {
+            #app.yt-ios-scroll-locked,
             #youtube-view {
-                overflow: clip;
+                overflow: clip !important;
             }
+        }
+
+        #youtube-view > .bottom-sheet-overlay:not(.active),
+        #add-yt-char-sheet:not(.active),
+        #yt-char-all-content-sheet:not(.active) {
+            display: none !important;
+        }
+
+        #youtube-view > .bottom-sheet-overlay.active,
+        #add-yt-char-sheet.active,
+        #yt-char-all-content-sheet.active {
+            display: flex !important;
+            overflow: clip !important;
+        }
+
+        #youtube-view > .bottom-sheet-overlay .bottom-sheet,
+        #add-yt-char-sheet .bottom-sheet,
+        #yt-char-all-content-sheet .bottom-sheet {
+            -webkit-transform: none !important;
+            transform: none !important;
+            -webkit-transition: none !important;
+            transition: none !important;
         }
 
         #sub-channel-view,
@@ -1757,20 +1784,6 @@
         #yt-bubble-chat-view.active {
             visibility: visible;
             pointer-events: auto;
-        }
-
-        #youtube-view.yt-ios-keyboard-managed #yt-video-player-view.keyboard-open,
-        #youtube-view.yt-ios-keyboard-managed #yt-user-live-view.keyboard-open,
-        #youtube-view.yt-ios-keyboard-managed #yt-community-detail-view.keyboard-open,
-        #youtube-view.yt-ios-keyboard-managed #yt-bubble-chat-view.keyboard-open {
-            top: var(--yt-visual-viewport-top, 0px) !important;
-            bottom: auto !important;
-            height: var(--yt-visual-viewport-height, 100%) !important;
-            width: 100% !important;
-            -webkit-transform: none !important;
-            transform: none !important;
-            -webkit-transition: none !important;
-            transition: none !important;
         }
     }
 }
