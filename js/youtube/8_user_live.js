@@ -279,6 +279,7 @@
     let userLiveTotalViews = 0;
     let userLiveMaxHot = 0;
     let userLiveNewSubs = 0;
+    let userLiveSessionId = null;
 
     const userLiveChatInput = document.getElementById('yt-user-live-chat-input');
     const userLiveChatSend = document.getElementById('yt-user-live-chat-send');
@@ -317,6 +318,7 @@
             totalViews,
             maxHot: Number(userLiveMaxHot) || totalViews,
             newSubs: Number(userLiveNewSubs) || 0,
+            liveSessionId: userLiveSessionId || channelState.activeUserLive?.liveSessionId || null,
             guest: getSelectedUserLiveGuest(),
             user: {
                 name: effectiveYtUser.name || '我',
@@ -379,6 +381,7 @@
         userLiveTotalViews = Number(activeLive.totalViews) || 0;
         userLiveMaxHot = Number(activeLive.maxHot) || userLiveTotalViews;
         userLiveNewSubs = Number(activeLive.newSubs) || 0;
+        userLiveSessionId = activeLive.liveSessionId || activeLive.id || null;
 
         const titleInput = document.getElementById('yt-user-live-title-input');
         const topicInput = document.getElementById('yt-user-live-topic-input');
@@ -464,6 +467,7 @@
             userLiveTotalViews = Math.floor(Math.random() * 500) + 100;
             userLiveMaxHot = userLiveTotalViews;
             userLiveNewSubs = 0;
+            userLiveSessionId = `user_live_${Date.now()}`;
             persistActiveUserLive({ minimized: false });
             const viewsEl = document.getElementById('yt-user-live-views-display');
             if(viewsEl) viewsEl.textContent = userLiveTotalViews + ' 人正在观看';
@@ -524,7 +528,14 @@
     if (ytSummaryConfirmBtn && userLiveSummarySheet) {
         ytSummaryConfirmBtn.addEventListener('click', () => {
             userLiveSummarySheet.classList.remove('active');
-            if(window.showToast) window.showToast('录播已保存至往期记录');
+            const completedLiveId = userLiveSessionId || channelState.activeUserLive?.liveSessionId || `user_live_${Date.now()}`;
+            const communityGrowth = typeof window.applyYtUserCommunityLiveGrowth === 'function'
+                ? window.applyYtUserCommunityLiveGrowth({
+                    liveId: completedLiveId,
+                    newSubs: userLiveNewSubs,
+                    totalViews: userLiveTotalViews
+                })
+                : 0;
             
             const existingIndex = mockVideos.findIndex(v => v.channelData && v.channelData.id === 'user_channel_id');
             if(existingIndex > -1) mockVideos.splice(existingIndex, 1);
@@ -591,6 +602,12 @@
 
             channelState.activeUserLive = null;
             saveYoutubeData();
+
+            if(window.showToast) {
+                window.showToast(communityGrowth > 0
+                    ? `录播已保存，社群新增 ${communityGrowth} 人`
+                    : '录播已保存至往期记录');
+            }
 
             renderVideos();
             

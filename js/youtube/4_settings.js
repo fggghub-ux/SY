@@ -20,10 +20,12 @@ var defaultPrompt = `你正在扮演 YouTube 直播主播 {char}。
 要求：主播气泡不少于 5 条，继续生成不少于 10 条弹幕评论（fanComments），这些弹幕中，一部分可以是对 {user} 最新评论的回复、跟风或吐槽；另一部分可以是刚进直播间的新观众留言，或是没看到 {user} 评论、纯粹针对主播或直播内容表达自己观点的独立弹幕，以体现真实直播间弹幕的丰富和滚动感。
 语言自然，不要 emoji，不要 Markdown。`;
 
-var defaultGroupChatPrompt = `你要扮演的是 YouTube 频道的专属粉丝社群。群主是 {char}，其他都是 {char} 的粉丝或订阅者。
+var defaultGroupChatPrompt = `你要生成真实自然的 YouTube 私信或频道粉丝社群对话。频道主体是 {char}。
 群主人设：{char_persona}
 用户：{user}
 用户人设：{user_persona}
+可用管理员（自建社群时使用）：
+{admins}
 世界书内容：{wb_context}
 聊天记录：
 {chat_history}
@@ -31,24 +33,11 @@ var defaultGroupChatPrompt = `你要扮演的是 YouTube 频道的专属粉丝�
 触发说明：
 {trigger_instruction}
 
-请根据群聊上下文生成社群里活泼自然的聊天记录。
-只返回严格 JSON：
-{
-  "charReplies": [
-    {"text": "群主发的消息1", "translationZh": ""},
-    {"text": "foreign-language reply", "translationZh": "这条外语回复的自然中文翻译"}
-  ],
-  "otherFansReplies": [
-    {"name": "粉丝A", "text": "第一句话", "translationZh": ""},
-    {"name": "粉丝A", "text": "第二句话", "translationZh": ""},
-    {"name": "粉丝B", "text": "another message", "translationZh": "另一句消息"}
-  ]
-}
+请根据聊天上下文生成活泼自然的短消息，并严格遵循末尾追加的 JSON 输出协议。
 要求：
-1. 生成 1-3 条群主的消息气泡。
-2. 生成 3-8 个粉丝的话，一个粉丝可以连发 2-5 条消息（通过生成多条同 name 的对象来实现）。
-3. 不要使用 Markdown，不要 emoji，回复必须符合真实粉丝群的氛围，粉丝的语气可以有吹捧、调侃、讨论等多种自然表现。
-4. YouTube 是国际化平台，回复可以使用符合角色国籍、人设和上下文的任意语言；text 不是中文时必须填写 translationZh 自然中文翻译，text 是中文时 translationZh 必须为空字符串。`;
+1. 不要使用 Markdown，不要 emoji，语气符合真实私信或粉丝群氛围，可以吹捧、调侃、讨论和自然追问。
+2. 连续消息应有上下文关系，不要机械复述。
+3. YouTube 是国际化平台，可以使用符合角色国籍、人设和上下文的任意语言；外语必须提供自然中文翻译。`;
 
 var defaultVODPrompt = `你正在扮演 YouTube 频道 {char}。
 频道人设：{char_persona}
@@ -134,7 +123,7 @@ function setActiveYtPromptTab(type) {
     if (promptTabGroup) promptTabGroup.classList.toggle('active', currentYtPromptType === 'group');
     if (ytPromptDesc) {
         ytPromptDesc.textContent = currentYtPromptType === 'group'
-            ? '群聊/私信提示词。可用变量：{char}、{char_persona}、{user}、{user_persona}、{wb_context}、{chat_history}、{trigger_instruction}。'
+            ? '群聊/私信提示词。可用变量：{char}、{char_persona}、{user}、{user_persona}、{admins}、{wb_context}、{chat_history}、{trigger_instruction}。'
             : '直播互动提示词。可用变量：{char}、{char_persona}、{user}、{user_persona}、{guest}、{wb_context}、{live_summary_context}、{msg_context}、{context_clue}。';
     }
     if (ytPromptInput) ytPromptInput.value = getYtPromptValue(currentYtPromptType);

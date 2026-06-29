@@ -21,7 +21,9 @@
             cachedTrendingLive: null,
             cachedTrendingSub: null,
             activeUserLive: null,
-            pastVideos: []
+            pastVideos: [],
+            communityPosts: [],
+            userCommunityChannel: null
         },
         subscriptions: [],
         userState: null
@@ -143,7 +145,9 @@
                 liveSummaries: Array.isArray(channelState.liveSummaries) ? channelState.liveSummaries.filter(Boolean) : [],
                 groupChatHistory: Array.isArray(channelState.groupChatHistory) ? channelState.groupChatHistory.filter(Boolean) : [],
                 activeUserLive: isPlainObject(channelState.activeUserLive) ? channelState.activeUserLive : null,
-                pastVideos: Array.isArray(channelState.pastVideos) ? channelState.pastVideos.filter(Boolean) : []
+                pastVideos: Array.isArray(channelState.pastVideos) ? channelState.pastVideos.filter(Boolean) : [],
+                communityPosts: Array.isArray(channelState.communityPosts) ? channelState.communityPosts.filter(Boolean) : [],
+                userCommunityChannel: isPlainObject(channelState.userCommunityChannel) ? channelState.userCommunityChannel : null
             },
             subscriptions: Array.isArray(safe.subscriptions) ? safe.subscriptions.filter(Boolean) : [],
             userState: isPlainObject(safe.userState) ? safe.userState : null

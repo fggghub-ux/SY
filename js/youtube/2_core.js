@@ -56,7 +56,9 @@
             cachedTrendingLive: null,
             cachedTrendingSub: null,
             activeUserLive: null,
-            pastVideos: []
+            pastVideos: [],
+            communityPosts: [],
+            userCommunityChannel: null
         };
     }
 
@@ -78,6 +80,74 @@
     }
 
     let channelState = createDefaultYtChannelState();
+
+    function clampYtContextLimit(value, fallback = 80) {
+        const parsed = Math.round(Number(value));
+        if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+        return Math.min(200, parsed);
+    }
+
+    function normalizeYtAdminSnapshots(rawAdmins) {
+        if (!Array.isArray(rawAdmins)) return [];
+        const seen = new Set();
+        return rawAdmins.map(admin => {
+            if (!admin || typeof admin !== 'object') return null;
+            const charId = admin.charId ?? admin.id;
+            if (charId === undefined || charId === null || charId === '') return null;
+            const key = String(charId);
+            if (seen.has(key)) return null;
+            seen.add(key);
+            return {
+                charId,
+                name: String(admin.name || admin.nickname || admin.realName || '管理员'),
+                avatarUrl: admin.avatarUrl || admin.avatar || '',
+                persona: String(admin.persona || '')
+            };
+        }).filter(Boolean);
+    }
+
+    function normalizeYtFanGroup(rawGroup = {}) {
+        const safeGroup = rawGroup && typeof rawGroup === 'object' ? rawGroup : {};
+        return {
+            ...safeGroup,
+            contextLimit: clampYtContextLimit(safeGroup.contextLimit, 80),
+            admins: normalizeYtAdminSnapshots(safeGroup.admins)
+        };
+    }
+
+    function normalizeYtUserCommunityChannel(rawChannel) {
+        if (!rawChannel || typeof rawChannel !== 'object') return null;
+        const safeGeneratedContent = rawChannel.generatedContent && typeof rawChannel.generatedContent === 'object'
+            ? rawChannel.generatedContent
+            : {};
+        const rawGroup = safeGeneratedContent.fanGroup && typeof safeGeneratedContent.fanGroup === 'object'
+            ? safeGeneratedContent.fanGroup
+            : {};
+        const memberCount = Math.max(1, Math.round(Number(rawGroup.memberCount) || 1));
+        return {
+            ...rawChannel,
+            id: rawChannel.id || 'user_community_channel',
+            name: String(rawChannel.name || '我的频道'),
+            avatar: rawChannel.avatar || '',
+            isUserOwnedCommunity: true,
+            isBusiness: false,
+            dmContextLimit: clampYtContextLimit(rawChannel.dmContextLimit, 80),
+            groupChatHistory: Array.isArray(rawChannel.groupChatHistory) ? rawChannel.groupChatHistory.filter(Boolean) : [],
+            dmHistory: Array.isArray(rawChannel.dmHistory) ? rawChannel.dmHistory.filter(Boolean) : [],
+            generatedContent: {
+                ...safeGeneratedContent,
+                fanGroup: {
+                    ...normalizeYtFanGroup(rawGroup),
+                    id: rawGroup.id || 'user_fan_group',
+                    name: String(rawGroup.name || '我的社群'),
+                    memberCount,
+                    isJoined: true,
+                    isOwned: true,
+                    lastGrowthLiveId: rawGroup.lastGrowthLiveId || null
+                }
+            }
+        };
+    }
 
     function compressImage(dataUrl, maxWidth, maxHeight, callback) {
         const img = new Image();
@@ -209,7 +279,9 @@
             liveSummaries: Array.isArray(safeState.liveSummaries) ? safeState.liveSummaries.filter(item => item && typeof item === 'object') : [],
             groupChatHistory: Array.isArray(safeState.groupChatHistory) ? safeState.groupChatHistory.filter(item => item && typeof item === 'object') : [],
             activeUserLive: safeState.activeUserLive && typeof safeState.activeUserLive === 'object' ? safeState.activeUserLive : null,
-            pastVideos: Array.isArray(safeState.pastVideos) ? safeState.pastVideos.filter(video => video && typeof video === 'object') : []
+            pastVideos: Array.isArray(safeState.pastVideos) ? safeState.pastVideos.filter(video => video && typeof video === 'object') : [],
+            communityPosts: Array.isArray(safeState.communityPosts) ? safeState.communityPosts.filter(post => post && typeof post === 'object') : [],
+            userCommunityChannel: normalizeYtUserCommunityChannel(safeState.userCommunityChannel)
         };
     }
 
@@ -324,11 +396,19 @@
             subs: sub.subs || '',
             videos: sub.videos || '',
             isLive: !!sub.isLive,
-            generatedContent: sub.generatedContent || null,
+            generatedContent: sub.generatedContent && typeof sub.generatedContent === 'object'
+                ? {
+                    ...sub.generatedContent,
+                    fanGroup: sub.generatedContent.fanGroup
+                        ? normalizeYtFanGroup(sub.generatedContent.fanGroup)
+                        : null
+                }
+                : null,
             groupChatHistory: Array.isArray(sub.groupChatHistory) ? sub.groupChatHistory : [],
             isFriend: !!sub.isFriend,
             isBusiness: !!sub.isBusiness,
             isSubscribed: sub.isSubscribed !== false,
+            dmContextLimit: clampYtContextLimit(sub.dmContextLimit, 80),
             dmHistory: Array.isArray(sub.dmHistory) ? sub.dmHistory.filter(item => item && typeof item === 'object') : []
         };
     }
@@ -505,7 +585,10 @@
             hasSubscriptions = mockSubscriptions.some(sub => sub && sub.isSubscribed !== false);
 
             if (typeof currentSubChannelData !== 'undefined' && currentSubChannelData && currentSubChannelData.id) {
-                const syncedCurrentSub = mockSubscriptions.find(sub => String(sub.id) === String(currentSubChannelData.id));
+                const syncedCurrentSub = channelState.userCommunityChannel
+                    && String(channelState.userCommunityChannel.id) === String(currentSubChannelData.id)
+                    ? channelState.userCommunityChannel
+                    : mockSubscriptions.find(sub => String(sub.id) === String(currentSubChannelData.id));
                 if (syncedCurrentSub) currentSubChannelData = syncedCurrentSub;
             }
 
@@ -546,6 +629,8 @@
     window.normalizeYtUserState = normalizeYtUserState;
     window.normalizeYtSubscriptions = normalizeYtSubscriptions;
     window.normalizeYtChannelState = normalizeYtChannelState;
+    window.clampYtContextLimit = clampYtContextLimit;
+    window.normalizeYtAdminSnapshots = normalizeYtAdminSnapshots;
     window.normalizeYoutubeState = normalizeYoutubeState;
     window.createStableYtChannelId = createStableYtChannelId;
     window.buildYtChannelFromTrendingItem = buildYtChannelFromTrendingItem;
@@ -1107,6 +1192,13 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
 
         // Community Tab - Render joined fan groups
         let joinedGroups = [];
+        if (channelState.userCommunityChannel?.generatedContent?.fanGroup) {
+            joinedGroups.push({
+                subData: channelState.userCommunityChannel,
+                group: channelState.userCommunityChannel.generatedContent.fanGroup,
+                isOwned: true
+            });
+        }
         mockSubscriptions.forEach(sub => {
             if (sub.generatedContent && sub.generatedContent.fanGroup && sub.generatedContent.fanGroup.isJoined) {
                 joinedGroups.push({
@@ -1120,7 +1212,7 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
             msgListContainer.innerHTML = `
                 <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding-top: 100px; color: #8e8e93;">
                     <i class="fas fa-users" style="font-size: 48px; margin-bottom: 16px; color: #d1d1d6;"></i>
-                    <p style="font-size: 15px;">你还没有加入任何粉丝群</p>
+                    <p style="font-size: 15px;">你还没有创建或加入任何社群</p>
                 </div>
             `;
             return;
@@ -1167,7 +1259,7 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
             el.innerHTML = `
                 ${groupAvatarHtml}
                 <div style="flex: 1; overflow: hidden;">
-                    <div style="font-size: 16px; font-weight: 600; color: #0f0f0f; margin-bottom: 4px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">${item.group.name || '粉丝群'}</div>
+                    <div style="font-size: 16px; font-weight: 600; color: #0f0f0f; margin-bottom: 4px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">${item.group.name || '粉丝群'}${item.isOwned ? '<span style="font-size:10px; color:#fff; background:#0f0f0f; border-radius:6px; padding:2px 5px; margin-left:6px; vertical-align:2px;">我的</span>' : ''}</div>
                     <div style="font-size: 13px; color: #606060; display: flex; align-items: center; gap: 6px;">
                         <span style="white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">${lastMsgText}</span>
                     </div>
@@ -1221,10 +1313,10 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
                 if (idx === 0) {
                     const userLiveSetupSheet = document.getElementById('yt-user-live-setup-sheet');
                     if (userLiveSetupSheet) userLiveSetupSheet.classList.add('active');
+                } else if (idx === 1) {
+                    if (typeof window.openYtUserPostComposer === 'function') window.openYtUserPostComposer();
                 } else if (idx === 2) {
-                    const addYtCharSheet = document.getElementById('add-yt-char-sheet');
-                    if (window.openCustomCharSheet) window.openCustomCharSheet(null);
-                    else if (addYtCharSheet) addYtCharSheet.classList.add('active');
+                    if (typeof window.openYtUserCommunityCreator === 'function') window.openYtUserCommunityCreator();
                 }
             });
         });

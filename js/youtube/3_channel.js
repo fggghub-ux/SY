@@ -5,6 +5,12 @@
 
     let currentSubChannelData = null;
 
+    function escapeYtChannelHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[char]));
+    }
+
     function openSubChannelView(sub) {
         try {
             if (!subChannelView) return;
@@ -283,12 +289,47 @@
                 `;
             }
         } else if (target === 'community') {
-            container.innerHTML = `
-                <div style="display: flex; flex-direction: column; align-items: center; padding: 40px 20px; color: #8e8e93;">
-                    <i class="fas fa-users" style="font-size: 40px; margin-bottom: 10px; color: #d1d1d6;"></i>
-                    <p style="font-size: 14px;">暂无社群动态</p>
-                </div>
-            `;
+            const posts = Array.isArray(channelState.communityPosts) ? channelState.communityPosts : [];
+            if (posts.length === 0) {
+                container.innerHTML = `
+                    <div style="display: flex; flex-direction: column; align-items: center; padding: 40px 20px; color: #8e8e93;">
+                        <i class="fas fa-users" style="font-size: 40px; margin-bottom: 10px; color: #d1d1d6;"></i>
+                        <p style="font-size: 14px;">暂无社群动态</p>
+                    </div>
+                `;
+                return;
+            }
+            const effectiveUser = typeof window.getYtEffectiveUserState === 'function'
+                ? window.getYtEffectiveUserState()
+                : (ytUserState || {});
+            posts.forEach(post => {
+                const item = document.createElement('div');
+                item.className = 'yt-community-post';
+                item.style.cursor = 'pointer';
+                const status = post.commentsStatus === 'loading'
+                    ? '<span style="color:#8e8e93;"><i class="fas fa-circle-notch fa-spin"></i> 评论生成中</span>'
+                    : (post.commentsStatus === 'failed' ? '<span style="color:#ff3b30;">评论生成失败</span>' : '');
+                const commentCount = Array.isArray(post.comments) ? post.comments.length : (Number(post.commentsCount) || 0);
+                item.innerHTML = `
+                    <div style="display:flex;align-items:center;margin-bottom:10px;gap:10px;">
+                        <div class="yt-video-avatar" style="width:36px;height:36px;">${effectiveUser.avatarUrl ? `<img src="${escapeYtChannelHtml(effectiveUser.avatarUrl)}">` : '<i class="fas fa-user" style="color:#8e8e93;"></i>'}</div>
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-size:14px;font-weight:500;">${escapeYtChannelHtml(effectiveUser.name || '我的频道')}</div>
+                            <div style="font-size:11px;color:#606060;">${escapeYtChannelHtml(post.time || '刚刚')}</div>
+                        </div>
+                        <div style="font-size:11px;">${status}</div>
+                    </div>
+                    <div class="yt-community-post-content" style="white-space:pre-wrap;">${escapeYtChannelHtml(post.content || '')}</div>
+                    ${post.imageUrl ? `<img src="${escapeYtChannelHtml(post.imageUrl)}" alt="贴文图片" style="display:block;width:100%;max-height:360px;object-fit:cover;border-radius:16px;margin-bottom:12px;">` : ''}
+                    <div class="yt-community-post-actions">
+                        <div class="yt-community-post-action"><i class="far fa-thumbs-up"></i> ${Math.max(0, Number(post.likes) || 0)}</div>
+                        <div class="yt-community-post-action"><i class="far fa-thumbs-down"></i></div>
+                        <div class="yt-community-post-action"><i class="far fa-comment"></i> ${commentCount}</div>
+                    </div>
+                `;
+                item.addEventListener('click', () => window.openYtUserCommunityPost?.(post));
+                container.appendChild(item);
+            });
         }
     });
 

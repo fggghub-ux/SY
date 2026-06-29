@@ -1051,6 +1051,15 @@
                                             <i class="fas fa-chevron-right arrow"></i>
                                         </div>
                                     </div>
+                                    <div class="settings-group fully-rounded" id="yt-dm-context-group" style="margin:0 16px 16px;">
+                                        <div class="settings-item" style="border-bottom:none; justify-content:space-between;">
+                                            <div style="display:flex; align-items:center;">
+                                                <div class="settings-icon" style="background-color:#8e8e93;"><i class="fas fa-link"></i></div>
+                                                <div class="settings-text">上下文</div>
+                                            </div>
+                                            <input type="number" id="yt-dm-context-limit-input" value="80" min="1" max="200" inputmode="numeric" style="width:58px; text-align:center; border:1px solid #e5e5ea; border-radius:8px; padding:5px; font-size:15px;">
+                                        </div>
+                                    </div>
                                     <div class="settings-group fully-rounded" style="margin:0 16px;">
                                         <div class="sheet-action" id="yt-dm-clear-history-btn" style="margin:0; border-bottom: 1px solid var(--separator-color); border-radius:12px 12px 0 0; color:#ff3b30;">清空聊天记录</div>
                                         <div class="sheet-action" id="yt-dm-delete-friend-btn" style="margin:0; border-radius:0 0 12px 12px; color:#ff3b30;">删除私信</div>
@@ -1082,18 +1091,101 @@
                                             <label>群聊名称</label>
                                             <input type="text" id="yt-group-name-input" placeholder="输入群聊名称">
                                         </div>
+                                        <div class="form-item">
+                                            <label>当前人数</label>
+                                            <span id="yt-group-member-count" style="color:#606060;">1人</span>
+                                        </div>
                                         <div class="form-item" style="border-bottom:none;">
                                             <label>所属频道</label>
                                             <div id="yt-group-owner-info" style="display:flex; align-items:center; gap:8px;">
                                                 <img id="yt-group-owner-avatar" src="" style="width:24px; height:24px; border-radius:50%; object-fit:cover; display:none;">
                                                 <span id="yt-group-owner-name" style="color:#606060;"></span>
+                                                <span id="yt-group-owner-status" style="font-size:11px; color:#007aff; font-weight:600;">添加</span>
                                             </div>
+                                        </div>
+                                    </div>
+                                    <div class="settings-group fully-rounded" style="margin:0 16px 16px;">
+                                        <div class="settings-item" style="border-bottom:none; justify-content:space-between;">
+                                            <div style="display:flex; align-items:center;">
+                                                <div class="settings-icon" style="background-color:#8e8e93;"><i class="fas fa-link"></i></div>
+                                                <div class="settings-text">上下文</div>
+                                            </div>
+                                            <input type="number" id="yt-group-context-limit-input" value="80" min="1" max="200" inputmode="numeric" style="width:58px; text-align:center; border:1px solid #e5e5ea; border-radius:8px; padding:5px; font-size:15px;">
+                                        </div>
+                                    </div>
+                                    <div class="settings-group fully-rounded" id="yt-group-admin-settings-group" style="display:none; margin:0 16px 16px;">
+                                        <div class="settings-item" id="yt-group-admin-manage-btn" style="border-bottom:none; cursor:pointer;">
+                                            <div class="settings-icon" style="background-color:#5856d6;"><i class="fas fa-user-shield"></i></div>
+                                            <div class="settings-text">管理员</div>
+                                            <span id="yt-group-admin-count" style="font-size:13px; color:#8e8e93; margin-right:8px;">0人</span>
+                                            <i class="fas fa-chevron-right arrow"></i>
                                         </div>
                                     </div>
                                     <div class="sheet-action confirm-action" id="yt-save-group-settings-btn" style="margin:0 16px 20px; background:#0f0f0f; color:#fff;">保存</div>
                                     <div class="settings-group fully-rounded" style="margin:0 16px;">
                                         <div class="sheet-action" id="yt-clear-group-history-btn" style="margin:0; border-bottom: 1px solid var(--separator-color); border-radius:12px 12px 0 0; color:#ff3b30;">清空聊天记录</div>
                                         <div class="sheet-action" id="yt-exit-group-btn" style="margin:0; border-radius:0 0 12px 12px; color:#ff3b30;">退出群聊</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- User Community Creator -->
+                        <div class="bottom-sheet-overlay detail-sheet-overlay" id="yt-user-community-create-sheet" style="z-index:360;">
+                            <div class="bottom-sheet" style="max-height:85%;">
+                                <div class="sheet-handle"></div>
+                                <div class="sheet-title">创建社群</div>
+                                <div class="detail-sheet-content">
+                                    <div class="edit-avatar-section" style="margin-top:0; margin-bottom:18px;">
+                                        <div class="edit-avatar-wrapper detail-avatar-wrapper" id="yt-user-community-avatar-wrapper">
+                                            <div class="edit-avatar" style="width:80px; height:80px; background:#e5e5ea; display:flex; align-items:center; justify-content:center;">
+                                                <i class="fas fa-users" id="yt-user-community-avatar-icon" style="font-size:28px; color:#8e8e93;"></i>
+                                                <img id="yt-user-community-avatar-img" src="" alt="" style="display:none; width:100%; height:100%; object-fit:cover;">
+                                            </div>
+                                            <div class="edit-label">社群头像</div>
+                                            <input type="file" id="yt-user-community-avatar-upload" accept="image/*" style="display:none;">
+                                        </div>
+                                    </div>
+                                    <div class="form-group fully-rounded" style="margin:0 16px 18px;">
+                                        <div class="form-item" style="border-bottom:none;">
+                                            <label>社群名称</label>
+                                            <input type="text" id="yt-user-community-name-input" maxlength="40" placeholder="输入社群名称">
+                                        </div>
+                                    </div>
+                                    <div class="sheet-action confirm-action" id="yt-user-community-confirm-btn" style="margin:0 16px; background:#0f0f0f; color:#fff;">创建</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- User Community Admin Picker -->
+                        <div class="bottom-sheet-overlay detail-sheet-overlay" id="yt-user-community-admin-sheet" style="z-index:361;">
+                            <div class="bottom-sheet" style="height:75%; display:flex; flex-direction:column;">
+                                <div class="sheet-handle"></div>
+                                <div class="sheet-title">选择管理员</div>
+                                <div id="yt-user-community-admin-list" style="flex:1; overflow-y:auto; padding:8px 16px 16px;"></div>
+                                <div class="sheet-action confirm-action" id="yt-user-community-admin-save-btn" style="margin:0 16px 20px; background:#0f0f0f; color:#fff;">保存管理员</div>
+                            </div>
+                        </div>
+
+                        <!-- User Community Post Composer -->
+                        <div class="bottom-sheet-overlay detail-sheet-overlay" id="yt-user-post-compose-sheet" style="z-index:362;">
+                            <div class="bottom-sheet" style="max-height:90%;">
+                                <div class="sheet-handle"></div>
+                                <div class="sheet-title">编辑贴文</div>
+                                <div class="detail-sheet-content" style="padding:0 16px 24px;">
+                                    <textarea id="yt-user-post-content-input" maxlength="2000" placeholder="分享最新动态..." style="width:100%; min-height:150px; box-sizing:border-box; border:none; border-radius:16px; background:#f2f2f7; padding:14px; font-size:16px; line-height:1.5; resize:none; outline:none;"></textarea>
+                                    <div id="yt-user-post-image-wrapper" style="display:none; position:relative; margin-top:14px; border-radius:16px; overflow:hidden; background:#f2f2f7; aspect-ratio:16/9;">
+                                        <img id="yt-user-post-image-preview" src="" alt="贴文图片" style="width:100%; height:100%; object-fit:cover;">
+                                        <button type="button" id="yt-user-post-image-remove-btn" aria-label="移除图片" style="position:absolute; right:10px; top:10px; width:30px; height:30px; border:none; border-radius:50%; background:rgba(0,0,0,.65); color:#fff; cursor:pointer;"><i class="fas fa-times"></i></button>
+                                    </div>
+                                    <div id="yt-user-post-image-description-group" style="display:none; margin-top:12px;">
+                                        <textarea id="yt-user-post-image-description-input" maxlength="500" placeholder="描述图片主体、场景和氛围，供评论 AI 理解..." style="width:100%; min-height:80px; box-sizing:border-box; border:none; border-radius:14px; background:#f2f2f7; padding:12px; font-size:14px; resize:none; outline:none;"></textarea>
+                                    </div>
+                                    <div style="display:flex; align-items:center; gap:10px; margin-top:14px;">
+                                        <button type="button" id="yt-user-post-image-add-btn" style="width:42px; height:42px; border:none; border-radius:21px; background:#f2f2f7; color:#606060; cursor:pointer;"><i class="fas fa-image"></i></button>
+                                        <input type="file" id="yt-user-post-image-upload" accept="image/*" style="display:none;">
+                                        <div style="flex:1; font-size:12px; color:#8e8e93;">正文必填，最多上传一张图片</div>
+                                        <button type="button" id="yt-user-post-publish-btn" style="border:none; border-radius:18px; background:#0f0f0f; color:#fff; padding:9px 18px; font-size:14px; font-weight:600; cursor:pointer;">发布</button>
                                     </div>
                                 </div>
                             </div>

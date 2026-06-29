@@ -6,6 +6,16 @@
     const postChatInput = document.getElementById('yt-community-chat-input');
     
     let currentActivePost = null;
+    const userPostComposeSheet = document.getElementById('yt-user-post-compose-sheet');
+    const userPostContentInput = document.getElementById('yt-user-post-content-input');
+    const userPostImageWrapper = document.getElementById('yt-user-post-image-wrapper');
+    const userPostImagePreview = document.getElementById('yt-user-post-image-preview');
+    const userPostImageAddBtn = document.getElementById('yt-user-post-image-add-btn');
+    const userPostImageUpload = document.getElementById('yt-user-post-image-upload');
+    const userPostImageRemoveBtn = document.getElementById('yt-user-post-image-remove-btn');
+    const userPostImageDescriptionGroup = document.getElementById('yt-user-post-image-description-group');
+    const userPostImageDescriptionInput = document.getElementById('yt-user-post-image-description-input');
+    const userPostPublishBtn = document.getElementById('yt-user-post-publish-btn');
 
     function stopCommunityControlEvent(e) {
         if (!e) return;
@@ -72,6 +82,10 @@
         }[char]));
     }
 
+    function formatYtPostText(value) {
+        return ytEscapeHtml(value).replace(/\n/g, '<br>');
+    }
+
     function normalizeYtChatReply(value) {
         if (typeof normalizeYtGeneratedMessage === 'function') {
             return normalizeYtGeneratedMessage(value);
@@ -85,6 +99,7 @@
 
     function getYtBubbleSpeakerKey(msg) {
         if (msg?.type === 'user') return 'user';
+        if (msg?.type === 'admin') return `admin:${msg?.speakerId || msg?.name || ''}`;
         if (msg?.isOffer || msg?.type === 'char') return `char:${msg?.name || currentSubChannelData?.name || ''}`;
         return `fan:${msg?.name || ''}`;
     }
@@ -170,10 +185,10 @@
                         ${c.avatar ? `<img src="${c.avatar}" style="width:100%;height:100%;object-fit:cover;">` : `<span style="font-size:12px; font-weight:bold; color:#555;">${c.name ? c.name[0].toUpperCase() : '?'}</span>`}
                     </div>
                     <div style="flex: 1;">
-                        <div style="font-size: 13px; color: #606060; margin-bottom: 4px;">${c.name}</div>
-                        <div style="font-size: 14px; color: #0f0f0f; line-height: 1.4;">${c.text}</div>
+                        <div style="font-size: 13px; color: #606060; margin-bottom: 4px;">${ytEscapeHtml(c.name)}</div>
+                        <div style="font-size: 14px; color: #0f0f0f; line-height: 1.4;">${formatYtPostText(c.text)}</div>
                         <div style="font-size: 12px; color: #8e8e93; margin-top: 6px; display: flex; gap: 16px;">
-                            <span><i class="far fa-thumbs-up"></i> ${Math.floor(Math.random() * 500) + 10}</span>
+                            <span><i class="far fa-thumbs-up"></i> ${Number.isFinite(Number(c.likes)) ? Math.max(0, Math.round(Number(c.likes))) : 0}</span>
                             <span><i class="far fa-thumbs-down"></i></span>
                         </div>
                     </div>
@@ -183,19 +198,24 @@
             commentsHtml = '<div style="text-align:center; padding: 20px; color:#8e8e93; font-size:13px;" id="yt-empty-post-comments">暂无评论</div>';
         }
 
+        const statusHtml = post.commentsStatus === 'loading'
+            ? '<div style="font-size:12px;color:#8e8e93;margin:0 0 12px;"><i class="fas fa-circle-notch fa-spin"></i> 评论生成中</div>'
+            : (post.commentsStatus === 'failed' ? '<div style="font-size:12px;color:#ff3b30;margin:0 0 12px;">评论生成失败，贴文已保留</div>' : '');
         communityDetailContent.innerHTML = `
             <div style="display: flex; align-items: center; margin-bottom: 12px; gap: 10px;">
                 <div class="yt-video-avatar" style="width:40px; height:40px;"><img src="${typeof resolveYtChannelAvatar === 'function' ? resolveYtChannelAvatar(currentSubChannelData) : (currentSubChannelData.avatar || '')}"></div>
                 <div style="flex:1;">
-                    <div style="font-size:15px; font-weight:500;">${currentSubChannelData.name || '未知'}</div>
+                    <div style="font-size:15px; font-weight:500;">${ytEscapeHtml(currentSubChannelData.name || '未知')}</div>
                     <div style="font-size:12px; color:#606060;">${post.time || '刚刚'}</div>
                 </div>
             </div>
             <div style="font-size: 15px; line-height: 1.5; color: #0f0f0f; margin-bottom: 16px;">
-                ${post.content || ''}
+                ${formatYtPostText(post.content || '')}
             </div>
+            ${post.imageUrl ? `<img src="${ytEscapeHtml(post.imageUrl)}" alt="贴文图片" style="display:block;width:100%;max-height:420px;object-fit:cover;border-radius:16px;margin:0 0 16px;">` : ''}
+            ${statusHtml}
             <div style="display: flex; gap: 24px; color: #606060; font-size: 14px; padding-bottom: 16px;">
-                <span><i class="far fa-thumbs-up"></i> ${post.likes || '1.2万'}</span>
+                <span><i class="far fa-thumbs-up"></i> ${post.isUserPost ? Math.max(0, Number(post.likes) || 0) : (post.likes || '1.2万')}</span>
                 <span><i class="far fa-thumbs-down"></i></span>
                 <span><i class="far fa-comment"></i> ${post.comments?.length || post.commentsCount || '0'}</span>
             </div>
@@ -226,6 +246,7 @@
         
         // Append to array so it's at the end (newest at bottom)
         currentActivePost.comments.push(newComment);
+        currentActivePost.commentsCount = currentActivePost.comments.length;
         saveYoutubeData();
 
         // Re-render
@@ -240,6 +261,7 @@
             const effectiveYtUser = getCurrentYtCommunityUser();
             addPostCommentMessage(effectiveYtUser.name || '我', text, true);
             postChatInput.value = '';
+            if (currentActivePost.isUserPost) return;
             
             // Show loading
             const container = document.getElementById('yt-post-comments-container');
@@ -273,6 +295,170 @@
         });
     }
 
+    function refreshYtUserCommunityPosts() {
+        const activeCommunityTab = document.querySelector('#profile-main-tabs .yt-sliding-tab.active[data-target="community"]');
+        if (activeCommunityTab) activeCommunityTab.click();
+        if (currentActivePost?.isUserPost && communityDetailView?.classList.contains('active')) renderPostComments();
+    }
+
+    function resetYtUserPostComposer() {
+        if (userPostContentInput) userPostContentInput.value = '';
+        if (userPostImagePreview) {
+            userPostImagePreview.src = '';
+            userPostImagePreview.removeAttribute('data-image-ready');
+        }
+        if (userPostImageWrapper) userPostImageWrapper.style.display = 'none';
+        if (userPostImageDescriptionGroup) userPostImageDescriptionGroup.style.display = 'none';
+        if (userPostImageDescriptionInput) userPostImageDescriptionInput.value = '';
+        if (userPostImageUpload) userPostImageUpload.value = '';
+    }
+
+    window.openYtUserPostComposer = function() {
+        resetYtUserPostComposer();
+        if (userPostComposeSheet) userPostComposeSheet.classList.add('active');
+        setTimeout(() => userPostContentInput?.focus(), 120);
+    };
+
+    window.openYtUserCommunityPost = function(post) {
+        if (!post) return;
+        const effectiveUser = getCurrentYtCommunityUser();
+        currentSubChannelData = channelState.userCommunityChannel || {
+            id: 'user_channel_id',
+            name: effectiveUser.name || '我的频道',
+            avatar: effectiveUser.avatarUrl || '',
+            desc: effectiveUser.persona || ''
+        };
+        openPostDetail(post);
+    };
+
+    if (userPostComposeSheet) {
+        userPostComposeSheet.addEventListener('mousedown', event => {
+            if (event.target === userPostComposeSheet) userPostComposeSheet.classList.remove('active');
+        });
+    }
+
+    if (userPostImageAddBtn && userPostImageUpload) {
+        userPostImageAddBtn.addEventListener('click', () => userPostImageUpload.click());
+        userPostImageUpload.addEventListener('change', event => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = loadEvent => {
+                const applyImage = url => {
+                    if (userPostImagePreview) {
+                        userPostImagePreview.src = url;
+                        userPostImagePreview.setAttribute('data-image-ready', 'true');
+                    }
+                    if (userPostImageWrapper) userPostImageWrapper.style.display = 'block';
+                    if (userPostImageDescriptionGroup) userPostImageDescriptionGroup.style.display = 'block';
+                };
+                if (window.compressImage) window.compressImage(loadEvent.target.result, 1280, 1280, applyImage);
+                else applyImage(loadEvent.target.result);
+            };
+            reader.readAsDataURL(file);
+            event.target.value = '';
+        });
+    }
+
+    if (userPostImageRemoveBtn) {
+        userPostImageRemoveBtn.addEventListener('click', event => {
+            event.preventDefault();
+            if (userPostImagePreview) {
+                userPostImagePreview.src = '';
+                userPostImagePreview.removeAttribute('data-image-ready');
+            }
+            if (userPostImageWrapper) userPostImageWrapper.style.display = 'none';
+            if (userPostImageDescriptionGroup) userPostImageDescriptionGroup.style.display = 'none';
+            if (userPostImageDescriptionInput) userPostImageDescriptionInput.value = '';
+        });
+    }
+
+    async function generateYtUserPostComments(post) {
+        try {
+            if (!window.apiConfig?.endpoint || !window.apiConfig?.apiKey) throw new Error('API_NOT_CONFIGURED');
+            const effectiveUser = getCurrentYtCommunityUser();
+            const wbContext = typeof window.getGlobalWorldBookContext === 'function'
+                ? (window.getGlobalWorldBookContext() || '')
+                : '';
+            const imageContext = post.imageUrl ? (post.imageDescription || '用户未填写图片描述') : '无图片';
+            const prompt = `你要模拟真实 YouTube 社群贴文下的国际化评论区。\n发布者：${effectiveUser.name || '用户'}\n发布者人设：${effectiveUser.persona || '未设置'}\n贴文正文：${post.content}\n图片内容描述：${imageContext}\n世界书：${wbContext || '无'}\n\n一次生成 10–15 条自然、有差异的评论。评论者来自不同国家和身份，可以讨论正文、图片、催更、提问或互相呼应；不要让所有人说同一种话。不要冒充发布者。\n只返回严格 JSON：{"comments":[{"name":"评论者昵称","text":"评论内容","likes":0}]}。不要 Markdown。`;
+            let endpoint = window.apiConfig.endpoint.replace(/\/$/, '');
+            if (!endpoint.endsWith('/chat/completions')) endpoint = endpoint.endsWith('/v1') ? `${endpoint}/chat/completions` : `${endpoint}/v1/chat/completions`;
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${window.apiConfig.apiKey}`
+                },
+                body: JSON.stringify({
+                    model: window.apiConfig.model || 'gpt-3.5-turbo',
+                    messages: [{ role: 'user', content: prompt }],
+                    temperature: 0.9,
+                    response_format: { type: 'json_object' }
+                })
+            });
+            if (!response.ok) throw new Error(`API_${response.status}`);
+            const data = await response.json();
+            const rawText = String(data?.choices?.[0]?.message?.content || '').replace(/```json/gi, '').replace(/```/g, '').trim();
+            const parsed = sanitizeObj(JSON.parse(rawText));
+            const comments = Array.isArray(parsed?.comments) ? parsed.comments.slice(0, 15).map((comment, index) => {
+                const text = typeof comment === 'string' ? comment.trim() : String(comment?.text || comment?.content || '').trim();
+                if (!text) return null;
+                return {
+                    name: typeof comment === 'string' ? `观众${index + 1}` : String(comment?.name || `观众${index + 1}`).trim(),
+                    text,
+                    likes: Math.max(0, Math.round(Number(comment?.likes) || 0))
+                };
+            }).filter(Boolean) : [];
+            if (comments.length < 10) throw new Error('TOO_FEW_COMMENTS');
+            post.comments = comments;
+            post.commentsCount = comments.length;
+            post.commentsStatus = 'ready';
+            saveYoutubeData();
+            refreshYtUserCommunityPosts();
+        } catch (error) {
+            console.error('User community post comments failed:', error);
+            post.commentsStatus = 'failed';
+            saveYoutubeData();
+            refreshYtUserCommunityPosts();
+            if (window.showToast) {
+                window.showToast(error?.message === 'API_NOT_CONFIGURED' ? '贴文已发布，请先配置 API' : '贴文已发布，评论生成失败');
+            }
+        }
+    }
+
+    if (userPostPublishBtn) {
+        userPostPublishBtn.addEventListener('click', () => {
+            const content = userPostContentInput?.value.trim() || '';
+            if (!content) {
+                if (window.showToast) window.showToast('请输入贴文正文');
+                return;
+            }
+            const hasImage = userPostImagePreview?.getAttribute('data-image-ready') === 'true';
+            const post = {
+                id: `user_post_${Date.now()}`,
+                isUserPost: true,
+                content,
+                imageUrl: hasImage ? userPostImagePreview.src : '',
+                imageDescription: hasImage ? (userPostImageDescriptionInput?.value.trim() || '') : '',
+                time: '刚刚',
+                createdAt: Date.now(),
+                likes: 0,
+                comments: [],
+                commentsCount: 0,
+                commentsStatus: 'loading'
+            };
+            channelState.communityPosts = Array.isArray(channelState.communityPosts) ? channelState.communityPosts : [];
+            channelState.communityPosts.unshift(post);
+            saveYoutubeData();
+            if (userPostComposeSheet) userPostComposeSheet.classList.remove('active');
+            resetYtUserPostComposer();
+            document.querySelector('.yt-nav-item[data-target="yt-profile-tab"]')?.click();
+            setTimeout(() => document.querySelector('#profile-main-tabs .yt-sliding-tab[data-target="community"]')?.click(), 0);
+            generateYtUserPostComments(post);
+        });
+    }
+
     // --- Fan Group Chat Logic ---
     const groupChatView = document.getElementById('yt-bubble-chat-view');
     const groupChatBackBtn = document.getElementById('yt-bubble-chat-back-btn');
@@ -288,8 +474,57 @@
     const groupNameInput = document.getElementById('yt-group-name-input');
     const groupOwnerInfo = document.getElementById('yt-group-owner-info');
     const groupSettingsSaveBtn = document.getElementById('yt-save-group-settings-btn');
+    const groupMemberCount = document.getElementById('yt-group-member-count');
+    const groupOwnerStatus = document.getElementById('yt-group-owner-status');
+    const groupContextLimitInput = document.getElementById('yt-group-context-limit-input');
+    const groupAdminSettingsGroup = document.getElementById('yt-group-admin-settings-group');
+    const groupAdminManageBtn = document.getElementById('yt-group-admin-manage-btn');
+    const groupAdminCount = document.getElementById('yt-group-admin-count');
     
     let isGroupChatLoading = false;
+
+    function getCurrentYtFanGroup() {
+        return currentSubChannelData?.generatedContent?.fanGroup || null;
+    }
+
+    function clampCurrentYtContextLimit(value, fallback = 80) {
+        return typeof window.clampYtContextLimit === 'function'
+            ? window.clampYtContextLimit(value, fallback)
+            : Math.min(200, Math.max(1, Math.round(Number(value) || fallback)));
+    }
+
+    function parseYtGroupMemberCount(value, fallback = 1) {
+        if (Number.isFinite(Number(value))) return Math.max(1, Math.round(Number(value)));
+        const match = String(value || '').replace(/,/g, '').match(/[\d.]+/);
+        if (!match) return fallback;
+        const parsed = Number(match[0]);
+        if (!Number.isFinite(parsed)) return fallback;
+        if (String(value).includes('万')) return Math.max(1, Math.round(parsed * 10000));
+        return Math.max(1, Math.round(parsed));
+    }
+
+    function formatYtGroupMemberCount(value) {
+        const count = parseYtGroupMemberCount(value, 1);
+        if (count >= 10000) return `${(count / 10000).toFixed(count % 10000 === 0 ? 0 : 1)}万人`;
+        return `${count}人`;
+    }
+
+    window.applyYtUserCommunityLiveGrowth = function({ liveId, newSubs, totalViews } = {}) {
+        const fanGroup = channelState.userCommunityChannel?.generatedContent?.fanGroup;
+        const normalizedLiveId = String(liveId || '').trim();
+        if (!fanGroup || !normalizedLiveId || String(fanGroup.lastGrowthLiveId || '') === normalizedLiveId) return 0;
+        const growth = Math.max(1, Math.round((Number(newSubs) || 0) * 0.5 + (Number(totalViews) || 0) * 0.02));
+        fanGroup.memberCount = parseYtGroupMemberCount(fanGroup.memberCount, 1) + growth;
+        fanGroup.lastGrowthLiveId = normalizedLiveId;
+        if (typeof renderMessagesList === 'function') renderMessagesList();
+        if (currentSubChannelData?.isUserOwnedCommunity && groupChatTitle) {
+            groupChatTitle.textContent = `${fanGroup.name} (${formatYtGroupMemberCount(fanGroup.memberCount)})`;
+        }
+        if (currentSubChannelData?.isUserOwnedCommunity && groupMemberCount) {
+            groupMemberCount.textContent = formatYtGroupMemberCount(fanGroup.memberCount);
+        }
+        return growth;
+    };
 
     [
         groupChatContainer,
@@ -371,6 +606,223 @@
     const clearGroupHistoryBtn = document.getElementById('yt-clear-group-history-btn');
     const exitGroupBtn = document.getElementById('yt-exit-group-btn');
 
+    const userCommunityCreateSheet = document.getElementById('yt-user-community-create-sheet');
+    const userCommunityAvatarWrapper = document.getElementById('yt-user-community-avatar-wrapper');
+    const userCommunityAvatarUpload = document.getElementById('yt-user-community-avatar-upload');
+    const userCommunityAvatarImg = document.getElementById('yt-user-community-avatar-img');
+    const userCommunityAvatarIcon = document.getElementById('yt-user-community-avatar-icon');
+    const userCommunityNameInput = document.getElementById('yt-user-community-name-input');
+    const userCommunityConfirmBtn = document.getElementById('yt-user-community-confirm-btn');
+    const userCommunityAdminSheet = document.getElementById('yt-user-community-admin-sheet');
+    const userCommunityAdminList = document.getElementById('yt-user-community-admin-list');
+    const userCommunityAdminSaveBtn = document.getElementById('yt-user-community-admin-save-btn');
+    let pendingUserCommunityAdminIds = new Set();
+
+    function getYtCommunityAdminSource() {
+        const chars = typeof getYtImChars === 'function'
+            ? getYtImChars()
+            : (typeof window.getImFriends === 'function' ? window.getImFriends().filter(item => item?.type === 'char') : []);
+        return Array.isArray(chars) ? chars : [];
+    }
+
+    function resolveYtCommunityAdmin(adminSnapshot) {
+        const source = getYtCommunityAdminSource();
+        const current = source.find(char => String(char.id) === String(adminSnapshot?.charId));
+        if (!current) return adminSnapshot || null;
+        return {
+            charId: current.id,
+            name: current.nickname || current.realName || current.name || adminSnapshot?.name || '管理员',
+            avatarUrl: current.avatarUrl || adminSnapshot?.avatarUrl || '',
+            persona: current.persona || adminSnapshot?.persona || ''
+        };
+    }
+
+    function findYtCommunityAdmin(speakerId, name) {
+        const admins = getCurrentYtFanGroup()?.admins || [];
+        const snapshot = admins.find(admin => String(admin.charId) === String(speakerId || ''))
+            || admins.find(admin => String(admin.name || '').trim() === String(name || '').trim());
+        return snapshot ? resolveYtCommunityAdmin(snapshot) : null;
+    }
+
+    function openOwnedYtCommunity() {
+        const ownedChannel = channelState.userCommunityChannel;
+        const fanGroup = ownedChannel?.generatedContent?.fanGroup;
+        if (!ownedChannel || !fanGroup) return false;
+        currentSubChannelData = ownedChannel;
+        const msgNavBtn = document.querySelector('.yt-nav-item[data-target="yt-messages-tab"]');
+        if (msgNavBtn) msgNavBtn.click();
+        const communityFilter = document.getElementById('msg-filter-community');
+        if (communityFilter) communityFilter.click();
+        openFanGroupChat(fanGroup);
+        return true;
+    }
+
+    window.openYtUserCommunityCreator = function() {
+        if (openOwnedYtCommunity()) return;
+        const effectiveUser = getCurrentYtCommunityUser();
+        if (userCommunityNameInput) userCommunityNameInput.value = `${effectiveUser.name || '我的'}的社群`;
+        if (userCommunityAvatarImg) {
+            userCommunityAvatarImg.src = '';
+            userCommunityAvatarImg.style.display = 'none';
+        }
+        if (userCommunityAvatarIcon) userCommunityAvatarIcon.style.display = 'block';
+        if (userCommunityCreateSheet) userCommunityCreateSheet.classList.add('active');
+    };
+
+    if (userCommunityCreateSheet) {
+        userCommunityCreateSheet.addEventListener('mousedown', event => {
+            if (event.target === userCommunityCreateSheet) userCommunityCreateSheet.classList.remove('active');
+        });
+    }
+
+    if (userCommunityAvatarWrapper && userCommunityAvatarUpload) {
+        userCommunityAvatarWrapper.addEventListener('click', () => userCommunityAvatarUpload.click());
+        userCommunityAvatarUpload.addEventListener('change', event => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = loadEvent => {
+                const applyAvatar = url => {
+                    if (userCommunityAvatarImg) {
+                        userCommunityAvatarImg.src = url;
+                        userCommunityAvatarImg.style.display = 'block';
+                    }
+                    if (userCommunityAvatarIcon) userCommunityAvatarIcon.style.display = 'none';
+                };
+                if (window.compressImage) window.compressImage(loadEvent.target.result, 320, 320, applyAvatar);
+                else applyAvatar(loadEvent.target.result);
+            };
+            reader.readAsDataURL(file);
+            event.target.value = '';
+        });
+    }
+
+    if (userCommunityConfirmBtn) {
+        userCommunityConfirmBtn.addEventListener('click', () => {
+            if (channelState.userCommunityChannel) {
+                if (userCommunityCreateSheet) userCommunityCreateSheet.classList.remove('active');
+                openOwnedYtCommunity();
+                return;
+            }
+            const name = userCommunityNameInput?.value.trim();
+            if (!name) {
+                if (window.showToast) window.showToast('请输入社群名称');
+                return;
+            }
+            const effectiveUser = getCurrentYtCommunityUser();
+            const avatar = userCommunityAvatarImg?.style.display === 'block'
+                ? userCommunityAvatarImg.src
+                : (effectiveUser.avatarUrl || '');
+            channelState.userCommunityChannel = {
+                id: 'user_community_channel',
+                name: effectiveUser.name || '我的频道',
+                avatar,
+                isUserOwnedCommunity: true,
+                isBusiness: false,
+                dmContextLimit: 80,
+                dmHistory: [],
+                groupChatHistory: [],
+                generatedContent: {
+                    communityPosts: [],
+                    fanGroup: {
+                        id: 'user_fan_group',
+                        name,
+                        avatar,
+                        memberCount: 1,
+                        contextLimit: 80,
+                        admins: [],
+                        isJoined: true,
+                        isOwned: true,
+                        lastGrowthLiveId: null
+                    }
+                }
+            };
+            saveYoutubeData();
+            if (userCommunityCreateSheet) userCommunityCreateSheet.classList.remove('active');
+            renderMessagesList();
+            openOwnedYtCommunity();
+            if (window.showToast) window.showToast('社群已创建');
+        });
+    }
+
+    function renderYtCommunityAdminPicker() {
+        if (!userCommunityAdminList) return;
+        const fanGroup = getCurrentYtFanGroup();
+        const currentAdmins = Array.isArray(fanGroup?.admins) ? fanGroup.admins : [];
+        pendingUserCommunityAdminIds = new Set(currentAdmins.map(admin => String(admin.charId)));
+        const chars = getYtCommunityAdminSource();
+        if (chars.length === 0) {
+            userCommunityAdminList.innerHTML = '<div style="padding:40px 10px; text-align:center; color:#8e8e93; font-size:14px;">暂无已添加的 Char</div>';
+            return;
+        }
+        userCommunityAdminList.innerHTML = '';
+        chars.forEach(char => {
+            const charId = String(char.id);
+            const selected = pendingUserCommunityAdminIds.has(charId);
+            const name = char.nickname || char.realName || char.name || 'Char';
+            const row = document.createElement('div');
+            row.className = 'account-card';
+            row.dataset.charId = charId;
+            row.style.cursor = 'pointer';
+            row.innerHTML = `
+                <div class="account-content">
+                    <div class="account-avatar">${char.avatarUrl ? `<img src="${ytEscapeHtml(char.avatarUrl)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : '<i class="fas fa-user"></i>'}</div>
+                    <div class="account-info">
+                        <div class="account-name">${ytEscapeHtml(name)}</div>
+                        <div class="account-detail">${ytEscapeHtml(char.persona || char.signature || '已添加 Char')}</div>
+                    </div>
+                    <i class="fas ${selected ? 'fa-check-circle' : 'fa-circle'}" style="color:${selected ? '#34c759' : '#d1d1d6'}; font-size:20px;"></i>
+                </div>
+            `;
+            row.addEventListener('click', () => {
+                if (pendingUserCommunityAdminIds.has(charId)) pendingUserCommunityAdminIds.delete(charId);
+                else pendingUserCommunityAdminIds.add(charId);
+                renderYtCommunityAdminPicker();
+            });
+            userCommunityAdminList.appendChild(row);
+        });
+    }
+
+    if (groupAdminManageBtn) {
+        groupAdminManageBtn.addEventListener('click', () => {
+            if (!currentSubChannelData?.isUserOwnedCommunity) return;
+            renderYtCommunityAdminPicker();
+            if (userCommunityAdminSheet) userCommunityAdminSheet.classList.add('active');
+        });
+    }
+
+    if (userCommunityAdminSheet) {
+        userCommunityAdminSheet.addEventListener('mousedown', event => {
+            if (event.target === userCommunityAdminSheet) userCommunityAdminSheet.classList.remove('active');
+        });
+    }
+
+    if (userCommunityAdminSaveBtn) {
+        userCommunityAdminSaveBtn.addEventListener('click', () => {
+            const fanGroup = getCurrentYtFanGroup();
+            if (!fanGroup || !currentSubChannelData?.isUserOwnedCommunity) return;
+            const chars = getYtCommunityAdminSource();
+            const previousCount = Array.isArray(fanGroup.admins) ? fanGroup.admins.length : 0;
+            const nextAdmins = chars.filter(char => pendingUserCommunityAdminIds.has(String(char.id))).map(char => ({
+                charId: char.id,
+                name: char.nickname || char.realName || char.name || '管理员',
+                avatarUrl: char.avatarUrl || '',
+                persona: char.persona || ''
+            }));
+            fanGroup.admins = typeof window.normalizeYtAdminSnapshots === 'function'
+                ? window.normalizeYtAdminSnapshots(nextAdmins)
+                : nextAdmins;
+            fanGroup.memberCount = Math.max(1, parseYtGroupMemberCount(fanGroup.memberCount, 1) + fanGroup.admins.length - previousCount);
+            saveYoutubeData();
+            if (groupMemberCount) groupMemberCount.textContent = formatYtGroupMemberCount(fanGroup.memberCount);
+            if (groupAdminCount) groupAdminCount.textContent = `${fanGroup.admins.length}人`;
+            if (groupChatTitle) groupChatTitle.textContent = `${fanGroup.name} (${formatYtGroupMemberCount(fanGroup.memberCount)})`;
+            if (userCommunityAdminSheet) userCommunityAdminSheet.classList.remove('active');
+            renderMessagesList();
+            if (window.showToast) window.showToast('管理员已更新');
+        });
+    }
+
     if (groupAvatarWrapper && groupAvatarUpload) {
         groupAvatarWrapper.addEventListener('click', () => groupAvatarUpload.click());
         groupAvatarUpload.addEventListener('change', (e) => {
@@ -410,18 +862,26 @@
     if (groupSettingsSaveBtn) {
         groupSettingsSaveBtn.addEventListener('click', () => {
             if (!currentSubChannelData || !currentSubChannelData.generatedContent || !currentSubChannelData.generatedContent.fanGroup) return;
+            const fanGroup = currentSubChannelData.generatedContent.fanGroup;
             
             if (groupNameInput && groupNameInput.value.trim()) {
-                currentSubChannelData.generatedContent.fanGroup.name = groupNameInput.value.trim();
-                if (groupChatTitle) groupChatTitle.textContent = `${groupNameInput.value.trim()} (${currentSubChannelData.generatedContent.fanGroup.memberCount})`;
+                fanGroup.name = groupNameInput.value.trim();
             }
 
             if (groupAvatarImg && groupAvatarImg.style.display === 'block' && groupAvatarImg.src) {
-                currentSubChannelData.generatedContent.fanGroup.avatar = groupAvatarImg.src;
+                fanGroup.avatar = groupAvatarImg.src;
             }
+            fanGroup.contextLimit = clampCurrentYtContextLimit(groupContextLimitInput?.value, 80);
+            if (groupContextLimitInput) groupContextLimitInput.value = fanGroup.contextLimit;
+            if (groupChatTitle) groupChatTitle.textContent = `${fanGroup.name} (${formatYtGroupMemberCount(fanGroup.memberCount)})`;
             
             saveYoutubeData();
-            renderGeneratedContent('community'); // Refresh external card
+            if (currentSubChannelData.isUserOwnedCommunity) {
+                const activeTab = document.querySelector('#profile-main-tabs .yt-sliding-tab.active');
+                if (activeTab?.getAttribute('data-target') === 'community') activeTab.click();
+            } else {
+                renderGeneratedContent('community');
+            }
             renderMessagesList(); // Refresh message list tab
             if(window.showToast) window.showToast('群设置已修改');
             groupSettingsSheet.classList.remove('active');
@@ -451,14 +911,24 @@
 
     if (exitGroupBtn) {
         exitGroupBtn.addEventListener('click', () => {
+            const isOwnedGroup = !!currentSubChannelData?.isUserOwnedCommunity;
             window.showCustomModal({
-                title: '退出群聊',
-                message: '确定要退出该粉丝群吗？退出后聊天记录将被删除。',
-                confirmText: '退出',
+                title: isOwnedGroup ? '解散社群' : '退出群聊',
+                message: isOwnedGroup ? '确定要解散自己的社群吗？社群和聊天记录将被删除。' : '确定要退出该粉丝群吗？退出后聊天记录将被删除。',
+                confirmText: isOwnedGroup ? '解散' : '退出',
                 cancelText: '取消',
                 isDestructive: true,
                 onConfirm: () => {
                     if (currentSubChannelData && currentSubChannelData.generatedContent && currentSubChannelData.generatedContent.fanGroup) {
+                        if (currentSubChannelData.isUserOwnedCommunity) {
+                            channelState.userCommunityChannel = null;
+                            saveYoutubeData();
+                            groupSettingsSheet.classList.remove('active');
+                            if (groupChatView) groupChatView.classList.remove('active');
+                            renderMessagesList();
+                            if (window.showToast) window.showToast('社群已解散');
+                            return;
+                        }
                         currentSubChannelData.generatedContent.fanGroup.isJoined = false;
                         currentSubChannelData.groupChatHistory = [];
                         saveYoutubeData();
@@ -480,6 +950,14 @@
     if (groupOwnerInfo) {
         groupOwnerInfo.addEventListener('click', () => {
             if (!currentSubChannelData) return;
+            if (currentSubChannelData.isUserOwnedCommunity) {
+                if (window.showToast) window.showToast('这是你的频道');
+                return;
+            }
+            if (currentSubChannelData.isFriend) {
+                if (window.showToast) window.showToast('已添加到私信');
+                return;
+            }
             
             window.showCustomModal({
                 title: '添加私信',
@@ -507,18 +985,11 @@
                     
                     saveYoutubeData();
                     renderMessagesList();
-                    
-                    groupSettingsSheet.classList.remove('active');
-                    if (groupChatView) groupChatView.classList.remove('active');
-                    
-                    // Optionally jump to DM view immediately
-                    setTimeout(() => {
-                        const msgNavBtn = document.querySelector('.yt-nav-item[data-target="yt-messages-tab"]');
-                        if (msgNavBtn) msgNavBtn.click();
-                        const msgFilterDm = document.getElementById('msg-filter-dm');
-                        if (msgFilterDm) msgFilterDm.click();
-                        if (window.showToast) window.showToast(`已添加与 ${currentSubChannelData.name} 的私信`);
-                    }, 300);
+                    if (groupOwnerStatus) {
+                        groupOwnerStatus.textContent = '已添加';
+                        groupOwnerStatus.style.color = '#34c759';
+                    }
+                    if (window.showToast) window.showToast(`已添加与 ${currentSubChannelData.name} 的私信`);
                 }
             });
         });
@@ -528,6 +999,18 @@
     const dmGoHomeBtn = document.getElementById('yt-dm-go-home-btn');
     const dmClearHistoryBtn = document.getElementById('yt-dm-clear-history-btn');
     const dmDeleteFriendBtn = document.getElementById('yt-dm-delete-friend-btn');
+    const dmContextGroup = document.getElementById('yt-dm-context-group');
+    const dmContextLimitInput = document.getElementById('yt-dm-context-limit-input');
+
+    if (dmContextLimitInput) {
+        dmContextLimitInput.addEventListener('change', () => {
+            if (!currentSubChannelData || currentSubChannelData.isBusiness) return;
+            currentSubChannelData.dmContextLimit = clampCurrentYtContextLimit(dmContextLimitInput.value, 80);
+            dmContextLimitInput.value = currentSubChannelData.dmContextLimit;
+            saveYoutubeData();
+            if (window.showToast) window.showToast(`上下文已设为 ${currentSubChannelData.dmContextLimit} 条`);
+        });
+    }
 
     if (groupChatSettingsBtn) {
         groupChatSettingsBtn.addEventListener('click', () => {
@@ -537,6 +1020,10 @@
             
             if (isDM) {
                 if (dmDeleteFriendBtn) dmDeleteFriendBtn.style.display = 'block';
+                if (dmContextGroup) dmContextGroup.style.display = currentSubChannelData.isBusiness ? 'none' : 'block';
+                if (dmContextLimitInput && !currentSubChannelData.isBusiness) {
+                    dmContextLimitInput.value = clampCurrentYtContextLimit(currentSubChannelData.dmContextLimit, 80);
+                }
                 if (dmSettingsSheet) dmSettingsSheet.classList.add('active');
             } else {
                 // Group Settings
@@ -561,7 +1048,20 @@
                 const ownerName = document.getElementById('yt-group-owner-name');
                 const ownerAvatar = document.getElementById('yt-group-owner-avatar');
                 if(ownerName) ownerName.textContent = currentSubChannelData.name;
-                if(ownerAvatar) ownerAvatar.src = typeof resolveYtChannelAvatar === 'function' ? resolveYtChannelAvatar(currentSubChannelData) : currentSubChannelData.avatar;
+                if(ownerAvatar) {
+                    ownerAvatar.src = typeof resolveYtChannelAvatar === 'function' ? resolveYtChannelAvatar(currentSubChannelData) : currentSubChannelData.avatar;
+                    ownerAvatar.style.display = 'block';
+                }
+                if (groupMemberCount) groupMemberCount.textContent = formatYtGroupMemberCount(fanGroup.memberCount);
+                if (groupContextLimitInput) groupContextLimitInput.value = clampCurrentYtContextLimit(fanGroup.contextLimit, 80);
+                const isOwnedGroup = !!currentSubChannelData.isUserOwnedCommunity;
+                if (groupOwnerStatus) {
+                    groupOwnerStatus.textContent = isOwnedGroup ? '我的频道' : (currentSubChannelData.isFriend ? '已添加' : '添加');
+                    groupOwnerStatus.style.color = isOwnedGroup || currentSubChannelData.isFriend ? '#34c759' : '#007aff';
+                }
+                if (groupAdminSettingsGroup) groupAdminSettingsGroup.style.display = isOwnedGroup ? 'block' : 'none';
+                if (groupAdminCount) groupAdminCount.textContent = `${Array.isArray(fanGroup.admins) ? fanGroup.admins.length : 0}人`;
+                if (exitGroupBtn) exitGroupBtn.textContent = isOwnedGroup ? '解散社群' : '退出群聊';
                 
                 if (groupSettingsSheet) groupSettingsSheet.classList.add('active');
             }
@@ -643,7 +1143,7 @@
         if (typeof window.releaseYtChatKeyboardLock === 'function') window.releaseYtChatKeyboardLock(groupChatView);
         
         if (groupChatTitle) {
-            groupChatTitle.textContent = `${groupData.name} (${groupData.memberCount || '3000'})`;
+            groupChatTitle.textContent = `${groupData.name} (${formatYtGroupMemberCount(groupData.memberCount || 1)})`;
         }
 
         renderGroupChatHistory(false);
@@ -967,6 +1467,23 @@
                     <div class="${bubble.className}" ${bubble.attributes}>${bubble.html}</div>
                 </div>
             `;
+        } else if (msg.type === 'admin') {
+            row.className = `yt-bubble-row left ${groupClass}`;
+            const admin = findYtCommunityAdmin(msg.speakerId, msg.name) || {
+                charId: msg.speakerId,
+                name: msg.name || '管理员',
+                avatarUrl: msg.avatarUrl || ''
+            };
+            const adminName = ytEscapeHtml(admin.name || msg.name || '管理员');
+            const adminAvatar = admin.avatarUrl || msg.avatarUrl || '';
+            const bubble = getYtBubbleTextMarkup(msg);
+            row.innerHTML = `
+                ${groupState.isConsecutive ? avatarPlaceholder : `<div class="yt-bubble-avatar">${adminAvatar ? `<img src="${ytEscapeHtml(adminAvatar)}">` : '<i class="fas fa-user-shield" style="color:#8e8e93;"></i>'}</div>`}
+                <div class="yt-bubble-content">
+                    ${groupState.isConsecutive ? '' : `<div class="yt-bubble-name" style="color:#1c1c1e; font-weight:500; display:flex; align-items:center;">${adminName}<span style="font-size:10px; background:rgba(88,86,214,.1); color:#5856d6; padding:2px 6px; border-radius:6px; margin-left:6px; font-weight:600;">管理员</span></div>`}
+                    <div class="${bubble.className}" ${bubble.attributes}>${bubble.html}</div>
+                </div>
+            `;
         } else if (msg.type === 'char') {
             row.className = `yt-bubble-row left ${groupClass}`;
             // isDM check based on Title matching the name
@@ -1091,7 +1608,16 @@
                 });
             }
 
-            const historyStr = targetHistory.slice(-10).map(m => `${m.name}: ${m.text}`).join('\n');
+            const fanGroup = getCurrentYtFanGroup();
+            const isOwnedGroup = !isDM && Boolean(currentSubChannelData.isUserOwnedCommunity || fanGroup?.isOwned);
+            const resolvedAdmins = (fanGroup?.admins || []).map(resolveYtCommunityAdmin).filter(Boolean);
+            const adminContext = resolvedAdmins.length > 0
+                ? resolvedAdmins.map(admin => `- speakerId: ${admin.charId}; 姓名: ${admin.name}; 人设: ${admin.persona || '未设置'}`).join('\n')
+                : '无管理员';
+            const contextLimit = isDM
+                ? (char.isBusiness ? 10 : clampCurrentYtContextLimit(char.dmContextLimit, 80))
+                : clampCurrentYtContextLimit(fanGroup?.contextLimit, 80);
+            const historyStr = targetHistory.slice(-contextLimit).map(m => `${m.type || 'fan'}${m.speakerId ? `(${m.speakerId})` : ''} ${m.name}: ${m.text}`).join('\n');
 
             let instructionStr = isUserMsg 
                 ? `用户"${effectiveYtUser.name || '我'}"刚刚发送了消息。请先生成其他粉丝的讨论或附和，然后你作为群主回复用户的消息（也可以带上其他粉丝）。`
@@ -1104,6 +1630,8 @@
                 }
                 const languageHint = char.preferredLanguage ? `优先保持联系人此前的惯用语言：${char.preferredLanguage}。` : '';
                 instructionStr = `这是一对一私信。${isUserMsg ? '用户刚刚发送了消息，请自然承接最后一条内容。' : '用户没有发送新消息，请基于聊天上下文自然主动继续话题。'}请你作为"${char.name}"，直接对用户"${effectiveYtUser.name || '我'}"进行私信回复，保持真实活人的短消息节奏。${languageHint}${contextAddon}`;
+            } else if (isOwnedGroup) {
+                instructionStr = `这是用户自己创建并担任群主的社群。用户群主名为"${effectiveYtUser.name || '我'}"，你绝对不能代替、模仿或生成用户群主的发言。只能生成普通粉丝和上方管理员名单中的管理员发言。管理员发言必须使用真实 speakerId 并严格遵守对应人设；没有管理员时只能生成普通粉丝。${isUserMsg ? '请自然回应用户刚刚发送的消息。' : '请基于上下文自然延续社群日常聊天。'}`;
             }
 
             let promptStr = channelState.groupChatPrompt || defaultGroupChatPrompt;
@@ -1115,10 +1643,16 @@
                 .replace(/{char_persona}/g, charPersona)
                 .replace(/{user}/g, effectiveYtUser.name || '我')
                 .replace(/{user_persona}/g, userPersona)
+                .replace(/{admins}/g, adminContext)
                 .replace(/{wb_context}/g, wbContext)
                 .replace(/{chat_history}/g, historyStr)
                 .replace(/{trigger_instruction}/g, instructionStr);
-            finalPrompt += `\n\n【国际化输出协议｜不可省略】\n- 每条回复必须是对象 {"text":"原文","translationZh":"中文翻译或空字符串"}。\n- text 不是中文时，translationZh 必须填写该条原文的自然中文翻译；text 是中文时，translationZh 必须是空字符串。\n- charReplies 必须是上述对象数组；otherFansReplies 中每项必须包含 name、text、translationZh。\n- 只返回合法 JSON，不要 Markdown。`;
+            if (isDM) {
+                finalPrompt += `\n\n【国际化输出协议｜不可省略】\n- 返回 {"charReplies":[{"text":"原文","translationZh":"中文翻译或空字符串"}]}。\n- text 不是中文时必须提供自然中文翻译；text 是中文时 translationZh 为空字符串。\n- 只返回合法 JSON，不要 Markdown。`;
+            } else {
+                const allowedRoles = isOwnedGroup ? 'admin 或 fan，禁止 owner 和 user' : 'owner 或 fan';
+                finalPrompt += `\n\n【统一群聊输出协议｜不可省略】\n- 返回 {"groupReplies":[{"role":"角色","speakerId":"管理员ID或空字符串","name":"显示名","text":"原文","translationZh":"中文翻译或空字符串"}]}。\n- role 只能是 ${allowedRoles}。\n- admin 只能从管理员名单选择，speakerId 必须完全一致；fan 使用自然的粉丝昵称。\n- text 不是中文时必须提供自然中文翻译；text 是中文时 translationZh 为空字符串。\n- 生成 2–6 条简短、自然、有连续性的消息。\n- 只返回合法 JSON，不要 Markdown。`;
+            }
 
             let endpoint = window.apiConfig.endpoint;
             if(endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
@@ -1149,48 +1683,59 @@
             const tRow = document.getElementById(typingId);
             if (tRow) tRow.remove();
 
-            if (!isDM && responseObj.otherFansReplies && Array.isArray(responseObj.otherFansReplies)) {
-                responseObj.otherFansReplies.forEach((reply, i) => {
-                    setTimeout(() => {
-                        const normalizedReply = normalizeYtChatReply(reply);
-                        if (!normalizedReply.text) return;
-                        const fanMsg = {
-                            type: 'fan',
-                            name: reply?.name || '粉丝',
-                            text: normalizedReply.text,
-                            translationZh: normalizedReply.translationZh
-                        };
-                        targetHistory.push(fanMsg);
-                        saveYoutubeData();
-                        addGroupChatMessageToUI(fanMsg);
-                    }, i * 1500); 
-                });
-            }
-
-            let replies = [];
-            if (responseObj.charReplies && Array.isArray(responseObj.charReplies)) {
-                replies = responseObj.charReplies;
-            } else if (responseObj.charReply) {
-                replies = [responseObj.charReply];
-            }
-
-            const baseDelay = (!isDM && responseObj.otherFansReplies ? responseObj.otherFansReplies.length : 0) * 1500 + 1000;
-            
-            replies.forEach((replyText, index) => {
-                setTimeout(() => {
-                    const normalizedReply = normalizeYtChatReply(replyText);
-                    if (normalizedReply.text) {
-                        const charMsg = {
-                            type: 'char',
-                            name: char.name,
-                            text: normalizedReply.text,
-                            translationZh: normalizedReply.translationZh
-                        };
-                        targetHistory.push(charMsg);
-                        saveYoutubeData();
-                        addGroupChatMessageToUI(charMsg);
+            const scheduledReplies = [];
+            if (isDM) {
+                const replies = Array.isArray(responseObj.charReplies)
+                    ? responseObj.charReplies
+                    : (responseObj.charReply ? [responseObj.charReply] : []);
+                replies.forEach(reply => scheduledReplies.push({ type: 'char', name: char.name, reply }));
+            } else if (Array.isArray(responseObj.groupReplies)) {
+                responseObj.groupReplies.forEach(reply => {
+                    const role = String(reply?.role || '').toLowerCase();
+                    if (role === 'admin') {
+                        if (!isOwnedGroup) return;
+                        const admin = findYtCommunityAdmin(reply?.speakerId || reply?.charId, reply?.name);
+                        if (!admin) return;
+                        scheduledReplies.push({ type: 'admin', name: admin.name, speakerId: admin.charId, avatarUrl: admin.avatarUrl, reply });
+                    } else if (role === 'fan' || role === 'otherfan' || role === 'other_fan') {
+                        scheduledReplies.push({ type: 'fan', name: reply?.name || '粉丝', reply });
+                    } else if (!isOwnedGroup && (role === 'owner' || role === 'char')) {
+                        scheduledReplies.push({ type: 'char', name: char.name, reply });
                     }
-                }, baseDelay + (index * 2000)); 
+                });
+            } else {
+                const fanReplies = Array.isArray(responseObj.otherFansReplies) ? responseObj.otherFansReplies : [];
+                fanReplies.forEach(reply => scheduledReplies.push({ type: 'fan', name: reply?.name || '粉丝', reply }));
+                if (isOwnedGroup && Array.isArray(responseObj.adminReplies)) {
+                    responseObj.adminReplies.forEach(reply => {
+                        const admin = findYtCommunityAdmin(reply?.speakerId || reply?.charId, reply?.name);
+                        if (admin) scheduledReplies.push({ type: 'admin', name: admin.name, speakerId: admin.charId, avatarUrl: admin.avatarUrl, reply });
+                    });
+                } else if (!isOwnedGroup) {
+                    const ownerReplies = Array.isArray(responseObj.charReplies)
+                        ? responseObj.charReplies
+                        : (responseObj.charReply ? [responseObj.charReply] : []);
+                    ownerReplies.forEach(reply => scheduledReplies.push({ type: 'char', name: char.name, reply }));
+                }
+            }
+
+            scheduledReplies.forEach((item, index) => {
+                setTimeout(() => {
+                    const normalizedReply = normalizeYtChatReply(item.reply);
+                    if (normalizedReply.text) {
+                        const replyMsg = {
+                            type: item.type,
+                            name: item.name,
+                            speakerId: item.speakerId,
+                            avatarUrl: item.avatarUrl,
+                            text: normalizedReply.text,
+                            translationZh: normalizedReply.translationZh
+                        };
+                        targetHistory.push(replyMsg);
+                        saveYoutubeData();
+                        addGroupChatMessageToUI(replyMsg);
+                    }
+                }, index * 1500);
             });
 
         } catch (error) {
