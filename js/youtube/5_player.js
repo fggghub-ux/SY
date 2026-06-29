@@ -630,7 +630,7 @@
                 
                 if(video.comments && Array.isArray(video.comments) && video.comments.length > 0) {
                     video.comments.forEach(c => {
-                        addChatMessage(c.name || '观众', c.text || '', true, c.amount, c.color, true);
+                        addChatMessage(c.name || '观众', c.text || '', true, c.amount, c.color, true, c.senderType || '');
                     });
                     
                     if(chatInterval) clearInterval(chatInterval);
@@ -644,7 +644,7 @@
                 if(chatInterval) clearInterval(chatInterval);
                 
                 if(video.comments && Array.isArray(video.comments) && video.comments.length > 0) {
-                    video.comments.forEach(c => addChatMessage(c.name || '观众', c.text || '', false, c.amount, c.color, true));
+                    video.comments.forEach(c => addChatMessage(c.name || '观众', c.text || '', false, c.amount, c.color, true, c.senderType || ''));
                 } else {
                     if(chatContainer) chatContainer.innerHTML = `<div style="text-align:center; padding: 20px; color: #666;" id="yt-empty-comment-msg">暂无评论</div>`;
                 }
@@ -657,7 +657,7 @@
         }
     }
 
-    function addChatMessage(name, text, isLive = true, amount = null, color = null, skipPersist = false) {
+    function addChatMessage(name, text, isLive = true, amount = null, color = null, skipPersist = false, senderType = '') {
         const chatContainer = document.getElementById('yt-player-chat-container');
         if(!chatContainer) return;
 
@@ -707,7 +707,9 @@
         // Persist comment
         if (currentVideoData && !skipPersist) {
             if (!currentVideoData.comments) currentVideoData.comments = [];
-            currentVideoData.comments.push({ name: name, text: text, amount: amount, color: color });
+            const storedComment = { name: name, text: text, amount: amount, color: color };
+            if (senderType) storedComment.senderType = senderType;
+            currentVideoData.comments.push(storedComment);
             
             // Update the underlying data structure (use replacement instead of push to avoid reference duplication)
             const channel = currentVideoData.channelData;
@@ -744,14 +746,15 @@
                 time: new Date().toLocaleTimeString(),
                 name: name || '未知',
                 text: text || '',
-                amount: amount
+                amount: amount,
+                ...(senderType ? { senderType } : {})
             });
             if (currentChatHistory.length > 50) currentChatHistory.shift(); 
         }
     }
 
     // --- VOD Comment API ---
-    async function getVODResponse(userMessage, titleOverride) {
+    async function getVODResponse(userMessage, titleOverride, requireTranslations = false) {
         if (!currentSubChannelData) return null;
         const char = currentSubChannelData;
         
@@ -786,6 +789,9 @@
             .replace(/{msg}/g, userMessage || '')
             .replace(/{wb_context}/g, wbContext)
             .replace(/{video_title}/g, titleOverride || (currentVideoData ? currentVideoData.title : '未知内容'));
+        if (requireTranslations) {
+            finalPrompt += `\n\n当前互动发生在 YouTube 社群贴文评论区。charReplies 和 fanReplies 的每一项都必须返回对象 {"name":"昵称或空字符串","text":"原文","translationZh":"中文翻译或空字符串"}。text 不是中文时必须填写自然中文翻译；text 是中文时 translationZh 必须为空字符串。只返回合法 JSON。`;
+        }
 
         try {
             let endpoint = window.apiConfig.endpoint;
@@ -828,6 +834,11 @@
         return String(reply.text || reply.reply || reply.comment || reply.content || reply.message || '').trim();
     }
 
+    function getYtVodReplyTranslation(reply) {
+        if (!reply || typeof reply !== 'object') return '';
+        return String(reply.translationZh || reply.translation || '').trim();
+    }
+
     function renderVODResponse(responseObj, isPost = false) {
         if (!responseObj) return;
         
@@ -844,11 +855,12 @@
         }
 
         // Add char replies with prefix
-        replies.map(getYtVodReplyText).filter(Boolean).forEach((text, index) => {
+        replies.map(reply => ({ text: getYtVodReplyText(reply), translationZh: getYtVodReplyTranslation(reply) })).filter(item => item.text).forEach((reply, index) => {
             let tId = setTimeout(() => {
-                const replyText = `回复 @${userName} : ${text}`;
+                const replyText = `回复 @${userName} : ${reply.text}`;
                 if (isPost) {
-                    addPostCommentMessage(currentSubChannelData.name, replyText);
+                    const translatedReply = reply.translationZh ? `回复 @${userName}：${reply.translationZh}` : '';
+                    addPostCommentMessage(currentSubChannelData.name, replyText, false, translatedReply);
                 } else {
                     addChatMessage(currentSubChannelData.name, replyText, false); 
                 }
@@ -879,7 +891,9 @@
                 let tId = setTimeout(() => {
                     const replyText = `回复 @${userName} : ${c.text}`;
                     if (isPost) {
-                        addPostCommentMessage(c.name || '观众', replyText);
+                        const translationZh = getYtVodReplyTranslation(c);
+                        const translatedReply = translationZh ? `回复 @${userName}：${translationZh}` : '';
+                        addPostCommentMessage(c.name || '观众', replyText, false, translatedReply);
                     } else {
                         addChatMessage(c.name || '观众', replyText, false);
                     }
@@ -1183,6 +1197,8 @@
 
     const chatInput = document.getElementById('yt-player-chat-input');
     const chatSend = document.getElementById('yt-player-chat-send');
+    const chatApiBtn = document.getElementById('yt-player-chat-api');
+    let isPlayerChatApiLoading = false;
 
     function stopPlayerControlEvent(e) {
         if (!e) return;
@@ -1201,6 +1217,7 @@
         ytPlayerChatContainer,
         chatInput,
         chatSend,
+        chatApiBtn,
         playerPlusBtn,
         document.getElementById('yt-gift-btn')
     ].filter(Boolean).forEach((el) => {
@@ -1248,46 +1265,31 @@
         }
         if (chatSend) {
             chatSend.title = isLive ? '发送消息' : '发表评论';
+            chatSend.setAttribute('aria-label', isLive ? '发送消息' : '发表评论');
+        }
+        if (chatApiBtn) {
+            chatApiBtn.title = isLive ? '调用 API 生成直播回复' : '调用 API 生成评论回复';
+            chatApiBtn.setAttribute('aria-label', chatApiBtn.title);
         }
     }
 
     if(chatSend && chatInput) {
-        const sendAction = async () => {
+        const sendAction = () => {
             const text = chatInput.value.trim();
             if(!text) return;
             
             const isLive = currentVideoData && currentVideoData.isLive;
             const effectiveYtUser = getCurrentYtViewer();
-            addChatMessage(effectiveYtUser.name || '我', text, isLive);
+            addChatMessage(effectiveYtUser.name || '我', text, isLive, null, null, false, 'user');
             chatInput.value = '';
-            
-            if (!currentVideoData) return;
-            
-            if (isLive) {
-                const responseObj = await getCharResponse(text, false);
-                renderAiResponse(responseObj);
-            } else {
-                // Show loading indicator
-                const chatContainer = document.getElementById('yt-player-chat-container');
-                if(chatContainer) {
-                    const loadingId = 'yt-reply-loading';
-                    const loadingDiv = document.createElement('div');
-                    loadingDiv.id = loadingId;
-                    loadingDiv.style.textAlign = 'center';
-                    loadingDiv.style.padding = '10px';
-                    loadingDiv.style.color = '#8e8e93';
-                    loadingDiv.style.fontSize = '12px';
-                    loadingDiv.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> 回复生成中...';
-                    chatContainer.appendChild(loadingDiv);
-                    chatContainer.scrollTop = chatContainer.scrollHeight;
-                }
-                
-                const responseObj = await getVODResponse(text);
-                renderVODResponse(responseObj);
-            }
         };
 
         chatSend.addEventListener('click', sendAction);
+        chatSend.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            sendAction();
+        });
         window.mobileInputCompat?.register({
             input: chatInput,
             root: playerView,
@@ -1295,6 +1297,81 @@
             onSend: sendAction,
             allowEmpty: true,
             openClasses: ['keyboard-open', 'yt-chat-keyboard-lock']
+        });
+    }
+
+    function findLatestPlayerUserMessage(isLive) {
+        const effectiveYtUser = getCurrentYtViewer();
+        const userName = String(effectiveYtUser.name || '我');
+        const messages = isLive
+            ? currentChatHistory
+            : (Array.isArray(currentVideoData?.comments) ? currentVideoData.comments : []);
+        for (let index = messages.length - 1; index >= 0; index--) {
+            if (messages[index]?.senderType === 'user') return messages[index];
+        }
+        for (let index = messages.length - 1; index >= 0; index--) {
+            if (String(messages[index]?.name || '') === userName) return messages[index];
+        }
+        return null;
+    }
+
+    function setPlayerChatApiLoading(isLoading) {
+        isPlayerChatApiLoading = isLoading;
+        if (!chatApiBtn) return;
+        chatApiBtn.style.opacity = isLoading ? '0.5' : '1';
+        chatApiBtn.style.pointerEvents = isLoading ? 'none' : 'auto';
+        chatApiBtn.setAttribute('aria-busy', String(isLoading));
+        chatApiBtn.innerHTML = isLoading
+            ? '<i class="fas fa-spinner fa-spin"></i>'
+            : '<i class="fas fa-arrow-down" style="font-size:14px;"></i>';
+    }
+
+    function showPlayerReplyLoading() {
+        const chatContainer = document.getElementById('yt-player-chat-container');
+        if (!chatContainer || document.getElementById('yt-reply-loading')) return;
+        const loadingDiv = document.createElement('div');
+        loadingDiv.id = 'yt-reply-loading';
+        loadingDiv.style.textAlign = 'center';
+        loadingDiv.style.padding = '10px';
+        loadingDiv.style.color = '#8e8e93';
+        loadingDiv.style.fontSize = '12px';
+        loadingDiv.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> 回复生成中...';
+        chatContainer.appendChild(loadingDiv);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    async function triggerPlayerChatApi() {
+        if (isPlayerChatApiLoading || !currentVideoData) return;
+        const isLive = !!currentVideoData.isLive;
+        const latestUserMessage = findLatestPlayerUserMessage(isLive);
+        if (!isLive && !latestUserMessage) {
+            if (window.showToast) window.showToast('请先发送评论');
+            return;
+        }
+
+        setPlayerChatApiLoading(true);
+        try {
+            if (isLive) {
+                const responseObj = await getCharResponse(latestUserMessage?.text || '', false, 0, !latestUserMessage);
+                renderAiResponse(responseObj);
+            } else {
+                showPlayerReplyLoading();
+                const responseObj = await getVODResponse(latestUserMessage.text);
+                renderVODResponse(responseObj);
+            }
+        } finally {
+            const loadingMsg = document.getElementById('yt-reply-loading');
+            if (loadingMsg) loadingMsg.remove();
+            setPlayerChatApiLoading(false);
+        }
+    }
+
+    if (chatApiBtn) {
+        chatApiBtn.addEventListener('click', triggerPlayerChatApi);
+        chatApiBtn.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            triggerPlayerChatApi();
         });
     }
 
@@ -1427,7 +1504,7 @@
             const text = ytScInput ? ytScInput.value.trim() || '支持主播！' : '支持主播！';
             
             const effectiveYtUser = getCurrentYtViewer();
-            addChatMessage(effectiveYtUser.name || '我', text, true, currentScAmount, currentScColor);
+            addChatMessage(effectiveYtUser.name || '我', text, true, currentScAmount, currentScColor, false, 'user');
             
             if(ytScInput) ytScInput.value = '';
             if(ytScSheet) ytScSheet.classList.remove('active');
@@ -1614,6 +1691,15 @@
                 if(Array.isArray(data.communityPosts)){
                     data.communityPosts.forEach(post => {
                         const el = document.createElement('div');
+                        const syncedLikes = typeof window.syncYtPostLikeGrowth === 'function'
+                            ? window.syncYtPostLikeGrowth(post)
+                            : post.likes;
+                        const likeCount = typeof window.formatYtPostLikeCount === 'function'
+                            ? window.formatYtPostLikeCount(syncedLikes)
+                            : (syncedLikes || '0');
+                        const commentCount = typeof window.countYtPostComments === 'function'
+                            ? window.countYtPostComments(post)
+                            : (post.commentsCount || post.comments?.length || 0);
                         const avatarUrl = typeof resolveYtChannelAvatar === 'function'
                             ? resolveYtChannelAvatar(currentSubChannelData)
                             : (currentSubChannelData.avatar || '');
@@ -1629,9 +1715,9 @@
                             </div>
                             <div class="yt-community-post-content">${post.content || ''}</div>
                             <div class="yt-community-post-actions">
-                                <div class="yt-community-post-action"><i class="far fa-thumbs-up"></i> ${post.likes || '1.2万'}</div>
+                                <div class="yt-community-post-action"><i class="far fa-thumbs-up"></i> ${likeCount}</div>
                                 <div class="yt-community-post-action"><i class="far fa-thumbs-down"></i></div>
-                                <div class="yt-community-post-action"><i class="far fa-comment"></i> ${post.commentsCount || post.comments?.length || '856'}</div>
+                                <div class="yt-community-post-action"><i class="far fa-comment"></i> ${commentCount}</div>
                             </div>
                         `;
                         
@@ -1687,9 +1773,9 @@
    - likes(点赞数字符串，如"3.2万")
    - commentsCount(评论数，如"1400")
    - time(发布时间，如"5小时前")
-   - comments: 数组，包含3-5个对象，代表这条动态下的热门评论，每个对象有 name(观众昵称) 和 text(评论内容)。
+   - comments: 数组，包含3-5个对象，代表这条动态下的热门评论，每个对象有 name(观众昵称)、text(评论原文) 和 translationZh(中文翻译或空字符串)。
 4. fanGroup: 对象，包含 name(粉丝群名称，如"xx的秘密基地") 和 memberCount(群人数，如"3000人")。
-注意：只能返回纯 JSON，不要包含 Markdown 符号如 \`\`\`json。`;
+注意：YouTube 是国际化平台。社群动态评论 text 不是中文时 translationZh 必须提供自然中文翻译，text 是中文时 translationZh 必须为空字符串。只能返回纯 JSON，不要包含 Markdown 符号如 \`\`\`json。`;
 
             try {
                 let endpoint = window.apiConfig.endpoint;
@@ -1759,6 +1845,7 @@
                     if (!oldGen.communityPosts) oldGen.communityPosts = [];
                     const normalizedCommunityPosts = parsedData.communityPosts.map(post => ({
                         ...post,
+                        lastLikeGrowthAt: Number(post.lastLikeGrowthAt) || Date.now(),
                         comments: Array.isArray(post.comments) ? post.comments : []
                     }));
                     oldGen.communityPosts = normalizedCommunityPosts.concat(oldGen.communityPosts);

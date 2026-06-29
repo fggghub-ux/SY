@@ -701,9 +701,12 @@
                                 <div class="ins-chat-input-container">
                                     <div class="ins-chat-input-wrapper" style="background:#f2f2f2; border-radius:22px; display:flex; align-items:center; padding:4px 6px 4px 14px;">
                                         <input id="yt-player-chat-input" type="text" placeholder="发表评论..." style="flex:1; min-width:0; border:none; background:transparent; padding:8px 0; outline:none; font-size:15px; color:#0f0f0f;">
-                                        <div style="display:flex; align-items:center; gap:8px;">
-                                            <div id="yt-player-chat-send" style="width:32px; height:32px; border-radius:16px; background:#0f0f0f; color:#fff; display:flex; justify-content:center; align-items:center; cursor:pointer;">
-                                                <i class="fas fa-arrow-up" style="font-size:14px;"></i>
+                                        <div style="display:flex; align-items:center; gap:4px;">
+                                            <div id="yt-player-chat-send" role="button" tabindex="0" aria-label="发送消息" title="发送消息" style="width:32px; height:32px; border-radius:16px; background:transparent; color:#8e8e93; display:flex; justify-content:center; align-items:center; cursor:pointer;">
+                                                <i class="fas fa-paper-plane" style="font-size:14px;"></i>
+                                            </div>
+                                            <div id="yt-player-chat-api" role="button" tabindex="0" aria-label="调用 API 生成回复" title="调用 API 生成回复" style="width:32px; height:32px; border-radius:16px; background:#0f0f0f; color:#fff; display:flex; justify-content:center; align-items:center; cursor:pointer;">
+                                                <i class="fas fa-arrow-down" style="font-size:14px;"></i>
                                             </div>
                                         </div>
                                     </div>
@@ -829,12 +832,12 @@
                                 <div class="ins-chat-input-container">
                                     <div class="ins-chat-input-wrapper" style="background:#f2f2f2; border-radius:22px; display:flex; align-items:center; padding:4px 6px 4px 14px;">
                                         <input id="yt-user-live-chat-input" type="text" placeholder="说点什么..." style="flex:1; min-width:0; border:none; background:transparent; padding:8px 0; outline:none; font-size:15px; color:#0f0f0f;">
-                                        <div style="display:flex; align-items:center; gap:8px;">
-                                            <div id="yt-user-live-trigger-api-btn" style="width:32px; height:32px; border-radius:16px; background:#fff; color:#0f0f0f; display:flex; justify-content:center; align-items:center; cursor:pointer;">
-                                                <i class="fas fa-magic"></i>
+                                        <div style="display:flex; align-items:center; gap:4px;">
+                                            <div id="yt-user-live-chat-send" role="button" tabindex="0" aria-label="发送消息" title="发送消息" style="width:32px; height:32px; border-radius:16px; background:transparent; color:#8e8e93; display:flex; justify-content:center; align-items:center; cursor:pointer;">
+                                                <i class="fas fa-paper-plane" style="font-size:14px;"></i>
                                             </div>
-                                            <div id="yt-user-live-chat-send" style="width:32px; height:32px; border-radius:16px; background:#0f0f0f; color:#fff; display:flex; justify-content:center; align-items:center; cursor:pointer;">
-                                                <i class="fas fa-arrow-up" style="font-size:14px;"></i>
+                                            <div id="yt-user-live-trigger-api-btn" role="button" tabindex="0" aria-label="调用 API 生成观众互动" title="调用 API 生成观众互动" style="width:32px; height:32px; border-radius:16px; background:#0f0f0f; color:#fff; display:flex; justify-content:center; align-items:center; cursor:pointer;">
+                                                <i class="fas fa-arrow-down" style="font-size:14px;"></i>
                                             </div>
                                         </div>
                                     </div>
@@ -1001,6 +1004,10 @@
                             </div>
                             <div class="yt-community-detail-content" id="yt-community-detail-content"></div>
                             <div class="ins-chat-input-container">
+                                <div id="yt-community-reply-context" style="display:none; align-items:center; justify-content:space-between; gap:10px; padding:0 10px 7px; color:#606060; font-size:12px;">
+                                    <span id="yt-community-reply-context-text" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></span>
+                                    <button type="button" id="yt-community-reply-cancel" aria-label="取消回复" style="border:none; background:transparent; color:#8e8e93; padding:2px 4px; cursor:pointer;"><i class="fas fa-times"></i></button>
+                                </div>
                                 <div class="ins-chat-input-wrapper" style="background:#f2f2f2; border-radius:22px; display:flex; align-items:center; padding:4px 6px 4px 14px;">
                                     <div id="yt-community-user-avatar" style="width:28px; height:28px; border-radius:14px; overflow:hidden; background:#e5e5ea; flex-shrink:0; display:flex; justify-content:center; align-items:center; color:#888;">
                                         <i class="fas fa-user" id="yt-community-user-icon" style="font-size:14px;"></i>

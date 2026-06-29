@@ -6,6 +6,8 @@
     const postChatInput = document.getElementById('yt-community-chat-input');
     
     let currentActivePost = null;
+    let currentPostReplyTarget = null;
+    let ytPostLikeGrowthTimer = null;
     const userPostComposeSheet = document.getElementById('yt-user-post-compose-sheet');
     const userPostContentInput = document.getElementById('yt-user-post-content-input');
     const userPostImageWrapper = document.getElementById('yt-user-post-image-wrapper');
@@ -16,6 +18,9 @@
     const userPostImageDescriptionGroup = document.getElementById('yt-user-post-image-description-group');
     const userPostImageDescriptionInput = document.getElementById('yt-user-post-image-description-input');
     const userPostPublishBtn = document.getElementById('yt-user-post-publish-btn');
+    const postReplyContext = document.getElementById('yt-community-reply-context');
+    const postReplyContextText = document.getElementById('yt-community-reply-context-text');
+    const postReplyCancel = document.getElementById('yt-community-reply-cancel');
 
     function stopCommunityControlEvent(e) {
         if (!e) return;
@@ -49,7 +54,17 @@
     if (communityDetailBackBtn) {
         communityDetailBackBtn.addEventListener('click', () => {
             if (postChatInput && document.activeElement === postChatInput) postChatInput.blur();
+            clearYtPostReplyTarget();
+            stopYtPostLikeGrowthTimer();
             if (typeof window.releaseYtChatKeyboardLock === 'function') window.releaseYtChatKeyboardLock();
+        });
+    }
+
+    if (postReplyCancel) {
+        postReplyCancel.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            clearYtPostReplyTarget();
         });
     }
 
@@ -84,6 +99,92 @@
 
     function formatYtPostText(value) {
         return ytEscapeHtml(value).replace(/\n/g, '<br>');
+    }
+
+    function parseYtPostLikeCount(value) {
+        if (Number.isFinite(Number(value))) return Math.max(0, Math.round(Number(value)));
+        const text = String(value || '').replace(/,/g, '').trim();
+        const matched = text.match(/[\d.]+/);
+        if (!matched) return 0;
+        const number = Number(matched[0]);
+        if (!Number.isFinite(number)) return 0;
+        if (text.includes('万')) return Math.max(0, Math.round(number * 10000));
+        return Math.max(0, Math.round(number));
+    }
+
+    function formatYtPostLikeCount(value) {
+        const count = parseYtPostLikeCount(value);
+        if (count >= 10000) {
+            const formatted = (count / 10000).toFixed(count % 10000 === 0 ? 0 : 1).replace(/\.0$/, '');
+            return `${formatted}万`;
+        }
+        return String(count);
+    }
+
+    function countYtPostComments(post) {
+        const comments = Array.isArray(post?.comments) ? post.comments : [];
+        return comments.reduce((total, comment) => total + 1 + (Array.isArray(comment?.replies) ? comment.replies.length : 0), 0);
+    }
+
+    function syncYtPostLikeGrowth(post, persist = true) {
+        if (!post || typeof post !== 'object') return 0;
+        const now = Date.now();
+        const currentLikes = parseYtPostLikeCount(post.likes);
+        const lastGrowthAt = Number(post.lastLikeGrowthAt);
+        if (!Number.isFinite(lastGrowthAt) || lastGrowthAt <= 0) {
+            post.likes = currentLikes;
+            post.lastLikeGrowthAt = now;
+            if (persist) saveYoutubeData();
+            return currentLikes;
+        }
+        const elapsedSteps = Math.min(2880, Math.floor((now - lastGrowthAt) / 30000));
+        if (elapsedSteps <= 0) return currentLikes;
+        const growthPerStep = Math.max(1, Math.ceil(countYtPostComments(post) * 0.08));
+        post.likes = currentLikes + elapsedSteps * growthPerStep;
+        post.lastLikeGrowthAt = lastGrowthAt + elapsedSteps * 30000;
+        if (persist) saveYoutubeData();
+        return post.likes;
+    }
+
+    window.syncYtPostLikeGrowth = syncYtPostLikeGrowth;
+    window.formatYtPostLikeCount = formatYtPostLikeCount;
+    window.countYtPostComments = countYtPostComments;
+
+    function clearYtPostReplyTarget() {
+        currentPostReplyTarget = null;
+        if (postReplyContext) postReplyContext.style.display = 'none';
+        if (postReplyContextText) postReplyContextText.textContent = '';
+        if (postChatInput) postChatInput.placeholder = '发表评论...';
+    }
+
+    function setYtPostReplyTarget(rootComment, replyToName) {
+        if (!rootComment) return;
+        currentPostReplyTarget = { rootComment, replyToName: String(replyToName || rootComment.name || '评论者') };
+        if (postReplyContext) postReplyContext.style.display = 'flex';
+        if (postReplyContextText) postReplyContextText.textContent = `回复 @${currentPostReplyTarget.replyToName}`;
+        if (postChatInput) {
+            postChatInput.placeholder = `回复 @${currentPostReplyTarget.replyToName}...`;
+            postChatInput.focus();
+        }
+    }
+
+    function stopYtPostLikeGrowthTimer() {
+        if (ytPostLikeGrowthTimer) clearInterval(ytPostLikeGrowthTimer);
+        ytPostLikeGrowthTimer = null;
+    }
+
+    function startYtPostLikeGrowthTimer(post) {
+        stopYtPostLikeGrowthTimer();
+        if (!post) return;
+        ytPostLikeGrowthTimer = setInterval(() => {
+            if (currentActivePost !== post || !communityDetailView?.classList.contains('active')) return;
+            const growth = Math.max(1, Math.ceil(countYtPostComments(post) * 0.05));
+            post.likes = parseYtPostLikeCount(post.likes) + growth;
+            post.lastLikeGrowthAt = Date.now();
+            saveYoutubeData();
+            const likeCount = document.getElementById('yt-community-post-like-count');
+            if (likeCount) likeCount.textContent = formatYtPostLikeCount(post.likes);
+        }, 10000);
     }
 
     function normalizeYtChatReply(value) {
@@ -153,6 +254,8 @@
         if (!communityDetailView || !communityDetailContent || !currentSubChannelData) return;
         if (typeof window.releaseYtChatKeyboardLock === 'function') window.releaseYtChatKeyboardLock(communityDetailView);
         currentActivePost = post;
+        clearYtPostReplyTarget();
+        syncYtPostLikeGrowth(post);
         if (postChatInput) {
             postChatInput.value = '';
             postChatInput.placeholder = '发表评论...';
@@ -170,6 +273,7 @@
         }
 
         renderPostComments();
+        startYtPostLikeGrowthTimer(post);
         communityDetailView.classList.add('active');
     }
 
@@ -179,21 +283,53 @@
         
         let commentsHtml = '';
         if (post.comments && Array.isArray(post.comments) && post.comments.length > 0) {
-            commentsHtml = post.comments.map(c => `
+            commentsHtml = post.comments.map((c, rootIndex) => {
+                const translationZh = String(c?.translationZh || '').trim();
+                const replies = Array.isArray(c?.replies) ? c.replies : [];
+                const repliesHtml = replies.map((reply, replyIndex) => {
+                    const replyTranslation = String(reply?.translationZh || '').trim();
+                    return `
+                        <div class="yt-community-comment-reply" style="display:flex; gap:9px; margin-top:12px; padding:10px 10px 10px 12px; border-left:2px solid #e5e5ea; background:#fafafa; border-radius:0 12px 12px 0;">
+                            <div class="yt-video-avatar" style="width:24px; height:24px; flex-shrink:0; background:#e5e5ea; display:flex; justify-content:center; align-items:center; border-radius:50%; overflow:hidden;">
+                                ${reply.avatar ? `<img src="${ytEscapeHtml(reply.avatar)}" style="width:100%;height:100%;object-fit:cover;">` : `<span style="font-size:10px;font-weight:bold;color:#555;">${ytEscapeHtml(String(reply.name || '?').charAt(0).toUpperCase())}</span>`}
+                            </div>
+                            <div style="flex:1;min-width:0;">
+                                <div class="yt-post-comment-reply-target" role="button" tabindex="0" data-root-index="${rootIndex}" data-reply-index="${replyIndex}" style="cursor:pointer;">
+                                    <div style="font-size:12px;color:#606060;margin-bottom:3px;">${ytEscapeHtml(reply.name || '用户')}</div>
+                                    <div style="font-size:13px;color:#0f0f0f;line-height:1.4;">${reply.replyTo ? `<span style="color:#606060;">回复 @${ytEscapeHtml(reply.replyTo)}：</span>` : ''}${formatYtPostText(reply.text)}</div>
+                                </div>
+                                ${replyTranslation ? `
+                                    <button type="button" class="yt-post-comment-translation-btn" aria-expanded="false" style="border:none;background:transparent;color:#606060;padding:5px 0 0;font-size:12px;font-weight:600;cursor:pointer;">翻译</button>
+                                    <div class="yt-post-comment-translation" hidden style="margin-top:5px;padding:8px 10px;border-radius:10px;background:#f2f2f7;color:#3a3a3c;font-size:13px;line-height:1.45;">${formatYtPostText(replyTranslation)}</div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                return `
                 <div class="yt-community-comment-item">
                     <div class="yt-video-avatar" style="width:30px; height:30px; flex-shrink: 0; background-color: #f2f2f2; display: flex; justify-content: center; align-items: center; border-radius: 50%; overflow: hidden;">
                         ${c.avatar ? `<img src="${c.avatar}" style="width:100%;height:100%;object-fit:cover;">` : `<span style="font-size:12px; font-weight:bold; color:#555;">${c.name ? c.name[0].toUpperCase() : '?'}</span>`}
                     </div>
-                    <div style="flex: 1;">
-                        <div style="font-size: 13px; color: #606060; margin-bottom: 4px;">${ytEscapeHtml(c.name)}</div>
-                        <div style="font-size: 14px; color: #0f0f0f; line-height: 1.4;">${formatYtPostText(c.text)}</div>
+                    <div style="flex:1;min-width:0;">
+                        <div class="yt-post-comment-reply-target" role="button" tabindex="0" data-root-index="${rootIndex}" style="cursor:pointer;">
+                            <div style="font-size: 13px; color: #606060; margin-bottom: 4px;">${ytEscapeHtml(c.name)}</div>
+                            <div style="font-size: 14px; color: #0f0f0f; line-height: 1.4;">${formatYtPostText(c.text)}</div>
+                        </div>
+                        ${translationZh ? `
+                            <button type="button" class="yt-post-comment-translation-btn" aria-expanded="false" style="border:none; background:transparent; color:#606060; padding:5px 0 0; font-size:12px; font-weight:600; cursor:pointer;">翻译</button>
+                            <div class="yt-post-comment-translation" hidden style="margin-top:5px; padding:8px 10px; border-radius:10px; background:#f2f2f7; color:#3a3a3c; font-size:13px; line-height:1.45;">${formatYtPostText(translationZh)}</div>
+                        ` : ''}
                         <div style="font-size: 12px; color: #8e8e93; margin-top: 6px; display: flex; gap: 16px;">
                             <span><i class="far fa-thumbs-up"></i> ${Number.isFinite(Number(c.likes)) ? Math.max(0, Math.round(Number(c.likes))) : 0}</span>
                             <span><i class="far fa-thumbs-down"></i></span>
+                            <span style="font-weight:600;">回复</span>
                         </div>
+                        ${repliesHtml}
                     </div>
                 </div>
-            `).join('');
+            `;
+            }).join('');
         } else {
             commentsHtml = '<div style="text-align:center; padding: 20px; color:#8e8e93; font-size:13px;" id="yt-empty-post-comments">暂无评论</div>';
         }
@@ -215,9 +351,9 @@
             ${post.imageUrl ? `<img src="${ytEscapeHtml(post.imageUrl)}" alt="贴文图片" style="display:block;width:100%;max-height:420px;object-fit:cover;border-radius:16px;margin:0 0 16px;">` : ''}
             ${statusHtml}
             <div style="display: flex; gap: 24px; color: #606060; font-size: 14px; padding-bottom: 16px;">
-                <span><i class="far fa-thumbs-up"></i> ${post.isUserPost ? Math.max(0, Number(post.likes) || 0) : (post.likes || '1.2万')}</span>
+                <span><i class="far fa-thumbs-up"></i> <span id="yt-community-post-like-count">${formatYtPostLikeCount(post.likes)}</span></span>
                 <span><i class="far fa-thumbs-down"></i></span>
-                <span><i class="far fa-comment"></i> ${post.comments?.length || post.commentsCount || '0'}</span>
+                <span><i class="far fa-comment"></i> ${countYtPostComments(post)}</span>
             </div>
 
             <div class="yt-community-comments-section" id="yt-post-comments-container">
@@ -225,9 +361,40 @@
                 ${commentsHtml}
             </div>
         `;
+        communityDetailContent.querySelectorAll('.yt-post-comment-translation-btn').forEach(button => {
+            button.addEventListener('click', event => {
+                event.stopPropagation();
+                const translation = button.nextElementSibling;
+                if (!translation) return;
+                const isExpanded = translation.hasAttribute('hidden');
+                if (isExpanded) translation.removeAttribute('hidden');
+                else translation.setAttribute('hidden', '');
+                button.textContent = isExpanded ? '收起翻译' : '翻译';
+                button.setAttribute('aria-expanded', String(isExpanded));
+            });
+        });
+        communityDetailContent.querySelectorAll('.yt-post-comment-reply-target').forEach(target => {
+            const activateReply = () => {
+                const rootIndex = Number(target.dataset.rootIndex);
+                const rootComment = post.comments?.[rootIndex];
+                if (!rootComment) return;
+                const replyIndex = target.dataset.replyIndex === undefined ? -1 : Number(target.dataset.replyIndex);
+                const replyToName = replyIndex >= 0 ? rootComment.replies?.[replyIndex]?.name : rootComment.name;
+                setYtPostReplyTarget(rootComment, replyToName);
+            };
+            target.addEventListener('click', event => {
+                event.stopPropagation();
+                activateReply();
+            });
+            target.addEventListener('keydown', event => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                activateReply();
+            });
+        });
     }
 
-    function addPostCommentMessage(name, text, isUser = false) {
+    function addPostCommentMessage(name, text, isUser = false, translationZh = '') {
         const container = document.getElementById('yt-post-comments-container');
         if (!container) return;
         
@@ -241,12 +408,21 @@
         const newComment = {
             name: name,
             text: text,
-            avatar: isUser ? effectiveYtUser.avatarUrl || null : null
+            avatar: isUser ? effectiveYtUser.avatarUrl || null : null,
+            translationZh: isUser ? '' : String(translationZh || '').trim()
         };
         
-        // Append to array so it's at the end (newest at bottom)
-        currentActivePost.comments.push(newComment);
-        currentActivePost.commentsCount = currentActivePost.comments.length;
+        if (currentPostReplyTarget?.rootComment) {
+            const rootComment = currentPostReplyTarget.rootComment;
+            rootComment.replies = Array.isArray(rootComment.replies) ? rootComment.replies : [];
+            newComment.replyTo = currentPostReplyTarget.replyToName;
+            rootComment.replies.push(newComment);
+        } else {
+            currentActivePost.comments.push(newComment);
+        }
+        currentActivePost.commentsCount = countYtPostComments(currentActivePost);
+        if (isUser) currentActivePost.likes = parseYtPostLikeCount(currentActivePost.likes) + 1;
+        clearYtPostReplyTarget();
         saveYoutubeData();
 
         // Re-render
@@ -279,7 +455,7 @@
             }
 
             try {
-                const responseObj = await getVODResponse(text, currentActivePost.content);
+                const responseObj = await getVODResponse(text, currentActivePost.content, true);
                 renderVODResponse(responseObj, true);
             } finally {
                 if(loadingId) { const el = document.getElementById(loadingId); if(el) el.remove(); }
@@ -381,7 +557,7 @@
                 ? (window.getGlobalWorldBookContext() || '')
                 : '';
             const imageContext = post.imageUrl ? (post.imageDescription || '用户未填写图片描述') : '无图片';
-            const prompt = `你要模拟真实 YouTube 社群贴文下的国际化评论区。\n发布者：${effectiveUser.name || '用户'}\n发布者人设：${effectiveUser.persona || '未设置'}\n贴文正文：${post.content}\n图片内容描述：${imageContext}\n世界书：${wbContext || '无'}\n\n一次生成 10–15 条自然、有差异的评论。评论者来自不同国家和身份，可以讨论正文、图片、催更、提问或互相呼应；不要让所有人说同一种话。不要冒充发布者。\n只返回严格 JSON：{"comments":[{"name":"评论者昵称","text":"评论内容","likes":0}]}。不要 Markdown。`;
+            const prompt = `你要模拟真实 YouTube 社群贴文下的国际化评论区。\n发布者：${effectiveUser.name || '用户'}\n发布者人设：${effectiveUser.persona || '未设置'}\n贴文正文：${post.content}\n图片内容描述：${imageContext}\n世界书：${wbContext || '无'}\n\n一次生成 10–15 条自然、有差异的评论。评论者来自不同国家和身份，可以讨论正文、图片、催更、提问或互相呼应；不要让所有人说同一种话。不要冒充发布者。YouTube 是国际化平台：text 不是中文时 translationZh 必须提供自然中文翻译，text 是中文时 translationZh 必须为空字符串。\n只返回严格 JSON：{"comments":[{"name":"评论者昵称","text":"评论内容","translationZh":"中文翻译或空字符串","likes":0}]}。不要 Markdown。`;
             let endpoint = window.apiConfig.endpoint.replace(/\/$/, '');
             if (!endpoint.endsWith('/chat/completions')) endpoint = endpoint.endsWith('/v1') ? `${endpoint}/chat/completions` : `${endpoint}/v1/chat/completions`;
             const response = await fetch(endpoint, {
@@ -407,6 +583,7 @@
                 return {
                     name: typeof comment === 'string' ? `观众${index + 1}` : String(comment?.name || `观众${index + 1}`).trim(),
                     text,
+                    translationZh: typeof comment === 'string' ? '' : String(comment?.translationZh || comment?.translation || '').trim(),
                     likes: Math.max(0, Math.round(Number(comment?.likes) || 0))
                 };
             }).filter(Boolean) : [];
@@ -444,6 +621,7 @@
                 time: '刚刚',
                 createdAt: Date.now(),
                 likes: 0,
+                lastLikeGrowthAt: Date.now(),
                 comments: [],
                 commentsCount: 0,
                 commentsStatus: 'loading'

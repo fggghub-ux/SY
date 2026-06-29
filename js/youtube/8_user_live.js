@@ -624,7 +624,7 @@
             const text = userLiveChatInput.value.trim();
             if(!text) return;
 
-            userLiveHistory.push({ type: 'host', text: text });
+            userLiveHistory.push({ type: 'host', senderType: 'user', text: text });
             
             // Create bubble on screen
             const bubble = document.createElement('div');
@@ -643,6 +643,11 @@
         };
 
         userLiveChatSend.addEventListener('click', sendAction);
+        userLiveChatSend.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            sendAction();
+        });
         window.mobileInputCompat?.register({
             input: userLiveChatInput,
             root: userLiveView,
@@ -724,7 +729,8 @@ JSON 结构必须完全符合：
 
             userLiveTriggerApiBtn.style.opacity = '0.5';
             userLiveTriggerApiBtn.style.pointerEvents = 'none';
-            userLiveTriggerApiBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 等待中';
+            userLiveTriggerApiBtn.setAttribute('aria-busy', 'true');
+            userLiveTriggerApiBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 
             try {
                 let endpoint = window.apiConfig.endpoint;
@@ -826,8 +832,14 @@ JSON 结构必须完全符合：
             } finally {
                 userLiveTriggerApiBtn.style.opacity = '1';
                 userLiveTriggerApiBtn.style.pointerEvents = 'auto';
-                userLiveTriggerApiBtn.innerHTML = '<i class="fas fa-magic"></i>';
+                userLiveTriggerApiBtn.setAttribute('aria-busy', 'false');
+                userLiveTriggerApiBtn.innerHTML = '<i class="fas fa-arrow-down" style="font-size:14px;"></i>';
             }
+        });
+        userLiveTriggerApiBtn.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            userLiveTriggerApiBtn.click();
         });
     }
 

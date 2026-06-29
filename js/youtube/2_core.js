@@ -1413,7 +1413,19 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
             allBtn.onclick = () => {
                 const list = document.getElementById('yt-all-subs-list');
                 list.innerHTML = '';
-                mockSubscriptions.forEach(sub => {
+                const visibleSubscriptions = mockSubscriptions.filter(sub => {
+                    if (!sub) return false;
+                    return sub.isSubscribed !== false || !!resolveYtExplicitImChar(sub);
+                });
+                if (visibleSubscriptions.length === 0) {
+                    list.innerHTML = `
+                        <div style="display:flex; flex-direction:column; align-items:center; padding:44px 16px; color:#8e8e93; text-align:center;">
+                            <i class="fas fa-user-plus" style="font-size:36px; color:#d1d1d6; margin-bottom:12px;"></i>
+                            <div style="font-size:14px;">暂无 Char 或已订阅频道</div>
+                        </div>
+                    `;
+                }
+                visibleSubscriptions.forEach(sub => {
                     const item = document.createElement('div');
                     const avatarUrl = resolveYtChannelAvatar(sub);
                     item.className = 'account-card';
