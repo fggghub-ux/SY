@@ -318,6 +318,7 @@
                 const likeCount = typeof window.formatYtPostLikeCount === 'function'
                     ? window.formatYtPostLikeCount(syncedLikes)
                     : String(syncedLikes);
+                const postTranslationZh = String(post.translationZh || post.contentTranslationZh || post.translation || '').trim();
                 item.innerHTML = `
                     <div style="display:flex;align-items:center;margin-bottom:10px;gap:10px;">
                         <div class="yt-video-avatar" style="width:36px;height:36px;">${effectiveUser.avatarUrl ? `<img src="${escapeYtChannelHtml(effectiveUser.avatarUrl)}">` : '<i class="fas fa-user" style="color:#8e8e93;"></i>'}</div>
@@ -328,6 +329,10 @@
                         <div style="font-size:11px;">${status}</div>
                     </div>
                     <div class="yt-community-post-content" style="white-space:pre-wrap;">${escapeYtChannelHtml(post.content || '')}</div>
+                    ${postTranslationZh ? `
+                        <button type="button" class="yt-post-content-translation-btn" aria-expanded="false" style="border:none;background:transparent;color:#606060;padding:6px 0 0;font-size:12px;font-weight:600;cursor:pointer;">翻译</button>
+                        <div class="yt-post-content-translation" hidden style="margin:6px 0 0;padding:8px 10px;border-radius:10px;background:#f2f2f7;color:#3a3a3c;font-size:13px;line-height:1.45;">${escapeYtChannelHtml(postTranslationZh)}</div>
+                    ` : ''}
                     ${post.imageUrl ? `<img src="${escapeYtChannelHtml(post.imageUrl)}" alt="贴文图片" style="display:block;width:100%;max-height:360px;object-fit:cover;border-radius:16px;margin-bottom:12px;">` : ''}
                     <div class="yt-community-post-actions">
                         <div class="yt-community-post-action"><i class="far fa-thumbs-up"></i> ${likeCount}</div>
@@ -335,6 +340,18 @@
                         <div class="yt-community-post-action"><i class="far fa-comment"></i> ${commentCount}</div>
                     </div>
                 `;
+                item.querySelectorAll('.yt-post-content-translation-btn').forEach(button => {
+                    button.addEventListener('click', event => {
+                        event.stopPropagation();
+                        const translation = button.nextElementSibling;
+                        if (!translation) return;
+                        const isExpanded = translation.hasAttribute('hidden');
+                        if (isExpanded) translation.removeAttribute('hidden');
+                        else translation.setAttribute('hidden', '');
+                        button.textContent = isExpanded ? '收起翻译' : '翻译';
+                        button.setAttribute('aria-expanded', String(isExpanded));
+                    });
+                });
                 item.addEventListener('click', () => window.openYtUserCommunityPost?.(post));
                 container.appendChild(item);
             });

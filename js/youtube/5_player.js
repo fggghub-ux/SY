@@ -17,6 +17,16 @@
         return ytUserState || {};
     }
 
+    function ytPlayerEscapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        }[char]));
+    }
+
     const ytEditVideoSheet = document.getElementById('yt-edit-video-sheet');
     const ytEditVideoCoverBtn = document.getElementById('yt-edit-video-cover-btn');
     const ytEditVideoUpload = document.getElementById('yt-edit-video-upload');
@@ -52,17 +62,50 @@
         }));
     }
 
+    function getUnifiedYtLiveGuestOptions() {
+        const seen = new Set();
+        return (Array.isArray(mockSubscriptions) ? mockSubscriptions : []).filter(sub => {
+            if (!sub) return false;
+            const linkedChar = typeof resolveYtExplicitImChar === 'function' ? resolveYtExplicitImChar(sub) : null;
+            return !!linkedChar || sub.isSubscribed !== false;
+        }).map(sub => {
+            const linkedChar = typeof resolveYtExplicitImChar === 'function' ? resolveYtExplicitImChar(sub) : null;
+            const normalized = {
+                ...sub,
+                avatar: typeof resolveYtChannelAvatar === 'function'
+                    ? resolveYtChannelAvatar(sub)
+                    : (sub.avatar || sub.avatarUrl || ''),
+                desc: sub.desc || sub.persona || '',
+                persona: sub.persona || sub.desc || '',
+                guestSource: linkedChar ? 'imessage-char' : 'youtube-subscription'
+            };
+            return normalized;
+        }).filter(sub => {
+            const key = sub.imCharId ? `char:${sub.imCharId}` : `sub:${sub.id}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }
+
+    function validateYtLiveGuestOption(guest) {
+        if (!guest) return null;
+        return getUnifiedYtLiveGuestOptions().find(option => {
+            if (String(option.id) === String(guest.id)) return true;
+            return option.imCharId && guest.imCharId && String(option.imCharId) === String(guest.imCharId);
+        }) || null;
+    }
+
     function validateUserLiveSelectedGuest() {
         if (!userLiveSelectedGuest) return null;
-        const stillFollowed = getFollowedTkLiveGuests().find(char => String(char.id) === String(userLiveSelectedGuest.id));
-        userLiveSelectedGuest = stillFollowed || null;
+        userLiveSelectedGuest = validateYtLiveGuestOption(userLiveSelectedGuest);
         if (ytUserLiveGuestName) ytUserLiveGuestName.value = userLiveSelectedGuest ? userLiveSelectedGuest.name : '无';
         return userLiveSelectedGuest;
     }
 
     window.validateUserLiveSelectedGuest = validateUserLiveSelectedGuest;
 
-    function renderGuestPicker(onSelect, source = 'youtube-subscriptions') {
+    function renderGuestPicker(onSelect, source = 'unified-live-guests', options = {}) {
         if (!ytGuestList) return;
         ytGuestList.innerHTML = '';
 
@@ -78,11 +121,11 @@
 
         const guestOptions = source === 'tiktok-following'
             ? getFollowedTkLiveGuests()
-            : mockSubscriptions;
+            : (source === 'youtube-subscriptions' ? mockSubscriptions : getUnifiedYtLiveGuestOptions());
 
         guestOptions.forEach(sub => {
             // Avoid selecting self
-            if (currentSubChannelData && sub.id === currentSubChannelData.id) return;
+            if (options.excludeCurrent !== false && currentSubChannelData && sub.id === currentSubChannelData.id) return;
             if (ytUserState && sub.name === ytUserState.name) return;
             const avatarUrl = source === 'tiktok-following'
                 ? (sub.avatar || `https://picsum.photos/seed/${encodeURIComponent(sub.id || sub.name)}/80/80`)
@@ -91,7 +134,7 @@
                 : (sub.avatar || 'https://picsum.photos/80/80?grayscale'));
             const detailText = source === 'tiktok-following'
                 ? (sub.status || sub.persona || '已关注 Char')
-                : `${sub.subs || '0'} 订阅者`;
+                : (sub.guestSource === 'imessage-char' ? 'Char' : `${sub.subs || '0'} 订阅者`);
 
             const item = document.createElement('div');
             item.className = 'account-card';
@@ -138,7 +181,7 @@
                 if (ytUserLiveGuestName) {
                     ytUserLiveGuestName.value = selectedSub ? selectedSub.name : '无';
                 }
-            }, 'tiktok-following');
+            }, 'unified-live-guests', { excludeCurrent: false });
             ytGuestPickerSheet.classList.add('active');
         });
     }
@@ -156,7 +199,7 @@
                     }
 
                     // Set temp guest data
-                    tempGuestData = currentVideoData.guest || null;
+                    tempGuestData = validateYtLiveGuestOption(currentVideoData.guest) || null;
                     if(ytEditVideoGuestName) {
                         ytEditVideoGuestName.value = tempGuestData ? tempGuestData.name : '无';
                     }
@@ -209,6 +252,7 @@
                 
                 const newTitle = ytEditVideoTitleInput.value.trim() || '无标题';
                 const newCover = (ytEditVideoCoverImg.style.display === 'block' && ytEditVideoCoverImg.src) ? ytEditVideoCoverImg.src : 'https://picsum.photos/320/180?grayscale';
+                tempGuestData = validateYtLiveGuestOption(tempGuestData) || null;
 
                 currentVideoData.title = newTitle;
                 currentVideoData.thumbnail = newCover;
@@ -1700,6 +1744,7 @@
                         const commentCount = typeof window.countYtPostComments === 'function'
                             ? window.countYtPostComments(post)
                             : (post.commentsCount || post.comments?.length || 0);
+                        const postTranslationZh = String(post.translationZh || post.contentTranslationZh || post.translation || '').trim();
                         const avatarUrl = typeof resolveYtChannelAvatar === 'function'
                             ? resolveYtChannelAvatar(currentSubChannelData)
                             : (currentSubChannelData.avatar || '');
@@ -1714,12 +1759,28 @@
                                 </div>
                             </div>
                             <div class="yt-community-post-content">${post.content || ''}</div>
+                            ${postTranslationZh ? `
+                                <button type="button" class="yt-post-content-translation-btn" aria-expanded="false" style="border:none;background:transparent;color:#606060;padding:6px 0 0;font-size:12px;font-weight:600;cursor:pointer;">翻译</button>
+                                <div class="yt-post-content-translation" hidden style="margin:6px 0 0;padding:8px 10px;border-radius:10px;background:#f2f2f7;color:#3a3a3c;font-size:13px;line-height:1.45;">${ytPlayerEscapeHtml(postTranslationZh)}</div>
+                            ` : ''}
                             <div class="yt-community-post-actions">
                                 <div class="yt-community-post-action"><i class="far fa-thumbs-up"></i> ${likeCount}</div>
                                 <div class="yt-community-post-action"><i class="far fa-thumbs-down"></i></div>
                                 <div class="yt-community-post-action"><i class="far fa-comment"></i> ${commentCount}</div>
                             </div>
                         `;
+                        el.querySelectorAll('.yt-post-content-translation-btn').forEach(button => {
+                            button.addEventListener('click', event => {
+                                event.stopPropagation();
+                                const translation = button.nextElementSibling;
+                                if (!translation) return;
+                                const isExpanded = translation.hasAttribute('hidden');
+                                if (isExpanded) translation.removeAttribute('hidden');
+                                else translation.setAttribute('hidden', '');
+                                button.textContent = isExpanded ? '收起翻译' : '翻译';
+                                button.setAttribute('aria-expanded', String(isExpanded));
+                            });
+                        });
                         
                         el.addEventListener('click', () => {
                             openPostDetail(post);
@@ -1770,12 +1831,13 @@
    - comments: 数组，包含3-5个对象，每个对象有 name(观众昵称) 和 text(评论内容)。
 3. communityPosts: 数组，包含1-3个对象，每个对象代表一条YouTube社区动态，有:
    - content(动态正文内容，符合人设，具有活人感，禁止使用emoji)
+   - translationZh(content 的自然中文翻译；content 是中文时必须为空字符串)
    - likes(点赞数字符串，如"3.2万")
    - commentsCount(评论数，如"1400")
    - time(发布时间，如"5小时前")
    - comments: 数组，包含3-5个对象，代表这条动态下的热门评论，每个对象有 name(观众昵称)、text(评论原文) 和 translationZh(中文翻译或空字符串)。
 4. fanGroup: 对象，包含 name(粉丝群名称，如"xx的秘密基地") 和 memberCount(群人数，如"3000人")。
-注意：YouTube 是国际化平台。社群动态评论 text 不是中文时 translationZh 必须提供自然中文翻译，text 是中文时 translationZh 必须为空字符串。只能返回纯 JSON，不要包含 Markdown 符号如 \`\`\`json。`;
+注意：YouTube 是国际化平台。社群动态正文 content 和评论 text 不是中文时，对应 translationZh 必须提供自然中文翻译；如果原文是中文，translationZh 必须为空字符串。只能返回纯 JSON，不要包含 Markdown 符号如 \`\`\`json。`;
 
             try {
                 let endpoint = window.apiConfig.endpoint;
@@ -1845,6 +1907,7 @@
                     if (!oldGen.communityPosts) oldGen.communityPosts = [];
                     const normalizedCommunityPosts = parsedData.communityPosts.map(post => ({
                         ...post,
+                        translationZh: String(post.translationZh || post.contentTranslationZh || post.translation || '').trim(),
                         lastLikeGrowthAt: Number(post.lastLikeGrowthAt) || Date.now(),
                         comments: Array.isArray(post.comments) ? post.comments : []
                     }));

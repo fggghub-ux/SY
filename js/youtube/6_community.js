@@ -4,10 +4,13 @@
     const communityDetailContent = document.getElementById('yt-community-detail-content');
     const postChatSend = document.getElementById('yt-community-chat-send');
     const postChatInput = document.getElementById('yt-community-chat-input');
+    const communityDetailGenerateBtn = document.getElementById('yt-community-generate-comments-btn');
+    const communityDetailDeletePostBtn = document.getElementById('yt-community-delete-post-btn');
     
     let currentActivePost = null;
     let currentPostReplyTarget = null;
     let ytPostLikeGrowthTimer = null;
+    let ytPostCommentGenerationLocked = false;
     const userPostComposeSheet = document.getElementById('yt-user-post-compose-sheet');
     const userPostContentInput = document.getElementById('yt-user-post-content-input');
     const userPostImageWrapper = document.getElementById('yt-user-post-image-wrapper');
@@ -31,7 +34,9 @@
         communityDetailContent,
         postChatInput,
         postChatSend,
-        communityDetailBackBtn
+        communityDetailBackBtn,
+        communityDetailGenerateBtn,
+        communityDetailDeletePostBtn
     ].filter(Boolean).forEach((el) => {
         el.addEventListener('click', stopCommunityControlEvent);
         el.addEventListener('pointerdown', stopCommunityControlEvent);
@@ -121,8 +126,92 @@
         return String(count);
     }
 
+    function makeYtPostCommentId(prefix = 'yt_post_comment') {
+        return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    }
+
+    function normalizeYtPostNameKey(value) {
+        return String(value || '').trim().toLowerCase();
+    }
+
+    function getYtPostAvailableChars() {
+        const rawChars = typeof getYtImChars === 'function'
+            ? getYtImChars()
+            : (Array.isArray(window.imData?.friends) ? window.imData.friends.filter(friend => friend?.type === 'char') : []);
+        return (Array.isArray(rawChars) ? rawChars : []).map(friend => {
+            const normalized = window.imApp && typeof window.imApp.normalizeFriendData === 'function'
+                ? (window.imApp.normalizeFriendData(friend) || friend)
+                : friend;
+            const id = String(normalized?.id ?? friend?.id ?? '').trim();
+            const name = String(normalized?.nickname || normalized?.realName || normalized?.name || friend?.nickname || friend?.realName || friend?.name || '').trim();
+            if (!id || !name) return null;
+            return {
+                id,
+                name,
+                avatar: normalized?.avatarUrl || normalized?.avatar || friend?.avatarUrl || friend?.avatar || '',
+                persona: normalized?.persona || friend?.persona || friend?.bio || '',
+                aliases: [
+                    normalized?.nickname,
+                    normalized?.realName,
+                    normalized?.name,
+                    friend?.nickname,
+                    friend?.realName,
+                    friend?.name
+                ].map(normalizeYtPostNameKey).filter(Boolean)
+            };
+        }).filter(Boolean);
+    }
+
+    function resolveYtPostCommentChar(comment) {
+        const declaredType = String(comment?.speakerType || comment?.type || '').toLowerCase();
+        if (declaredType === 'user') return null;
+        const chars = getYtPostAvailableChars();
+        if (chars.length === 0) return null;
+        const speakerId = String(comment?.speakerId || comment?.charId || comment?.imCharId || '').trim();
+        if (speakerId) {
+            const byId = chars.find(char => char.id === speakerId);
+            if (byId) return byId;
+        }
+        const nameKey = normalizeYtPostNameKey(comment?.name || comment?.speakerName);
+        if (!nameKey) return null;
+        if (declaredType === 'char') {
+            return chars.find(char => char.aliases.includes(nameKey)) || null;
+        }
+        return chars.find(char => char.aliases.includes(nameKey)) || null;
+    }
+
+    function normalizeYtPostCommentEntry(rawComment, index = 0) {
+        const source = typeof rawComment === 'string' ? { text: rawComment } : (rawComment && typeof rawComment === 'object' ? rawComment : {});
+        const resolvedChar = resolveYtPostCommentChar(source);
+        const fallbackName = `观众${index + 1}`;
+        const text = String(source.text ?? source.content ?? '').trim();
+        const replies = Array.isArray(source.replies)
+            ? source.replies.map((reply, replyIndex) => normalizeYtPostCommentEntry(reply, replyIndex)).filter(reply => reply.text)
+            : [];
+        source.id = source.id || makeYtPostCommentId();
+        source.speakerId = resolvedChar ? resolvedChar.id : String(source.speakerId || source.charId || source.imCharId || '').trim();
+        source.speakerType = resolvedChar ? 'char' : String(source.speakerType || source.type || 'fan').trim();
+        source.name = resolvedChar ? resolvedChar.name : String(source.name || source.speakerName || fallbackName).trim();
+        source.avatar = resolvedChar ? resolvedChar.avatar : (source.avatar || source.avatarUrl || '');
+        source.text = text;
+        source.translationZh = String(source.translationZh || source.translation || '').trim();
+        source.likes = Math.max(0, Math.round(Number(source.likes) || 0));
+        source.replyTo = source.replyTo ? String(source.replyTo).trim() : '';
+        source.replies = replies;
+        return source;
+    }
+
+    function ensureYtPostCommentsShape(post) {
+        if (!post || typeof post !== 'object') return [];
+        post.comments = Array.isArray(post.comments)
+            ? post.comments.map((comment, index) => normalizeYtPostCommentEntry(comment, index)).filter(comment => comment.text)
+            : [];
+        post.commentsCount = post.comments.reduce((total, comment) => total + 1 + (Array.isArray(comment.replies) ? comment.replies.length : 0), 0);
+        return post.comments;
+    }
+
     function countYtPostComments(post) {
-        const comments = Array.isArray(post?.comments) ? post.comments : [];
+        const comments = ensureYtPostCommentsShape(post);
         return comments.reduce((total, comment) => total + 1 + (Array.isArray(comment?.replies) ? comment.replies.length : 0), 0);
     }
 
@@ -185,6 +274,17 @@
             const likeCount = document.getElementById('yt-community-post-like-count');
             if (likeCount) likeCount.textContent = formatYtPostLikeCount(post.likes);
         }, 10000);
+    }
+
+    function setYtPostGenerateButtonLoading(isLoading) {
+        ytPostCommentGenerationLocked = !!isLoading;
+        if (!communityDetailGenerateBtn) return;
+        communityDetailGenerateBtn.style.pointerEvents = isLoading ? 'none' : 'auto';
+        communityDetailGenerateBtn.style.opacity = isLoading ? '0.65' : '1';
+        communityDetailGenerateBtn.innerHTML = isLoading
+            ? '<i class="fas fa-circle-notch fa-spin"></i>'
+            : '<i class="fas fa-search"></i>';
+        communityDetailGenerateBtn.setAttribute('aria-busy', String(!!isLoading));
     }
 
     function normalizeYtChatReply(value) {
@@ -277,13 +377,49 @@
         communityDetailView.classList.add('active');
     }
 
+    function findYtActivePostList() {
+        if (!currentActivePost) return null;
+        const candidates = [];
+        if (Array.isArray(channelState.communityPosts)) candidates.push(channelState.communityPosts);
+        if (Array.isArray(currentSubChannelData?.generatedContent?.communityPosts)) candidates.push(currentSubChannelData.generatedContent.communityPosts);
+        if (Array.isArray(currentSubChannelData?.communityPosts)) candidates.push(currentSubChannelData.communityPosts);
+        return candidates.find(list => list.includes(currentActivePost))
+            || candidates.find(list => list.some(post => post?.id && post.id === currentActivePost.id))
+            || null;
+    }
+
+    function deleteYtActiveCommunityPost() {
+        if (!currentActivePost) return;
+        const list = findYtActivePostList();
+        if (!list) return;
+        const index = list.indexOf(currentActivePost);
+        const resolvedIndex = index >= 0
+            ? index
+            : list.findIndex(post => post?.id && post.id === currentActivePost.id);
+        if (resolvedIndex < 0) return;
+        list.splice(resolvedIndex, 1);
+        const deletedPost = currentActivePost;
+        currentActivePost = null;
+        clearYtPostReplyTarget();
+        stopYtPostLikeGrowthTimer();
+        saveYoutubeData();
+        if (communityDetailView) communityDetailView.classList.remove('active');
+        refreshYtUserCommunityPosts();
+        if (typeof renderGeneratedContent === 'function') {
+            try { renderGeneratedContent('community'); } catch (error) {}
+        }
+        if (typeof window.showToast === 'function') window.showToast('贴文已删除');
+        return deletedPost;
+    }
+
     function renderPostComments() {
         if (!currentActivePost) return;
         const post = currentActivePost;
+        const comments = ensureYtPostCommentsShape(post);
         
         let commentsHtml = '';
-        if (post.comments && Array.isArray(post.comments) && post.comments.length > 0) {
-            commentsHtml = post.comments.map((c, rootIndex) => {
+        if (comments.length > 0) {
+            commentsHtml = comments.map((c, rootIndex) => {
                 const translationZh = String(c?.translationZh || '').trim();
                 const replies = Array.isArray(c?.replies) ? c.replies : [];
                 const repliesHtml = replies.map((reply, replyIndex) => {
@@ -302,6 +438,10 @@
                                     <button type="button" class="yt-post-comment-translation-btn" aria-expanded="false" style="border:none;background:transparent;color:#606060;padding:5px 0 0;font-size:12px;font-weight:600;cursor:pointer;">翻译</button>
                                     <div class="yt-post-comment-translation" hidden style="margin-top:5px;padding:8px 10px;border-radius:10px;background:#f2f2f7;color:#3a3a3c;font-size:13px;line-height:1.45;">${formatYtPostText(replyTranslation)}</div>
                                 ` : ''}
+                                <div style="font-size:12px;color:#8e8e93;margin-top:5px;display:flex;gap:14px;">
+                                    <span class="yt-post-comment-reply-action" role="button" tabindex="0" data-root-index="${rootIndex}" data-reply-index="${replyIndex}" style="font-weight:600;cursor:pointer;">回复</span>
+                                    <span class="yt-post-comment-delete-btn" role="button" tabindex="0" data-root-index="${rootIndex}" data-reply-index="${replyIndex}" style="color:#8e8e93;cursor:pointer;">删除</span>
+                                </div>
                             </div>
                         </div>
                     `;
@@ -309,7 +449,7 @@
                 return `
                 <div class="yt-community-comment-item">
                     <div class="yt-video-avatar" style="width:30px; height:30px; flex-shrink: 0; background-color: #f2f2f2; display: flex; justify-content: center; align-items: center; border-radius: 50%; overflow: hidden;">
-                        ${c.avatar ? `<img src="${c.avatar}" style="width:100%;height:100%;object-fit:cover;">` : `<span style="font-size:12px; font-weight:bold; color:#555;">${c.name ? c.name[0].toUpperCase() : '?'}</span>`}
+                        ${c.avatar ? `<img src="${ytEscapeHtml(c.avatar)}" style="width:100%;height:100%;object-fit:cover;">` : `<span style="font-size:12px; font-weight:bold; color:#555;">${ytEscapeHtml(c.name ? c.name[0].toUpperCase() : '?')}</span>`}
                     </div>
                     <div style="flex:1;min-width:0;">
                         <div class="yt-post-comment-reply-target" role="button" tabindex="0" data-root-index="${rootIndex}" style="cursor:pointer;">
@@ -323,7 +463,8 @@
                         <div style="font-size: 12px; color: #8e8e93; margin-top: 6px; display: flex; gap: 16px;">
                             <span><i class="far fa-thumbs-up"></i> ${Number.isFinite(Number(c.likes)) ? Math.max(0, Math.round(Number(c.likes))) : 0}</span>
                             <span><i class="far fa-thumbs-down"></i></span>
-                            <span style="font-weight:600;">回复</span>
+                            <span class="yt-post-comment-reply-action" role="button" tabindex="0" data-root-index="${rootIndex}" style="font-weight:600;cursor:pointer;">回复</span>
+                            <span class="yt-post-comment-delete-btn" role="button" tabindex="0" data-root-index="${rootIndex}" style="color:#8e8e93;cursor:pointer;">删除</span>
                         </div>
                         ${repliesHtml}
                     </div>
@@ -337,6 +478,7 @@
         const statusHtml = post.commentsStatus === 'loading'
             ? '<div style="font-size:12px;color:#8e8e93;margin:0 0 12px;"><i class="fas fa-circle-notch fa-spin"></i> 评论生成中</div>'
             : (post.commentsStatus === 'failed' ? '<div style="font-size:12px;color:#ff3b30;margin:0 0 12px;">评论生成失败，贴文已保留</div>' : '');
+        const postTranslationZh = String(post.translationZh || post.contentTranslationZh || post.translation || '').trim();
         communityDetailContent.innerHTML = `
             <div style="display: flex; align-items: center; margin-bottom: 12px; gap: 10px;">
                 <div class="yt-video-avatar" style="width:40px; height:40px;"><img src="${typeof resolveYtChannelAvatar === 'function' ? resolveYtChannelAvatar(currentSubChannelData) : (currentSubChannelData.avatar || '')}"></div>
@@ -348,6 +490,10 @@
             <div style="font-size: 15px; line-height: 1.5; color: #0f0f0f; margin-bottom: 16px;">
                 ${formatYtPostText(post.content || '')}
             </div>
+            ${postTranslationZh ? `
+                <button type="button" class="yt-post-comment-translation-btn" aria-expanded="false" style="border:none;background:transparent;color:#606060;padding:0 0 12px;font-size:13px;font-weight:600;cursor:pointer;">翻译</button>
+                <div class="yt-post-comment-translation" hidden style="margin:-6px 0 14px;padding:10px 12px;border-radius:12px;background:#f2f2f7;color:#3a3a3c;font-size:14px;line-height:1.45;">${formatYtPostText(postTranslationZh)}</div>
+            ` : ''}
             ${post.imageUrl ? `<img src="${ytEscapeHtml(post.imageUrl)}" alt="贴文图片" style="display:block;width:100%;max-height:420px;object-fit:cover;border-radius:16px;margin:0 0 16px;">` : ''}
             ${statusHtml}
             <div style="display: flex; gap: 24px; color: #606060; font-size: 14px; padding-bottom: 16px;">
@@ -392,9 +538,64 @@
                 activateReply();
             });
         });
+        communityDetailContent.querySelectorAll('.yt-post-comment-reply-action').forEach(target => {
+            const activateReply = () => {
+                const rootIndex = Number(target.dataset.rootIndex);
+                const rootComment = post.comments?.[rootIndex];
+                if (!rootComment) return;
+                const replyIndex = target.dataset.replyIndex === undefined ? -1 : Number(target.dataset.replyIndex);
+                const replyToName = replyIndex >= 0 ? rootComment.replies?.[replyIndex]?.name : rootComment.name;
+                setYtPostReplyTarget(rootComment, replyToName);
+            };
+            target.addEventListener('click', event => {
+                event.stopPropagation();
+                activateReply();
+            });
+            target.addEventListener('keydown', event => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                activateReply();
+            });
+        });
+        communityDetailContent.querySelectorAll('.yt-post-comment-delete-btn').forEach(button => {
+            const deleteComment = () => {
+                const rootIndex = Number(button.dataset.rootIndex);
+                if (!Array.isArray(post.comments) || rootIndex < 0 || rootIndex >= post.comments.length) return;
+                const rootComment = post.comments[rootIndex];
+                const replyIndex = button.dataset.replyIndex === undefined ? -1 : Number(button.dataset.replyIndex);
+                if (replyIndex >= 0) {
+                    if (!Array.isArray(rootComment.replies) || replyIndex >= rootComment.replies.length) return;
+                    rootComment.replies.splice(replyIndex, 1);
+                } else {
+                    post.comments.splice(rootIndex, 1);
+                }
+                if (currentPostReplyTarget?.rootComment === rootComment) clearYtPostReplyTarget();
+                post.commentsCount = countYtPostComments(post);
+                saveYoutubeData();
+                renderPostComments();
+                refreshYtUserCommunityPosts();
+            };
+            button.addEventListener('click', event => {
+                event.stopPropagation();
+                deleteComment();
+            });
+            button.addEventListener('keydown', event => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                deleteComment();
+            });
+        });
     }
 
-    function addPostCommentMessage(name, text, isUser = false, translationZh = '') {
+    function resolveYtPostReplyRoot(replyTarget) {
+        if (!replyTarget?.rootComment || !currentActivePost) return null;
+        const comments = ensureYtPostCommentsShape(currentActivePost);
+        if (comments.includes(replyTarget.rootComment)) return replyTarget.rootComment;
+        const targetId = replyTarget.rootComment.id;
+        return targetId ? comments.find(comment => comment.id === targetId) || null : null;
+    }
+
+    function addPostCommentMessage(name, text, isUser = false, translationZh = '', options = {}) {
         const container = document.getElementById('yt-post-comments-container');
         if (!container) return;
         
@@ -405,28 +606,35 @@
         if (!currentActivePost.comments) currentActivePost.comments = [];
         
         const effectiveYtUser = getCurrentYtCommunityUser();
-        const newComment = {
+        const rawComment = {
+            id: makeYtPostCommentId(),
             name: name,
             text: text,
+            speakerType: isUser ? 'user' : 'fan',
             avatar: isUser ? effectiveYtUser.avatarUrl || null : null,
             translationZh: isUser ? '' : String(translationZh || '').trim()
         };
+        const newComment = normalizeYtPostCommentEntry(rawComment, currentActivePost.comments.length);
         
-        if (currentPostReplyTarget?.rootComment) {
-            const rootComment = currentPostReplyTarget.rootComment;
+        const replyTarget = options.replyTarget || currentPostReplyTarget;
+        const rootComment = resolveYtPostReplyRoot(replyTarget);
+        const wasReply = !!rootComment;
+        if (wasReply) {
             rootComment.replies = Array.isArray(rootComment.replies) ? rootComment.replies : [];
-            newComment.replyTo = currentPostReplyTarget.replyToName;
+            newComment.replyTo = replyTarget.replyToName;
             rootComment.replies.push(newComment);
         } else {
             currentActivePost.comments.push(newComment);
         }
         currentActivePost.commentsCount = countYtPostComments(currentActivePost);
         if (isUser) currentActivePost.likes = parseYtPostLikeCount(currentActivePost.likes) + 1;
-        clearYtPostReplyTarget();
+        if (options.clearReplyTarget !== false) clearYtPostReplyTarget();
         saveYoutubeData();
 
         // Re-render
         renderPostComments();
+        refreshYtUserCommunityPosts();
+        return { comment: newComment, rootComment, wasReply };
     }
 
     if (postChatSend && postChatInput) {
@@ -435,8 +643,32 @@
             if(!text || !currentActivePost) return;
             
             const effectiveYtUser = getCurrentYtCommunityUser();
-            addPostCommentMessage(effectiveYtUser.name || '我', text, true);
+            const added = addPostCommentMessage(effectiveYtUser.name || '我', text, true);
             postChatInput.value = '';
+            if (added?.wasReply) {
+                const container = document.getElementById('yt-post-comments-container');
+                let loadingId = null;
+                if (container) {
+                    loadingId = 'yt-post-thread-reply-loading';
+                    const loadingDiv = document.createElement('div');
+                    loadingDiv.id = loadingId;
+                    loadingDiv.style.textAlign = 'center';
+                    loadingDiv.style.padding = '10px';
+                    loadingDiv.style.color = '#8e8e93';
+                    loadingDiv.style.fontSize = '12px';
+                    loadingDiv.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> 楼中楼回复生成中...';
+                    container.appendChild(loadingDiv);
+                }
+                try {
+                    await generateYtPostThreadReplies(currentActivePost, added.rootComment, added.comment);
+                } finally {
+                    if (loadingId) {
+                        const el = document.getElementById(loadingId);
+                        if (el) el.remove();
+                    }
+                }
+                return;
+            }
             if (currentActivePost.isUserPost) return;
             
             // Show loading
@@ -549,50 +781,140 @@
         });
     }
 
+    function buildYtPostCommentContext(post, rootComment = null) {
+        const comments = ensureYtPostCommentsShape(post);
+        if (rootComment) {
+            const replies = Array.isArray(rootComment.replies) ? rootComment.replies : [];
+            return [
+                `根评论：${rootComment.name || '观众'}：${rootComment.text || ''}`,
+                `已有楼中楼：${replies.map(reply => `${reply.name || '观众'}${reply.replyTo ? ` 回复 @${reply.replyTo}` : ''}：${reply.text || ''}`).join('\n') || '无'}`
+            ].join('\n');
+        }
+        return comments.slice(0, 30).map(comment => {
+            const replies = Array.isArray(comment.replies) && comment.replies.length > 0
+                ? `\n  楼中楼：${comment.replies.map(reply => `${reply.name || '观众'}${reply.replyTo ? ` 回复 @${reply.replyTo}` : ''}：${reply.text || ''}`).join(' | ')}`
+                : '';
+            return `${comment.name || '观众'}：${comment.text || ''}${replies}`;
+        }).join('\n') || '无';
+    }
+
+    function buildYtPostCharPromptContext() {
+        const chars = getYtPostAvailableChars();
+        if (chars.length === 0) return '无可用 Char';
+        return JSON.stringify(chars.slice(0, 30).map(char => ({
+            speakerId: char.id,
+            name: char.name,
+            persona: char.persona || ''
+        })));
+    }
+
+    function normalizeYtGeneratedPostComments(rawComments, maxCount = 15) {
+        const source = Array.isArray(rawComments) ? rawComments : [];
+        return source.slice(0, maxCount).map((comment, index) => {
+            const raw = typeof comment === 'string'
+                ? { name: `观众${index + 1}`, text: comment }
+                : (comment && typeof comment === 'object' ? comment : {});
+            const text = String(raw.text || raw.content || '').trim();
+            if (!text) return null;
+            return normalizeYtPostCommentEntry({
+                id: makeYtPostCommentId(),
+                speakerType: raw.speakerType || raw.type || '',
+                speakerId: raw.speakerId || raw.charId || raw.imCharId || '',
+                name: raw.name || raw.speakerName || `观众${index + 1}`,
+                avatar: raw.avatar || raw.avatarUrl || '',
+                text,
+                translationZh: raw.translationZh || raw.translation || '',
+                likes: raw.likes
+            }, index);
+        }).filter(Boolean);
+    }
+
+    async function requestYtPostGeneratedComments({ post, mode = 'top', rootComment = null, userReply = null } = {}) {
+        if (!post) throw new Error('NO_POST');
+        if (!window.apiConfig?.endpoint || !window.apiConfig?.apiKey) throw new Error('API_NOT_CONFIGURED');
+        const effectiveUser = getCurrentYtCommunityUser();
+        const wbContext = typeof window.getGlobalWorldBookContext === 'function'
+            ? (window.getGlobalWorldBookContext() || '')
+            : '';
+        const imageContext = post.imageUrl ? (post.imageDescription || '用户未填写图片描述') : '无图片';
+        const existingContext = buildYtPostCommentContext(post, rootComment);
+        const charContext = buildYtPostCharPromptContext();
+        const modeInstruction = mode === 'thread'
+            ? `你正在模拟 YouTube 社群贴文某条评论下的楼中楼讨论。用户刚刚回复了别人：${userReply?.name || effectiveUser.name || 'User'}：${userReply?.text || ''}\n请在同一个楼中楼线程继续生成 10–15 条自然、有差异的后续回复，应该排在用户回复之后。可以有人回应用户、回应根评论、互相补充或跑题闲聊；不要冒充发布者或 User。`
+            : '请为当前贴文继续生成 10–15 条新的顶层评论，参考已有评论但避免重复昵称、重复观点和机械复读。不要冒充发布者或 User。';
+        const prompt = `你要模拟真实 YouTube 社群贴文下的国际化评论区。\n发布者：${effectiveUser.name || '用户'}\n发布者人设：${effectiveUser.persona || '未设置'}\n贴文正文：${post.content}\n图片内容描述：${imageContext}\n世界书：${wbContext || '无'}\n可用 Char 列表：${charContext}\n现有评论上下文：\n${existingContext}\n\n${modeInstruction}\n\n输出规则：\n1. 评论者可以是普通国际观众，也可以是可用 Char 列表中的角色。\n2. 如果使用 Char，speakerType 必须是 "char"，speakerId 必须填写可用 Char 列表里的 speakerId；前端会用真实 Char 名字和头像展示。\n3. 普通观众 speakerType 填 "fan" 或留空，name 使用自然昵称。\n4. YouTube 是国际化平台：text 不是中文时 translationZh 必须提供自然中文翻译；text 是中文时 translationZh 必须为空字符串。\n5. 必须一次返回不少于 10 条，最多 15 条。\n只返回严格 JSON：{"comments":[{"speakerType":"fan或char","speakerId":"Char ID或空字符串","name":"评论者昵称","text":"评论内容","translationZh":"中文翻译或空字符串","likes":0}]}。不要 Markdown。`;
+        let endpoint = window.apiConfig.endpoint.replace(/\/$/, '');
+        if (!endpoint.endsWith('/chat/completions')) endpoint = endpoint.endsWith('/v1') ? `${endpoint}/chat/completions` : `${endpoint}/v1/chat/completions`;
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${window.apiConfig.apiKey}`
+            },
+            body: JSON.stringify({
+                model: window.apiConfig.model || 'gpt-3.5-turbo',
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.9,
+                response_format: { type: 'json_object' }
+            })
+        });
+        if (!response.ok) throw new Error(`API_${response.status}`);
+        const data = await response.json();
+        const rawText = String(data?.choices?.[0]?.message?.content || '').replace(/```json/gi, '').replace(/```/g, '').trim();
+        const parsed = sanitizeObj(JSON.parse(rawText));
+        const rawComments = Array.isArray(parsed?.comments)
+            ? parsed.comments
+            : (Array.isArray(parsed?.replies) ? parsed.replies : (Array.isArray(parsed?.threadReplies) ? parsed.threadReplies : []));
+        const comments = normalizeYtGeneratedPostComments(rawComments, 15);
+        if (comments.length < 10) throw new Error('TOO_FEW_COMMENTS');
+        return comments;
+    }
+
+    function appendYtPostTopLevelComments(post, comments) {
+        if (!post || !Array.isArray(comments)) return 0;
+        ensureYtPostCommentsShape(post);
+        comments.forEach(comment => post.comments.push(comment));
+        post.commentsCount = countYtPostComments(post);
+        post.commentsStatus = 'ready';
+        saveYoutubeData();
+        if (currentActivePost === post && communityDetailView?.classList.contains('active')) renderPostComments();
+        refreshYtUserCommunityPosts();
+        return comments.length;
+    }
+
+    function appendYtPostThreadReplies(post, rootComment, comments, replyToName = '') {
+        if (!post || !rootComment || !Array.isArray(comments)) return 0;
+        const resolvedRoot = resolveYtPostReplyRoot({ rootComment });
+        if (!resolvedRoot) return 0;
+        resolvedRoot.replies = Array.isArray(resolvedRoot.replies) ? resolvedRoot.replies : [];
+        comments.forEach(comment => {
+            comment.replyTo = comment.replyTo || replyToName || '';
+            resolvedRoot.replies.push(comment);
+        });
+        post.commentsCount = countYtPostComments(post);
+        saveYoutubeData();
+        if (currentActivePost === post && communityDetailView?.classList.contains('active')) renderPostComments();
+        refreshYtUserCommunityPosts();
+        return comments.length;
+    }
+
+    async function generateYtPostThreadReplies(post, rootComment, userReply) {
+        try {
+            const comments = await requestYtPostGeneratedComments({ post, mode: 'thread', rootComment, userReply });
+            const added = appendYtPostThreadReplies(post, rootComment, comments, userReply?.name || '');
+            if (added > 0 && window.showToast) window.showToast(`已生成 ${added} 条楼中楼回复`);
+        } catch (error) {
+            console.error('User community post thread replies failed:', error);
+            if (window.showToast) {
+                window.showToast(error?.message === 'API_NOT_CONFIGURED' ? '回复已发送，请先配置 API' : '回复已发送，后续评论生成失败');
+            }
+        }
+    }
+
     async function generateYtUserPostComments(post) {
         try {
-            if (!window.apiConfig?.endpoint || !window.apiConfig?.apiKey) throw new Error('API_NOT_CONFIGURED');
-            const effectiveUser = getCurrentYtCommunityUser();
-            const wbContext = typeof window.getGlobalWorldBookContext === 'function'
-                ? (window.getGlobalWorldBookContext() || '')
-                : '';
-            const imageContext = post.imageUrl ? (post.imageDescription || '用户未填写图片描述') : '无图片';
-            const prompt = `你要模拟真实 YouTube 社群贴文下的国际化评论区。\n发布者：${effectiveUser.name || '用户'}\n发布者人设：${effectiveUser.persona || '未设置'}\n贴文正文：${post.content}\n图片内容描述：${imageContext}\n世界书：${wbContext || '无'}\n\n一次生成 10–15 条自然、有差异的评论。评论者来自不同国家和身份，可以讨论正文、图片、催更、提问或互相呼应；不要让所有人说同一种话。不要冒充发布者。YouTube 是国际化平台：text 不是中文时 translationZh 必须提供自然中文翻译，text 是中文时 translationZh 必须为空字符串。\n只返回严格 JSON：{"comments":[{"name":"评论者昵称","text":"评论内容","translationZh":"中文翻译或空字符串","likes":0}]}。不要 Markdown。`;
-            let endpoint = window.apiConfig.endpoint.replace(/\/$/, '');
-            if (!endpoint.endsWith('/chat/completions')) endpoint = endpoint.endsWith('/v1') ? `${endpoint}/chat/completions` : `${endpoint}/v1/chat/completions`;
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${window.apiConfig.apiKey}`
-                },
-                body: JSON.stringify({
-                    model: window.apiConfig.model || 'gpt-3.5-turbo',
-                    messages: [{ role: 'user', content: prompt }],
-                    temperature: 0.9,
-                    response_format: { type: 'json_object' }
-                })
-            });
-            if (!response.ok) throw new Error(`API_${response.status}`);
-            const data = await response.json();
-            const rawText = String(data?.choices?.[0]?.message?.content || '').replace(/```json/gi, '').replace(/```/g, '').trim();
-            const parsed = sanitizeObj(JSON.parse(rawText));
-            const comments = Array.isArray(parsed?.comments) ? parsed.comments.slice(0, 15).map((comment, index) => {
-                const text = typeof comment === 'string' ? comment.trim() : String(comment?.text || comment?.content || '').trim();
-                if (!text) return null;
-                return {
-                    name: typeof comment === 'string' ? `观众${index + 1}` : String(comment?.name || `观众${index + 1}`).trim(),
-                    text,
-                    translationZh: typeof comment === 'string' ? '' : String(comment?.translationZh || comment?.translation || '').trim(),
-                    likes: Math.max(0, Math.round(Number(comment?.likes) || 0))
-                };
-            }).filter(Boolean) : [];
-            if (comments.length < 10) throw new Error('TOO_FEW_COMMENTS');
-            post.comments = comments;
-            post.commentsCount = comments.length;
-            post.commentsStatus = 'ready';
-            saveYoutubeData();
-            refreshYtUserCommunityPosts();
+            const comments = await requestYtPostGeneratedComments({ post, mode: 'top' });
+            appendYtPostTopLevelComments(post, comments);
         } catch (error) {
             console.error('User community post comments failed:', error);
             post.commentsStatus = 'failed';
@@ -602,6 +924,47 @@
                 window.showToast(error?.message === 'API_NOT_CONFIGURED' ? '贴文已发布，请先配置 API' : '贴文已发布，评论生成失败');
             }
         }
+    }
+
+    async function generateYtPostTopCommentsFromButton() {
+        if (!currentActivePost || ytPostCommentGenerationLocked) return;
+        const post = currentActivePost;
+        setYtPostGenerateButtonLoading(true);
+        post.commentsStatus = 'loading';
+        saveYoutubeData();
+        renderPostComments();
+        try {
+            const comments = await requestYtPostGeneratedComments({ post, mode: 'top' });
+            const added = appendYtPostTopLevelComments(post, comments);
+            if (window.showToast) window.showToast(`已生成 ${added} 条评论`);
+        } catch (error) {
+            console.error('Manual community post comments failed:', error);
+            post.commentsStatus = 'failed';
+            saveYoutubeData();
+            renderPostComments();
+            refreshYtUserCommunityPosts();
+            if (window.showToast) {
+                window.showToast(error?.message === 'API_NOT_CONFIGURED' ? '请先配置 API' : '评论生成失败');
+            }
+        } finally {
+            setYtPostGenerateButtonLoading(false);
+        }
+    }
+
+    if (communityDetailGenerateBtn) {
+        communityDetailGenerateBtn.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            generateYtPostTopCommentsFromButton();
+        });
+    }
+
+    if (communityDetailDeletePostBtn) {
+        communityDetailDeletePostBtn.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            deleteYtActiveCommunityPost();
+        });
     }
 
     if (userPostPublishBtn) {
@@ -616,6 +979,7 @@
                 id: `user_post_${Date.now()}`,
                 isUserPost: true,
                 content,
+                translationZh: '',
                 imageUrl: hasImage ? userPostImagePreview.src : '',
                 imageDescription: hasImage ? (userPostImageDescriptionInput?.value.trim() || '') : '',
                 time: '刚刚',
@@ -1531,6 +1895,7 @@
                 if (!sub.generatedContent.communityPosts) sub.generatedContent.communityPosts = [];
                 sub.generatedContent.communityPosts.unshift({
                     content: `非常荣幸能邀请到 @${effectiveYtUser.name || 'User'} 参与我们的 ${title} 活动！现场返图来啦~ #商业合作`,
+                    translationZh: '',
                     likes: Math.floor(Math.random() * 10) + 1 + '万',
                     time: '刚刚'
                 });
@@ -1552,6 +1917,7 @@
                 if (!sub.generatedContent.communityPosts) sub.generatedContent.communityPosts = [];
                 sub.generatedContent.communityPosts.unshift({
                     content: `今天和 @${effectiveYtUser.name || 'User'} 合作了《${title}》，真是太有趣了，快去看正片！`,
+                    translationZh: '',
                     likes: Math.floor(Math.random() * 5) + 1 + '万',
                     time: '刚刚'
                 });
