@@ -27,6 +27,19 @@
         return obj;
     }
 
+    function normalizeYtGeneratedMessage(value) {
+        if (typeof value === 'string') {
+            return { text: value.trim(), translationZh: '' };
+        }
+        if (!value || typeof value !== 'object') {
+            return { text: '', translationZh: '' };
+        }
+        return {
+            text: String(value.text ?? value.content ?? value.message ?? '').trim(),
+            translationZh: String(value.translationZh ?? value.translation ?? '').trim()
+        };
+    }
+
     function createDefaultYtChannelState() {
         return {
             bannerUrl: null,
@@ -768,6 +781,39 @@
     const msgRefreshBtn = document.getElementById('yt-messages-refresh-btn');
     let currentMsgFilter = 'dm';
 
+    function buildYtIncomingMessageChannelContext() {
+        const activeLive = channelState && channelState.activeUserLive
+            ? {
+                title: channelState.activeUserLive.title || '未命名直播',
+                topic: channelState.activeUserLive.desc || '',
+                guest: channelState.activeUserLive.guest?.name || ''
+            }
+            : null;
+        const pastVideos = Array.isArray(channelState?.pastVideos)
+            ? channelState.pastVideos.slice(0, 5).map(video => ({
+                title: video.title || '未命名视频',
+                description: video.desc || '',
+                publishedAt: video.time || '',
+                representativeComments: Array.isArray(video.comments)
+                    ? video.comments.slice(0, 2).map(comment => comment?.text || '').filter(Boolean)
+                    : []
+            }))
+            : [];
+        const liveSummaries = Array.isArray(channelState?.liveSummaries)
+            ? channelState.liveSummaries.slice(-3).reverse().map(summary => ({
+                title: summary.title || '',
+                content: summary.content || summary.summary || '',
+                highlights: Array.isArray(summary.highlights) ? summary.highlights.slice(0, 3) : []
+            }))
+            : [];
+
+        return JSON.stringify({
+            currentlyLive: activeLive,
+            recentVideos: pastVideos,
+            recentLiveSummaries: liveSummaries
+        }, null, 2);
+    }
+
     if (msgRefreshBtn) {
         msgRefreshBtn.addEventListener('click', async () => {
             if (!window.apiConfig || !window.apiConfig.endpoint || !window.apiConfig.apiKey) {
@@ -802,24 +848,32 @@
                 ? window.getYtEffectiveUserState()
                 : (ytUserState || {});
             const userPersona = effectiveYtUser.persona || '普通用户';
+            const userChannelContext = buildYtIncomingMessageChannelContext();
             
             const filterTypeAtRequest = currentMsgFilter;
             let prompt = '';
             if (filterTypeAtRequest === 'business') {
                 prompt = `仔细阅读我的用户人设，根据我的用户人设生成3-5个**为你量身定制**的商务合作/赞助/联动邀请。
-要求发件人是不同的品牌方、赞助商或希望联动的博主。合作内容必须与我的人设息息相关！
+要求发件人来自不同国家或地区，可以是品牌方、赞助商或希望联动的博主。合作内容必须与我的人设及真实频道内容息息相关。
+每个发件人要有明确身份、沟通风格和惯用语言；允许使用符合其地区和人设的任意语言，整体应体现 YouTube 的国际化用户构成。
+每人先发送2-4条简短自然的文字气泡，再发送商单卡片。不要像统一模板，不要每个人都用相同开场。
 绝对不要使用任何 Emoji 表情符号，句子末尾不要使用句号。
 我的用户人设："${userPersona}"。
 世界观背景：${wbContext}
+我的 YouTube 频道真实内容：${userChannelContext}
+只能引用上述真实频道内容；没有往期视频或直播记录时，不得虚构看过某个具体视频或直播。
+国际化翻译规则：每条文字消息如果 content 不是中文，translationZh 必须填写自然中文翻译；如果 content 是中文，translationZh 必须是空字符串。
 返回严格的JSON格式：
 {
   "users": [
     {
       "name": "发件人名字(必须纯品牌名或频道名，绝对禁止在名字中添加'PR'、'经理'、'负责人'、'官方'等任何后缀！)",
       "avatarDesc": "英文单词描述头像(如: business logo)",
+      "persona": "发件人的身份、地区、性格和沟通风格",
+      "preferredLanguage": "主要使用的语言名称",
       "messages": [
-        { "type": "text", "content": "你好！我们是某某品牌" },
-        { "type": "text", "content": "看了你的内容非常感兴趣" },
+        { "type": "text", "content": "你好！我们是某某品牌", "translationZh": "" },
+        { "type": "text", "content": "We loved your latest stream", "translationZh": "我们很喜欢你最近的直播" },
         { "type": "offer", "offerData": { 
             "title": "游戏试玩推广", 
             "offerType": "填入枚举值: video(定制视频) 或 live(工商直播) 或 post(图文宣发) 或 collab(博主联动)",
@@ -828,7 +882,7 @@
             "rmbAmount": 35000,
             "penalty": "$2000",
             "rmbPenalty": 14000
-          } 
+            } 
         }
       ]
     }
@@ -837,20 +891,27 @@
 注意：每个发件人的 messages 数组中，除了前面的文字寒暄，最后一条必须是 type 为 "offer" 的商单卡片。
 offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算成人民币的金额。只能返回纯JSON。`;
             } else if (filterTypeAtRequest === 'dm') {
-                prompt = `仔细阅读我的用户人设，生成3-5个不同的陌生人、同行或粉丝给你发私信的数据。
-私信内容必须**强烈受我的人设影响**！他们可能是被你的人设吸引，也可能是针对你人设的某些特征来找你搭话。
-绝对不要使用任何 Emoji 表情符号，句子末尾不要使用句号，语气要像真实的活人聊天。
+                prompt = `仔细阅读我的用户人设和频道真实内容，生成3-5个不同国家、身份和语言习惯的陌生人、同行或粉丝给我发 YouTube 私信的数据。
+私信必须像真实活人发来的消息：一句一发，每人2-5条短气泡，语气、断句和熟悉程度各不相同，不要像客服或统一模板。
+他们可以询问我什么时候开播、讨论正在进行的直播、针对真实往期视频或直播内容说具体感受、催更、追问后续，或根据人设自然搭话。不同联系人应选择不同话题，不要全都催更。
+如果频道没有往期视频或直播记录，只能询问首次开播、未来计划或根据人设搭话，绝对不能虚构看过某个具体视频或直播。
+允许使用符合联系人国籍、人设和上下文的任意语言，整体应体现 YouTube 的国际化用户构成。
+绝对不要使用任何 Emoji 表情符号，句子末尾不要使用句号。
 我的用户人设："${userPersona}"。
 世界观背景：${wbContext}
+我的 YouTube 频道真实内容：${userChannelContext}
+国际化翻译规则：每条消息如果 content 不是中文，translationZh 必须填写自然中文翻译；如果 content 是中文，translationZh 必须是空字符串。
 返回严格的JSON格式：
 {
   "users": [
     {
       "name": "陌生人/同行/粉丝名字",
       "avatarDesc": "英文单词描述头像",
+      "persona": "联系人身份、国家或地区、性格以及为什么联系我",
+      "preferredLanguage": "主要使用的语言名称",
       "messages": [
-        { "type": "text", "content": "第一条消息内容" },
-        { "type": "text", "content": "第二条消息内容" }
+        { "type": "text", "content": "第一条中文消息", "translationZh": "" },
+        { "type": "text", "content": "foreign-language message", "translationZh": "这条外语消息的自然中文翻译" }
       ]
     }
   ]
@@ -894,10 +955,12 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
                             name: u.name,
                             handle: u.name.toLowerCase().replace(/\s+/g, ''),
                             avatar: `https://picsum.photos/seed/${u.avatarDesc ? u.avatarDesc.replace(/\s+/g, '') : Date.now()}/80/80?grayscale`,
+                            desc: u.persona || '',
+                            preferredLanguage: u.preferredLanguage || '',
                             isBusiness: isBusiness,
-                            isFriend: false, // 默认都是陌生人，需要手动添加好友
+                            isFriend: false,
                             isSubscribed: false, // 默认未订阅
-                            dmHistory: u.messages.map(m => {
+                            dmHistory: (Array.isArray(u.messages) ? u.messages : []).map(m => {
                                 if (m.type === 'offer') {
                                     return {
                                         type: 'char',
@@ -907,10 +970,12 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
                                         offerStatus: 'pending' // pending, accepted, rejected, completed, failed
                                     };
                                 } else {
+                                    const normalizedMessage = normalizeYtGeneratedMessage(m);
                                     return {
                                         type: 'char',
                                         name: u.name,
-                                        text: m.content || m.text || (typeof m === 'string' ? m : "你好")
+                                        text: normalizedMessage.text || "你好",
+                                        translationZh: normalizedMessage.translationZh
                                     };
                                 }
                             })

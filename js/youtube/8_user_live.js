@@ -75,6 +75,9 @@
 
     if (startUserLiveBtn && userLiveView) {
         startUserLiveBtn.addEventListener('click', () => {
+            if (typeof window.validateUserLiveSelectedGuest === 'function') {
+                window.validateUserLiveSelectedGuest();
+            }
             const titleInput = document.getElementById('yt-user-live-title-input');
             const title = titleInput && titleInput.value ? titleInput.value : '我的直播间';
 
@@ -562,13 +565,14 @@
                 time: '刚刚',
                 thumbnail: userLiveBgUrl || 'https://picsum.photos/seed/user_past/320/180?grayscale',
                 comments: [...userLiveComments],
-                guest: userLiveSelectedGuest 
+                guest: getSelectedUserLiveGuest()
             };
             channelState.pastVideos.unshift(pastVid);
             
             // Sync to Guest Profile
-            if (userLiveSelectedGuest) {
-                const guestSub = mockSubscriptions.find(s => s.id === userLiveSelectedGuest.id);
+            const selectedLiveGuest = getSelectedUserLiveGuest();
+            if (selectedLiveGuest && selectedLiveGuest.guestSource !== 'tiktok-following') {
+                const guestSub = mockSubscriptions.find(s => s.id === selectedLiveGuest.id);
                 if (guestSub) {
                     if (!guestSub.generatedContent) {
                         guestSub.generatedContent = { pastVideos: [], communityPosts: [], currentLive: null, fanGroup: null };

@@ -1176,9 +1176,8 @@
 
 /* User bubbles in messages/group chats */
 .yt-bubble-row.right .yt-bubble-msg {
-    background: #333333;
+    background: #0f0f0f;
     color: #ffffff;
-    border-bottom-right-radius: 8px;
 }
 
 /* Community Post Styles */
@@ -1370,15 +1369,27 @@
     padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 0;
     background-color: #ffffff;
 }
 
 .yt-bubble-row {
     display: flex;
-    margin-bottom: 4px;
+    margin: 0;
     align-items: flex-end; /* Avatar at bottom */
-    max-width: 80%;
+    max-width: 85%;
+}
+
+.yt-bubble-row.yt-bubble-group-start {
+    margin-top: 12px;
+}
+
+.yt-bubble-row.yt-bubble-group-start:first-child {
+    margin-top: 0;
+}
+
+.yt-bubble-row.yt-bubble-compact {
+    margin-top: 3px;
 }
 
 .yt-bubble-row.left {
@@ -1398,6 +1409,10 @@
     flex-shrink: 0;
     background: #f2f2f2;
     margin-bottom: 2px;
+}
+
+.yt-bubble-avatar.yt-bubble-avatar-placeholder {
+    visibility: hidden;
 }
 
 .yt-bubble-avatar img {
@@ -1420,7 +1435,9 @@
 }
 
 .yt-bubble-row.right .yt-bubble-name {
-    display: none;
+    margin-left: 0;
+    margin-right: 4px;
+    text-align: right;
 }
 
 .yt-bubble-msg {
@@ -1437,8 +1454,7 @@
 .yt-bubble-row.left .yt-bubble-msg {
     background-color: #f2f2f7; /* 高级浅灰 */
     color: #000;
-    /* 左侧发言气泡异形圆角，更显扁平高级感 */
-    border-radius: 18px 18px 18px 4px;
+    border-radius: 20px;
 }
 
 /* Remove CSS arrows */
@@ -1450,10 +1466,32 @@
 }
 
 .yt-bubble-row.right .yt-bubble-msg {
-    background-color: #007aff; /* Apple Blue 高级对比色 */
+    background-color: #0f0f0f;
     color: #fff;
-    /* 右侧发言气泡异形圆角 */
-    border-radius: 18px 18px 4px 18px;
+    border-radius: 20px;
+}
+
+.yt-bubble-msg.yt-bubble-translatable {
+    cursor: pointer;
+}
+
+.yt-bubble-translation {
+    display: none;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+    font-size: 13px;
+    line-height: 1.45;
+    color: #606060;
+}
+
+.yt-bubble-row.right .yt-bubble-translation {
+    border-top-color: rgba(255, 255, 255, 0.24);
+    color: rgba(255, 255, 255, 0.82);
+}
+
+.yt-bubble-msg.yt-translation-expanded .yt-bubble-translation {
+    display: block;
 }
 
 

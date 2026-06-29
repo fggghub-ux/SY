@@ -62,6 +62,72 @@
         return ytUserState || {};
     }
 
+    function ytEscapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        }[char]));
+    }
+
+    function normalizeYtChatReply(value) {
+        if (typeof normalizeYtGeneratedMessage === 'function') {
+            return normalizeYtGeneratedMessage(value);
+        }
+        if (typeof value === 'string') return { text: value.trim(), translationZh: '' };
+        return {
+            text: String(value?.text ?? value?.content ?? '').trim(),
+            translationZh: String(value?.translationZh ?? value?.translation ?? '').trim()
+        };
+    }
+
+    function getYtBubbleSpeakerKey(msg) {
+        if (msg?.type === 'user') return 'user';
+        if (msg?.isOffer || msg?.type === 'char') return `char:${msg?.name || currentSubChannelData?.name || ''}`;
+        return `fan:${msg?.name || ''}`;
+    }
+
+    function getYtBubbleGroupState(msg) {
+        const speakerKey = getYtBubbleSpeakerKey(msg);
+        let previousSpeakerKey = '';
+        if (groupChatContainer) {
+            const rows = groupChatContainer.querySelectorAll('.yt-bubble-row[data-yt-speaker-key]');
+            previousSpeakerKey = rows.length > 0 ? rows[rows.length - 1].dataset.ytSpeakerKey || '' : '';
+        }
+        return { speakerKey, isConsecutive: previousSpeakerKey === speakerKey };
+    }
+
+    function getYtBubbleTextMarkup(msg) {
+        const text = ytEscapeHtml(msg?.text || '');
+        const translationZh = String(msg?.translationZh || '').trim();
+        return {
+            className: translationZh ? 'yt-bubble-msg yt-bubble-translatable' : 'yt-bubble-msg',
+            attributes: translationZh ? 'role="button" tabindex="0" aria-expanded="false" aria-label="展开中文翻译"' : '',
+            html: `${text}${translationZh ? `<div class="yt-bubble-translation">${ytEscapeHtml(translationZh)}</div>` : ''}`
+        };
+    }
+
+    function bindYtBubbleTranslation(row) {
+        const bubble = row?.querySelector('.yt-bubble-translatable');
+        if (!bubble) return;
+        const toggle = () => {
+            const isExpanded = bubble.classList.toggle('yt-translation-expanded');
+            bubble.setAttribute('aria-expanded', String(isExpanded));
+            bubble.setAttribute('aria-label', isExpanded ? '收起中文翻译' : '展开中文翻译');
+        };
+        bubble.addEventListener('click', event => {
+            event.stopPropagation();
+            toggle();
+        });
+        bubble.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            toggle();
+        });
+    }
+
     if (communityDetailBackBtn) {
         communityDetailBackBtn.addEventListener('click', () => {
             if (communityDetailView) communityDetailView.classList.remove('active');
@@ -462,32 +528,6 @@
     const dmGoHomeBtn = document.getElementById('yt-dm-go-home-btn');
     const dmClearHistoryBtn = document.getElementById('yt-dm-clear-history-btn');
     const dmDeleteFriendBtn = document.getElementById('yt-dm-delete-friend-btn');
-    
-    // Add "Add Friend" logic
-    let dmAddFriendBtn = document.getElementById('yt-dm-add-friend-btn');
-    if (!dmAddFriendBtn && dmSettingsSheet) {
-        dmAddFriendBtn = document.createElement('div');
-        dmAddFriendBtn.className = 'sheet-action';
-        dmAddFriendBtn.id = 'yt-dm-add-friend-btn';
-        dmAddFriendBtn.style.color = '#007aff';
-        dmAddFriendBtn.style.marginBottom = '10px';
-        dmAddFriendBtn.textContent = '添加好友';
-        
-        // Insert before clear history
-        if (dmClearHistoryBtn) {
-            dmClearHistoryBtn.parentNode.insertBefore(dmAddFriendBtn, dmClearHistoryBtn);
-        }
-        
-        dmAddFriendBtn.addEventListener('click', () => {
-            if (currentSubChannelData && !currentSubChannelData.isFriend) {
-                currentSubChannelData.isFriend = true;
-                saveYoutubeData();
-                if (window.showToast) window.showToast('已添加为好友');
-                if (dmSettingsSheet) dmSettingsSheet.classList.remove('active');
-                renderMessagesList();
-            }
-        });
-    }
 
     if (groupChatSettingsBtn) {
         groupChatSettingsBtn.addEventListener('click', () => {
@@ -496,15 +536,7 @@
             const isDM = groupChatTitle && groupChatTitle.textContent === currentSubChannelData.name;
             
             if (isDM) {
-                if (dmAddFriendBtn) {
-                    if (currentSubChannelData.isFriend) {
-                        dmAddFriendBtn.style.display = 'none';
-                        dmDeleteFriendBtn.style.display = 'block';
-                    } else {
-                        dmAddFriendBtn.style.display = 'block';
-                        dmDeleteFriendBtn.style.display = 'none';
-                    }
-                }
+                if (dmDeleteFriendBtn) dmDeleteFriendBtn.style.display = 'block';
                 if (dmSettingsSheet) dmSettingsSheet.classList.add('active');
             } else {
                 // Group Settings
@@ -584,8 +616,8 @@
     if (dmDeleteFriendBtn) {
         dmDeleteFriendBtn.addEventListener('click', () => {
             window.showCustomModal({
-                title: '删除好友',
-                message: '确定要删除该好友吗？私信记录将被清空。',
+                title: '删除私信',
+                message: '确定要删除该私信吗？聊天记录将被清空。',
                 confirmText: '删除',
                 cancelText: '取消',
                 isDestructive: true,
@@ -599,7 +631,7 @@
                         if (groupChatView) groupChatView.classList.remove('active');
                         
                         renderMessagesList();
-                        if(window.showToast) window.showToast('已删除好友');
+                        if(window.showToast) window.showToast('已删除私信');
                     }
                 }
             });
@@ -879,9 +911,13 @@
         if (!groupChatContainer) return;
 
         const row = document.createElement('div');
+        const groupState = getYtBubbleGroupState(msg);
+        const groupClass = groupState.isConsecutive ? 'yt-bubble-compact' : 'yt-bubble-group-start';
+        const avatarPlaceholder = '<div class="yt-bubble-avatar yt-bubble-avatar-placeholder" aria-hidden="true"></div>';
+        row.dataset.ytSpeakerKey = groupState.speakerKey;
         
         if (msg.isOffer) {
-            row.className = 'yt-bubble-row left';
+            row.className = `yt-bubble-row left ${groupClass}`;
             
             const isAccepted = msg.offerStatus === 'accepted';
             const isRejected = msg.offerStatus === 'rejected';
@@ -896,10 +932,10 @@
             else if (isFailed) { statusText = '已违约'; statusColor = '#8e8e93'; }
 
             row.innerHTML = `
-                <div class="yt-bubble-avatar"><img src="${typeof resolveYtChannelAvatar === 'function' ? resolveYtChannelAvatar(currentSubChannelData) : currentSubChannelData.avatar}"></div>
+                ${groupState.isConsecutive ? avatarPlaceholder : `<div class="yt-bubble-avatar"><img src="${typeof resolveYtChannelAvatar === 'function' ? resolveYtChannelAvatar(currentSubChannelData) : currentSubChannelData.avatar}"></div>`}
                 <div class="yt-bubble-content" style="max-width: 80%;">
-                    <div class="yt-bubble-name">${msg.name}</div>
-                    <div class="yt-offer-bubble" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border: 1px solid rgba(0,0,0,0.08); border-radius: 16px; padding: 12px; cursor: pointer; display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                    ${groupState.isConsecutive ? '' : `<div class="yt-bubble-name">${ytEscapeHtml(msg.name || currentSubChannelData?.name || '')}</div>`}
+                    <div class="yt-offer-bubble" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border: 1px solid rgba(0,0,0,0.08); border-radius: 20px; padding: 12px; cursor: pointer; display: flex; align-items: center; gap: 10px;">
                         <div style="background: #007aff; color: #fff; width: 32px; height: 32px; border-radius: 8px; display: flex; justify-content: center; align-items: center;">
                             <i class="fas fa-file-signature"></i>
                         </div>
@@ -921,53 +957,63 @@
             }, 0);
 
         } else if (msg.type === 'user') {
-            row.className = 'yt-bubble-row right';
+            row.className = `yt-bubble-row right ${groupClass}`;
             const effectiveYtUser = getCurrentYtCommunityUser();
+            const bubble = getYtBubbleTextMarkup(msg);
             row.innerHTML = `
-                <div class="yt-bubble-avatar"><img src="${effectiveYtUser.avatarUrl || 'https://picsum.photos/100'}"></div>
+                ${groupState.isConsecutive ? avatarPlaceholder : `<div class="yt-bubble-avatar"><img src="${effectiveYtUser.avatarUrl || 'https://picsum.photos/100'}"></div>`}
                 <div class="yt-bubble-content">
-                    <div class="yt-bubble-msg">${msg.text}</div>
+                    ${groupState.isConsecutive ? '' : `<div class="yt-bubble-name">${ytEscapeHtml(msg.name || effectiveYtUser.name || '我')}</div>`}
+                    <div class="${bubble.className}" ${bubble.attributes}>${bubble.html}</div>
                 </div>
             `;
         } else if (msg.type === 'char') {
-            row.className = 'yt-bubble-row left';
+            row.className = `yt-bubble-row left ${groupClass}`;
             // isDM check based on Title matching the name
             const isDMContext = groupChatTitle && groupChatTitle.textContent === currentSubChannelData.name;
-            const displayName = isDMContext ? msg.name : `${msg.name} <span style="font-size: 10px; background: rgba(0, 122, 255, 0.1); color: #007aff; padding: 2px 6px; border-radius: 6px; margin-left: 6px; font-weight: 600;">群主</span>`;
+            const safeName = ytEscapeHtml(msg.name || currentSubChannelData?.name || '');
+            const displayName = isDMContext ? safeName : `${safeName} <span style="font-size: 10px; background: rgba(0, 122, 255, 0.1); color: #007aff; padding: 2px 6px; border-radius: 6px; margin-left: 6px; font-weight: 600;">群主</span>`;
             
             let charAvatarSrc = typeof resolveYtChannelAvatar === 'function' ? resolveYtChannelAvatar(currentSubChannelData) : currentSubChannelData.avatar;
+            const bubble = getYtBubbleTextMarkup(msg);
             
             row.innerHTML = `
-                <div class="yt-bubble-avatar" style=""><img src="${charAvatarSrc}"></div>
+                ${groupState.isConsecutive ? avatarPlaceholder : `<div class="yt-bubble-avatar"><img src="${charAvatarSrc}"></div>`}
                 <div class="yt-bubble-content">
-                    <div class="yt-bubble-name" style="color: #1c1c1e; font-weight: 500; display: flex; align-items: center;">${displayName}</div>
-                    <div class="yt-bubble-msg">${msg.text}</div>
+                    ${groupState.isConsecutive ? '' : `<div class="yt-bubble-name" style="color: #1c1c1e; font-weight: 500; display: flex; align-items: center;">${displayName}</div>`}
+                    <div class="${bubble.className}" ${bubble.attributes}>${bubble.html}</div>
                 </div>
             `;
         } else {
-            row.className = 'yt-bubble-row left';
+            row.className = `yt-bubble-row left ${groupClass}`;
             let hash = 0;
-            for (let i = 0; i < msg.name.length; i++) hash = msg.name.charCodeAt(i) + ((hash << 5) - hash);
+            const fanName = String(msg.name || '粉丝');
+            for (let i = 0; i < fanName.length; i++) hash = fanName.charCodeAt(i) + ((hash << 5) - hash);
             const color = '#' + (hash & 0x00FFFFFF).toString(16).padStart(6, '0');
+            const bubble = getYtBubbleTextMarkup(msg);
             
             row.innerHTML = `
-                <div class="yt-bubble-avatar" style="background-color: ${color}; display: flex; justify-content: center; align-items: center; color: white; font-size: 14px; font-weight: bold;">
-                    ${msg.name.substring(0, 1)}
-                </div>
+                ${groupState.isConsecutive ? avatarPlaceholder : `<div class="yt-bubble-avatar" style="background-color: ${color}; display: flex; justify-content: center; align-items: center; color: white; font-size: 14px; font-weight: bold;">${ytEscapeHtml(fanName.substring(0, 1))}</div>`}
                 <div class="yt-bubble-content">
-                    <div class="yt-bubble-name">${msg.name}</div>
-                    <div class="yt-bubble-msg">${msg.text}</div>
+                    ${groupState.isConsecutive ? '' : `<div class="yt-bubble-name">${ytEscapeHtml(fanName)}</div>`}
+                    <div class="${bubble.className}" ${bubble.attributes}>${bubble.html}</div>
                 </div>
             `;
         }
 
         groupChatContainer.appendChild(row);
+        bindYtBubbleTranslation(row);
         groupChatContainer.scrollTop = groupChatContainer.scrollHeight;
     }
 
     if (groupChatSendBtn && groupChatInput) {
         groupChatSendBtn.addEventListener('click', () => {
             sendGroupChatMessageOnly(groupChatInput.value.trim());
+        });
+        groupChatSendBtn.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            groupChatSendBtn.click();
         });
         
         window.mobileInputCompat?.register({
@@ -983,6 +1029,11 @@
     if (groupChatApiBtn && groupChatInput) {
         groupChatApiBtn.addEventListener('click', () => {
             triggerGroupChatAPI('');
+        });
+        groupChatApiBtn.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            groupChatApiBtn.click();
         });
     }
 
@@ -1004,7 +1055,7 @@
             addGroupChatMessageToUI(userMsg);
             if(groupChatInput) groupChatInput.value = '';
         } else {
-            isUserMsg = targetHistory.some(m => m.type === 'user');
+            isUserMsg = targetHistory[targetHistory.length - 1]?.type === 'user';
         }
 
         isGroupChatLoading = true;
@@ -1051,7 +1102,8 @@
                 if (char.isBusiness) {
                     contextAddon = `\n注意：当前是商务私信，你扮演品牌方/赞助商（"${char.name}"）。如果用户刚刚接取了你的商单（发了同意接取之类的话），你需要表现出感谢并回复准备对接细节/合同；如果用户婉拒了，则礼貌回应。`;
                 }
-                instructionStr = `这是一对一私信。用户刚刚发送了消息（如果上面是用户潜水，则代表没有新消息），请你作为"${char.name}"，直接对用户"${effectiveYtUser.name || '我'}"进行私信回复，语气要自然。${contextAddon}`;
+                const languageHint = char.preferredLanguage ? `优先保持联系人此前的惯用语言：${char.preferredLanguage}。` : '';
+                instructionStr = `这是一对一私信。${isUserMsg ? '用户刚刚发送了消息，请自然承接最后一条内容。' : '用户没有发送新消息，请基于聊天上下文自然主动继续话题。'}请你作为"${char.name}"，直接对用户"${effectiveYtUser.name || '我'}"进行私信回复，保持真实活人的短消息节奏。${languageHint}${contextAddon}`;
             }
 
             let promptStr = channelState.groupChatPrompt || defaultGroupChatPrompt;
@@ -1066,6 +1118,7 @@
                 .replace(/{wb_context}/g, wbContext)
                 .replace(/{chat_history}/g, historyStr)
                 .replace(/{trigger_instruction}/g, instructionStr);
+            finalPrompt += `\n\n【国际化输出协议｜不可省略】\n- 每条回复必须是对象 {"text":"原文","translationZh":"中文翻译或空字符串"}。\n- text 不是中文时，translationZh 必须填写该条原文的自然中文翻译；text 是中文时，translationZh 必须是空字符串。\n- charReplies 必须是上述对象数组；otherFansReplies 中每项必须包含 name、text、translationZh。\n- 只返回合法 JSON，不要 Markdown。`;
 
             let endpoint = window.apiConfig.endpoint;
             if(endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
@@ -1099,7 +1152,14 @@
             if (!isDM && responseObj.otherFansReplies && Array.isArray(responseObj.otherFansReplies)) {
                 responseObj.otherFansReplies.forEach((reply, i) => {
                     setTimeout(() => {
-                        const fanMsg = { type: 'fan', name: reply.name, text: reply.text };
+                        const normalizedReply = normalizeYtChatReply(reply);
+                        if (!normalizedReply.text) return;
+                        const fanMsg = {
+                            type: 'fan',
+                            name: reply?.name || '粉丝',
+                            text: normalizedReply.text,
+                            translationZh: normalizedReply.translationZh
+                        };
                         targetHistory.push(fanMsg);
                         saveYoutubeData();
                         addGroupChatMessageToUI(fanMsg);
@@ -1118,8 +1178,14 @@
             
             replies.forEach((replyText, index) => {
                 setTimeout(() => {
-                    if (replyText) {
-                        const charMsg = { type: 'char', name: char.name, text: replyText };
+                    const normalizedReply = normalizeYtChatReply(replyText);
+                    if (normalizedReply.text) {
+                        const charMsg = {
+                            type: 'char',
+                            name: char.name,
+                            text: normalizedReply.text,
+                            translationZh: normalizedReply.translationZh
+                        };
                         targetHistory.push(charMsg);
                         saveYoutubeData();
                         addGroupChatMessageToUI(charMsg);

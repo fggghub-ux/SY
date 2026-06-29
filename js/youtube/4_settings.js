@@ -34,17 +34,21 @@ var defaultGroupChatPrompt = `你要扮演的是 YouTube 频道的专属粉丝�
 请根据群聊上下文生成社群里活泼自然的聊天记录。
 只返回严格 JSON：
 {
-  "charReplies": ["群主发的消息1", "群主发的消息2"],
+  "charReplies": [
+    {"text": "群主发的消息1", "translationZh": ""},
+    {"text": "foreign-language reply", "translationZh": "这条外语回复的自然中文翻译"}
+  ],
   "otherFansReplies": [
-    {"name": "粉丝A", "text": "第一句话"},
-    {"name": "粉丝A", "text": "第二句话"},
-    {"name": "粉丝B", "text": "另一句消息"}
+    {"name": "粉丝A", "text": "第一句话", "translationZh": ""},
+    {"name": "粉丝A", "text": "第二句话", "translationZh": ""},
+    {"name": "粉丝B", "text": "another message", "translationZh": "另一句消息"}
   ]
 }
 要求：
 1. 生成 1-3 条群主的消息气泡。
 2. 生成 3-8 个粉丝的话，一个粉丝可以连发 2-5 条消息（通过生成多条同 name 的对象来实现）。
-3. 不要使用 Markdown，不要 emoji，回复必须符合真实粉丝群的氛围，粉丝的语气可以有吹捧、调侃、讨论等多种自然表现。`;
+3. 不要使用 Markdown，不要 emoji，回复必须符合真实粉丝群的氛围，粉丝的语气可以有吹捧、调侃、讨论等多种自然表现。
+4. YouTube 是国际化平台，回复可以使用符合角色国籍、人设和上下文的任意语言；text 不是中文时必须填写 translationZh 自然中文翻译，text 是中文时 translationZh 必须为空字符串。`;
 
 var defaultVODPrompt = `你正在扮演 YouTube 频道 {char}。
 频道人设：{char_persona}

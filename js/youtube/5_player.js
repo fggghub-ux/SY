@@ -37,7 +37,32 @@
     const ytUserLiveGuestName = document.getElementById('yt-user-live-guest-name');
     let userLiveSelectedGuest = null;
 
-    function renderGuestPicker(onSelect) {
+    function getFollowedTkLiveGuests() {
+        const chars = Array.isArray(window.tkState?.chars) ? window.tkState.chars : [];
+        return chars.filter(char => char && char.isFollowed === true).map(char => ({
+            id: char.id,
+            name: char.name || char.handle || '未命名 Char',
+            avatar: window.tkResolveAvatar
+                ? window.tkResolveAvatar(char.id, char.name || char.handle, char.avatar)
+                : (char.avatar || ''),
+            desc: char.persona || char.bio || '',
+            persona: char.persona || '',
+            status: char.status || '',
+            guestSource: 'tiktok-following'
+        }));
+    }
+
+    function validateUserLiveSelectedGuest() {
+        if (!userLiveSelectedGuest) return null;
+        const stillFollowed = getFollowedTkLiveGuests().find(char => String(char.id) === String(userLiveSelectedGuest.id));
+        userLiveSelectedGuest = stillFollowed || null;
+        if (ytUserLiveGuestName) ytUserLiveGuestName.value = userLiveSelectedGuest ? userLiveSelectedGuest.name : '无';
+        return userLiveSelectedGuest;
+    }
+
+    window.validateUserLiveSelectedGuest = validateUserLiveSelectedGuest;
+
+    function renderGuestPicker(onSelect, source = 'youtube-subscriptions') {
         if (!ytGuestList) return;
         ytGuestList.innerHTML = '';
 
@@ -51,23 +76,31 @@
         });
         ytGuestList.appendChild(noneItem);
 
-        // Subscriptions as options
-        mockSubscriptions.forEach(sub => {
+        const guestOptions = source === 'tiktok-following'
+            ? getFollowedTkLiveGuests()
+            : mockSubscriptions;
+
+        guestOptions.forEach(sub => {
             // Avoid selecting self
             if (currentSubChannelData && sub.id === currentSubChannelData.id) return;
             if (ytUserState && sub.name === ytUserState.name) return;
-            const avatarUrl = typeof resolveYtChannelAvatar === 'function'
+            const avatarUrl = source === 'tiktok-following'
+                ? (sub.avatar || `https://picsum.photos/seed/${encodeURIComponent(sub.id || sub.name)}/80/80`)
+                : (typeof resolveYtChannelAvatar === 'function'
                 ? resolveYtChannelAvatar(sub)
-                : (sub.avatar || 'https://picsum.photos/80/80?grayscale');
+                : (sub.avatar || 'https://picsum.photos/80/80?grayscale'));
+            const detailText = source === 'tiktok-following'
+                ? (sub.status || sub.persona || '已关注 Char')
+                : `${sub.subs || '0'} 订阅者`;
 
             const item = document.createElement('div');
             item.className = 'account-card';
             item.innerHTML = `
                 <div class="account-content">
-                    <div class="account-avatar"><img src="${avatarUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"></div>
-                    <div class="account-info">
-                        <div class="account-name">${sub.name}</div>
-                        <div class="account-detail">${sub.subs || '0'} 订阅者</div>
+                        <div class="account-avatar"><img src="${avatarUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"></div>
+                        <div class="account-info">
+                            <div class="account-name">${sub.name}</div>
+                            <div class="account-detail">${detailText}</div>
                     </div>
                 </div>
             `;
@@ -91,7 +124,7 @@
             renderGuestPicker((selectedSub) => {
                 tempGuestData = selectedSub;
                 if (ytEditVideoGuestName) {
-                    ytEditVideoGuestName.textContent = selectedSub ? selectedSub.name : '无';
+                    ytEditVideoGuestName.value = selectedSub ? selectedSub.name : '无';
                 }
             });
             ytGuestPickerSheet.classList.add('active');
@@ -103,9 +136,9 @@
             renderGuestPicker((selectedSub) => {
                 userLiveSelectedGuest = selectedSub;
                 if (ytUserLiveGuestName) {
-                    ytUserLiveGuestName.textContent = selectedSub ? selectedSub.name : '无';
+                    ytUserLiveGuestName.value = selectedSub ? selectedSub.name : '无';
                 }
-            });
+            }, 'tiktok-following');
             ytGuestPickerSheet.classList.add('active');
         });
     }
@@ -125,7 +158,7 @@
                     // Set temp guest data
                     tempGuestData = currentVideoData.guest || null;
                     if(ytEditVideoGuestName) {
-                        ytEditVideoGuestName.textContent = tempGuestData ? tempGuestData.name : '无';
+                        ytEditVideoGuestName.value = tempGuestData ? tempGuestData.name : '无';
                     }
 
                     ytEditVideoSheet.classList.add('active');
