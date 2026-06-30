@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="bstage-header">
             <div class="bstage-logo" id="bstage-back-btn">b.stage</div>
             <div class="bstage-header-right">
-                <i class="fas fa-search bstage-icon-btn"></i>
+                <i class="fas fa-search bstage-icon-btn" id="bstage-search-generate-btn"></i>
                 <i class="fas fa-cog bstage-icon-btn" id="bstage-global-settings-btn"></i>
                 <div class="bstage-avatar-placeholder" id="bstage-header-profile-container"><i class="fas fa-user"></i></div>
             </div>
@@ -68,16 +68,67 @@ document.addEventListener('DOMContentLoaded', () => {
             <!-- Messages go here -->
         </div>
         <div class="bstage-chat-input-area">
-            <div class="bstage-chat-input-wrapper">
-                <input type="text" placeholder="Send a message..." style="color: #fff; background-color: transparent; border: none; outline: none;">
-                <div id="bstage-magic-btn" style="width: 28px; height: 28px; border-radius: 50%; background: #444; display: flex; justify-content: center; align-items: center; cursor: pointer; margin-right: 8px;">
-                    <i class="fas fa-magic" style="color: #fff; font-size: 14px;"></i>
+            <div class="bstage-reply-preview" id="bstage-chat-reply-preview" style="display:none;">
+                <div class="bstage-reply-preview-content">
+                    <div class="bstage-reply-preview-label">正在回复</div>
+                    <div class="bstage-reply-preview-text" id="bstage-chat-reply-preview-text"></div>
                 </div>
-                <i class="fas fa-paper-plane" style="color: #007aff;"></i>
+                <div class="bstage-reply-preview-close" id="bstage-chat-reply-cancel-btn" role="button" tabindex="0" aria-label="取消回复" title="取消回复">
+                    <i class="fas fa-times"></i>
+                </div>
+            </div>
+            <div class="bstage-chat-input-wrapper">
+                <input type="text" id="bstage-chat-input" placeholder="Send a message..." style="color: #fff; background-color: transparent; border: none; outline: none;">
+                <div id="bstage-chat-send-btn" class="bstage-chat-action-btn bstage-chat-send-btn" role="button" tabindex="0" aria-label="发送消息" title="发送消息">
+                    <i class="fas fa-paper-plane"></i>
+                </div>
+                <div id="bstage-chat-api-btn" class="bstage-chat-action-btn bstage-chat-api-btn" role="button" tabindex="0" aria-label="调用 API" title="调用 API">
+                    <i class="fas fa-arrow-down"></i>
+                </div>
             </div>
         </div>
     `;
     document.getElementById('app').appendChild(bstageChatView);
+
+    // Fan Chat View
+    const bstageFanChatView = document.createElement('div');
+    bstageFanChatView.className = 'app-view bstage-chat-view bstage-fan-chat-view';
+    bstageFanChatView.id = 'bstage-fan-chat-view';
+    bstageFanChatView.style.backgroundColor = '#1c1c1e';
+    bstageFanChatView.innerHTML = `
+        <div class="bstage-header chat-header" style="background-color: transparent;">
+            <div class="bstage-icon-btn" id="bstage-fan-chat-back-btn"><i class="fas fa-chevron-left"></i></div>
+            <div class="bstage-chat-header-info">
+                <div class="bstage-chat-name" id="bstage-fan-chat-name">粉丝聊天室</div>
+                <div class="bstage-chat-days" id="bstage-fan-chat-subtitle">已订阅 0 人</div>
+            </div>
+            <div class="bstage-icon-btn" id="bstage-fan-chat-menu-btn"><i class="fas fa-bars"></i></div>
+        </div>
+        <div class="bstage-chat-content" id="bstage-fan-chat-content">
+            <!-- Fan messages go here -->
+        </div>
+        <div class="bstage-chat-input-area">
+            <div class="bstage-reply-preview" id="bstage-fan-chat-reply-preview" style="display:none;">
+                <div class="bstage-reply-preview-content">
+                    <div class="bstage-reply-preview-label">正在回复</div>
+                    <div class="bstage-reply-preview-text" id="bstage-fan-chat-reply-preview-text"></div>
+                </div>
+                <div class="bstage-reply-preview-close" id="bstage-fan-chat-reply-cancel-btn" role="button" tabindex="0" aria-label="取消回复" title="取消回复">
+                    <i class="fas fa-times"></i>
+                </div>
+            </div>
+            <div class="bstage-chat-input-wrapper">
+                <input type="text" id="bstage-fan-chat-input" placeholder="对粉丝说点什么..." style="color: #fff; background-color: transparent; border: none; outline: none;">
+                <div id="bstage-fan-chat-send-btn" class="bstage-chat-action-btn bstage-chat-send-btn" role="button" tabindex="0" aria-label="发送消息" title="发送消息">
+                    <i class="fas fa-paper-plane"></i>
+                </div>
+                <div id="bstage-fan-chat-api-btn" class="bstage-chat-action-btn bstage-chat-api-btn" role="button" tabindex="0" aria-label="调用 API" title="调用 API">
+                    <i class="fas fa-arrow-down"></i>
+                </div>
+            </div>
+        </div>
+    `;
+    document.getElementById('app').appendChild(bstageFanChatView);
 
     // Global Settings Modal
     const globalSettingsModal = document.createElement('div');
@@ -112,6 +163,35 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
     `;
     document.getElementById('app').appendChild(globalSettingsModal);
+
+    // Search Generate Modal
+    const searchGenerateModal = document.createElement('div');
+    searchGenerateModal.className = 'bottom-sheet-overlay detail-sheet-overlay';
+    searchGenerateModal.id = 'bstage-search-generate-modal';
+    searchGenerateModal.style.zIndex = '1200';
+    searchGenerateModal.innerHTML = `
+        <div class="bottom-sheet bstage-search-generate-sheet" style="background: #1c1c1e; color: #fff;">
+            <div class="sheet-handle" style="background-color: #444;"></div>
+            <div class="sheet-title" style="color: #fff;">搜索生成团队</div>
+            <div class="detail-sheet-content bstage-modal-content">
+                <div class="bstage-search-generate-hint">输入想搜索的团队或明星，AI 会按内容生成团队资料和成员设定；留空则随机生成。</div>
+                <div class="bstage-search-form">
+                    <label class="bstage-search-label" for="bstage-search-query-input">搜索内容</label>
+                    <input type="text" id="bstage-search-query-input" class="bstage-search-input" placeholder="例如：韩系男团、清冷女演员、摇滚乐队；留空随机">
+                </div>
+                <div class="bstage-search-form">
+                    <label class="bstage-search-label" for="bstage-search-member-count">团队人数</label>
+                    <input type="number" id="bstage-search-member-count" class="bstage-search-input" value="1" min="1" max="12" step="1" inputmode="numeric">
+                </div>
+                <div id="bstage-search-loading" class="bstage-search-loading" style="display:none;">
+                    <i class="fas fa-spinner"></i>
+                    <span>正在生成团队...</span>
+                </div>
+                <div class="sheet-action confirm-action bstage-search-confirm-btn" id="bstage-search-confirm-btn" style="background-color: #fff; color: #000;">生成团队</div>
+            </div>
+        </div>
+    `;
+    document.getElementById('app').appendChild(searchGenerateModal);
 
     // Create Modals
     const createTeamSheet = document.createElement('div');
@@ -305,9 +385,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div class="bstage-profile-btn" id="bstage-my-orders-btn" style="background-color: #2c2c2e; color: #fff; border: none;">
                         <i class="fas fa-receipt"></i> 我的订单
-                    </div>
-                    <div class="bstage-profile-btn" id="bstage-my-chatroom-btn" style="background-color: #2c2c2e; color: #fff; border: none; grid-column: span 2;">
-                        <i class="fas fa-comments"></i> 粉丝聊天室
                     </div>
                 </div>
             </div>
@@ -577,6 +654,78 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
     document.getElementById('app').appendChild(chatDetailSheet);
 
+    // Fan Chat Detail Sheet
+    const fanChatDetailSheet = document.createElement('div');
+    fanChatDetailSheet.className = 'bottom-sheet-overlay detail-sheet-overlay';
+    fanChatDetailSheet.id = 'bstage-fan-chat-detail-sheet';
+    fanChatDetailSheet.style.zIndex = '1200';
+    fanChatDetailSheet.innerHTML = `
+        <div class="bottom-sheet" style="height: 90%; background: #1c1c1e; color: #fff;">
+            <div class="sheet-handle" style="background-color: #444;"></div>
+            <div class="detail-sheet-content bstage-modal-content" style="padding: 0;">
+                <div style="text-align: center; padding: 20px 0;">
+                    <div id="bstage-fan-detail-avatar-container" style="width: 80px; height: 80px; border-radius: 50%; background-color: #2c2c2e; margin: 0 auto 10px; overflow: hidden; border: 1px solid #333; display: flex; justify-content: center; align-items: center;">
+                        <img id="bstage-fan-detail-avatar" src="" style="width: 100%; height: 100%; object-fit: cover; display: none;">
+                        <i class="fas fa-user-friends" id="bstage-fan-detail-avatar-icon" style="font-size: 28px; color: #aaa;"></i>
+                    </div>
+                    <h2 style="font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 5px;" id="bstage-fan-detail-name">粉丝聊天室</h2>
+                    <div style="font-size: 13px; color: #aaa; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                        <i class="fas fa-heart" style="color: #ff3b30;"></i>
+                        <span id="bstage-fan-detail-subscribers">已订阅 0 人</span>
+                    </div>
+                </div>
+
+                <div class="bstage-settings-list">
+                    <div class="bstage-setting-item">
+                        <div class="bstage-setting-icon"><i class="fas fa-image"></i></div>
+                        <div class="bstage-setting-label" id="bstage-fan-setting-bg" style="flex:1;">背景设定</div>
+                        <div class="bstage-setting-right-action" id="bstage-fan-reset-bg-btn" style="color: #aaa;">重置</div>
+                        <input type="file" id="bstage-fan-chat-bg-input" accept="image/*" style="display:none;">
+                    </div>
+
+                    <div class="bstage-setting-item">
+                        <div class="bstage-setting-icon"><i class="fas fa-paint-brush"></i></div>
+                        <div class="bstage-setting-label" style="flex:1;">界面 CSS</div>
+                        <select id="bstage-fan-chat-css-select" style="background: #2c2c2e; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 4px; width: 120px; outline: none;">
+                            <option value="">默认</option>
+                        </select>
+                    </div>
+
+                    <div class="bstage-setting-item">
+                        <div class="bstage-setting-icon"><i class="fas fa-comment-dots"></i></div>
+                        <div class="bstage-setting-label" style="flex:1;">气泡 CSS</div>
+                        <select id="bstage-fan-bubble-css-select" style="background: #2c2c2e; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 4px; width: 120px; outline: none;">
+                            <option value="">默认</option>
+                        </select>
+                    </div>
+
+                    <div class="bstage-setting-item">
+                        <div class="bstage-setting-icon"><i class="fas fa-history"></i></div>
+                        <div class="bstage-setting-label" style="flex: 1;">上下文携带</div>
+                        <input type="number" id="bstage-fan-context-count" value="50" style="width: 50px; background: transparent; border: 1px solid #444; color: #fff; text-align: center; border-radius: 4px; margin-right: 10px;">
+                        <div class="bstage-switch active" id="bstage-fan-context-switch">
+                            <div class="bstage-switch-knob"></div>
+                        </div>
+                    </div>
+
+                    <div class="bstage-setting-item">
+                        <div class="bstage-setting-icon"><i class="fas fa-language"></i></div>
+                        <div class="bstage-setting-label" style="flex: 1;">实时翻译</div>
+                        <div class="bstage-switch" id="bstage-fan-trans-switch">
+                            <div class="bstage-switch-knob"></div>
+                        </div>
+                    </div>
+
+                    <div class="bstage-setting-item" style="color: #ff3b30;" id="bstage-fan-chat-clear-btn">
+                        <div class="bstage-setting-icon" style="color: #ff3b30 !important;"><i class="fas fa-trash-alt"></i></div>
+                        <div class="bstage-setting-label" style="color: #ff3b30 !important;">清空聊天</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    document.getElementById('app').appendChild(fanChatDetailSheet);
+
     // Locker Modal (See All Photos)
     const lockerModal = document.createElement('div');
     lockerModal.className = 'bottom-sheet-overlay detail-sheet-overlay';
@@ -615,7 +764,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="bstage-video-detail-meta" id="bstage-vid-detail-meta">Views • Date</div>
                         
                         <div class="bstage-publisher-row">
-                            <img class="bstage-publisher-avatar" id="bstage-vid-publisher-avatar" src="">
+                            <div class="bstage-publisher-avatar" id="bstage-vid-publisher-avatar"></div>
                             <div class="bstage-publisher-name" id="bstage-vid-publisher-name">Team Name</div>
                             <div class="bstage-small-magic-btn" id="bstage-video-detail-magic-btn" style="margin-left: auto;">
                                 <i class="fas fa-magic"></i>
@@ -696,11 +845,16 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentEditingMember = null; // Track member being edited
     let currentPopSubMember = null;
     let currentChatMember = null; // Track current chat member
+    let pendingChatReply = null;
+    let pendingFanReply = null;
     let isTranslationEnabled = false; // Translation State
     let isContextEnabled = true; // Context State
     let contextMessageCount = 50; // Context Message Count
     let userMsgCountSinceLastReply = 0; // POP logic: resets on char reply
     let bstageOrders = []; // { id, title, price, date, type }
+    let bstageFanChatHistory = []; // { type, isUser, text, name, avatar, timestamp }
+    let bstageFanChatSettings = { chatBg: null, chatCssId: '', bubbleCssId: '' };
+    let bstageUserTeamState = { id: '__bstage_user_team__', isUserTeam: true, isSubscribed: true };
     let chatPhotos = []; // List of photo URLs for the current chat/team (Simplified as global for now)
     let contentCarouselInterval = null; // To track auto-rotation
     let bstagePresets = {
@@ -740,6 +894,280 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function normalizeChatCompletionsEndpoint(endpoint) {
+        let nextEndpoint = String(endpoint || '').trim();
+        if (nextEndpoint.endsWith('/')) nextEndpoint = nextEndpoint.slice(0, -1);
+        if (!nextEndpoint.endsWith('/chat/completions')) {
+            nextEndpoint = nextEndpoint.endsWith('/v1') ? `${nextEndpoint}/chat/completions` : `${nextEndpoint}/v1/chat/completions`;
+        }
+        return nextEndpoint;
+    }
+
+    function stripGeneratedText(value, fallback = '') {
+        return String(value || fallback || '').replace(/[<>]/g, '').trim();
+    }
+
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function createImageSeed(prefix = 'bstage') {
+        return encodeURIComponent(`${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    }
+
+    const bstageEmojiAvatars = ['😀', '😎', '🥳', '🤩', '😊', '😺', '🌟', '✨', '🎤', '🎧', '🎵', '🎸', '💿', '📀', '🎬', '📸', '🌈', '🔥', '💜', '💙', '🍒', '🍓', '🍑', '🍋', '🍀', '🌙', '☀️', '⭐', '🪩', '🫶'];
+
+    function hashBstageString(value) {
+        const text = String(value || 'bstage');
+        let hash = 0;
+        for (let i = 0; i < text.length; i++) {
+            hash = ((hash << 5) - hash) + text.charCodeAt(i);
+            hash |= 0;
+        }
+        return Math.abs(hash);
+    }
+
+    function getStableEmojiAvatar(seed) {
+        return bstageEmojiAvatars[hashBstageString(seed) % bstageEmojiAvatars.length];
+    }
+
+    function isBstageRandomAvatar(value) {
+        return /^https:\/\/i\.pravatar\.cc\//.test(String(value || ''));
+    }
+
+    function ensureEmojiAvatar(entity, seed) {
+        if (!entity || typeof entity !== 'object') return getStableEmojiAvatar(seed);
+        if (!entity.avatarEmoji) entity.avatarEmoji = getStableEmojiAvatar(seed || entity.name || entity.id || entity.timestamp || 'bstage');
+        return entity.avatarEmoji;
+    }
+
+    function renderBstageAvatar(entity, label = 'User', className = '') {
+        const avatar = entity && entity.avatar ? String(entity.avatar) : '';
+        if (avatar && !isBstageRandomAvatar(avatar)) {
+            return `<img class="${escapeHtml(className)}" src="${escapeHtml(avatar)}" alt="">`;
+        }
+        const emoji = ensureEmojiAvatar(entity, label);
+        return `<div class="${escapeHtml(className)} bstage-emoji-avatar" aria-label="${escapeHtml(label)}">${escapeHtml(emoji)}</div>`;
+    }
+
+    function renderBstageAvatarContent(entity, label = 'User') {
+        const avatar = entity && entity.avatar ? String(entity.avatar) : '';
+        if (avatar && !isBstageRandomAvatar(avatar)) {
+            return `<img src="${escapeHtml(avatar)}" alt="">`;
+        }
+        return `<span class="bstage-emoji-avatar-text">${escapeHtml(ensureEmojiAvatar(entity, label))}</span>`;
+    }
+
+    function isUserTeam(team) {
+        return !!team && (team.isUserTeam || team.id === '__bstage_user_team__');
+    }
+
+    function getBstageUserTeam() {
+        const userName = window.userState && window.userState.name ? window.userState.name : 'User';
+        const userAvatar = window.userState && window.userState.avatarUrl ? window.userState.avatarUrl : null;
+        bstageUserTeamState.id = '__bstage_user_team__';
+        bstageUserTeamState.isUserTeam = true;
+        bstageUserTeamState.isSubscribed = true;
+        bstageUserTeamState.name = userName;
+        bstageUserTeamState.desc = window.userState && window.userState.persona ? window.userState.persona : 'User 官方空间';
+        bstageUserTeamState.avatar = userAvatar;
+        bstageUserTeamState.avatarEmoji = bstageUserTeamState.avatarEmoji || getStableEmojiAvatar(`bstage-user-team-${userName}`);
+        bstageUserTeamState.members = [{
+            id: '__bstage_user_member__',
+            isUserMember: true,
+            name: userName,
+            role: window.userState && window.userState.persona ? window.userState.persona : 'User',
+            avatar: userAvatar,
+            avatarEmoji: bstageUserTeamState.avatarEmoji,
+            isSubscribed: true,
+            subStartDate: Date.now()
+        }];
+        return bstageUserTeamState;
+    }
+
+    function createExternalBackground(seed) {
+        return `https://picsum.photos/seed/${encodeURIComponent(seed)}/900/1200`;
+    }
+
+    function createExternalRandomImage(seed, width = 800, height = 800) {
+        return `https://picsum.photos/seed/${encodeURIComponent(seed)}/${width}/${height}`;
+    }
+
+    function createBstageMessageId(prefix = 'msg') {
+        return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    }
+
+    function ensureMessageId(msg, prefix = 'msg') {
+        if (!msg || typeof msg !== 'object') return '';
+        if (!msg.id) msg.id = `${prefix}_${msg.timestamp || Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        return msg.id;
+    }
+
+    function getMessageSummary(msg) {
+        if (!msg) return '';
+        const raw = msg.type === 'image' ? `[图片] ${msg.imgDesc || msg.description || ''}` : (msg.text || '');
+        const text = stripGeneratedText(raw, msg.type === 'image' ? '[图片]' : '');
+        return text.length > 64 ? `${text.slice(0, 64)}...` : text;
+    }
+
+    function createReplyMeta(msg, speaker) {
+        if (!msg) return null;
+        return {
+            id: ensureMessageId(msg, msg.isUser ? 'user' : 'ai'),
+            speaker: stripGeneratedText(speaker, msg.isUser ? 'User' : 'AI'),
+            text: getMessageSummary(msg),
+            isUser: !!msg.isUser
+        };
+    }
+
+    function renderReplyQuote(replyTo) {
+        if (!replyTo || !replyTo.text) return '';
+        return `
+            <div class="bstage-reply-quote">
+                <div class="bstage-reply-quote-speaker">${escapeHtml(replyTo.speaker || '消息')}</div>
+                <div class="bstage-reply-quote-text">${escapeHtml(replyTo.text)}</div>
+            </div>
+        `;
+    }
+
+    function formatReplyForPrompt(replyTo) {
+        if (!replyTo || !replyTo.id) return '';
+        return `；回复 ${replyTo.speaker || '消息'}(${replyTo.id})：「${replyTo.text || ''}」`;
+    }
+
+    function findMessageById(history, id, predicate) {
+        if (!id || !Array.isArray(history)) return null;
+        return history.find(msg => msg && msg.id === id && (!predicate || predicate(msg))) || null;
+    }
+
+    function openBstageImagePreview(src, desc) {
+        const overlay = document.createElement('div');
+        overlay.style.position = 'fixed';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.width = '100vw';
+        overlay.style.height = '100vh';
+        overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+        overlay.style.zIndex = '10000';
+        overlay.style.display = 'flex';
+        overlay.style.flexDirection = 'column';
+        overlay.style.justifyContent = 'center';
+        overlay.style.alignItems = 'center';
+        overlay.style.cursor = 'zoom-out';
+
+        const img = document.createElement('img');
+        img.src = src;
+        img.style.maxWidth = '90%';
+        img.style.maxHeight = '80%';
+        img.style.objectFit = 'contain';
+        img.style.borderRadius = '12px';
+        img.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
+        overlay.appendChild(img);
+
+        if (desc) {
+            const textDiv = document.createElement('div');
+            textDiv.style.color = '#fff';
+            textDiv.style.marginTop = '20px';
+            textDiv.style.maxWidth = '90%';
+            textDiv.style.textAlign = 'center';
+            textDiv.style.fontSize = '16px';
+            textDiv.textContent = desc;
+            overlay.appendChild(textDiv);
+        }
+
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', () => overlay.remove());
+    }
+
+    function attachBstageImagePreview(container) {
+        if (!container) return;
+        const imgNode = container.querySelector('.bstage-chat-image-clickable');
+        if (!imgNode) return;
+        imgNode.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openBstageImagePreview(imgNode.src, imgNode.getAttribute('data-desc') || '');
+        });
+    }
+
+    function formatMessageForPrompt(msg, speaker) {
+        if (!msg || msg.type === 'date') return '';
+        ensureMessageId(msg, msg.isUser ? 'user' : 'ai');
+        const summary = getMessageSummary(msg);
+        const replyText = formatReplyForPrompt(msg.replyTo);
+        return `[id:${msg.id}] [${speaker}]${replyText}: ${summary}`;
+    }
+
+    function setPendingReply(kind, target) {
+        const isFan = kind === 'fan';
+        if (isFan) pendingFanReply = target;
+        else pendingChatReply = target;
+
+        const preview = document.getElementById(isFan ? 'bstage-fan-chat-reply-preview' : 'bstage-chat-reply-preview');
+        const textEl = document.getElementById(isFan ? 'bstage-fan-chat-reply-preview-text' : 'bstage-chat-reply-preview-text');
+        if (preview && textEl) {
+            if (target) {
+                textEl.textContent = `${target.speaker}: ${target.text}`;
+                preview.style.display = 'flex';
+                preview.classList.add('active');
+            } else {
+                textEl.textContent = '';
+                preview.style.display = 'none';
+                preview.classList.remove('active');
+            }
+        }
+
+        const input = document.getElementById(isFan ? 'bstage-fan-chat-input' : 'bstage-chat-input');
+        if (target && input) input.focus();
+    }
+
+    function clearPendingReply(kind) {
+        setPendingReply(kind, null);
+    }
+
+    function setChatActionLoading(button, isLoading) {
+        if (!button) return;
+        button.classList.toggle('is-loading', isLoading);
+        button.setAttribute('aria-disabled', isLoading ? 'true' : 'false');
+        button.innerHTML = isLoading ? '<i class="fas fa-spinner"></i>' : '<i class="fas fa-arrow-down"></i>';
+    }
+
+    function parseApiJsonContent(rawContent) {
+        const cleaned = String(rawContent || '').replace(/```json/g, '').replace(/```/g, '').trim();
+        return JSON.parse(cleaned);
+    }
+
+    async function callBstageJsonApi(prompt, systemContent = 'You are a JSON generator.', temperature = 0.7) {
+        if (!window.apiConfig || !window.apiConfig.endpoint || !window.apiConfig.apiKey) {
+            throw new Error('missing_api_config');
+        }
+
+        const configuredTemperature = window.apiConfig.temperature !== undefined ? window.apiConfig.temperature : window.apiConfig.temp;
+        const response = await fetch(normalizeChatCompletionsEndpoint(window.apiConfig.endpoint), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${window.apiConfig.apiKey}`
+            },
+            body: JSON.stringify({
+                model: window.apiConfig.model || 'gpt-3.5-turbo',
+                messages: [
+                    { role: 'system', content: systemContent },
+                    { role: 'user', content: prompt }
+                ],
+                temperature: parseFloat(configuredTemperature) || temperature
+            })
+        });
+
+        if (!response.ok) throw new Error(`api_error_${response.status}`);
+        const data = await response.json();
+        return parseApiJsonContent(data && data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : '');
+    }
+
     function checkAndAddDateBubble(member, contentContainer, timestamp) {
         if (!member.chatHistory) member.chatHistory = [];
         let lastMsg = null;
@@ -764,9 +1192,68 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function migrateRandomAvatarEntity(entity, seed) {
+        if (!entity || typeof entity !== 'object') return false;
+        let changed = false;
+        if (isBstageRandomAvatar(entity.avatar)) {
+            entity.avatarEmoji = entity.avatarEmoji || getStableEmojiAvatar(seed || entity.avatar);
+            entity.avatar = null;
+            changed = true;
+        }
+        return changed;
+    }
+
+    function normalizeLoadedBstageData() {
+        let changed = false;
+        teams.forEach(team => {
+            changed = migrateRandomAvatarEntity(team, `team-${team.id || team.name}`) || changed;
+            if (Array.isArray(team.members)) {
+                team.members.forEach(member => {
+                    changed = migrateRandomAvatarEntity(member, `member-${member.id || member.name}`) || changed;
+                    if (Array.isArray(member.chatHistory)) {
+                        member.chatHistory.forEach(msg => {
+                            if (!msg || msg.type === 'date') return;
+                            const beforeId = msg.id;
+                            ensureMessageId(msg, msg.isUser ? 'user' : 'char');
+                            if (!beforeId) changed = true;
+                        });
+                    }
+                });
+            }
+        });
+
+        if (Array.isArray(bstageFanChatHistory)) {
+            bstageFanChatHistory.forEach(msg => {
+                if (!msg || msg.type === 'date') return;
+                const beforeId = msg.id;
+                ensureMessageId(msg, msg.isUser ? 'user' : 'fan');
+                if (!beforeId) changed = true;
+                if (!msg.isUser) {
+                    changed = migrateRandomAvatarEntity(msg, `fan-${msg.name || msg.id}`) || changed;
+                    if (!msg.avatarEmoji) {
+                        msg.avatarEmoji = getStableEmojiAvatar(`fan-${msg.name || msg.id || msg.timestamp}`);
+                        changed = true;
+                    }
+                }
+            });
+        }
+        return changed;
+    }
+
     function saveBstageData() {
         try {
-            const nextState = { teams, bstageOrders, chatPhotos, bstagePresets, isTranslationEnabled };
+            const nextState = {
+                teams,
+                bstageOrders,
+                bstageFanChatHistory,
+                bstageFanChatSettings,
+                bstageUserTeamState,
+                chatPhotos,
+                bstagePresets,
+                isTranslationEnabled,
+                isContextEnabled,
+                contextMessageCount
+            };
             window.__bstageGlobalState = nextState;
 
             if (typeof window.setAppState === 'function') {
@@ -788,9 +1275,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (Array.isArray(window.__bstageGlobalState.teams)) teams = window.__bstageGlobalState.teams;
             if (Array.isArray(window.__bstageGlobalState.bstageOrders)) bstageOrders = window.__bstageGlobalState.bstageOrders;
+            if (Array.isArray(window.__bstageGlobalState.bstageFanChatHistory)) bstageFanChatHistory = window.__bstageGlobalState.bstageFanChatHistory;
+            if (window.__bstageGlobalState.bstageFanChatSettings && typeof window.__bstageGlobalState.bstageFanChatSettings === 'object') {
+                bstageFanChatSettings = { ...bstageFanChatSettings, ...window.__bstageGlobalState.bstageFanChatSettings };
+            }
+            if (window.__bstageGlobalState.bstageUserTeamState && typeof window.__bstageGlobalState.bstageUserTeamState === 'object') {
+                bstageUserTeamState = { ...bstageUserTeamState, ...window.__bstageGlobalState.bstageUserTeamState };
+            }
             if (Array.isArray(window.__bstageGlobalState.chatPhotos)) chatPhotos = window.__bstageGlobalState.chatPhotos;
             if (window.__bstageGlobalState.bstagePresets) bstagePresets = window.__bstageGlobalState.bstagePresets;
             if (typeof window.__bstageGlobalState.isTranslationEnabled === 'boolean') isTranslationEnabled = window.__bstageGlobalState.isTranslationEnabled;
+            if (typeof window.__bstageGlobalState.isContextEnabled === 'boolean') isContextEnabled = window.__bstageGlobalState.isContextEnabled;
+            if (Number.isFinite(Number(window.__bstageGlobalState.contextMessageCount))) {
+                contextMessageCount = Math.max(1, parseInt(window.__bstageGlobalState.contextMessageCount, 10) || 50);
+            }
+            if (normalizeLoadedBstageData()) saveBstageData();
         } catch (e) {
             console.error('Bstage data load failed:', e);
         }
@@ -851,6 +1350,36 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('bstage-chat-back-btn').addEventListener('click', () => {
         window.closeView(bstageChatView);
     });
+
+    document.getElementById('bstage-fan-chat-back-btn').addEventListener('click', () => {
+        window.closeView(bstageFanChatView);
+    });
+
+    document.getElementById('bstage-fan-chat-menu-btn').addEventListener('click', () => {
+        openFanChatDetailSheet();
+    });
+
+    const chatReplyCancelBtn = document.getElementById('bstage-chat-reply-cancel-btn');
+    if (chatReplyCancelBtn) {
+        chatReplyCancelBtn.addEventListener('click', () => clearPendingReply('chat'));
+        chatReplyCancelBtn.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                clearPendingReply('chat');
+            }
+        });
+    }
+
+    const fanChatReplyCancelBtn = document.getElementById('bstage-fan-chat-reply-cancel-btn');
+    if (fanChatReplyCancelBtn) {
+        fanChatReplyCancelBtn.addEventListener('click', () => clearPendingReply('fan'));
+        fanChatReplyCancelBtn.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                clearPendingReply('fan');
+            }
+        });
+    }
 
     // --- Auto Activity Logic ---
     function startAutoActivity(member) {
@@ -1123,6 +1652,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function populateFanCssSelects() {
+        const chatSelect = document.getElementById('bstage-fan-chat-css-select');
+        const bubbleSelect = document.getElementById('bstage-fan-bubble-css-select');
+        if (!chatSelect || !bubbleSelect) return;
+
+        chatSelect.innerHTML = '<option value="">默认</option>';
+        (bstagePresets.chatCss || []).forEach(p => {
+            chatSelect.innerHTML += `<option value="${p.id}">${p.name}</option>`;
+        });
+        chatSelect.value = bstageFanChatSettings.chatCssId || '';
+
+        bubbleSelect.innerHTML = '<option value="">默认</option>';
+        (bstagePresets.bubbleCss || []).forEach(p => {
+            bubbleSelect.innerHTML += `<option value="${p.id}">${p.name}</option>`;
+        });
+        bubbleSelect.value = bstageFanChatSettings.bubbleCssId || '';
+    }
+
     // Select Change Listeners
     document.getElementById('bstage-chat-css-select').addEventListener('change', (e) => {
         if (!currentChatMember) return;
@@ -1145,9 +1692,19 @@ document.addEventListener('DOMContentLoaded', () => {
         saveBstageData();
     });
 
-    function applyDynamicStyles() {
-        if (!currentChatMember) return;
+    document.getElementById('bstage-fan-chat-css-select').addEventListener('change', (e) => {
+        bstageFanChatSettings.chatCssId = e.target.value;
+        applyFanChatSettings();
+        saveBstageData();
+    });
 
+    document.getElementById('bstage-fan-bubble-css-select').addEventListener('change', (e) => {
+        bstageFanChatSettings.bubbleCssId = e.target.value;
+        applyFanChatSettings();
+        saveBstageData();
+    });
+
+    function applyDynamicStyles() {
         let styleTag = document.getElementById('bstage-dynamic-styles');
         if (!styleTag) {
             styleTag = document.createElement('style');
@@ -1157,8 +1714,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let combinedCss = '';
 
-        // 1. Chat CSS
-        if (currentChatMember.chatCssId) {
+        // 1. Char Chat CSS
+        if (currentChatMember && currentChatMember.chatCssId) {
             const preset = (bstagePresets.chatCss || []).find(p => p.id === currentChatMember.chatCssId);
             if (preset) {
                 combinedCss += `
@@ -1169,12 +1726,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // 2. Frame CSS
-        if (currentChatMember.frameCssId) {
+        // 2. Char Frame CSS
+        if (currentChatMember && currentChatMember.frameCssId) {
             const preset = (bstagePresets.avatarFrameCss || []).find(p => p.id === currentChatMember.frameCssId);
             if (preset) {
                 combinedCss += `
-                    .bstage-chat-msg.income img {
+                    #bstage-chat-view .bstage-chat-msg.income img {
                         ${preset.css}
                     }
                     #bstage-detail-avatar {
@@ -1184,12 +1741,36 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // 3. Bubble CSS
-        if (currentChatMember.bubbleCssId) {
+        // 3. Char Bubble CSS
+        if (currentChatMember && currentChatMember.bubbleCssId) {
             const preset = (bstagePresets.bubbleCss || []).find(p => p.id === currentChatMember.bubbleCssId);
             if (preset) {
                 combinedCss += `
-                    .bstage-chat-bubble {
+                    #bstage-chat-view .bstage-chat-bubble {
+                        ${preset.css}
+                    }
+                `;
+            }
+        }
+
+        // 4. Fan Chat CSS
+        if (bstageFanChatSettings.chatCssId) {
+            const preset = (bstagePresets.chatCss || []).find(p => p.id === bstageFanChatSettings.chatCssId);
+            if (preset) {
+                combinedCss += `
+                    #bstage-fan-chat-view {
+                        ${preset.css}
+                    }
+                `;
+            }
+        }
+
+        // 5. Fan Bubble CSS
+        if (bstageFanChatSettings.bubbleCssId) {
+            const preset = (bstagePresets.bubbleCss || []).find(p => p.id === bstageFanChatSettings.bubbleCssId);
+            if (preset) {
+                combinedCss += `
+                    #bstage-fan-chat-view .bstage-chat-bubble {
                         ${preset.css}
                     }
                 `;
@@ -1204,6 +1785,9 @@ document.addEventListener('DOMContentLoaded', () => {
         isContextEnabled = !isContextEnabled;
         if (isContextEnabled) this.classList.add('active');
         else this.classList.remove('active');
+        const fanContextSwitch = document.getElementById('bstage-fan-context-switch');
+        if (fanContextSwitch) fanContextSwitch.classList.toggle('active', isContextEnabled);
+        saveBstageData();
         window.showToast(`上下文携带已${isContextEnabled ? '开启' : '关闭'}`);
     });
 
@@ -1212,6 +1796,29 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isNaN(val) || val < 1) val = 1;
         contextMessageCount = val;
         this.value = val;
+        const fanContextCount = document.getElementById('bstage-fan-context-count');
+        if (fanContextCount) fanContextCount.value = val;
+        saveBstageData();
+    });
+
+    document.getElementById('bstage-fan-context-switch').addEventListener('click', function() {
+        isContextEnabled = !isContextEnabled;
+        if (isContextEnabled) this.classList.add('active');
+        else this.classList.remove('active');
+        const charContextSwitch = document.getElementById('bstage-context-switch');
+        if (charContextSwitch) charContextSwitch.classList.toggle('active', isContextEnabled);
+        saveBstageData();
+        window.showToast(`上下文携带已${isContextEnabled ? '开启' : '关闭'}`);
+    });
+
+    document.getElementById('bstage-fan-context-count').addEventListener('change', function() {
+        let val = parseInt(this.value, 10);
+        if (isNaN(val) || val < 1) val = 1;
+        contextMessageCount = val;
+        this.value = val;
+        const charContextCount = document.getElementById('bstage-context-count');
+        if (charContextCount) charContextCount.value = val;
+        saveBstageData();
     });
 
     // Clear Chat / Exit Logic
@@ -1265,6 +1872,27 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isTranslationEnabled) content.classList.add('show-trans');
             else content.classList.remove('show-trans');
         }
+        syncFanChatTranslationState();
+        const fanSwitchEl = document.getElementById('bstage-fan-trans-switch');
+        if (fanSwitchEl) fanSwitchEl.classList.toggle('active', isTranslationEnabled);
+
+        saveBstageData();
+        window.showToast(`实时翻译已${isTranslationEnabled ? '开启' : '关闭'}`);
+    });
+
+    document.getElementById('bstage-fan-trans-switch').addEventListener('click', function() {
+        isTranslationEnabled = !isTranslationEnabled;
+        if (isTranslationEnabled) this.classList.add('active');
+        else this.classList.remove('active');
+
+        const charContent = document.getElementById('bstage-chat-content');
+        if (charContent) {
+            if (isTranslationEnabled) charContent.classList.add('show-trans');
+            else charContent.classList.remove('show-trans');
+        }
+        syncFanChatTranslationState();
+        const charSwitchEl = document.getElementById('bstage-trans-switch');
+        if (charSwitchEl) charSwitchEl.classList.toggle('active', isTranslationEnabled);
 
         saveBstageData();
         window.showToast(`实时翻译已${isTranslationEnabled ? '开启' : '关闭'}`);
@@ -1272,7 +1900,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // Click outside to close modals
-    [createTeamSheet, addCharSheet, pullFriendSheet, subModal, popSubModal, userProfileModal, ordersModal, editProfileModal, editTeamSheet, chatDetailSheet, lockerModal, videoDetailModal, editVideoSheet, shopDetailModal].forEach(modal => {
+    [searchGenerateModal, createTeamSheet, addCharSheet, pullFriendSheet, subModal, popSubModal, userProfileModal, ordersModal, editProfileModal, editTeamSheet, chatDetailSheet, fanChatDetailSheet, lockerModal, videoDetailModal, editVideoSheet, shopDetailModal].forEach(modal => {
         modal.addEventListener('click', (e) => {
             if (e.target === modal) {
                 window.closeView(modal);
@@ -1342,6 +1970,42 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             reader.readAsDataURL(file);
         }
+    });
+
+    document.getElementById('bstage-fan-setting-bg').addEventListener('click', () => {
+        document.getElementById('bstage-fan-chat-bg-input').click();
+    });
+
+    document.getElementById('bstage-fan-reset-bg-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        bstageFanChatSettings.chatBg = null;
+        applyFanChatSettings();
+        saveBstageData();
+        window.showToast('背景已重置');
+    });
+
+    document.getElementById('bstage-fan-chat-bg-input').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (readerEvent) => {
+            bstageFanChatSettings.chatBg = readerEvent.target.result;
+            applyFanChatSettings();
+            saveBstageData();
+            window.showToast('背景已更换');
+            window.closeView(fanChatDetailSheet);
+        };
+        reader.readAsDataURL(file);
+    });
+
+    document.getElementById('bstage-fan-chat-clear-btn').addEventListener('click', () => {
+        if (!confirm('确定要清空粉丝聊天室记录吗？此操作不可恢复。')) return;
+        bstageFanChatHistory = [];
+        renderFanChatHistory();
+        updateFanSubscriberLabels();
+        saveBstageData();
+        window.showToast('粉丝聊天室已清空');
+        window.closeView(fanChatDetailSheet);
     });
 
     // Locker Logic
@@ -1419,6 +2083,151 @@ document.addEventListener('DOMContentLoaded', () => {
         tempMembers = [];
         renderTempMembers();
         window.openView(createTeamSheet);
+    });
+
+    function clampSearchMemberCount(value) {
+        const parsed = parseInt(value, 10);
+        if (!Number.isFinite(parsed) || parsed < 1) return 1;
+        if (parsed > 12) return 12;
+        return parsed;
+    }
+
+    function setSearchGenerateLoading(isLoading) {
+        const confirmBtn = document.getElementById('bstage-search-confirm-btn');
+        const loading = document.getElementById('bstage-search-loading');
+        if (confirmBtn) {
+            confirmBtn.classList.toggle('is-loading', isLoading);
+            confirmBtn.textContent = isLoading ? '生成中...' : '生成团队';
+        }
+        if (loading) loading.style.display = isLoading ? 'flex' : 'none';
+    }
+
+    function openSearchGenerateModal() {
+        const queryInput = document.getElementById('bstage-search-query-input');
+        const countInput = document.getElementById('bstage-search-member-count');
+        if (queryInput) queryInput.value = '';
+        if (countInput) countInput.value = '1';
+        setSearchGenerateLoading(false);
+        window.openView(searchGenerateModal);
+        setTimeout(() => {
+            if (queryInput) queryInput.focus();
+        }, 80);
+    }
+
+    async function generateTeamFromSearch(query, memberCount) {
+        const searchQuery = String(query || '').trim();
+        const isRandom = !searchQuery;
+        const generationIntent = isRandom
+            ? '用户没有填写搜索内容。请随机生成一个虚构的 b.stage 团队或明星企划，可以自由选择风格、国家地区、成员定位和团队概念。'
+            : `用户填写的搜索内容是「${searchQuery}」。必须围绕这个内容生成，团队名、团队信息、成员名字、成员人设都要明显贴合该内容，禁止忽略搜索内容或生成无关的随机团队。`;
+        const prompt = `
+请生成一个适合 b.stage 的虚构团队或明星企划。
+
+${generationIntent}
+团队人数：${memberCount}
+
+要求：
+1. 只返回严格 JSON 对象，不要 markdown，不要解释。
+2. members 数组长度必须严格等于 ${memberCount}。
+3. name 是团队名或艺名，desc 是团队/明星信息。
+4. 每个成员必须包含 name 和 role，role 是可供 AI 扮演使用的人设。
+5. ${isRandom ? '因为用户留空，本次可以随机发挥，但仍要保持团队设定完整、统一。' : '因为用户填写了搜索内容，本次不允许随机偏题，所有核心设定必须服务于该搜索内容。'}
+
+格式：
+{
+  "name": "团队名",
+  "desc": "团队信息",
+  "members": [
+    { "name": "成员名", "role": "成员人设" }
+  ]
+}
+`;
+
+        const generated = await callBstageJsonApi(prompt, 'You generate strict JSON for fictional idol/team profiles.', 0.8);
+        if (!generated || typeof generated !== 'object' || Array.isArray(generated)) {
+            throw new Error('invalid_team_payload');
+        }
+
+        const teamName = stripGeneratedText(generated.name);
+        const desc = stripGeneratedText(generated.desc || generated.info || generated.description);
+        const members = Array.isArray(generated.members) ? generated.members : [];
+        if (!teamName || !desc || members.length !== memberCount) {
+            throw new Error('invalid_team_payload');
+        }
+
+        const normalizedMembers = members.map((member, index) => {
+            const name = stripGeneratedText(member && member.name, `成员${index + 1}`);
+            const role = stripGeneratedText(member && (member.role || member.persona || member.desc));
+            if (!name || !role) throw new Error('invalid_member_payload');
+            const seed = createImageSeed(`bstage-member-${teamName}-${name}-${index}`);
+            return {
+                id: Date.now() + index + Math.random(),
+                name,
+                role,
+                avatar: null,
+                avatarEmoji: getStableEmojiAvatar(seed),
+                isSubscribed: false,
+                subStartDate: null
+            };
+        });
+
+        const teamSeed = createImageSeed(`bstage-team-${teamName}`);
+        return {
+            id: Date.now(),
+            name: teamName,
+            desc,
+            avatar: null,
+            avatarEmoji: getStableEmojiAvatar(`${teamSeed}-avatar`),
+            bg: createExternalBackground(`${teamSeed}-bg`),
+            members: normalizedMembers,
+            isSubscribed: false
+        };
+    }
+
+    async function confirmSearchGenerate() {
+        const confirmBtn = document.getElementById('bstage-search-confirm-btn');
+        if (confirmBtn && confirmBtn.classList.contains('is-loading')) return;
+
+        const queryInput = document.getElementById('bstage-search-query-input');
+        const countInput = document.getElementById('bstage-search-member-count');
+        const query = queryInput ? queryInput.value.trim() : '';
+        const memberCount = clampSearchMemberCount(countInput ? countInput.value : 1);
+        if (countInput) countInput.value = String(memberCount);
+
+        setSearchGenerateLoading(true);
+        try {
+            const generatedTeam = await generateTeamFromSearch(query, memberCount);
+            teams.push(generatedTeam);
+            saveBstageData();
+            renderFollowingBar();
+            window.closeView(searchGenerateModal);
+            openTeam(generatedTeam);
+            window.showToast('团队已生成');
+        } catch (error) {
+            console.error('Bstage search generate failed:', error);
+            if (error && error.message === 'missing_api_config') {
+                window.showToast('请先在系统设置中配置 API');
+            } else if (error && /member|payload/.test(error.message || '')) {
+                window.showToast('生成结果格式或人数不匹配');
+            } else {
+                window.showToast('生成团队失败');
+            }
+        } finally {
+            setSearchGenerateLoading(false);
+        }
+    }
+
+    document.getElementById('bstage-search-generate-btn').addEventListener('click', openSearchGenerateModal);
+    document.getElementById('bstage-search-confirm-btn').addEventListener('click', confirmSearchGenerate);
+    ['bstage-search-query-input', 'bstage-search-member-count'].forEach(inputId => {
+        const input = document.getElementById(inputId);
+        if (!input) return;
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) {
+                e.preventDefault();
+                confirmSearchGenerate();
+            }
+        });
     });
 
     // File Upload Helpers
@@ -1560,10 +2369,11 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (name) {
             if (currentEditingMember) {
-                 // Edit existing
+                // Edit existing
                 currentEditingMember.name = name;
                 currentEditingMember.role = role;
                 currentEditingMember.avatar = hasAvatar ? avatar : null;
+                currentEditingMember.avatarEmoji = hasAvatar ? null : (currentEditingMember.avatarEmoji || getStableEmojiAvatar(`member-${currentEditingMember.id || name}`));
 
                 if (isEditingTeam && currentTeam) {
                     renderEditTeamMembers();
@@ -1584,6 +2394,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     name,
                     role,
                     avatar: hasAvatar ? avatar : null,
+                    avatarEmoji: hasAvatar ? null : getStableEmojiAvatar(`member-${name}-${Date.now()}`),
                     isSubscribed: false,
                     subStartDate: null
                 };
@@ -1612,8 +2423,8 @@ document.addEventListener('DOMContentLoaded', () => {
             item.className = 'bstage-char-preview-item';
             item.style.cursor = 'pointer'; // Make it look clickable
             item.innerHTML = `
-                <img class="bstage-char-preview-avatar" src="${m.avatar || ''}" style="${!m.avatar ? 'background:#333' : ''}">
-                <div class="bstage-char-preview-name">${m.name}</div>
+                ${renderBstageAvatar(m, m.name, 'bstage-char-preview-avatar')}
+                <div class="bstage-char-preview-name">${escapeHtml(m.name)}</div>
             `;
             
             // Add click listener to edit temp member
@@ -1663,6 +2474,7 @@ document.addEventListener('DOMContentLoaded', () => {
             name,
             desc,
             avatar: hasAvatar ? avatar : null,
+            avatarEmoji: hasAvatar ? null : getStableEmojiAvatar(`team-${name}-${Date.now()}`),
             bg: hasBg ? bg : null,
             members: [...tempMembers],
             isSubscribed: false
@@ -1683,24 +2495,20 @@ document.addEventListener('DOMContentLoaded', () => {
         container.innerHTML = '';
         container.appendChild(createBtn);
 
-        teams.forEach(team => {
+        [getBstageUserTeam(), ...teams].forEach(team => {
             const item = document.createElement('div');
             item.className = 'bstage-team-item';
             if (currentTeam && currentTeam.id === team.id) item.classList.add('active');
             
-            const avatarSrc = team.avatar || '';
-            const avatarStyle = !team.avatar ? 'background-color: #333; display: flex; justify-content: center; align-items: center; color: #fff; font-size: 20px;' : '';
-            const avatarContent = !team.avatar ? team.name[0] : `<img src="${avatarSrc}">`;
-
             item.innerHTML = `
-                <div class="bstage-team-avatar" style="${avatarStyle}">
-                    ${avatarContent}
+                <div class="bstage-team-avatar">
+                    ${renderBstageAvatarContent(team, team.name)}
                 </div>
-                <div class="bstage-team-name">${team.name}</div>
+                <div class="bstage-team-name">${escapeHtml(team.name)}</div>
             `;
             
             item.addEventListener('click', () => {
-                if (currentTeam && currentTeam.id === team.id) {
+                if (!isUserTeam(team) && currentTeam && currentTeam.id === team.id) {
                     openEditTeamModal(team);
                 } else {
                     openTeam(team);
@@ -1711,6 +2519,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function openEditTeamModal(team) {
+        if (isUserTeam(team)) {
+            openTeam(getBstageUserTeam());
+            return;
+        }
         isEditingTeam = true;
         document.getElementById('bstage-edit-team-name-input').value = team.name;
         
@@ -1749,8 +2561,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const item = document.createElement('div');
             item.className = 'bstage-char-preview-item';
             item.innerHTML = `
-                <img class="bstage-char-preview-avatar" src="${m.avatar || ''}" style="${!m.avatar ? 'background:#333' : ''}">
-                <div class="bstage-char-preview-name">${m.name}</div>
+                ${renderBstageAvatar(m, m.name, 'bstage-char-preview-avatar')}
+                <div class="bstage-char-preview-name">${escapeHtml(m.name)}</div>
             `;
             
             // Add click listener to edit
@@ -1811,6 +2623,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (name) {
             currentTeam.name = name;
             currentTeam.avatar = hasAvatar ? avatar : null;
+            currentTeam.avatarEmoji = hasAvatar ? null : (currentTeam.avatarEmoji || getStableEmojiAvatar(`team-${currentTeam.id || name}`));
             currentTeam.bg = hasBg ? bg : null;
             
             saveBstageData(); // Explicitly save to ensure persistence
@@ -1827,6 +2640,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('bstage-delete-team-btn').addEventListener('click', () => {
         if (!currentTeam) return;
+        if (isUserTeam(currentTeam)) {
+            window.showToast('User 团队为固定团队，不能删除');
+            return;
+        }
         if (confirm('确定要删除这个团队吗？')) {
             teams = teams.filter(t => t.id !== currentTeam.id);
             currentTeam = null;
@@ -1870,6 +2687,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderTeamHome(team) {
         const bgStyle = team.bg ? `background-image: url('${team.bg}')` : 'background-color: #111';
+        const isFixedUserTeam = isUserTeam(team);
         
         contentArea.innerHTML = `
             <div class="bstage-team-home" style="${bgStyle}">
@@ -1885,17 +2703,59 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
 
                     <div class="bstage-sub-bubble" id="bstage-home-sub-btn">
-                        <span>${team.isSubscribed ? '会员已订阅' : '订阅会员'}</span>
+                        <span>${isFixedUserTeam ? 'User Space' : (team.isSubscribed ? '会员已订阅' : '订阅会员')}</span>
                         <i class="fas fa-chevron-right" style="font-size: 12px;"></i>
                     </div>
                 </div>
             </div>
         `;
 
-        document.getElementById('bstage-home-sub-btn').addEventListener('click', openSubModal);
+        if (!isFixedUserTeam) {
+            document.getElementById('bstage-home-sub-btn').addEventListener('click', openSubModal);
+        }
     }
 
     function renderTeamPop(team) {
+        if (isUserTeam(team)) {
+            const userTeam = getBstageUserTeam();
+            contentArea.innerHTML = `
+                <div class="bstage-pop-view">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+                        <h2 style="font-size:20px; font-weight:700;">User POP</h2>
+                    </div>
+                    <div class="bstage-pop-list" id="bstage-pop-list-container">
+                        <div class="bstage-pop-item bstage-user-fan-chat-card" id="bstage-user-team-fan-chat-btn">
+                            <div class="bstage-pop-info">
+                                <div class="bstage-pop-avatar bstage-emoji-avatar"><i class="fas fa-comments"></i></div>
+                                <div class="bstage-pop-name-wrap">
+                                    <div class="bstage-pop-name">粉丝聊天室 <i class="fas fa-check-circle bstage-verified-icon"></i></div>
+                                    <div class="bstage-pop-role">${escapeHtml(getFanSubscriberText())}</div>
+                                </div>
+                            </div>
+                            <div class="bstage-pop-action">
+                                <div class="bstage-pop-status">进入 <i class="fas fa-chevron-right"></i></div>
+                            </div>
+                        </div>
+                        <div class="bstage-pop-item">
+                            <div class="bstage-pop-info">
+                                ${renderBstageAvatar(userTeam, userTeam.name, 'bstage-pop-avatar')}
+                                <div class="bstage-pop-name-wrap">
+                                    <div class="bstage-pop-name">${escapeHtml(userTeam.name)} <i class="fas fa-check-circle bstage-verified-icon"></i></div>
+                                    <div class="bstage-pop-role">${escapeHtml(userTeam.desc || 'User')}</div>
+                                </div>
+                            </div>
+                            <div class="bstage-pop-action">
+                                <div class="bstage-pop-status">User</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            const fanBtn = document.getElementById('bstage-user-team-fan-chat-btn');
+            if (fanBtn) fanBtn.addEventListener('click', openFanChat);
+            return;
+        }
+
         contentArea.innerHTML = `
             <div class="bstage-pop-view">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
@@ -1955,11 +2815,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 item.innerHTML = `
                     <div class="bstage-pop-info">
-                        <img class="bstage-pop-avatar" src="${m.avatar || ''}" style="${!m.avatar?'display:none':''}">
-                        <div class="bstage-pop-avatar" style="${m.avatar?'display:none':'display:flex;justify-content:center;align-items:center;color:#fff;'}">${m.name[0]}</div>
+                        ${renderBstageAvatar(m, m.name, 'bstage-pop-avatar')}
                         <div class="bstage-pop-name-wrap">
                             <div class="bstage-pop-name">
-                                ${m.name} 
+                                ${escapeHtml(m.name)} 
                                 <i class="fas fa-check-circle bstage-verified-icon"></i>
                             </div>
                             ${daysText ? `<div class="bstage-pop-role">${daysText}</div>` : ''}
@@ -2045,6 +2904,76 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    function appendCharChatMessage(member, msg, contentContainer) {
+        if (!member || !msg || !contentContainer) return;
+
+        if (msg.type === 'date') {
+            const dateDiv = document.createElement('div');
+            dateDiv.className = 'bstage-chat-date';
+            dateDiv.textContent = msg.text;
+            contentContainer.appendChild(dateDiv);
+            return;
+        }
+
+        ensureMessageId(msg, msg.isUser ? 'user' : 'char');
+
+        if (msg.isUser) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'bstage-chat-msg outgoing';
+            msgDiv.dataset.msgId = msg.id;
+            msgDiv.innerHTML = `
+                <div class="bstage-msg-status">
+                    <div class="bstage-msg-status-text">${escapeHtml(msg.status || '已读')}</div>
+                    <div class="bstage-msg-time">${escapeHtml(msg.time || getCurrentChatTimeText(msg.timestamp))}</div>
+                </div>
+                <div class="bstage-chat-bubble">
+                    ${renderReplyQuote(msg.replyTo)}
+                    <div class="bstage-msg-text">${escapeHtml(msg.text)}</div>
+                </div>
+            `;
+            contentContainer.appendChild(msgDiv);
+            return;
+        }
+
+        const replyDiv = document.createElement('div');
+        replyDiv.className = 'bstage-chat-msg income';
+        replyDiv.dataset.msgId = msg.id;
+
+        let bubbleContent = '';
+        if (msg.type === 'image') {
+            bubbleContent = `
+                ${renderReplyQuote(msg.replyTo)}
+                <div class="bstage-msg-text" style="padding: 0; background: transparent;">
+                    <img class="bstage-chat-image-clickable" src="${escapeHtml(msg.imgUrl || 'assets/moren.jpg')}" data-desc="${escapeHtml(msg.imgDesc || '')}" style="max-width: 250px; width: 100%; border-radius: 12px; display: block; object-fit: cover; cursor: zoom-in; border: 1px solid #333;">
+                </div>
+            `;
+        } else {
+            bubbleContent = `
+                ${renderReplyQuote(msg.replyTo)}
+                <div class="bstage-msg-text">${escapeHtml(msg.text)}</div>
+                ${msg.trans && msg.trans.trim() !== '' ? `<div class="bstage-trans-text">${escapeHtml(msg.trans)}</div>` : ''}
+            `;
+        }
+
+        replyDiv.innerHTML = `
+            ${renderBstageAvatar(member, member.name, 'bstage-chat-avatar')}
+            <div class="bstage-chat-bubble" style="${msg.type === 'image' && !msg.replyTo ? 'background: transparent; padding: 0;' : ''}">${bubbleContent}</div>
+            <button class="bstage-msg-reply-btn" type="button" aria-label="回复消息" title="回复消息">
+                <i class="fas fa-reply"></i>
+            </button>
+        `;
+
+        const replyBtn = replyDiv.querySelector('.bstage-msg-reply-btn');
+        if (replyBtn) {
+            replyBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                setPendingReply('chat', createReplyMeta(msg, member.name));
+            });
+        }
+        attachBstageImagePreview(replyDiv);
+        contentContainer.appendChild(replyDiv);
+    }
+
     function openChat(member) {
         currentChatMember = member; // Set current member
         document.getElementById('bstage-chat-name').textContent = member.name;
@@ -2084,109 +3013,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Render Chat History
         content.innerHTML = '';
-        member.chatHistory.forEach(msg => {
-            if (msg.type === 'date') {
-                const dateDiv = document.createElement('div');
-                dateDiv.className = 'bstage-chat-date';
-                dateDiv.textContent = msg.text;
-                content.appendChild(dateDiv);
-            } else if (msg.isUser) {
-                const msgDiv = document.createElement('div');
-                msgDiv.className = 'bstage-chat-msg outgoing';
-                msgDiv.innerHTML = `
-                    <div class="bstage-msg-status">
-                        <div class="bstage-msg-status-text">${msg.status || '已读'}</div>
-                        <div class="bstage-msg-time">${msg.time || ''}</div>
-                    </div>
-                    <div class="bstage-chat-bubble">${msg.text}</div>
-                `;
-                content.appendChild(msgDiv);
-            } else {
-                const replyDiv = document.createElement('div');
-                replyDiv.className = 'bstage-chat-msg income';
-                let bubbleContent = '';
-                if (msg.type === 'image') {
-                    bubbleContent = `
-                        <div class="bstage-msg-text" style="padding: 0; background: transparent;">
-                            <img class="bstage-chat-image-clickable" src="${msg.imgUrl}" data-desc="${msg.imgDesc || ''}" style="max-width: 250px; width: 100%; border-radius: 12px; display: block; object-fit: cover; cursor: zoom-in; border: 1px solid #333;">
-                        </div>
-                    `;
-                } else {
-                    bubbleContent = `<div class="bstage-msg-text">${msg.text}</div>`;
-                    if (msg.trans && msg.trans.trim() !== '') {
-                        bubbleContent += `<div class="bstage-trans-text">${msg.trans}</div>`;
-                    }
-                }
-                replyDiv.innerHTML = `
-                    <img src="${member.avatar || ''}" style="${!member.avatar?'display:none':''}">
-                    <div class="bstage-chat-avatar-placeholder" style="${member.avatar?'display:none':''}">${member.name[0]}</div>
-                    <div class="bstage-chat-bubble" style="${msg.type === 'image' ? 'background: transparent; padding: 0;' : ''}">${bubbleContent}</div>
-                `;
-                if (msg.type === 'image') {
-                    const imgNode = replyDiv.querySelector('.bstage-chat-image-clickable');
-                    if (imgNode) {
-                        imgNode.addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            const descText = imgNode.getAttribute('data-desc');
-                            if (typeof openImagePreview === 'function') openImagePreview(imgNode.src, descText);
-                            else {
-                                // Fullscreen Image Preview Fallback
-                                const overlay = document.createElement('div');
-                                overlay.style.position = 'fixed';
-                                overlay.style.top = '0';
-                                overlay.style.left = '0';
-                                overlay.style.width = '100vw';
-                                overlay.style.height = '100vh';
-                                overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
-                                overlay.style.zIndex = '10000';
-                                overlay.style.display = 'flex';
-                                overlay.style.flexDirection = 'column';
-                                overlay.style.justifyContent = 'center';
-                                overlay.style.alignItems = 'center';
-                                overlay.style.cursor = 'zoom-out';
-                                const img = document.createElement('img');
-                                img.src = imgNode.src;
-                                img.style.maxWidth = '90%';
-                                img.style.maxHeight = '80%';
-                                img.style.objectFit = 'contain';
-                                img.style.borderRadius = '12px';
-                                img.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
-                                overlay.appendChild(img);
-                                
-                                if (descText) {
-                                    const textDiv = document.createElement('div');
-                                    textDiv.style.color = '#fff';
-                                    textDiv.style.marginTop = '20px';
-                                    textDiv.style.maxWidth = '90%';
-                                    textDiv.style.textAlign = 'center';
-                                    textDiv.style.fontSize = '16px';
-                                    textDiv.textContent = descText;
-                                    overlay.appendChild(textDiv);
-                                }
-                                
-                                document.body.appendChild(overlay);
-                                overlay.addEventListener('click', () => overlay.remove());
-                            }
-                        });
-                    }
-                }
-                content.appendChild(replyDiv);
-            }
-        });
+        member.chatHistory.forEach(msg => appendCharChatMessage(member, msg, content));
+        clearPendingReply('chat');
         // Scroll to bottom
         setTimeout(() => { content.scrollTop = content.scrollHeight; }, 100);
         
         // Input Logic
-        const inputArea = document.querySelector('.bstage-chat-input-wrapper input');
-        const sendBtn = document.querySelector('.bstage-chat-input-wrapper .fa-paper-plane');
-        const magicBtn = document.getElementById('bstage-magic-btn');
+        const inputArea = document.getElementById('bstage-chat-input');
+        const sendBtn = document.getElementById('bstage-chat-send-btn');
+        const apiBtn = document.getElementById('bstage-chat-api-btn');
+        if (!inputArea || !sendBtn || !apiBtn) return;
         
         // Clone buttons to remove old listeners
         const newSendBtn = sendBtn.cloneNode(true);
         sendBtn.parentNode.replaceChild(newSendBtn, sendBtn);
         
-        const newMagicBtn = magicBtn.cloneNode(true);
-        magicBtn.parentNode.replaceChild(newMagicBtn, magicBtn);
+        const newApiBtn = apiBtn.cloneNode(true);
+        apiBtn.parentNode.replaceChild(newApiBtn, apiBtn);
 
         // Helper to get time
         const getCurrentTime = () => {
@@ -2220,32 +3063,49 @@ document.addEventListener('DOMContentLoaded', () => {
             const now = Date.now();
             checkAndAddDateBubble(member, content, now);
 
-            // Append User Msg
-                const displayTime = typeof window.formatChatBubbleTime === 'function' ? window.formatChatBubbleTime(now) : timeString;
-                const msgDiv = document.createElement('div');
-                msgDiv.className = 'bstage-chat-msg outgoing';
-                msgDiv.innerHTML = `
-                    <div class="bstage-msg-status">
-                        <div class="bstage-msg-status-text">未读</div>
-                        <div class="bstage-msg-time">${displayTime}</div>
-                    </div>
-                    <div class="bstage-chat-bubble">${txt}</div>
-                `;
-                content.appendChild(msgDiv);
-            
             // Save to History
             if (!member.chatHistory) member.chatHistory = [];
-            member.chatHistory.push({ isUser: true, type: 'text', text: txt, time: timeString, timestamp: now, status: '未读' });
+            const msg = {
+                id: createBstageMessageId('user'),
+                isUser: true,
+                type: 'text',
+                text: txt,
+                time: timeString,
+                timestamp: now,
+                status: '未读',
+                replyTo: pendingChatReply ? { ...pendingChatReply } : null
+            };
+            member.chatHistory.push(msg);
+            appendCharChatMessage(member, msg, content);
             saveBstageData();
 
             inputArea.value = '';
+            clearPendingReply('chat');
             content.scrollTop = content.scrollHeight;
         };
 
         newSendBtn.addEventListener('click', sendMsg);
+        newSendBtn.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                sendMsg();
+            }
+        });
         
-        newMagicBtn.addEventListener('click', () => {
-            triggerChatApi(member, content);
+        newApiBtn.addEventListener('click', async () => {
+            if (newApiBtn.classList.contains('is-loading')) return;
+            setChatActionLoading(newApiBtn, true);
+            try {
+                await triggerChatApi(member, content);
+            } finally {
+                setChatActionLoading(newApiBtn, false);
+            }
+        });
+        newApiBtn.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                newApiBtn.click();
+            }
         });
 
         // Handle Enter key on input
@@ -2287,32 +3147,24 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!isAuto) window.showToast(`${member.name} 正在输入...`);
 
         // Collect Chat History
-        let history = "聊天记录:\n";
+        if (!member.chatHistory || !Array.isArray(member.chatHistory)) member.chatHistory = [];
         let fetchCount = isContextEnabled ? contextMessageCount : 1;
-        
-        if (contentContainer) {
-            // Read from DOM if available
-            const msgs = Array.from(contentContainer.querySelectorAll('.bstage-chat-msg'));
-            msgs.slice(-fetchCount).forEach(el => {
-                const isUser = el.classList.contains('outgoing');
-                let text = '';
-                const textEl = el.querySelector('.bstage-msg-text');
-                if (textEl) {
-                    text = textEl.textContent;
-                } else {
-                    const bubble = el.querySelector('.bstage-chat-bubble');
-                    if (bubble) text = bubble.textContent;
-                }
-                history += `[${isUser ? 'User' : member.name}]: ${text.trim()}\n`;
-            });
-        } else if (member.chatHistory) {
-            // Read from internal state if DOM is not available (background)
-            member.chatHistory.slice(-fetchCount).forEach(msg => {
-                if (msg.type === 'text') {
-                    history += `[${msg.isUser ? 'User' : member.name}]: ${msg.text.trim()}\n`;
-                }
+        const promptMessages = member.chatHistory
+            .filter(msg => msg && msg.type !== 'date')
+            .slice(-fetchCount);
+        let history = "聊天记录（每条都有 id，replyTo 表示正在引用/翻牌某条消息）:\n";
+        if (promptMessages.length === 0) {
+            history += '暂无聊天记录。\n';
+        } else {
+            promptMessages.forEach(msg => {
+                const speaker = msg.isUser ? 'User' : member.name;
+                const line = formatMessageForPrompt(msg, speaker);
+                if (line) history += `${line}\n`;
             });
         }
+        const validUserReplyIds = promptMessages
+            .filter(msg => msg && msg.isUser && msg.id)
+            .map(msg => msg.id);
 
         // User Persona
         let userPersona = '';
@@ -2338,18 +3190,21 @@ ${systemDepthWorldBookContext ? `System Depth Rules:\n${systemDepthWorldBookCont
 当前真实时间是 ${realTimeContext}。
 
 请扮演该角色，与 User (粉丝/订阅者) 进行沉浸式对话。
+视角说明：User 在界面上看到的是与你的单聊；但从你的视角，你正在面对很多粉丝/订阅者的实时消息，User 只是其中一个可能被你看见的人。
 
 要求：
 1. 根据char的人设进行一次日常消息的营业，根据你的人设选择输出什么语言，例如你是韩国人，输出韩语。
-2. 从你的视角看会有很多很多粉丝的消息，你不一定能看见user发的消息，禁止每一条都回复user，禁止顺着user的话往下说，请按真实一对多的逻辑回复。
+2. 从你的视角看会有很多很多粉丝的消息，你不一定能看见 User 发的消息，禁止每一条都回复 User，禁止顺着 User 的话机械往下说，请按真实一对多的逻辑回复。
 3. 一句一发，将你想说的话拆分成 3 到 6 条简短的气泡回复。
-4. 必须返回严格的 JSON 数组格式（不要带有 markdown 代码块标记），包含原文和中文翻译。如果原文是中文则翻译为空。
-5. 你可以发送普通文本气泡，也可以发送图片，但发图片的概率很低，禁止每一条都发图片，比如有很多粉丝希望你发图片再发。
-6. 如果是图片，请使用 "type": "image" 并在 "description" 字段中写明画面的详细提示词描述（必须是中文描述）。
+4. 如果某条 User 消息带有 replyTo，说明 User 在引用/翻牌你的某条营业消息；你可以注意到，也可以像真实营业一样不一定回应。
+5. 必须返回严格的 JSON 数组格式（不要带有 markdown 代码块标记），包含原文和中文翻译。如果原文是中文则翻译为空。
+6. 你可以回复某条 User 消息；如需回复，请在该气泡对象中填写 replyToId，值只能从这些 User 消息 id 中选择：${validUserReplyIds.length ? validUserReplyIds.join(', ') : '无'}。不回复则省略或填空。
+7. 你可以发送普通文本气泡，也可以发送图片，但发图片的概率很低，禁止每一条都发图片，比如有很多粉丝希望你发图片再发。
+8. 如果是图片，请使用 "type": "image" 并在 "description" 字段中写明画面的详细提示词描述（必须是中文描述）。
 格式示例：
 [
-  {"type": "text", "text": "气泡1原文", "trans": "气泡1中文翻译"},
-  {"type": "image", "description": "一张帅气偶像的自拍，面带微笑，后台背景，明亮的灯光"}
+  {"type": "text", "text": "气泡1原文", "trans": "气泡1中文翻译", "replyToId": "可选的 User 消息 id"},
+  {"type": "image", "description": "一张帅气偶像的自拍，面带微笑，后台背景，明亮的灯光", "replyToId": "可选的 User 消息 id"}
 ]
 
 ${userPersona}
@@ -2468,6 +3323,7 @@ ${history}
                 let trans = '';
                 let type = 'text';
                 let imgDesc = '';
+                let replyToId = '';
                 
                 if (typeof msgItem === 'string') {
                     text = msgItem;
@@ -2476,24 +3332,18 @@ ${history}
                     text = msgItem.text || '';
                     trans = msgItem.trans || msgItem.translation || '';
                     imgDesc = msgItem.description || '';
+                    replyToId = stripGeneratedText(msgItem.replyToId || msgItem.reply_to_id || '');
                 }
+                const replySource = findMessageById(member.chatHistory, replyToId, msg => msg && msg.isUser);
+                const replyTo = replySource ? createReplyMeta(replySource, 'User') : null;
 
                 setTimeout(() => {
-                    const replyDiv = document.createElement('div');
-                    replyDiv.className = 'bstage-chat-msg income';
-                    
-                    let bubbleContent = '';
+                    let savedMsg = null;
                     
                     if (type === 'image') {
                         // Use default image
                         const fakeImgUrl = 'assets/moren.jpg';
-                        
-                        bubbleContent = `
-                            <div class="bstage-msg-text" style="padding: 0; background: transparent;">
-                                <img class="bstage-chat-image-clickable" src="${fakeImgUrl}" data-desc="${imgDesc || ''}" style="max-width: 250px; width: 100%; border-radius: 12px; display: block; object-fit: cover; cursor: zoom-in; border: 1px solid #333;">
-                            </div>
-                        `;
-                        
+
                         // Automatically save to locker
                         chatPhotos.push(fakeImgUrl);
                         saveBstageData();
@@ -2506,45 +3356,41 @@ ${history}
                         
                         // Save image message to history
                         if (!member.chatHistory) member.chatHistory = [];
-                        member.chatHistory.push({ isUser: false, type: 'image', imgUrl: fakeImgUrl, imgDesc: imgDesc, timestamp: Date.now() });
-                        saveBstageData();
+                        savedMsg = {
+                            id: createBstageMessageId('char'),
+                            isUser: false,
+                            type: 'image',
+                            imgUrl: fakeImgUrl,
+                            imgDesc: imgDesc,
+                            timestamp: Date.now(),
+                            replyTo,
+                            isUnread: !contentContainer
+                        };
                     } else {
-                        bubbleContent = `<div class="bstage-msg-text">${text}</div>`;
-                        if (trans && trans.trim() !== '') {
-                            bubbleContent += `<div class="bstage-trans-text">${trans}</div>`;
-                        }
-                        
                         // Save text message to history
                         if (!member.chatHistory) member.chatHistory = [];
-                        member.chatHistory.push({ isUser: false, type: 'text', text: text, trans: trans, timestamp: Date.now(), isUnread: true });
-                        saveBstageData();
+                        savedMsg = {
+                            id: createBstageMessageId('char'),
+                            isUser: false,
+                            type: 'text',
+                            text: text,
+                            trans: trans,
+                            timestamp: Date.now(),
+                            replyTo,
+                            isUnread: !contentContainer
+                        };
                     }
 
-                    if (contentContainer) {
-                        replyDiv.innerHTML = `
-                            <img src="${member.avatar || ''}" style="${!member.avatar?'display:none':''}">
-                            <div class="bstage-chat-avatar-placeholder" style="${member.avatar?'display:none':''}">${member.name[0]}</div>
-                            <div class="bstage-chat-bubble" style="${type === 'image' ? 'background: transparent; padding: 0;' : ''}">${bubbleContent}</div>
-                        `;
-                        
-                        if (type === 'image') {
-                            const imgNode = replyDiv.querySelector('.bstage-chat-image-clickable');
-                            if (imgNode) {
-                                imgNode.addEventListener('click', (e) => {
-                                    e.stopPropagation();
-                                    const descText = imgNode.getAttribute('data-desc');
-                                    openImagePreview(imgNode.src, descText);
-                                });
-                            }
-                        }
+                    member.chatHistory.push(savedMsg);
+                    saveBstageData();
 
-                        contentContainer.appendChild(replyDiv);
+                    if (contentContainer) {
+                        appendCharChatMessage(member, savedMsg, contentContainer);
                         contentContainer.scrollTop = contentContainer.scrollHeight;
                         
                         // Mark as read immediately if chatting
-                        if (member.chatHistory.length > 0) {
-                             member.chatHistory[member.chatHistory.length - 1].isUnread = false;
-                        }
+                        savedMsg.isUnread = false;
+                        saveBstageData();
                     } else {
                         // Background message received, show simple toast notification
                         if (isAuto) {
@@ -2575,11 +3421,11 @@ ${history}
         // Init Data if needed
         if (!team.shopItems) {
             team.shopItems = [
-                { id: 1, name: `${team.name} 2024 Season Greeting`, price: '₩45,000', img: null, category: '周边' },
-                { id: 2, name: `${team.name} Official Light Stick`, price: '₩55,000', img: null, category: '周边' },
-                { id: 3, name: 'Fan Meeting: OUR ZONE Ticket', price: '₩110,000', img: null, category: '票务' },
-                { id: 4, name: 'Video Call Event #3', price: '₩35,000', img: null, category: '签售' },
-                { id: 5, name: 'Behind Photo Set A', price: '₩15,000', img: null, category: '其他' },
+                { id: 1, name: `${team.name} 2024 Season Greeting`, price: '₩45,000', img: createExternalRandomImage(`${team.id || team.name}-shop-season`, 600, 600), category: '周边' },
+                { id: 2, name: `${team.name} Official Light Stick`, price: '₩55,000', img: createExternalRandomImage(`${team.id || team.name}-shop-lightstick`, 600, 600), category: '周边' },
+                { id: 3, name: 'Fan Meeting: OUR ZONE Ticket', price: '₩110,000', img: createExternalRandomImage(`${team.id || team.name}-shop-ticket`, 600, 600), category: '票务' },
+                { id: 4, name: 'Video Call Event #3', price: '₩35,000', img: createExternalRandomImage(`${team.id || team.name}-shop-videocall`, 600, 600), category: '签售' },
+                { id: 5, name: 'Behind Photo Set A', price: '₩15,000', img: createExternalRandomImage(`${team.id || team.name}-shop-photo-set`, 600, 600), category: '其他' },
             ];
         }
         if (!team.shopCategories) {
@@ -2596,18 +3442,17 @@ ${history}
                 gridHtml = '<div style="grid-column:span 2;text-align:center;padding:20px;color:#666;">暂无商品</div>';
             } else {
                 filteredItems.forEach(item => {
-                    const color = '#333'; 
+                    const img = item.img || createExternalRandomImage(`${team.id || team.name}-shop-${item.id || item.name}`, 600, 600);
+                    item.img = img;
                     gridHtml += `
                         <div class="bstage-shop-item" data-shop-id="${item.id}">
-                            <div class="bstage-shop-img" style="background-color: ${color};">
-                                <div style="width:100%;height:100%;display:flex;justify-content:center;align-items:center;color:#555;">
-                                    <i class="fas fa-image" style="font-size:30px;"></i>
-                                </div>
+                            <div class="bstage-shop-img">
+                                <img src="${escapeHtml(img)}" alt="">
                             </div>
                             <div class="bstage-shop-info">
-                                <span class="bstage-shop-badge">${item.category}</span>
-                                <div class="bstage-shop-name">${item.name}</div>
-                                <div class="bstage-shop-price">${item.price}</div>
+                                <span class="bstage-shop-badge">${escapeHtml(item.category)}</span>
+                                <div class="bstage-shop-name">${escapeHtml(item.name)}</div>
+                                <div class="bstage-shop-price">${escapeHtml(item.price)}</div>
                             </div>
                         </div>
                     `;
@@ -2623,10 +3468,10 @@ ${history}
                 catsHtml += `<div class="bstage-shop-cat-item ${activeClass}" data-cat="${cat}">${cat}</div>`;
             });
             
-            // Magic Wand Button
+            // Generate Button
             const magicHtml = `
                 <div class="bstage-small-magic-btn" id="bstage-shop-magic-btn" style="margin-left: 5px; flex-shrink: 0;">
-                    <i class="fas fa-magic"></i>
+                    <i class="fas fa-plus"></i>
                 </div>
             `;
 
@@ -2698,7 +3543,11 @@ ${history}
             // Magic Wand Listener
             const magicBtn = document.getElementById('bstage-shop-magic-btn');
             if(magicBtn) {
-                magicBtn.addEventListener('click', () => triggerShopApi(team, activeCategory));
+                magicBtn.addEventListener('click', () => {
+                    const request = prompt('想看什么类型的商品？留空则随机生成。');
+                    if (request === null) return;
+                    triggerShopApi(team, activeCategory, request.trim());
+                });
             }
 
             // Bind Shop Item Clicks
@@ -2742,7 +3591,7 @@ ${history}
         window.openView(document.getElementById('bstage-shop-detail-modal'));
     }
 
-    async function triggerShopApi(team, category) {
+    async function triggerShopApi(team, category, requestType = '') {
         if (!window.apiConfig || !window.apiConfig.endpoint || !window.apiConfig.apiKey) {
             window.showToast('请先在系统设置中配置 API');
             return;
@@ -2763,15 +3612,18 @@ ${history}
 团队名称: ${team.name}
 ${charInfo}
 商品分类: ${category}
+用户想看的类型: ${requestType || '留空，随机生成适合该团队/账号的商品'}
 
 要求：
-1. 商品名称要吸引人，符合偶像周边风格。
+1. 如果用户填写了想看的类型，商品必须围绕该类型生成；如果留空，则随机生成有吸引力的商品。
 2. 价格要合理（韩元），格式如 "₩45,000"。
-3. 返回严格的 JSON 数组格式，不要 markdown 标记。
+3. category 应该使用已有分类或根据用户想看的类型给出自然分类。
+4. desc 是商品详情简介。
+5. 返回严格的 JSON 数组格式，不要 markdown 标记。
 格式示例:
 [
-  {"name": "商品名称1", "price": "₩35,000"},
-  {"name": "商品名称2", "price": "₩12,000"}
+  {"name": "商品名称1", "price": "₩35,000", "category": "周边", "desc": "商品详情"},
+  {"name": "商品名称2", "price": "₩12,000", "category": "其他", "desc": "商品详情"}
 ]
 `;
 
@@ -2807,14 +3659,19 @@ ${charInfo}
             
             if (Array.isArray(newItems)) {
                 newItems.forEach(item => {
+                    const itemName = stripGeneratedText(item && item.name, 'New Item');
+                    const itemCategory = stripGeneratedText(item && item.category, category === '全部' ? (requestType || '周边') : category);
+                    if (itemCategory && !team.shopCategories.includes(itemCategory)) team.shopCategories.push(itemCategory);
                     team.shopItems.unshift({
                         id: Date.now() + Math.random(),
-                        name: item.name,
-                        price: item.price,
-                        img: null,
-                        category: category === '全部' ? '周边' : category
+                        name: itemName,
+                        price: stripGeneratedText(item && item.price, '₩35,000'),
+                        img: createExternalRandomImage(`${team.id || team.name}-shop-${itemName}-${Date.now()}`, 600, 600),
+                        category: itemCategory,
+                        desc: stripGeneratedText(item && item.desc)
                     });
                 });
+                saveBstageData();
                 renderShop(team); // Refresh
                 window.showToast(`已生成 ${newItems.length} 个商品`);
             }
@@ -2825,12 +3682,18 @@ ${charInfo}
     }
 
     function renderContent(team) {
-        if (!team.contentPhotos) team.contentPhotos = [];
+        if (!team.contentPhotos) {
+            team.contentPhotos = [
+                createExternalRandomImage(`${team.id || team.name}-content-photo-1`, 900, 600),
+                createExternalRandomImage(`${team.id || team.name}-content-photo-2`, 900, 600),
+                createExternalRandomImage(`${team.id || team.name}-content-photo-3`, 900, 600)
+            ];
+        }
         // Mock videos if not present
         if (!team.videos) team.videos = [
-            { title: "Behind The Scenes Ep.1", duration: "12:30", views: "1.2M", date: "2 days ago", thumb: null, series: 'vlog' },
-            { title: "Dance Practice", duration: "03:45", views: "5.5M", date: "1 week ago", thumb: null, series: 'vlog' },
-            { title: "Vlog #5: Day Off", duration: "15:20", views: "890K", date: "2 weeks ago", thumb: null, series: 'vlog' },
+            { title: "Behind The Scenes Ep.1", duration: "12:30", views: "1.2M", date: "2 days ago", thumb: createExternalRandomImage(`${team.id || team.name}-video-bts`, 800, 450), series: 'vlog' },
+            { title: "Dance Practice", duration: "03:45", views: "5.5M", date: "1 week ago", thumb: createExternalRandomImage(`${team.id || team.name}-video-dance`, 800, 450), series: 'vlog' },
+            { title: "Vlog #5: Day Off", duration: "15:20", views: "890K", date: "2 weeks ago", thumb: createExternalRandomImage(`${team.id || team.name}-video-day-off`, 800, 450), series: 'vlog' },
         ];
         
         // Init Series - Default to just "vlog" (and "全部" typically implied or handled)
@@ -2873,10 +3736,10 @@ ${charInfo}
                 </div>
             `;
 
-            // Magic Wand
+            // Generate Button
             const magicHtml = `
                 <div class="bstage-small-magic-btn" id="bstage-content-magic-btn" style="margin-left: 5px; flex-shrink: 0;">
-                    <i class="fas fa-magic"></i>
+                    <i class="fas fa-plus"></i>
                 </div>
             `;
 
@@ -2888,6 +3751,7 @@ ${charInfo}
                 videosHtml = '<div style="text-align:center; color:#666; padding:20px;">暂无视频</div>';
             } else {
                 filteredVideos.forEach(v => {
+                    if (!v.thumb) v.thumb = createExternalRandomImage(`${team.id || team.name}-video-${v.title || Date.now()}`, 800, 450);
                     const thumbStyle = v.thumb ? `background-image: url('${v.thumb}'); background-size: cover; background-position: center;` : '';
                     const thumbContent = v.thumb ? '' : `
                         <div style="width:100%;height:100%;display:flex;justify-content:center;align-items:center;color:#555;">
@@ -2997,7 +3861,11 @@ ${charInfo}
             // Magic Wand Listener
             const magicBtn = document.getElementById('bstage-content-magic-btn');
             if(magicBtn) {
-                magicBtn.addEventListener('click', () => triggerContentApi(team, activeSeries));
+                magicBtn.addEventListener('click', () => {
+                    const request = prompt('想看什么类型的视频内容？留空则随机生成。');
+                    if (request === null) return;
+                    triggerContentApi(team, activeSeries, request.trim());
+                });
             }
 
             // Start Auto Carousel
@@ -3038,12 +3906,7 @@ ${charInfo}
         document.getElementById('bstage-vid-publisher-name').textContent = currentTeam.name;
         
         const pubAvatar = document.getElementById('bstage-vid-publisher-avatar');
-        if (currentTeam.avatar) {
-            pubAvatar.src = currentTeam.avatar;
-            pubAvatar.style.display = 'block';
-        } else {
-            pubAvatar.style.display = 'none';
-        }
+        if (pubAvatar) pubAvatar.innerHTML = renderBstageAvatarContent(currentTeam, currentTeam.name);
 
         // Reset Player Placeholder Content (Clear bubbles if new video, or restore if saved)
         const playerPlaceholder = videoDetailModal.querySelector('.bstage-video-player-placeholder');
@@ -3369,7 +4232,7 @@ ${charInfo}
         });
     }
 
-    async function triggerContentApi(team, series) {
+    async function triggerContentApi(team, series, requestType = '') {
         if (!window.apiConfig || !window.apiConfig.endpoint || !window.apiConfig.apiKey) {
             window.showToast('请先在系统设置中配置 API');
             return;
@@ -3390,15 +4253,17 @@ ${charInfo}
 团队名称: ${team.name}
 ${charInfo}
 系列主题: ${series}
+用户想看的类型: ${requestType || '留空，随机生成适合该团队/账号的视频内容'}
 
 要求：
-1. 视频标题要吸引人。
+1. 如果用户填写了想看的类型，视频必须围绕该类型生成；如果留空，则随机生成有吸引力的视频内容。
 2. 生成虚拟的时长(如 12:30)、观看量(如 1.2M)、发布日期(如 2 days ago)。
-3. 返回严格的 JSON 数组格式，不要 markdown 标记。
+3. series 可以沿用当前系列，也可以根据用户想看的类型给出新系列名。
+4. 返回严格的 JSON 数组格式，不要 markdown 标记。
 格式示例:
 [
-  {"title": "Video Title 1", "duration": "10:05", "views": "500K", "date": "1 day ago"},
-  {"title": "Video Title 2", "duration": "03:20", "views": "1.2M", "date": "3 days ago"}
+  {"title": "Video Title 1", "duration": "10:05", "views": "500K", "date": "1 day ago", "series": "vlog"},
+  {"title": "Video Title 2", "duration": "03:20", "views": "1.2M", "date": "3 days ago", "series": "behind"}
 ]
 `;
 
@@ -3434,15 +4299,19 @@ ${charInfo}
             
             if (Array.isArray(newItems)) {
                 newItems.forEach(item => {
+                    const title = stripGeneratedText(item && item.title, 'New Video');
+                    const itemSeries = stripGeneratedText(item && item.series, series === '全部' ? (requestType || 'vlog') : series);
+                    if (itemSeries && !team.contentSeries.includes(itemSeries)) team.contentSeries.push(itemSeries);
                     team.videos.unshift({
-                        title: item.title,
-                        duration: item.duration,
-                        views: item.views,
-                        date: item.date,
-                        thumb: null,
-                        series: series === '全部' ? 'Vlog' : series
+                        title,
+                        duration: stripGeneratedText(item && item.duration, '10:05'),
+                        views: stripGeneratedText(item && item.views, '500K'),
+                        date: stripGeneratedText(item && item.date, 'Just now'),
+                        thumb: createExternalRandomImage(`${team.id || team.name}-content-${title}-${Date.now()}`, 800, 450),
+                        series: itemSeries
                     });
                 });
+                saveBstageData();
                 renderContent(team); // Refresh
                 window.showToast(`已生成 ${newItems.length} 个视频`);
             }
@@ -3493,7 +4362,7 @@ ${charInfo}
             const tab = e.target.getAttribute('data-tab');
             
             // Access Control
-            if ((tab === 'content' || tab === 'shop') && !currentTeam.isSubscribed) {
+            if ((tab === 'content' || tab === 'shop') && !currentTeam.isSubscribed && !isUserTeam(currentTeam)) {
                 renderLockedState(tab);
             } else {
                 if (tab === 'home') renderTeamHome(currentTeam);
@@ -3640,6 +4509,10 @@ ${charInfo}
                 document.getElementById('bstage-profile-avatar-display').style.display = 'block';
                 document.getElementById('bstage-profile-avatar-icon').style.display = 'none';
             }
+            renderFollowingBar();
+            if (isUserTeam(currentTeam)) {
+                currentTeam = getBstageUserTeam();
+            }
         }
         
         window.closeView(editProfileModal);
@@ -3679,12 +4552,393 @@ ${charInfo}
         });
     }
 
-    // Header Avatar Sync Logic
+    // Fan Chat Logic
+    const fallbackFanNames = ['Starry', 'Mina', 'Joon', 'Luna', 'BlueFan', 'Ari', 'Momo', 'Nabi', 'Echo', 'Summer'];
+
+    function getCurrentChatTimeText(timestamp = Date.now()) {
+        if (typeof window.formatChatBubbleTime === 'function') return window.formatChatBubbleTime(timestamp);
+        const d = new Date(timestamp);
+        return `${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`;
+    }
+
+    function getRandomFanName(index = 0) {
+        return fallbackFanNames[Math.floor(Math.random() * fallbackFanNames.length)] || `Fan${index + 1}`;
+    }
+
+    function fanMessageNeedsTranslation(text) {
+        const value = String(text || '');
+        const hasChinese = /[\u3400-\u9fff]/.test(value);
+        const hasForeignScript = /[A-Za-z\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff]/.test(value);
+        return hasForeignScript && !hasChinese;
+    }
+
+    function getFanSubscriberCount() {
+        if (!Array.isArray(bstageFanChatHistory)) return 0;
+        const fanNames = new Set();
+        bstageFanChatHistory.forEach(msg => {
+            if (msg && msg.type === 'text' && !msg.isUser && msg.name) {
+                fanNames.add(stripGeneratedText(msg.name, '粉丝'));
+            }
+        });
+        return fanNames.size;
+    }
+
+    function getFanSubscriberText() {
+        return `已订阅 ${getFanSubscriberCount()} 人`;
+    }
+
+    function updateFanSubscriberLabels() {
+        const text = getFanSubscriberText();
+        const subtitle = document.getElementById('bstage-fan-chat-subtitle');
+        const detailSubscribers = document.getElementById('bstage-fan-detail-subscribers');
+        if (subtitle) subtitle.textContent = text;
+        if (detailSubscribers) detailSubscribers.textContent = text;
+    }
+
+    function syncFanChatTranslationState() {
+        const content = document.getElementById('bstage-fan-chat-content');
+        if (!content) return;
+        content.classList.toggle('show-trans', isTranslationEnabled);
+    }
+
+    function applyFanChatSettings() {
+        const fanView = document.getElementById('bstage-fan-chat-view');
+        if (fanView) {
+            if (bstageFanChatSettings.chatBg) {
+                fanView.style.backgroundImage = `url('${bstageFanChatSettings.chatBg}')`;
+                fanView.style.backgroundSize = 'cover';
+                fanView.style.backgroundPosition = 'center';
+            } else {
+                fanView.style.backgroundImage = 'none';
+                fanView.style.backgroundColor = '#1c1c1e';
+            }
+        }
+        applyDynamicStyles();
+        syncFanChatTranslationState();
+    }
+
+    function openFanChatDetailSheet() {
+        updateFanSubscriberLabels();
+        populateFanCssSelects();
+        applyFanChatSettings();
+
+        const userName = window.userState && window.userState.name ? window.userState.name : 'User';
+        const userAvatar = window.userState && window.userState.avatarUrl ? window.userState.avatarUrl : '';
+        const detailName = document.getElementById('bstage-fan-detail-name');
+        const avatar = document.getElementById('bstage-fan-detail-avatar');
+        const avatarIcon = document.getElementById('bstage-fan-detail-avatar-icon');
+        if (detailName) detailName.textContent = `${userName} 的粉丝聊天室`;
+        if (avatar && avatarIcon) {
+            if (userAvatar) {
+                avatar.src = userAvatar;
+                avatar.style.display = 'block';
+                avatarIcon.style.display = 'none';
+            } else {
+                avatar.src = '';
+                avatar.style.display = 'none';
+                avatarIcon.style.display = 'block';
+            }
+        }
+
+        const contextSwitch = document.getElementById('bstage-fan-context-switch');
+        const contextCount = document.getElementById('bstage-fan-context-count');
+        const transSwitch = document.getElementById('bstage-fan-trans-switch');
+        if (contextSwitch) contextSwitch.classList.toggle('active', isContextEnabled);
+        if (contextCount) contextCount.value = contextMessageCount;
+        if (transSwitch) transSwitch.classList.toggle('active', isTranslationEnabled);
+
+        window.openView(fanChatDetailSheet);
+    }
+
+    function appendFanDateIfNeeded(contentContainer, timestamp) {
+        let lastMsg = null;
+        for (let i = bstageFanChatHistory.length - 1; i >= 0; i--) {
+            if (bstageFanChatHistory[i].type !== 'date') {
+                lastMsg = bstageFanChatHistory[i];
+                break;
+            }
+        }
+
+        const timeThreshold = 5 * 60 * 1000;
+        if (!lastMsg || !lastMsg.timestamp || timestamp - lastMsg.timestamp > timeThreshold) {
+            const timeText = formatTimeBubble(timestamp);
+            const dateMsg = { type: 'date', text: timeText, timestamp };
+            bstageFanChatHistory.push(dateMsg);
+            if (contentContainer) appendFanChatMessage(dateMsg, contentContainer);
+        }
+    }
+
+    function appendFanChatMessage(msg, contentContainer) {
+        if (!contentContainer || !msg) return;
+
+        if (msg.type === 'date') {
+            const dateDiv = document.createElement('div');
+            dateDiv.className = 'bstage-chat-date';
+            dateDiv.textContent = msg.text;
+            contentContainer.appendChild(dateDiv);
+            return;
+        }
+
+        ensureMessageId(msg, msg.isUser ? 'user' : 'fan');
+
+        if (msg.isUser) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'bstage-chat-msg outgoing';
+            msgDiv.dataset.msgId = msg.id;
+            msgDiv.innerHTML = `
+                <div class="bstage-msg-status">
+                    <div class="bstage-msg-status-text">已发送</div>
+                    <div class="bstage-msg-time">${escapeHtml(msg.time || getCurrentChatTimeText(msg.timestamp))}</div>
+                </div>
+                <div class="bstage-chat-bubble">
+                    ${renderReplyQuote(msg.replyTo)}
+                    <div class="bstage-msg-text">${escapeHtml(msg.text)}</div>
+                </div>
+            `;
+            contentContainer.appendChild(msgDiv);
+            return;
+        }
+
+        const fanName = stripGeneratedText(msg.name, '粉丝');
+        msg.avatarEmoji = msg.avatarEmoji || getStableEmojiAvatar(`bstage-fan-${fanName}-${msg.id || msg.timestamp || ''}`);
+        const transText = stripGeneratedText(msg.trans);
+        const replyDiv = document.createElement('div');
+        replyDiv.className = 'bstage-chat-msg income';
+        replyDiv.dataset.msgId = msg.id;
+        replyDiv.innerHTML = `
+            ${renderBstageAvatar(msg, fanName, 'bstage-chat-avatar')}
+            <div class="bstage-chat-bubble">
+                ${renderReplyQuote(msg.replyTo)}
+                <div class="bstage-fan-chat-sender">${escapeHtml(fanName)}</div>
+                <div class="bstage-msg-text">${escapeHtml(msg.text)}</div>
+                ${transText ? `<div class="bstage-trans-text">${escapeHtml(transText)}</div>` : ''}
+            </div>
+            <button class="bstage-msg-reply-btn" type="button" aria-label="回复消息" title="回复消息">
+                <i class="fas fa-reply"></i>
+            </button>
+        `;
+        const replyBtn = replyDiv.querySelector('.bstage-msg-reply-btn');
+        if (replyBtn) {
+            replyBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                setPendingReply('fan', createReplyMeta(msg, fanName));
+            });
+        }
+        contentContainer.appendChild(replyDiv);
+    }
+
+    function renderFanChatHistory() {
+        const content = document.getElementById('bstage-fan-chat-content');
+        if (!content) return;
+        content.innerHTML = '';
+        syncFanChatTranslationState();
+
+        if (!Array.isArray(bstageFanChatHistory)) bstageFanChatHistory = [];
+        if (bstageFanChatHistory.length === 0) {
+            content.innerHTML = '<div class="bstage-system-notice">粉丝聊天室已开启</div>';
+        } else {
+            bstageFanChatHistory.forEach(msg => appendFanChatMessage(msg, content));
+        }
+        updateFanSubscriberLabels();
+
+        setTimeout(() => {
+            content.scrollTop = content.scrollHeight;
+        }, 50);
+    }
+
+    function openFanChat() {
+        applyFanChatSettings();
+        renderFanChatHistory();
+        clearPendingReply('fan');
+        window.openView(bstageFanChatView);
+        const input = document.getElementById('bstage-fan-chat-input');
+        setTimeout(() => {
+            if (input) input.focus();
+        }, 80);
+    }
+
+    function sendFanChatMessage() {
+        const input = document.getElementById('bstage-fan-chat-input');
+        const content = document.getElementById('bstage-fan-chat-content');
+        if (!input || !content) return;
+
+        const text = input.value.trim();
+        if (!text) return;
+
+        if (content.querySelector('.bstage-system-notice') && bstageFanChatHistory.length === 0) {
+            content.innerHTML = '';
+        }
+
+        const now = Date.now();
+        appendFanDateIfNeeded(content, now);
+        const msg = {
+            id: createBstageMessageId('user'),
+            isUser: true,
+            type: 'text',
+            text,
+            time: getCurrentChatTimeText(now),
+            timestamp: now,
+            replyTo: pendingFanReply ? { ...pendingFanReply } : null
+        };
+        bstageFanChatHistory.push(msg);
+        appendFanChatMessage(msg, content);
+        saveBstageData();
+
+        input.value = '';
+        clearPendingReply('fan');
+        content.scrollTop = content.scrollHeight;
+    }
+
+    async function triggerFanChatApi() {
+        const apiBtn = document.getElementById('bstage-fan-chat-api-btn');
+        const content = document.getElementById('bstage-fan-chat-content');
+        if (!content || !apiBtn || apiBtn.classList.contains('is-loading')) return;
+
+        if (!window.apiConfig || !window.apiConfig.endpoint || !window.apiConfig.apiKey) {
+            window.showToast('请先在系统设置中配置 API');
+            return;
+        }
+
+        const userName = window.userState && window.userState.name ? window.userState.name : 'User';
+        const userPersona = window.userState && window.userState.persona ? window.userState.persona : '';
+        const teamContext = currentTeam ? `当前 b.stage 团队：${currentTeam.name}\n团队信息：${currentTeam.desc || '无'}` : '当前没有选中的 b.stage 团队。';
+        const fetchCount = isContextEnabled ? contextMessageCount : 1;
+        bstageFanChatHistory.forEach(msg => {
+            if (msg && msg.type !== 'date') ensureMessageId(msg, msg.isUser ? 'user' : 'fan');
+        });
+        const userMessages = bstageFanChatHistory
+            .filter(msg => msg && msg.type === 'text' && msg.isUser && msg.text)
+            .slice(-fetchCount);
+        const history = userMessages.length
+            ? userMessages.map(msg => formatMessageForPrompt(msg, userName)).join('\n')
+            : '暂无 User 发言。';
+        const validUserReplyIds = userMessages.map(msg => msg.id).filter(Boolean);
+
+        const systemDepthWorldBookContext = window.getGlobalWorldBookContextByPosition ? window.getGlobalWorldBookContextByPosition('system_depth') : '';
+        const beforeRoleWorldBookContext = window.getGlobalWorldBookContextByPosition ? window.getGlobalWorldBookContextByPosition('before_role') : '';
+        const afterRoleWorldBookContext = window.getGlobalWorldBookContextByPosition ? window.getGlobalWorldBookContextByPosition('after_role') : '';
+
+        const now = new Date();
+        const days = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+        const realTimeContext = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${days[now.getDay()]} ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+        const prompt = `
+${systemDepthWorldBookContext ? `System Depth Rules:\n${systemDepthWorldBookContext}\n\n` : ''}${beforeRoleWorldBookContext ? `Before Role Rules:\n${beforeRoleWorldBookContext}\n\n` : ''}你正在模拟 b.stage 的粉丝聊天室。b.stage 是国际化粉丝互动应用。
+
+当前账号 / User：${userName}
+User 的人设：${userPersona || '未填写'}
+${teamContext}
+当前真实时间：${realTimeContext}
+${afterRoleWorldBookContext ? `\nAfter Role Rules:\n${afterRoleWorldBookContext}\n` : ''}
+
+上下文只包含 User 自己发过的消息，不包含任何粉丝历史消息。每条都有 id，replyTo 表示 User 正在引用/翻牌某条粉丝消息：
+${history}
+
+要求：
+1. 你现在扮演的是 ${userName} 的粉丝或订阅者群体，不是 ${userName} 本人，也不是单一角色。
+2. 这不是真正的群聊：每个粉丝从自己的视角像是在和 ${userName} 单聊；只有 ${userName} 的界面把很多粉丝消息汇总成聊天室。
+3. 如果 User 的某条消息带有 replyTo，说明 User 翻牌/回复了某位粉丝；其他粉丝可能猜测被翻牌的是谁、羡慕、起哄、提出翻牌请求，但不要写成所有粉丝都知道完整群聊上下文。
+4. 一次生成不少于 10 条、最多 14 条来自不同粉丝/订阅者的实时聊天室消息。
+5. 消息要像真实国际化粉丝互动：可以应援、闲聊、提问、刷屏、玩梗、跨语言互动，不要每条都机械回复 User 上一句话。
+6. 可以使用中文、英文、韩文、日文或其他符合语境的语言；如果 text 不是纯中文，必须在 trans 中提供自然中文翻译。text 是中文时 trans 为空字符串。
+7. 你可以回复某条 User 消息；如需回复，请在该对象中填写 replyToId，值只能从这些 User 消息 id 中选择：${validUserReplyIds.length ? validUserReplyIds.join(', ') : '无'}。不回复则省略或填空。
+8. 返回严格 JSON 数组，不要 markdown，不要解释，不要外层对象。
+9. 每条必须包含 name、text、trans。
+
+格式：
+[
+  { "name": "粉丝昵称", "text": "原文消息", "trans": "非中文消息的中文翻译，中文消息则为空字符串", "replyToId": "可选的 User 消息 id" }
+]
+`;
+
+        setChatActionLoading(apiBtn, true);
+        try {
+            const generated = await callBstageJsonApi(prompt, 'You generate strict JSON arrays for live fan chat messages.', 0.85);
+            if (!Array.isArray(generated)) throw new Error('invalid_fan_chat_payload');
+
+            const now = Date.now();
+            const messages = generated.slice(0, 14).map((item, index) => {
+                const fanName = stripGeneratedText(item && item.name, getRandomFanName(index));
+                const text = stripGeneratedText(typeof item === 'string' ? item : item && item.text);
+                const trans = stripGeneratedText(item && (item.trans || item.translationZh || item.translation));
+                const replyToId = stripGeneratedText(item && (item.replyToId || item.reply_to_id));
+                const replySource = findMessageById(bstageFanChatHistory, replyToId, msg => msg && msg.isUser);
+                if (!text) return null;
+                if (fanMessageNeedsTranslation(text) && !trans) return null;
+                return {
+                    id: createBstageMessageId('fan'),
+                    isUser: false,
+                    type: 'text',
+                    name: fanName,
+                    avatar: null,
+                    avatarEmoji: getStableEmojiAvatar(`bstage-fan-${fanName}-${index}`),
+                    text,
+                    trans,
+                    timestamp: now + index,
+                    replyTo: replySource ? createReplyMeta(replySource, userName) : null
+                };
+            }).filter(Boolean);
+
+            if (messages.length < 10) throw new Error('too_few_fan_chat_payload');
+
+            if (content.querySelector('.bstage-system-notice') && bstageFanChatHistory.length === 0) {
+                content.innerHTML = '';
+            }
+            appendFanDateIfNeeded(content, now);
+
+            messages.forEach((msg, index) => {
+                setTimeout(() => {
+                    bstageFanChatHistory.push(msg);
+                    appendFanChatMessage(msg, content);
+                    updateFanSubscriberLabels();
+                    saveBstageData();
+                    content.scrollTop = content.scrollHeight;
+                }, index * 650);
+            });
+        } catch (error) {
+            console.error('Bstage fan chat API failed:', error);
+            window.showToast(error && error.message === 'missing_api_config' ? '请先在系统设置中配置 API' : '生成粉丝消息失败');
+        } finally {
+            setChatActionLoading(apiBtn, false);
+        }
+    }
+
+    const fanChatInput = document.getElementById('bstage-fan-chat-input');
+    const fanChatSendBtn = document.getElementById('bstage-fan-chat-send-btn');
+    const fanChatApiBtn = document.getElementById('bstage-fan-chat-api-btn');
+    if (fanChatInput) {
+        fanChatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.isComposing && e.keyCode !== 229) {
+                e.preventDefault();
+                sendFanChatMessage();
+                fanChatInput.blur();
+            }
+        });
+    }
+    if (fanChatSendBtn) {
+        fanChatSendBtn.addEventListener('click', sendFanChatMessage);
+        fanChatSendBtn.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                sendFanChatMessage();
+            }
+        });
+    }
+    if (fanChatApiBtn) {
+        fanChatApiBtn.addEventListener('click', triggerFanChatApi);
+        fanChatApiBtn.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                triggerFanChatApi();
+            }
+        });
+    }
+
     const chatRoomBtn = document.getElementById('bstage-my-chatroom-btn');
     if (chatRoomBtn) {
         chatRoomBtn.addEventListener('click', () => {
-            // For now just show toast, logic can be expanded
-            window.showToast('粉丝聊天室功能开发中...');
+            window.closeView(userProfileModal);
+            openFanChat();
         });
     }
 
@@ -3721,8 +4975,5 @@ ${charInfo}
 
     // Initialize UI with loaded data
     renderFollowingBar();
-    if (teams.length > 0) {
-        // Small delay to ensure DOM is ready for calculations
-        setTimeout(() => openTeam(teams[0]), 50);
-    }
+    setTimeout(() => openTeam(getBstageUserTeam()), 50);
 });
