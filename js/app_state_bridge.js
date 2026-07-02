@@ -86,6 +86,20 @@
                 xDirectMessages: [],
                 xPostThreads: {},
                 xGeneratedPosts: [],
+                xAccounts: [],
+                xTrends: [
+                    { id: 'default-stage-style', title: '#黑白舞台造型', category: 'Entertainment · Trending', heat: '52.8K', movement: 'none' },
+                    { id: 'default-topic-host', title: '#超话主持人招募', category: 'Community · Trending', heat: '18.2K', movement: 'none' },
+                    { id: 'default-citywalk', title: '#周末Citywalk', category: 'City · Rising', heat: '9.6K', movement: 'none' }
+                ],
+                xAdvancePreferences: {
+                    strangersEnabled: true,
+                    strangersCount: 5,
+                    trendsEnabled: true,
+                    trendsCount: 3,
+                    postsEnabled: true,
+                    postsCount: 3
+                },
                 xHomeBannerUrl: '',
                 xSearchBannerUrl: ''
             },
@@ -157,6 +171,27 @@
     function normalizeAppState(raw) {
         const defaults = createDefaultAppState();
         const safe = isPlainObject(raw) ? raw : {};
+        const safeX = isPlainObject(safe.x) ? safe.x : {};
+        const normalizedX = {
+            ...defaults.x,
+            ...safeX,
+            xData: {
+                ...defaults.x.xData,
+                ...(isPlainObject(safeX.xData) ? safeX.xData : {})
+            },
+            xTopics: Array.isArray(safeX.xTopics) ? safeX.xTopics : defaults.x.xTopics,
+            boundWorldBookIds: Array.isArray(safeX.boundWorldBookIds) ? safeX.boundWorldBookIds.map(String) : defaults.x.boundWorldBookIds,
+            xVisitors: Array.isArray(safeX.xVisitors) ? safeX.xVisitors : defaults.x.xVisitors,
+            xDirectMessages: Array.isArray(safeX.xDirectMessages) ? safeX.xDirectMessages : defaults.x.xDirectMessages,
+            xPostThreads: isPlainObject(safeX.xPostThreads) ? safeX.xPostThreads : defaults.x.xPostThreads,
+            xGeneratedPosts: Array.isArray(safeX.xGeneratedPosts) ? safeX.xGeneratedPosts : defaults.x.xGeneratedPosts,
+            xAccounts: Array.isArray(safeX.xAccounts) ? safeX.xAccounts : defaults.x.xAccounts,
+            xTrends: Array.isArray(safeX.xTrends) ? safeX.xTrends : defaults.x.xTrends,
+            xAdvancePreferences: isPlainObject(safeX.xAdvancePreferences) ? safeX.xAdvancePreferences : defaults.x.xAdvancePreferences,
+            xHomeBannerUrl: typeof safeX.xHomeBannerUrl === 'string' ? safeX.xHomeBannerUrl : defaults.x.xHomeBannerUrl,
+            xSearchBannerUrl: typeof safeX.xSearchBannerUrl === 'string' ? safeX.xSearchBannerUrl : defaults.x.xSearchBannerUrl
+        };
+        delete normalizedX.xCurrentDate;
 
         return {
             ...defaults,
@@ -184,22 +219,7 @@
             },
             desktop: isPlainObject(safe.desktop) ? safe.desktop : defaults.desktop,
             bstage: isPlainObject(safe.bstage) ? safe.bstage : defaults.bstage,
-            x: {
-                ...defaults.x,
-                ...(isPlainObject(safe.x) ? safe.x : {}),
-                xData: {
-                    ...defaults.x.xData,
-                    ...(isPlainObject(safe.x?.xData) ? safe.x.xData : {})
-                },
-                xTopics: Array.isArray(safe.x?.xTopics) ? safe.x.xTopics : defaults.x.xTopics,
-                boundWorldBookIds: Array.isArray(safe.x?.boundWorldBookIds) ? safe.x.boundWorldBookIds.map(String) : defaults.x.boundWorldBookIds,
-                xVisitors: Array.isArray(safe.x?.xVisitors) ? safe.x.xVisitors : defaults.x.xVisitors,
-                xDirectMessages: Array.isArray(safe.x?.xDirectMessages) ? safe.x.xDirectMessages : defaults.x.xDirectMessages,
-                xPostThreads: isPlainObject(safe.x?.xPostThreads) ? safe.x.xPostThreads : defaults.x.xPostThreads,
-                xGeneratedPosts: Array.isArray(safe.x?.xGeneratedPosts) ? safe.x.xGeneratedPosts : defaults.x.xGeneratedPosts,
-                xHomeBannerUrl: typeof safe.x?.xHomeBannerUrl === 'string' ? safe.x.xHomeBannerUrl : defaults.x.xHomeBannerUrl,
-                xSearchBannerUrl: typeof safe.x?.xSearchBannerUrl === 'string' ? safe.x.xSearchBannerUrl : defaults.x.xSearchBannerUrl
-            },
+            x: normalizedX,
             imessage: {
                 ...defaults.imessage,
                 ...(isPlainObject(safe.imessage) ? safe.imessage : {}),

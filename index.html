@@ -4018,17 +4018,6 @@
     
 
             <div class="app-view x-view" id="x-view">
-                <!-- X App 施工中界面 (后续开发完成可直接删除此段) -->
-                <div style="position: absolute; inset: 0; z-index: 99999; background: #fff; display: flex; flex-direction: column; justify-content: center; align-items: center; color: #111;">
-                    <div style="position: absolute; top: max(16px, env(safe-area-inset-top)); left: 16px; width: 36px; height: 36px; border-radius: 18px; background: #f2f2f7; display: flex; justify-content: center; align-items: center; cursor: pointer;" data-x-close="true">
-                        <i class="fas fa-chevron-left"></i>
-                    </div>
-                    <i class="fas fa-person-digging" style="font-size: 64px; color: #1d9bf0; margin-bottom: 20px;"></i>
-                    <div style="font-size: 24px; font-weight: 800; margin-bottom: 10px;">X 施工中</div>
-                    <div style="font-size: 15px; color: #8e8e93; text-align: center; max-width: 80%;">正在进行系统升级与界面重构<br>敬请期待</div>
-                </div>
-                <!-- /X App 施工中界面 -->
-
                 <div class="x-main-content">
                     <section class="x-tab-content active" id="x-home-tab" data-x-tab="home">
                         <header class="x-app-header">
@@ -4164,7 +4153,7 @@
                                 </div>
                             </div>
 
-                            <div class="x-super-home-card">
+                            <div class="x-super-home-card" hidden>
                                 <div class="x-super-cover">
                                     <div class="x-super-cover-mark">#</div>
                                 </div>
@@ -4172,36 +4161,36 @@
                                     <div class="x-super-topic-avatar">超</div>
                                     <div class="x-super-title-row">
                                         <div>
-                                            <h3>舞台直拍研究所</h3>
-                                            <span>超话 · 12.4万签到 · 8.7万讨论</span>
+                                            <h3></h3>
+                                            <span></span>
                                         </div>
                                         <button type="button">签到</button>
                                     </div>
                                     <div class="x-super-actions">
-                                        <button type="button"><i class="fas fa-check"></i> 已关注</button>
-                                        <button type="button"><i class="fas fa-pen"></i> 发帖</button>
-                                        <button type="button" id="x-super-update-btn"><i class="fas fa-sync"></i> 更新</button>
+                                        <button type="button" aria-label="已关注" title="已关注"><i class="fas fa-check"></i></button>
+                                        <button type="button" id="x-super-compose-btn" aria-label="发帖" title="发帖"><i class="fas fa-pen"></i></button>
+                                        <button type="button" id="x-super-update-btn" aria-label="更新" title="更新"><i class="fas fa-sync"></i></button>
                                     </div>
                                 </div>
                             </div>
 
-                            <div class="x-super-content-tabs" id="x-super-profile-tabs">
+                            <div class="x-super-content-tabs" id="x-super-profile-tabs" hidden>
                                 <button class="active" type="button" data-super-tab="featured">精选</button>
                                 <button type="button" data-super-tab="posts">帖子</button>
                                 <button type="button" data-super-tab="photos">图片</button>
                                 <button type="button" data-super-tab="moments">动态</button>
                             </div>
 
-                            <div class="x-super-feed active" data-super-panel="featured">
+                            <div class="x-super-feed active" data-super-panel="featured" hidden>
                                 <div class="x-empty-state">暂无精选，点击更新获取内容</div>
                             </div>
-                            <div class="x-super-feed" data-super-panel="posts">
+                            <div class="x-super-feed" data-super-panel="posts" hidden>
                                 <div class="x-empty-state">暂无帖子</div>
                             </div>
-                            <div class="x-super-feed" data-super-panel="photos">
+                            <div class="x-super-feed" data-super-panel="photos" hidden>
                                 <div class="x-empty-state">暂无图片</div>
                             </div>
-                            <div class="x-super-feed" data-super-panel="moments">
+                            <div class="x-super-feed" data-super-panel="moments" hidden>
                                 <div class="x-empty-state">暂无动态</div>
                             </div>
                         </div>
@@ -4213,8 +4202,8 @@
                                 <span>Explore</span>
                                 <h2>发现</h2>
                             </div>
-                            <button class="x-header-button" type="button" aria-label="Filter">
-                                <i class="fas fa-sliders"></i>
+                            <button class="x-header-button" id="x-discover-search-btn" type="button" aria-label="搜索并生成热搜">
+                                <i class="fas fa-search"></i>
                             </button>
                         </header>
                         <div class="x-scroll-area">
@@ -4222,38 +4211,11 @@
                                 <i class="fas fa-search"></i>
                                 <span>搜索话题、用户、超话</span>
                             </div>
-                            <div class="x-date-control" style="display: flex; align-items: center; justify-content: space-between; padding: 15px 20px; background: #fff; border-radius: 16px; margin-bottom: 20px; ">
-                                <div style="display: flex; align-items: center; gap: 10px;">
-                                    <i class="far fa-calendar-alt" style="color: #8e8e93; font-size: 18px;"></i>
-                                    <input type="date" id="x-global-date-input" style="border: none; outline: none; font-size: 16px; font-weight: 600; color: #111; background: transparent; font-family: -apple-system, sans-serif;">
-                                </div>
-                                <div id="x-next-day-btn" style="background: #111; color: #fff; padding: 8px 16px; border-radius: 20px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;">
-                                    下一天 <i class="fas fa-arrow-right"></i>
-                                </div>
-                            </div>
-                            <div class="x-trend-list">
-                                <div class="x-trend-row">
-                                    <div>
-                                        <small>Entertainment · Trending</small>
-                                        <strong>#黑白舞台造型</strong>
-                                    </div>
-                                    <span>52.8K</span>
-                                </div>
-                                <div class="x-trend-row">
-                                    <div>
-                                        <small>Community · Trending</small>
-                                        <strong>#超话主持人招募</strong>
-                                    </div>
-                                    <span>18.2K</span>
-                                </div>
-                                <div class="x-trend-row">
-                                    <div>
-                                        <small>City · Rising</small>
-                                        <strong>#周末Citywalk</strong>
-                                    </div>
-                                    <span>9.6K</span>
-                                </div>
-                            </div>
+                            <button class="x-next-day-btn" id="x-next-day-btn" type="button">
+                                <span>下一天</span>
+                                <i class="fas fa-arrow-right"></i>
+                            </button>
+                            <div class="x-trend-list" id="x-trend-list"></div>
                         </div>
                     </section>
 
@@ -4289,7 +4251,6 @@
                                         <strong>Akira</strong>
                                         <p>刚刚转发了你的帖子，并留下了新的评论。</p>
                                     </div>
-                                    <span>2m</span>
                                 </div>
                                 <div class="x-message-row">
                                     <div class="x-avatar">M</div>
@@ -4297,7 +4258,6 @@
                                         <strong>Mina</strong>
                                         <p>这个超话排版很像微博，但看起来更干净。</p>
                                     </div>
-                                    <span>18m</span>
                                 </div>
                                 <div class="x-message-row">
                                     <div class="x-avatar">S</div>
@@ -4305,7 +4265,6 @@
                                         <strong>System</strong>
                                         <p>你的话题进入发现页趋势列表。</p>
                                     </div>
-                                    <span>1h</span>
                                 </div>
                             </div>
                         </div>
@@ -4529,6 +4488,14 @@
                                 <i class="fas fa-chevron-right"></i>
                             </button>
                             <div class="x-settings-note">Selected world books are saved only for X App context.</div>
+                            <button class="x-settings-row x-settings-danger-row" id="x-settings-clear-data-btn" type="button">
+                                <div class="x-settings-row-icon"><i class="fas fa-trash-alt"></i></div>
+                                <div>
+                                    <strong>清空所有 X 数据</strong>
+                                    <span>将 X 恢复到初始状态</span>
+                                </div>
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -4546,14 +4513,32 @@
                                 <div class="x-avatar x-avatar-dark">X</div>
                                 <textarea id="x-compose-text-input" maxlength="280" placeholder="有什么新鲜事?"></textarea>
                             </div>
-                            <div class="x-compose-image-placeholder" id="x-compose-image-placeholder">
-                                <i class="far fa-image"></i>
-                                <span>Image placeholder</span>
+                            <button class="x-compose-super-chip" id="x-compose-super-chip" type="button" hidden>
+                                <i class="fas fa-hashtag"></i>
+                                <span id="x-compose-super-name"></span>
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
+                            <label class="x-compose-topic-field" for="x-compose-topic-input">
+                                <i class="fas fa-hashtag"></i>
+                                <input id="x-compose-topic-input" type="text" maxlength="40" placeholder="添加一个话题（可选）">
+                            </label>
+                            <div class="x-compose-media-card">
+                                <button class="x-compose-image-placeholder" id="x-compose-image-placeholder" type="button">
+                                    <i class="far fa-image"></i>
+                                    <span class="x-compose-image-copy"><strong>上传本地图片</strong><small>点击选择 JPG、PNG 或 GIF</small></span>
+                                    <img id="x-compose-image-preview" alt="" hidden>
+                                </button>
+                                <input id="x-compose-image-input" type="file" accept="image/*" hidden>
+                                <div class="x-compose-image-url-row">
+                                    <input id="x-compose-image-url-input" type="url" inputmode="url" placeholder="粘贴图片 URL">
+                                    <button id="x-compose-image-url-btn" type="button">添加</button>
+                                </div>
+                                <button class="x-compose-image-clear" id="x-compose-image-clear-btn" type="button" hidden>移除当前图片</button>
                             </div>
                             <div class="x-compose-chip-row">
                                 <button class="active" type="button">Recommend</button>
                                 <button type="button">Following</button>
-                                <button type="button"># Topic</button>
+                                <button type="button" id="x-compose-topic-focus-btn"># Topic</button>
                             </div>
                         </div>
                     </div>
@@ -5866,7 +5851,7 @@
 
                     <!-- Row 1 -->
                     <div class="netflix-row">
-                        <h2 class="netflix-row-title">线下世界书</h2>
+                        <h2 class="netflix-row-title">世界书</h2>
                         <div class="netflix-row-scroll">
                             <div class="netflix-card">
                                 <div class="netflix-card-img" style="background: #333;"></div>
@@ -5903,7 +5888,7 @@
                         <p>你的片单、下载和观看记录会出现在这里</p>
                         <div class="netflix-profile-list">
                             <div><i class="fas fa-plus"></i><span>我的列表</span></div>
-                            <div><i class="fas fa-clock"></i><span>线下世界书</span></div>
+                            <div><i class="fas fa-clock"></i><span>世界书</span></div>
                             <div><i class="fas fa-download"></i><span>下载</span></div>
                         </div>
                     </div>

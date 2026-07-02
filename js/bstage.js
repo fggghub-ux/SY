@@ -439,6 +439,27 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
     document.getElementById('app').appendChild(editProfileModal);
 
+    // Shared Generate Type Sheet
+    const generateTypeSheet = document.createElement('div');
+    generateTypeSheet.className = 'bottom-sheet-overlay detail-sheet-overlay';
+    generateTypeSheet.id = 'bstage-generate-type-sheet';
+    generateTypeSheet.innerHTML = `
+        <div class="bottom-sheet" style="height: auto; max-height: 70%; background: #1c1c1e; color: #fff;">
+            <div class="sheet-handle"></div>
+            <div class="sheet-title" id="bstage-generate-type-title">生成内容</div>
+            <div class="detail-sheet-content bstage-modal-content">
+                <div class="bstage-form-group" style="background-color: #2c2c2e; border-color: #333;">
+                    <div class="bstage-form-item">
+                        <label id="bstage-generate-type-label" style="color: #aaa;">想看什么类型</label>
+                        <input type="text" id="bstage-generate-type-input" placeholder="留空则随机生成" style="color: #fff; background-color: transparent; border: none; outline: none; width: 100%; padding: 4px 0; margin-top: 4px;">
+                    </div>
+                </div>
+                <div class="sheet-action confirm-action" id="bstage-generate-type-confirm-btn" style="background-color: #fff; color: #000;">确认生成</div>
+            </div>
+        </div>
+    `;
+    document.getElementById('app').appendChild(generateTypeSheet);
+
     // Edit Team Sheet
     const editTeamSheet = document.createElement('div');
     editTeamSheet.className = 'bottom-sheet-overlay detail-sheet-overlay';
@@ -519,6 +540,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
 
                 <div class="sheet-action confirm-action" id="bstage-confirm-edit-video-btn" style="background-color: #000; color: #fff; margin-top: 20px;">保存</div>
+                <div class="sheet-action" id="bstage-delete-video-btn" style="background-color: #ff3b30; color: #fff; margin-top: 10px;">删除视频</div>
             </div>
         </div>
     `;
@@ -767,7 +789,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <div class="bstage-publisher-avatar" id="bstage-vid-publisher-avatar"></div>
                             <div class="bstage-publisher-name" id="bstage-vid-publisher-name">Team Name</div>
                             <div class="bstage-small-magic-btn" id="bstage-video-detail-magic-btn" style="margin-left: auto;">
-                                <i class="fas fa-magic"></i>
+                                <i class="fas fa-plus"></i>
                             </div>
                         </div>
 
@@ -787,6 +809,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 <!-- Comment Input (Sticky Bottom) -->
                 <div class="bstage-comment-input-area" style="background-color: #1c1c1e; border-top: 1px solid #333;">
+                    <div class="bstage-comment-reply-preview" id="bstage-vid-comment-reply-preview" style="display:none;">
+                        <div class="bstage-comment-reply-preview-text" id="bstage-vid-comment-reply-preview-text"></div>
+                        <div class="bstage-comment-reply-cancel" id="bstage-vid-comment-reply-cancel-btn" role="button" tabindex="0" aria-label="取消回复" title="取消回复">
+                            <i class="fas fa-times"></i>
+                        </div>
+                    </div>
                     <div class="bstage-user-avatar-small" id="bstage-comment-user-avatar"></div>
                     <input type="text" class="bstage-comment-input" id="bstage-vid-comment-input" placeholder="添加评论..." style="color: #fff; background-color: transparent; border: none; outline: none; flex: 1;">
                     <i class="fas fa-paper-plane bstage-comment-send-btn disabled" id="bstage-vid-comment-send-btn" style="color: #aaa;"></i>
@@ -855,6 +883,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let bstageFanChatHistory = []; // { type, isUser, text, name, avatar, timestamp }
     let bstageFanChatSettings = { chatBg: null, chatCssId: '', bubbleCssId: '' };
     let bstageUserTeamState = { id: '__bstage_user_team__', isUserTeam: true, isSubscribed: true };
+    let bstageFanSubscriberCount = null;
+    let bstageFanSubscriberGrowthTimer = null;
+    let pendingVideoCommentReply = null;
+    let currentGenerateTypeAction = null;
     let chatPhotos = []; // List of photo URLs for the current chat/team (Simplified as global for now)
     let contentCarouselInterval = null; // To track auto-rotation
     let bstagePresets = {
@@ -968,15 +1000,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getBstageUserTeam() {
-        const userName = window.userState && window.userState.name ? window.userState.name : 'User';
-        const userAvatar = window.userState && window.userState.avatarUrl ? window.userState.avatarUrl : null;
+        const baseUserName = window.userState && window.userState.name ? window.userState.name : 'User';
+        const customName = typeof bstageUserTeamState.customName === 'string' ? bstageUserTeamState.customName.trim() : '';
+        const userName = customName || baseUserName;
+        const hasCustomAvatar = Object.prototype.hasOwnProperty.call(bstageUserTeamState, 'customAvatar');
+        const userAvatar = hasCustomAvatar ? bstageUserTeamState.customAvatar : (window.userState && window.userState.avatarUrl ? window.userState.avatarUrl : null);
         bstageUserTeamState.id = '__bstage_user_team__';
         bstageUserTeamState.isUserTeam = true;
         bstageUserTeamState.isSubscribed = true;
         bstageUserTeamState.name = userName;
-        bstageUserTeamState.desc = window.userState && window.userState.persona ? window.userState.persona : 'User 官方空间';
+        bstageUserTeamState.desc = bstageUserTeamState.customDesc || (window.userState && window.userState.persona ? window.userState.persona : 'User 官方空间');
         bstageUserTeamState.avatar = userAvatar;
+        if (Object.prototype.hasOwnProperty.call(bstageUserTeamState, 'customBg')) {
+            bstageUserTeamState.bg = bstageUserTeamState.customBg || null;
+        }
         bstageUserTeamState.avatarEmoji = bstageUserTeamState.avatarEmoji || getStableEmojiAvatar(`bstage-user-team-${userName}`);
+        const extraMembers = Array.isArray(bstageUserTeamState.members)
+            ? bstageUserTeamState.members.filter(member => member && !member.isUserMember && member.id !== '__bstage_user_member__')
+            : [];
         bstageUserTeamState.members = [{
             id: '__bstage_user_member__',
             isUserMember: true,
@@ -986,7 +1027,7 @@ document.addEventListener('DOMContentLoaded', () => {
             avatarEmoji: bstageUserTeamState.avatarEmoji,
             isSubscribed: true,
             subStartDate: Date.now()
-        }];
+        }, ...extraMembers];
         return bstageUserTeamState;
     }
 
@@ -996,6 +1037,69 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function createExternalRandomImage(seed, width = 800, height = 800) {
         return `https://picsum.photos/seed/${encodeURIComponent(seed)}/${width}/${height}`;
+    }
+
+    function removeBstageDefaultContent(team) {
+        if (!team || typeof team !== 'object') return false;
+        let changed = false;
+        const teamKey = team.id || team.name || '';
+
+        if (Array.isArray(team.shopItems)) {
+            const defaultShopNames = new Set([
+                `${team.name} 2024 Season Greeting`,
+                `${team.name} Official Light Stick`,
+                'Fan Meeting: OUR ZONE Ticket',
+                'Video Call Event #3',
+                'Behind Photo Set A'
+            ]);
+            const defaultShopImages = new Set([
+                createExternalRandomImage(`${teamKey}-shop-season`, 600, 600),
+                createExternalRandomImage(`${teamKey}-shop-lightstick`, 600, 600),
+                createExternalRandomImage(`${teamKey}-shop-ticket`, 600, 600),
+                createExternalRandomImage(`${teamKey}-shop-videocall`, 600, 600),
+                createExternalRandomImage(`${teamKey}-shop-photo-set`, 600, 600)
+            ]);
+            const before = team.shopItems.length;
+            team.shopItems = team.shopItems.filter(item => {
+                const itemName = item && item.name ? String(item.name) : '';
+                const itemImg = item && item.img ? String(item.img) : '';
+                return !(defaultShopNames.has(itemName) || defaultShopImages.has(itemImg));
+            });
+            if (team.shopItems.length !== before) changed = true;
+        }
+
+        if (Array.isArray(team.shopCategories) && team.shopCategories.length === 5) {
+            const defaultCats = ['全部', '周边', '票务', '签售', '其他'];
+            if (defaultCats.every((cat, index) => team.shopCategories[index] === cat) && (!team.shopItems || team.shopItems.length === 0)) {
+                team.shopCategories = ['全部'];
+                changed = true;
+            }
+        }
+
+        if (Array.isArray(team.contentPhotos)) {
+            const defaultPhotos = new Set([
+                createExternalRandomImage(`${teamKey}-content-photo-1`, 900, 600),
+                createExternalRandomImage(`${teamKey}-content-photo-2`, 900, 600),
+                createExternalRandomImage(`${teamKey}-content-photo-3`, 900, 600)
+            ]);
+            const before = team.contentPhotos.length;
+            team.contentPhotos = team.contentPhotos.filter(photo => !defaultPhotos.has(String(photo || '')));
+            if (team.contentPhotos.length !== before) changed = true;
+        }
+
+        if (Array.isArray(team.videos)) {
+            const defaultVideoTitles = new Set(['Behind The Scenes Ep.1', 'Dance Practice', 'Vlog #5: Day Off']);
+            const before = team.videos.length;
+            team.videos = team.videos.filter(video => !defaultVideoTitles.has(video && video.title ? String(video.title) : ''));
+            if (team.videos.length !== before) changed = true;
+        }
+
+        if (Array.isArray(team.contentSeries) && team.contentSeries.length === 2 && team.contentSeries[0] === '全部' && team.contentSeries[1] === 'vlog' && (!team.videos || team.videos.length === 0)) {
+            team.contentSeries = ['全部'];
+            changed = true;
+        }
+
+        return changed;
     }
 
     function createBstageMessageId(prefix = 'msg') {
@@ -1168,6 +1272,48 @@ document.addEventListener('DOMContentLoaded', () => {
         return parseApiJsonContent(data && data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : '');
     }
 
+    function openGenerateTypeSheet({ title, label, placeholder, onConfirm }) {
+        currentGenerateTypeAction = typeof onConfirm === 'function' ? onConfirm : null;
+        const titleEl = document.getElementById('bstage-generate-type-title');
+        const labelEl = document.getElementById('bstage-generate-type-label');
+        const inputEl = document.getElementById('bstage-generate-type-input');
+        const confirmBtn = document.getElementById('bstage-generate-type-confirm-btn');
+        if (titleEl) titleEl.textContent = title || '生成内容';
+        if (labelEl) labelEl.textContent = label || '想看什么类型';
+        if (inputEl) {
+            inputEl.value = '';
+            inputEl.placeholder = placeholder || '留空则随机生成';
+        }
+        if (confirmBtn) {
+            confirmBtn.classList.remove('is-loading');
+            confirmBtn.textContent = '确认生成';
+        }
+        window.openView(generateTypeSheet);
+        setTimeout(() => {
+            if (inputEl) inputEl.focus();
+        }, 80);
+    }
+
+    async function confirmGenerateTypeSheet() {
+        if (!currentGenerateTypeAction) return;
+        const confirmBtn = document.getElementById('bstage-generate-type-confirm-btn');
+        const inputEl = document.getElementById('bstage-generate-type-input');
+        if (confirmBtn && confirmBtn.classList.contains('is-loading')) return;
+        if (confirmBtn) {
+            confirmBtn.classList.add('is-loading');
+            confirmBtn.textContent = '生成中...';
+        }
+        try {
+            await currentGenerateTypeAction(inputEl ? inputEl.value.trim() : '');
+            window.closeView(generateTypeSheet);
+        } finally {
+            if (confirmBtn) {
+                confirmBtn.classList.remove('is-loading');
+                confirmBtn.textContent = '确认生成';
+            }
+        }
+    }
+
     function checkAndAddDateBubble(member, contentContainer, timestamp) {
         if (!member.chatHistory) member.chatHistory = [];
         let lastMsg = null;
@@ -1205,7 +1351,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function normalizeLoadedBstageData() {
         let changed = false;
+        const normalizeVideoComments = (team) => {
+            if (!team || !Array.isArray(team.videos)) return;
+            team.videos.forEach(video => {
+                if (!video || !Array.isArray(video.comments)) return;
+                video.comments.forEach(comment => {
+                    if (!comment || typeof comment !== 'object') return;
+                    const beforeId = comment.id;
+                    ensureMessageId(comment, comment.isUser ? 'user_comment' : 'video_comment');
+                    if (!beforeId) changed = true;
+                    if (!comment.isUser && !comment.avatar && !comment.avatarEmoji) {
+                        comment.avatarEmoji = getStableEmojiAvatar(`video-comment-${comment.name || comment.id}`);
+                        changed = true;
+                    }
+                    if (!Array.isArray(comment.replies)) {
+                        comment.replies = [];
+                        changed = true;
+                    }
+                    comment.replies.forEach(reply => {
+                        if (!reply || typeof reply !== 'object') return;
+                        const beforeReplyId = reply.id;
+                        ensureMessageId(reply, 'video_comment_reply');
+                        if (!beforeReplyId) changed = true;
+                        if (!reply.avatarEmoji) {
+                            reply.avatarEmoji = getStableEmojiAvatar(`video-comment-reply-${reply.name || reply.id}`);
+                            changed = true;
+                        }
+                    });
+                });
+            });
+        };
+
         teams.forEach(team => {
+            changed = removeBstageDefaultContent(team) || changed;
             changed = migrateRandomAvatarEntity(team, `team-${team.id || team.name}`) || changed;
             if (Array.isArray(team.members)) {
                 team.members.forEach(member => {
@@ -1220,7 +1398,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
             }
+            normalizeVideoComments(team);
         });
+
+        changed = removeBstageDefaultContent(bstageUserTeamState) || changed;
+        changed = migrateRandomAvatarEntity(bstageUserTeamState, `team-${bstageUserTeamState.id || bstageUserTeamState.name || 'user'}`) || changed;
+        normalizeVideoComments(bstageUserTeamState);
 
         if (Array.isArray(bstageFanChatHistory)) {
             bstageFanChatHistory.forEach(msg => {
@@ -1248,6 +1431,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 bstageFanChatHistory,
                 bstageFanChatSettings,
                 bstageUserTeamState,
+                bstageFanSubscriberCount,
                 chatPhotos,
                 bstagePresets,
                 isTranslationEnabled,
@@ -1282,6 +1466,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (window.__bstageGlobalState.bstageUserTeamState && typeof window.__bstageGlobalState.bstageUserTeamState === 'object') {
                 bstageUserTeamState = { ...bstageUserTeamState, ...window.__bstageGlobalState.bstageUserTeamState };
             }
+            if (Number.isFinite(Number(window.__bstageGlobalState.bstageFanSubscriberCount))) {
+                bstageFanSubscriberCount = Math.max(0, parseInt(window.__bstageGlobalState.bstageFanSubscriberCount, 10) || 0);
+            }
             if (Array.isArray(window.__bstageGlobalState.chatPhotos)) chatPhotos = window.__bstageGlobalState.chatPhotos;
             if (window.__bstageGlobalState.bstagePresets) bstagePresets = window.__bstageGlobalState.bstagePresets;
             if (typeof window.__bstageGlobalState.isTranslationEnabled === 'boolean') isTranslationEnabled = window.__bstageGlobalState.isTranslationEnabled;
@@ -1297,6 +1484,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Load data on init
     loadBstageData();
+    startFanSubscriberGrowth();
 
     // Hook window functions to save data automatically
     const originalToast = window.showToast;
@@ -1377,6 +1565,18 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
                 clearPendingReply('fan');
+            }
+        });
+    }
+
+    const generateTypeConfirmBtn = document.getElementById('bstage-generate-type-confirm-btn');
+    const generateTypeInput = document.getElementById('bstage-generate-type-input');
+    if (generateTypeConfirmBtn) generateTypeConfirmBtn.addEventListener('click', confirmGenerateTypeSheet);
+    if (generateTypeInput) {
+        generateTypeInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) {
+                e.preventDefault();
+                confirmGenerateTypeSheet();
             }
         });
     }
@@ -1900,7 +2100,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // Click outside to close modals
-    [searchGenerateModal, createTeamSheet, addCharSheet, pullFriendSheet, subModal, popSubModal, userProfileModal, ordersModal, editProfileModal, editTeamSheet, chatDetailSheet, fanChatDetailSheet, lockerModal, videoDetailModal, editVideoSheet, shopDetailModal].forEach(modal => {
+    [searchGenerateModal, generateTypeSheet, createTeamSheet, addCharSheet, pullFriendSheet, subModal, popSubModal, userProfileModal, ordersModal, editProfileModal, editTeamSheet, chatDetailSheet, fanChatDetailSheet, lockerModal, videoDetailModal, editVideoSheet, shopDetailModal].forEach(modal => {
         modal.addEventListener('click', (e) => {
             if (e.target === modal) {
                 window.closeView(modal);
@@ -2377,6 +2577,7 @@ ${generationIntent}
 
                 if (isEditingTeam && currentTeam) {
                     renderEditTeamMembers();
+                    saveBstageData();
                      // Update Pop View if needed
                     if (document.querySelector('.bstage-nav-item[data-tab="pop"]').classList.contains('active')) {
                         renderTeamPop(currentTeam);
@@ -2402,6 +2603,7 @@ ${generationIntent}
                 if (isEditingTeam && currentTeam) {
                     currentTeam.members.push(newChar);
                     renderEditTeamMembers();
+                    saveBstageData();
                     if (document.querySelector('.bstage-nav-item[data-tab="pop"]').classList.contains('active')) {
                         renderTeamPop(currentTeam);
                     }
@@ -2508,7 +2710,7 @@ ${generationIntent}
             `;
             
             item.addEventListener('click', () => {
-                if (!isUserTeam(team) && currentTeam && currentTeam.id === team.id) {
+                if (currentTeam && currentTeam.id === team.id) {
                     openEditTeamModal(team);
                 } else {
                     openTeam(team);
@@ -2519,11 +2721,12 @@ ${generationIntent}
     }
 
     function openEditTeamModal(team) {
-        if (isUserTeam(team)) {
-            openTeam(getBstageUserTeam());
-            return;
-        }
+        if (isUserTeam(team)) team = getBstageUserTeam();
+        currentTeam = team;
         isEditingTeam = true;
+        editTeamSheet.classList.toggle('bstage-user-team-editing', isUserTeam(team));
+        const deleteBtn = document.getElementById('bstage-delete-team-btn');
+        if (deleteBtn) deleteBtn.style.display = isUserTeam(team) ? 'none' : '';
         document.getElementById('bstage-edit-team-name-input').value = team.name;
         
         const avatarPreview = document.getElementById('bstage-edit-team-avatar-preview');
@@ -2567,6 +2770,7 @@ ${generationIntent}
             
             // Add click listener to edit
             item.addEventListener('click', () => {
+                if (isUserTeam(currentTeam) && m.isUserMember) return;
                 currentEditingMember = m;
                 document.getElementById('bstage-char-name-input').value = m.name;
                 document.getElementById('bstage-char-role-input').value = m.role || '';
@@ -2621,10 +2825,18 @@ ${generationIntent}
         const hasBg = document.getElementById('bstage-edit-team-bg-preview').style.display !== 'none';
 
         if (name) {
-            currentTeam.name = name;
-            currentTeam.avatar = hasAvatar ? avatar : null;
-            currentTeam.avatarEmoji = hasAvatar ? null : (currentTeam.avatarEmoji || getStableEmojiAvatar(`team-${currentTeam.id || name}`));
-            currentTeam.bg = hasBg ? bg : null;
+            if (isUserTeam(currentTeam)) {
+                bstageUserTeamState.customName = name;
+                bstageUserTeamState.customAvatar = hasAvatar ? avatar : null;
+                bstageUserTeamState.customBg = hasBg ? bg : null;
+                bstageUserTeamState.avatarEmoji = hasAvatar ? null : (bstageUserTeamState.avatarEmoji || getStableEmojiAvatar(`team-${currentTeam.id || name}`));
+                currentTeam = getBstageUserTeam();
+            } else {
+                currentTeam.name = name;
+                currentTeam.avatar = hasAvatar ? avatar : null;
+                currentTeam.avatarEmoji = hasAvatar ? null : (currentTeam.avatarEmoji || getStableEmojiAvatar(`team-${currentTeam.id || name}`));
+                currentTeam.bg = hasBg ? bg : null;
+            }
             
             saveBstageData(); // Explicitly save to ensure persistence
             renderFollowingBar();
@@ -2716,50 +2928,14 @@ ${generationIntent}
     }
 
     function renderTeamPop(team) {
-        if (isUserTeam(team)) {
-            const userTeam = getBstageUserTeam();
-            contentArea.innerHTML = `
-                <div class="bstage-pop-view">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
-                        <h2 style="font-size:20px; font-weight:700;">User POP</h2>
-                    </div>
-                    <div class="bstage-pop-list" id="bstage-pop-list-container">
-                        <div class="bstage-pop-item bstage-user-fan-chat-card" id="bstage-user-team-fan-chat-btn">
-                            <div class="bstage-pop-info">
-                                <div class="bstage-pop-avatar bstage-emoji-avatar"><i class="fas fa-comments"></i></div>
-                                <div class="bstage-pop-name-wrap">
-                                    <div class="bstage-pop-name">粉丝聊天室 <i class="fas fa-check-circle bstage-verified-icon"></i></div>
-                                    <div class="bstage-pop-role">${escapeHtml(getFanSubscriberText())}</div>
-                                </div>
-                            </div>
-                            <div class="bstage-pop-action">
-                                <div class="bstage-pop-status">进入 <i class="fas fa-chevron-right"></i></div>
-                            </div>
-                        </div>
-                        <div class="bstage-pop-item">
-                            <div class="bstage-pop-info">
-                                ${renderBstageAvatar(userTeam, userTeam.name, 'bstage-pop-avatar')}
-                                <div class="bstage-pop-name-wrap">
-                                    <div class="bstage-pop-name">${escapeHtml(userTeam.name)} <i class="fas fa-check-circle bstage-verified-icon"></i></div>
-                                    <div class="bstage-pop-role">${escapeHtml(userTeam.desc || 'User')}</div>
-                                </div>
-                            </div>
-                            <div class="bstage-pop-action">
-                                <div class="bstage-pop-status">User</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-            const fanBtn = document.getElementById('bstage-user-team-fan-chat-btn');
-            if (fanBtn) fanBtn.addEventListener('click', openFanChat);
-            return;
-        }
+        const isFixedUserTeam = isUserTeam(team);
+        const popTeam = isFixedUserTeam ? getBstageUserTeam() : team;
+        if (isFixedUserTeam) currentTeam = popTeam;
 
         contentArea.innerHTML = `
             <div class="bstage-pop-view">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
-                    <h2 style="font-size:20px; font-weight:700;">Star</h2>
+                    <h2 style="font-size:20px; font-weight:700;">${isFixedUserTeam ? 'User POP' : 'Star'}</h2>
                 </div>
                 <div class="bstage-pop-list" id="bstage-pop-list-container">
                     <!-- Members -->
@@ -2768,16 +2944,17 @@ ${generationIntent}
         `;
 
         const container = document.getElementById('bstage-pop-list-container');
-        if (team.members && team.members.length > 0) {
-            team.members.forEach(m => {
+        if (popTeam.members && popTeam.members.length > 0) {
+            popTeam.members.forEach(m => {
                 const item = document.createElement('div');
                 item.className = 'bstage-pop-item';
+                const isUserSelfMember = isFixedUserTeam && m.isUserMember;
                 
                 // Expiry Check
                 let isExpired = false;
                 let inGracePeriod = false;
                 
-                if (m.isSubscribed && m.subExpiryDate) {
+                if (!isUserSelfMember && m.isSubscribed && m.subExpiryDate) {
                     const now = Date.now();
                     const graceEnd = m.subExpiryDate + (3 * 24 * 60 * 60 * 1000); // 3 days buffer
                     
@@ -2796,14 +2973,18 @@ ${generationIntent}
 
                 // Calculate days
                 let daysText = '';
-                if (m.isSubscribed && m.subStartDate) {
+                if (isUserSelfMember) {
+                    daysText = getFanSubscriberText();
+                } else if (m.isSubscribed && m.subStartDate) {
                     const days = Math.floor((Date.now() - m.subStartDate) / (1000 * 60 * 60 * 24)) + 1;
                     daysText = `已一同 ${days} 天`;
                 }
 
                 // Action Button Logic
                 let actionHtml = '';
-                if (m.isSubscribed) {
+                if (isUserSelfMember) {
+                    actionHtml = '<div class="bstage-pop-status">粉丝聊天室 <i class="fas fa-chevron-right"></i></div>';
+                } else if (m.isSubscribed) {
                     if (inGracePeriod) {
                         actionHtml = '<div class="bstage-pop-sub-btn renew" style="background-color: #ffcc00; color: #000;">续费(缓冲)</div>';
                     } else {
@@ -2812,6 +2993,7 @@ ${generationIntent}
                 } else {
                     actionHtml = '<div class="bstage-pop-sub-btn">订阅</div>';
                 }
+                const roleClass = isUserSelfMember ? 'bstage-pop-role bstage-fan-subscriber-label' : 'bstage-pop-role';
 
                 item.innerHTML = `
                     <div class="bstage-pop-info">
@@ -2821,7 +3003,7 @@ ${generationIntent}
                                 ${escapeHtml(m.name)} 
                                 <i class="fas fa-check-circle bstage-verified-icon"></i>
                             </div>
-                            ${daysText ? `<div class="bstage-pop-role">${daysText}</div>` : ''}
+                            ${daysText ? `<div class="${roleClass}">${daysText}</div>` : ''}
                         </div>
                     </div>
                     <div class="bstage-pop-action">
@@ -2830,7 +3012,9 @@ ${generationIntent}
                 `;
 
                 // Bind Events
-                if (m.isSubscribed && !inGracePeriod) {
+                if (isUserSelfMember) {
+                    item.addEventListener('click', openFanChat);
+                } else if (m.isSubscribed && !inGracePeriod) {
                     item.addEventListener('click', () => openChat(m));
                 } else {
                     // Renew Button (Grace Period)
@@ -2899,6 +3083,7 @@ ${generationIntent}
             });
 
             if (currentTeam) renderTeamPop(currentTeam);
+            saveBstageData();
             window.showToast(`成功订阅 ${currentPopSubMember.name}！`);
             window.closeView(popSubModal);
         }
@@ -3418,18 +3603,13 @@ ${history}
     }
 
     function renderShop(team) {
+        if (removeBstageDefaultContent(team)) saveBstageData();
         // Init Data if needed
-        if (!team.shopItems) {
-            team.shopItems = [
-                { id: 1, name: `${team.name} 2024 Season Greeting`, price: '₩45,000', img: createExternalRandomImage(`${team.id || team.name}-shop-season`, 600, 600), category: '周边' },
-                { id: 2, name: `${team.name} Official Light Stick`, price: '₩55,000', img: createExternalRandomImage(`${team.id || team.name}-shop-lightstick`, 600, 600), category: '周边' },
-                { id: 3, name: 'Fan Meeting: OUR ZONE Ticket', price: '₩110,000', img: createExternalRandomImage(`${team.id || team.name}-shop-ticket`, 600, 600), category: '票务' },
-                { id: 4, name: 'Video Call Event #3', price: '₩35,000', img: createExternalRandomImage(`${team.id || team.name}-shop-videocall`, 600, 600), category: '签售' },
-                { id: 5, name: 'Behind Photo Set A', price: '₩15,000', img: createExternalRandomImage(`${team.id || team.name}-shop-photo-set`, 600, 600), category: '其他' },
-            ];
+        if (!Array.isArray(team.shopItems)) {
+            team.shopItems = [];
         }
-        if (!team.shopCategories) {
-            team.shopCategories = ['全部', '周边', '票务', '签售', '其他'];
+        if (!Array.isArray(team.shopCategories) || team.shopCategories.length === 0) {
+            team.shopCategories = ['全部'];
         }
 
         let activeCategory = '全部';
@@ -3476,7 +3656,7 @@ ${history}
             `;
 
             // Shop Banner Logic
-            const bannerStyle = team.shopBanner ? `background-image: url('${team.shopBanner}');` : `background-image: url('https://picsum.photos/seed/bstage_banner/800/400?grayscale');`;
+            const bannerStyle = team.shopBanner ? `background-image: url('${team.shopBanner}');` : 'background-color:#222;';
             const bannerContent = team.shopBanner ? '' : `
                 <div style="width:100%;height:100%;background-color:#222;display:flex;justify-content:center;align-items:center;opacity:0.5;">
                     <i class="fas fa-star" style="font-size:40px;color:#444;"></i>
@@ -3544,9 +3724,12 @@ ${history}
             const magicBtn = document.getElementById('bstage-shop-magic-btn');
             if(magicBtn) {
                 magicBtn.addEventListener('click', () => {
-                    const request = prompt('想看什么类型的商品？留空则随机生成。');
-                    if (request === null) return;
-                    triggerShopApi(team, activeCategory, request.trim());
+                    openGenerateTypeSheet({
+                        title: '生成商品',
+                        label: '想看什么类型的商品',
+                        placeholder: '例如：应援棒、签售周边、冬季套装；留空则随机',
+                        onConfirm: (request) => triggerShopApi(team, activeCategory, request)
+                    });
                 });
             }
 
@@ -3596,6 +3779,8 @@ ${history}
             window.showToast('请先在系统设置中配置 API');
             return;
         }
+        if (!Array.isArray(team.shopItems)) team.shopItems = [];
+        if (!Array.isArray(team.shopCategories)) team.shopCategories = ['全部'];
 
         window.showToast('正在生成商品...');
         
@@ -3682,23 +3867,16 @@ ${charInfo}
     }
 
     function renderContent(team) {
-        if (!team.contentPhotos) {
-            team.contentPhotos = [
-                createExternalRandomImage(`${team.id || team.name}-content-photo-1`, 900, 600),
-                createExternalRandomImage(`${team.id || team.name}-content-photo-2`, 900, 600),
-                createExternalRandomImage(`${team.id || team.name}-content-photo-3`, 900, 600)
-            ];
+        if (removeBstageDefaultContent(team)) saveBstageData();
+        if (!Array.isArray(team.contentPhotos)) {
+            team.contentPhotos = [];
         }
-        // Mock videos if not present
-        if (!team.videos) team.videos = [
-            { title: "Behind The Scenes Ep.1", duration: "12:30", views: "1.2M", date: "2 days ago", thumb: createExternalRandomImage(`${team.id || team.name}-video-bts`, 800, 450), series: 'vlog' },
-            { title: "Dance Practice", duration: "03:45", views: "5.5M", date: "1 week ago", thumb: createExternalRandomImage(`${team.id || team.name}-video-dance`, 800, 450), series: 'vlog' },
-            { title: "Vlog #5: Day Off", duration: "15:20", views: "890K", date: "2 weeks ago", thumb: createExternalRandomImage(`${team.id || team.name}-video-day-off`, 800, 450), series: 'vlog' },
-        ];
+        // Init videos if not present
+        if (!Array.isArray(team.videos)) team.videos = [];
         
-        // Init Series - Default to just "vlog" (and "全部" typically implied or handled)
-        if (!team.contentSeries) {
-            team.contentSeries = ['全部', 'vlog'];
+        // Init Series
+        if (!Array.isArray(team.contentSeries) || team.contentSeries.length === 0) {
+            team.contentSeries = ['全部'];
         }
 
         let activeSeries = '全部';
@@ -3862,9 +4040,12 @@ ${charInfo}
             const magicBtn = document.getElementById('bstage-content-magic-btn');
             if(magicBtn) {
                 magicBtn.addEventListener('click', () => {
-                    const request = prompt('想看什么类型的视频内容？留空则随机生成。');
-                    if (request === null) return;
-                    triggerContentApi(team, activeSeries, request.trim());
+                    openGenerateTypeSheet({
+                        title: '生成视频内容',
+                        label: '想看什么类型的视频内容',
+                        placeholder: '例如：练习室、旅行 vlog、后台花絮；留空则随机',
+                        onConfirm: (request) => triggerContentApi(team, activeSeries, request)
+                    });
                 });
             }
 
@@ -3899,6 +4080,7 @@ ${charInfo}
 
     function openVideoDetail(video) {
         currentVideo = video;
+        setPendingVideoCommentReply(null);
         
         // Populate Data
         document.getElementById('bstage-vid-detail-title').textContent = video.title;
@@ -3953,9 +4135,9 @@ ${charInfo}
         // Init Comments if needed
         if (!video.comments) {
             video.comments = [
-                { id: 1, name: 'User123', text: '太棒了！😍', time: '1m ago', avatar: null },
-                { id: 2, name: 'K-Pop Fan', text: 'Love this team!!!', time: '5m ago', avatar: null },
-                { id: 3, name: 'Stan', text: '❤️❤️❤️', time: '1h ago', avatar: null }
+                { id: 1, name: 'User123', text: '太棒了！😍', time: '1m ago', avatar: null, avatarEmoji: getStableEmojiAvatar('video-comment-User123') },
+                { id: 2, name: 'K-Pop Fan', text: 'Love this team!!!', time: '5m ago', avatar: null, avatarEmoji: getStableEmojiAvatar('video-comment-K-Pop Fan') },
+                { id: 3, name: 'Stan', text: '❤️❤️❤️', time: '1h ago', avatar: null, avatarEmoji: getStableEmojiAvatar('video-comment-Stan') }
             ];
         }
 
@@ -4052,14 +4234,44 @@ ${charInfo}
         }
     });
 
+    document.getElementById('bstage-delete-video-btn').addEventListener('click', () => {
+        if (!currentTeam || !currentVideo || !Array.isArray(currentTeam.videos)) return;
+        if (!confirm('确定要删除这个视频吗？')) return;
+
+        const target = currentVideo;
+        const before = currentTeam.videos.length;
+        currentTeam.videos = currentTeam.videos.filter(video => {
+            if (video === target) return false;
+            if (video.id && target.id) return video.id !== target.id;
+            return !(video.title === target.title && video.duration === target.duration && video.date === target.date);
+        });
+
+        if (currentTeam.videos.length === before) {
+            window.showToast('未找到要删除的视频');
+            return;
+        }
+
+        saveBstageData();
+        renderContent(currentTeam);
+        currentVideo = null;
+        window.closeView(document.getElementById('bstage-edit-video-sheet'));
+        window.closeView(videoDetailModal);
+        window.showToast('视频已删除');
+    });
+
     // Bind Magic Wand
     document.getElementById('bstage-video-detail-magic-btn').addEventListener('click', () => {
         if (currentVideo) {
-            triggerVideoDetailApi(currentVideo);
+            openGenerateTypeSheet({
+                title: '生成视频详情',
+                label: '想看什么类型的视频细节',
+                placeholder: '例如：后台互动、开箱、舞台花絮；留空则随机',
+                onConfirm: (request) => triggerVideoDetailApi(currentVideo, request)
+            });
         }
     });
 
-    async function triggerVideoDetailApi(video) {
+    async function triggerVideoDetailApi(video, requestType = '') {
         if (!window.apiConfig || !window.apiConfig.endpoint || !window.apiConfig.apiKey) {
             window.showToast('请先在系统设置中配置 API');
             return;
@@ -4074,24 +4286,27 @@ ${charInfo}
             });
         }
         
-        const prompt = `
+const prompt = `
 你是一个偶像视频内容生成器。
-请根据以下信息，生成一段视频画面的内容描述（分镜/字幕），以及几条粉丝评论。
+请根据以下信息，生成视频简介、视频画面的内容描述（分镜/字幕），以及几条粉丝评论。
 团队: ${currentTeam.name}
 ${charInfo}
 视频标题: ${video.title}
 视频简介: ${video.description || '无'}
+用户想看的类型: ${requestType || '留空，随机生成适合该视频的细节'}
 
 要求：
-1. "content": 生成 5 到 10 条简短的视频画面描述或字幕文本，用于逐条显示在视频画面上。内容要有趣，符合人设。
-2. "comments": 生成 2 到 3 条粉丝评论，包含 "name" (粉丝名) 和 "text" (评论内容)。
-3. 返回严格的 JSON 格式，不要 markdown 标记。
+1. "description": 生成一段自然的视频简介，贴合团队/账号和用户想看的类型。
+2. "content": 生成 5 到 10 条简短的视频画面描述或字幕文本，用于逐条显示在视频画面上。内容要有趣，符合人设。
+3. "comments": 生成 2 到 3 条粉丝评论，包含 name、text、trans。非中文 text 必须提供自然中文翻译，中文 text 的 trans 为空字符串。
+4. 返回严格的 JSON 格式，不要 markdown 标记。
 格式示例:
 {
+  "description": "视频简介",
   "content": ["成员A正在大笑", "字幕: 今天天气真好", "成员B突然闯入镜头"],
   "comments": [
-    {"name": "Fan1", "text": "太可爱了！"},
-    {"name": "Fan2", "text": "哈哈哈笑死我了"}
+    {"name": "Fan1", "text": "太可爱了！", "trans": ""},
+    {"name": "Fan2", "text": "Love this!", "trans": "太喜欢了！"}
   ]
 }
 `;
@@ -4125,6 +4340,12 @@ ${charInfo}
             aiReply = aiReply.replace(/```json/g, '').replace(/```/g, '').trim();
             
             const result = JSON.parse(aiReply);
+
+            if (result.description) {
+                video.description = stripGeneratedText(result.description);
+                const descEl = document.getElementById('bstage-vid-description');
+                if (descEl) descEl.textContent = video.description;
+            }
             
             // Handle Content
             if (result.content && Array.isArray(result.content)) {
@@ -4149,16 +4370,21 @@ ${charInfo}
             // Handle Comments
             if (result.comments && Array.isArray(result.comments)) {
                 result.comments.forEach(c => {
+                    const name = stripGeneratedText(c && c.name, 'Fan');
                     video.comments.unshift({
                         id: Date.now() + Math.random(),
-                        name: c.name,
-                        text: c.text,
+                        name,
+                        text: stripGeneratedText(c && c.text),
+                        trans: stripGeneratedText(c && (c.trans || c.translationZh || c.translation)),
                         time: 'Just now',
-                        avatar: null
+                        avatar: null,
+                        avatarEmoji: getStableEmojiAvatar(`video-comment-${name}-${Date.now()}-${Math.random()}`),
+                        replies: []
                     });
                 });
                 renderVideoComments();
             }
+            saveBstageData();
             
             window.showToast('内容生成完成');
 
@@ -4166,6 +4392,59 @@ ${charInfo}
             console.error(e);
             window.showToast('生成失败');
         }
+    }
+
+    function setPendingVideoCommentReply(comment) {
+        pendingVideoCommentReply = comment || null;
+        const preview = document.getElementById('bstage-vid-comment-reply-preview');
+        const textEl = document.getElementById('bstage-vid-comment-reply-preview-text');
+        if (preview && textEl) {
+            if (comment) {
+                textEl.textContent = `回复 ${comment.name}: ${getMessageSummary(comment)}`;
+                preview.style.display = 'flex';
+            } else {
+                textEl.textContent = '';
+                preview.style.display = 'none';
+            }
+        }
+        const input = document.getElementById('bstage-vid-comment-input');
+        if (comment && input) input.focus();
+    }
+
+    function renderCommentTranslation(comment) {
+        const trans = stripGeneratedText(comment && (comment.trans || comment.translationZh || comment.translation));
+        if (!trans) return '';
+        return `
+            <button class="bstage-comment-trans-btn" type="button">翻译</button>
+            <div class="bstage-comment-trans-text" style="display:none;">${escapeHtml(trans)}</div>
+        `;
+    }
+
+    function renderVideoCommentReplyQuote(comment) {
+        if (!comment || !comment.replyTo) return '';
+        const speaker = stripGeneratedText(comment.replyTo.name || comment.replyTo.speaker, '评论');
+        const text = getMessageSummary({ text: comment.replyTo.text || '' });
+        return `
+            <div class="bstage-comment-reply-quote">
+                <span>回复 ${escapeHtml(speaker)}</span>
+                <div>${escapeHtml(text)}</div>
+            </div>
+        `;
+    }
+
+    function renderCommentReplies(comment) {
+        if (!comment || !Array.isArray(comment.replies) || comment.replies.length === 0) return '';
+        return `
+            <div class="bstage-comment-replies">
+                ${comment.replies.map(reply => `
+                    <div class="bstage-comment-reply-item">
+                        <div class="bstage-comment-reply-author">${escapeHtml(reply.name || 'Fan')}</div>
+                        <div class="bstage-comment-reply-text">${escapeHtml(reply.text || '')}</div>
+                        ${renderCommentTranslation(reply)}
+                    </div>
+                `).join('')}
+            </div>
+        `;
     }
 
     function renderVideoComments() {
@@ -4178,21 +4457,39 @@ ${charInfo}
         currentVideo.comments.forEach(c => {
             const item = document.createElement('div');
             item.className = 'bstage-comment-item';
+            const commentName = stripGeneratedText(c && c.name, 'User');
             
             const avatarHtml = c.avatar 
-                ? `<img src="${c.avatar}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
-                : `<div style="width:100%;height:100%;background:#333;border-radius:50%;display:flex;justify-content:center;align-items:center;color:#fff;">${c.name[0]}</div>`;
+                ? `<img src="${escapeHtml(c.avatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
+                : `<div style="width:100%;height:100%;background:#333;border-radius:50%;display:flex;justify-content:center;align-items:center;color:#fff;">${escapeHtml(c.avatarEmoji || (c.isUser ? commentName.slice(0, 1) || 'U' : getStableEmojiAvatar(`video-comment-${commentName}-${c.id || ''}`)))}</div>`;
 
             item.innerHTML = `
                 <div class="bstage-comment-avatar">${avatarHtml}</div>
                 <div class="bstage-comment-content">
                     <div class="bstage-comment-header">
-                        <span class="bstage-comment-author">${c.name}</span>
-                        <span class="bstage-comment-time">${c.time}</span>
+                        <span class="bstage-comment-author">${escapeHtml(commentName)}</span>
+                        <span class="bstage-comment-time">${escapeHtml(c.time || '')}</span>
                     </div>
-                    <div class="bstage-comment-text">${c.text}</div>
+                    ${renderVideoCommentReplyQuote(c)}
+                    <div class="bstage-comment-text">${escapeHtml(c.text || '')}</div>
+                    ${renderCommentTranslation(c)}
+                    ${renderCommentReplies(c)}
                 </div>
             `;
+            item.addEventListener('click', (e) => {
+                if (e.target.closest('.bstage-comment-trans-btn') || e.target.closest('.bstage-comment-replies')) return;
+                setPendingVideoCommentReply(c);
+            });
+            item.querySelectorAll('.bstage-comment-trans-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const trans = btn.nextElementSibling;
+                    if (!trans) return;
+                    const isHidden = trans.style.display === 'none';
+                    trans.style.display = isHidden ? 'block' : 'none';
+                    btn.textContent = isHidden ? '收起翻译' : '翻译';
+                });
+            });
             list.appendChild(item);
         });
     }
@@ -4200,6 +4497,17 @@ ${charInfo}
     // Comment Input Logic
     const vidInput = document.getElementById('bstage-vid-comment-input');
     const vidSendBtn = document.getElementById('bstage-vid-comment-send-btn');
+    const vidReplyCancelBtn = document.getElementById('bstage-vid-comment-reply-cancel-btn');
+
+    if (vidReplyCancelBtn) {
+        vidReplyCancelBtn.addEventListener('click', () => setPendingVideoCommentReply(null));
+        vidReplyCancelBtn.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setPendingVideoCommentReply(null);
+            }
+        });
+    }
 
     if (vidInput && vidSendBtn) {
         vidInput.addEventListener('input', () => {
@@ -4220,16 +4528,87 @@ ${charInfo}
                     name: window.userState ? window.userState.name : 'User',
                     avatar: window.userState ? window.userState.avatarUrl : null,
                     text: text,
-                    time: 'Just now'
+                    time: 'Just now',
+                    isUser: true,
+                    replyTo: pendingVideoCommentReply ? {
+                        id: pendingVideoCommentReply.id,
+                        name: pendingVideoCommentReply.name,
+                        text: pendingVideoCommentReply.text
+                    } : null,
+                    replies: []
                 };
                 currentVideo.comments.unshift(newComment);
                 renderVideoComments();
                 vidInput.value = '';
                 vidSendBtn.classList.add('disabled');
+                setPendingVideoCommentReply(null);
+                triggerVideoCommentReplyApi(currentVideo, newComment);
                 
                 // Scroll to top of comments (optional, layout dependent)
             }
         });
+    }
+
+    async function triggerVideoCommentReplyApi(video, userComment) {
+        if (!video || !userComment) return;
+        if (!window.apiConfig || !window.apiConfig.endpoint || !window.apiConfig.apiKey) {
+            window.showToast('请先在系统设置中配置 API');
+            return;
+        }
+
+        let charInfo = "团队成员:\n";
+        if (currentTeam && currentTeam.members) {
+            currentTeam.members.forEach(m => {
+                charInfo += `- ${m.name} (${m.role})\n`;
+            });
+        }
+
+        const prompt = `
+你正在模拟 b.stage 视频评论区。
+团队/账号：${currentTeam ? currentTeam.name : 'User'}
+${charInfo}
+视频标题：${video.title || '未命名视频'}
+视频简介：${video.description || '无'}
+User 评论：${userComment.text}
+${userComment.replyTo ? `User 正在回复评论：${userComment.replyTo.name}: ${userComment.replyTo.text}` : ''}
+
+要求：
+1. 生成不少于 10 条、最多 14 条来自粉丝/观众的回复，围绕 User 的评论自然互动。
+2. 可以有人赞同、补充、提问、羡慕或讨论视频内容。
+3. b.stage 是国际化应用，text 可以是中文或外文；非中文 text 必须提供自然中文翻译 trans，中文则 trans 为空字符串。
+4. 只返回严格 JSON 数组，不要 markdown。
+格式：
+[
+  { "name": "评论者", "text": "原文", "trans": "中文翻译或空" }
+]
+`;
+
+        try {
+            const replies = await callBstageJsonApi(prompt, 'You generate strict JSON arrays for b.stage video comment replies.', 0.85);
+            if (!Array.isArray(replies)) throw new Error('invalid_comment_replies');
+            const normalized = replies.slice(0, 14).map((item, index) => {
+                const name = stripGeneratedText(item && item.name, getRandomFanName(index));
+                const text = stripGeneratedText(typeof item === 'string' ? item : item && item.text);
+                const trans = stripGeneratedText(item && (item.trans || item.translationZh || item.translation));
+                if (!text) return null;
+                if (fanMessageNeedsTranslation(text) && !trans) return null;
+                return {
+                    id: Date.now() + Math.random(),
+                    name,
+                    text,
+                    trans,
+                    avatarEmoji: getStableEmojiAvatar(`video-comment-reply-${name}-${index}-${Date.now()}`),
+                    time: 'Just now'
+                };
+            }).filter(Boolean);
+            if (normalized.length < 10) throw new Error('too_few_comment_replies');
+            userComment.replies = normalized;
+            saveBstageData();
+            renderVideoComments();
+        } catch (e) {
+            console.error('Bstage video comment reply API failed:', e);
+            window.showToast('生成评论回复失败');
+        }
     }
 
     async function triggerContentApi(team, series, requestType = '') {
@@ -4237,20 +4616,25 @@ ${charInfo}
             window.showToast('请先在系统设置中配置 API');
             return;
         }
+        if (!Array.isArray(team.videos)) team.videos = [];
+        if (!Array.isArray(team.contentSeries)) team.contentSeries = ['全部'];
 
         window.showToast('正在生成视频物料...');
         
         let charInfo = "团队成员:\n";
-        if (team.members) {
+        if (Array.isArray(team.members) && team.members.length > 0) {
             team.members.forEach(m => {
                 charInfo += `- ${m.name} (${m.role})\n`;
             });
+        } else {
+            charInfo += '- 暂无成员\n';
         }
         
         const prompt = `
 你是一个偶像团体的内容策划。
 请根据以下团队信息和角色人设，以及系列主题，生成2-3个相关的视频物料。
 团队名称: ${team.name}
+团队简介: ${team.desc || '无'}
 ${charInfo}
 系列主题: ${series}
 用户想看的类型: ${requestType || '留空，随机生成适合该团队/账号的视频内容'}
@@ -4573,18 +4957,51 @@ ${charInfo}
     }
 
     function getFanSubscriberCount() {
-        if (!Array.isArray(bstageFanChatHistory)) return 0;
-        const fanNames = new Set();
-        bstageFanChatHistory.forEach(msg => {
-            if (msg && msg.type === 'text' && !msg.isUser && msg.name) {
-                fanNames.add(stripGeneratedText(msg.name, '粉丝'));
-            }
-        });
-        return fanNames.size;
+        if (!Number.isFinite(Number(bstageFanSubscriberCount))) {
+            bstageFanSubscriberCount = Math.floor(800 + Math.random() * 9200);
+            saveBstageData();
+        }
+        return Math.max(0, parseInt(bstageFanSubscriberCount, 10) || 0);
     }
 
     function getFanSubscriberText() {
         return `已订阅 ${getFanSubscriberCount()} 人`;
+    }
+
+    function getFanSubscriberGrowthDelta(burst = false) {
+        const current = getFanSubscriberCount();
+        const min = burst ? 8 : 1;
+        const rate = burst ? (0.006 + Math.random() * 0.025) : (0.001 + Math.random() * 0.006);
+        return Math.max(min, Math.floor(current * rate) + Math.floor(Math.random() * (burst ? 18 : 6)));
+    }
+
+    function growFanSubscriberCount(burst = false) {
+        bstageFanSubscriberCount = getFanSubscriberCount() + getFanSubscriberGrowthDelta(burst);
+        updateFanSubscriberLabels();
+        saveBstageData();
+    }
+
+    function randomizeFanSubscriberCount() {
+        growFanSubscriberCount(true);
+    }
+
+    function scheduleFanSubscriberGrowth() {
+        if (bstageFanSubscriberGrowthTimer) {
+            clearTimeout(bstageFanSubscriberGrowthTimer);
+        }
+        const delay = 7000 + Math.floor(Math.random() * 18000);
+        bstageFanSubscriberGrowthTimer = setTimeout(() => {
+            growFanSubscriberCount(false);
+            scheduleFanSubscriberGrowth();
+        }, delay);
+    }
+
+    function startFanSubscriberGrowth() {
+        getFanSubscriberCount();
+        updateFanSubscriberLabels();
+        if (!bstageFanSubscriberGrowthTimer) {
+            scheduleFanSubscriberGrowth();
+        }
     }
 
     function updateFanSubscriberLabels() {
@@ -4593,6 +5010,9 @@ ${charInfo}
         const detailSubscribers = document.getElementById('bstage-fan-detail-subscribers');
         if (subtitle) subtitle.textContent = text;
         if (detailSubscribers) detailSubscribers.textContent = text;
+        document.querySelectorAll('.bstage-fan-subscriber-label').forEach(el => {
+            el.textContent = text;
+        });
     }
 
     function syncFanChatTranslationState() {
@@ -4648,6 +5068,23 @@ ${charInfo}
         if (transSwitch) transSwitch.classList.toggle('active', isTranslationEnabled);
 
         window.openView(fanChatDetailSheet);
+    }
+
+    function buildFanChatUserTeamContext() {
+        const userTeam = getBstageUserTeam();
+        const members = Array.isArray(userTeam.members) ? userTeam.members : [];
+        const videos = Array.isArray(userTeam.videos) ? userTeam.videos.slice(0, 8) : [];
+        const items = Array.isArray(userTeam.shopItems) ? userTeam.shopItems.slice(0, 8) : [];
+        const memberSummary = members.length
+            ? members.map(member => `- ${member.name || '未命名成员'}：${member.role || '暂无人设'}`).join('\n')
+            : '暂无团队成员。';
+        const contentSummary = videos.length
+            ? videos.map(v => `- ${v.title || '未命名视频'}${v.description ? `：${v.description}` : ''}`).join('\n')
+            : '暂无视频物料。';
+        const shopSummary = items.length
+            ? items.map(item => `- ${item.name || '未命名商品'}（${item.category || '商品'}，${item.price || '未定价'}）${item.desc ? `：${item.desc}` : ''}`).join('\n')
+            : '暂无周边商品。';
+        return `User 团队资料：\n团队名：${userTeam.name || 'User'}\n团队简介：${userTeam.desc || '无'}\n\nUser 团队成员：\n${memberSummary}\n\nUser 团队 Content 视频物料：\n${contentSummary}\n\nUser 团队 Shop 周边商品：\n${shopSummary}`;
     }
 
     function appendFanDateIfNeeded(contentContainer, timestamp) {
@@ -4802,6 +5239,7 @@ ${charInfo}
         const userName = window.userState && window.userState.name ? window.userState.name : 'User';
         const userPersona = window.userState && window.userState.persona ? window.userState.persona : '';
         const teamContext = currentTeam ? `当前 b.stage 团队：${currentTeam.name}\n团队信息：${currentTeam.desc || '无'}` : '当前没有选中的 b.stage 团队。';
+        const userTeamContext = buildFanChatUserTeamContext();
         const fetchCount = isContextEnabled ? contextMessageCount : 1;
         bstageFanChatHistory.forEach(msg => {
             if (msg && msg.type !== 'date') ensureMessageId(msg, msg.isUser ? 'user' : 'fan');
@@ -4828,6 +5266,7 @@ ${systemDepthWorldBookContext ? `System Depth Rules:\n${systemDepthWorldBookCont
 当前账号 / User：${userName}
 User 的人设：${userPersona || '未填写'}
 ${teamContext}
+${userTeamContext}
 当前真实时间：${realTimeContext}
 ${afterRoleWorldBookContext ? `\nAfter Role Rules:\n${afterRoleWorldBookContext}\n` : ''}
 
@@ -4840,10 +5279,12 @@ ${history}
 3. 如果 User 的某条消息带有 replyTo，说明 User 翻牌/回复了某位粉丝；其他粉丝可能猜测被翻牌的是谁、羡慕、起哄、提出翻牌请求，但不要写成所有粉丝都知道完整群聊上下文。
 4. 一次生成不少于 10 条、最多 14 条来自不同粉丝/订阅者的实时聊天室消息。
 5. 消息要像真实国际化粉丝互动：可以应援、闲聊、提问、刷屏、玩梗、跨语言互动，不要每条都机械回复 User 上一句话。
-6. 可以使用中文、英文、韩文、日文或其他符合语境的语言；如果 text 不是纯中文，必须在 trans 中提供自然中文翻译。text 是中文时 trans 为空字符串。
-7. 你可以回复某条 User 消息；如需回复，请在该对象中填写 replyToId，值只能从这些 User 消息 id 中选择：${validUserReplyIds.length ? validUserReplyIds.join(', ') : '无'}。不回复则省略或填空。
-8. 返回严格 JSON 数组，不要 markdown，不要解释，不要外层对象。
-9. 每条必须包含 name、text、trans。
+6. 可以自然评价 User 的视频物料、讨论已上架周边、期待新物料或询问下一次更新。
+7. 粉丝知道 User 团队的名字、简介和成员，可以自然询问 ${userName} 本人的近况、和其他队友的关系/合作/互动，也可以向 ${userName} 提到或追问别的队友。
+8. 可以使用中文、英文、韩文、日文或其他符合语境的语言；如果 text 不是纯中文，必须在 trans 中提供自然中文翻译。text 是中文时 trans 为空字符串。
+9. 你可以回复某条 User 消息；如需回复，请在该对象中填写 replyToId，值只能从这些 User 消息 id 中选择：${validUserReplyIds.length ? validUserReplyIds.join(', ') : '无'}。不回复则省略或填空。
+10. 返回严格 JSON 数组，不要 markdown，不要解释，不要外层对象。
+11. 每条必须包含 name、text、trans。
 
 格式：
 [
@@ -4885,6 +5326,7 @@ ${history}
                 content.innerHTML = '';
             }
             appendFanDateIfNeeded(content, now);
+            randomizeFanSubscriberCount();
 
             messages.forEach((msg, index) => {
                 setTimeout(() => {

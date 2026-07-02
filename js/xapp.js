@@ -33,6 +33,10 @@
         let createTopicAvatarDraft = '';
         let createTopicBannerDraft = '';
         let createTopicSelectedChars = [];
+        let editSuperTopicSheet = null;
+        let currentEditingSuperTopicId = null;
+        let editSuperTopicAvatarDraft = '';
+        let editSuperTopicBannerDraft = '';
 
         const editSheet = document.getElementById('x-edit-profile-sheet');
         const settingsSheet = document.getElementById('x-settings-sheet');
@@ -46,6 +50,15 @@
         const composeCancelButton = document.getElementById('x-compose-cancel-btn');
         const composeSubmitButton = document.getElementById('x-compose-submit-btn');
         const composeTextInput = document.getElementById('x-compose-text-input');
+        const composeTopicInput = document.getElementById('x-compose-topic-input');
+        const composeSuperChip = document.getElementById('x-compose-super-chip');
+        const composeSuperName = document.getElementById('x-compose-super-name');
+        const composeImageButton = document.getElementById('x-compose-image-placeholder');
+        const composeImageInput = document.getElementById('x-compose-image-input');
+        const composeImagePreview = document.getElementById('x-compose-image-preview');
+        const composeImageClearButton = document.getElementById('x-compose-image-clear-btn');
+        const composeImageUrlInput = document.getElementById('x-compose-image-url-input');
+        const composeImageUrlButton = document.getElementById('x-compose-image-url-btn');
         const editAvatarPreview = document.getElementById('x-edit-avatar-preview');
         const editAvatarInput = document.getElementById('x-edit-avatar-input');
         const editBannerPreview = document.getElementById('x-edit-banner-preview');
@@ -61,11 +74,8 @@
 
         if (!view || !appButton || navItems.length === 0 || tabs.length === 0) return;
 
-        const globalDateInput = document.getElementById('x-global-date-input');
         const nextDayBtn = document.getElementById('x-next-day-btn');
-
-        const currentYear = new Date().getFullYear();
-        const defaultDate = `${currentYear}-01-01`;
+        const trendList = document.getElementById('x-trend-list');
 
         const defaultProfile = {
             name: 'User Name',
@@ -76,6 +86,20 @@
             banner: ''
         };
 
+        const defaultTrends = [
+            { id: 'default-stage-style', title: '#黑白舞台造型', category: 'Entertainment · Trending', heat: '52.8K', movement: 'none' },
+            { id: 'default-topic-host', title: '#超话主持人招募', category: 'Community · Trending', heat: '18.2K', movement: 'none' },
+            { id: 'default-citywalk', title: '#周末Citywalk', category: 'City · Rising', heat: '9.6K', movement: 'none' }
+        ];
+        const defaultAdvancePreferences = {
+            strangersEnabled: true,
+            strangersCount: 5,
+            trendsEnabled: true,
+            trendsCount: 3,
+            postsEnabled: true,
+            postsCount: 3
+        };
+
         const defaultXState = {
             xData: { ...defaultProfile, edited: false },
             xTopics: [],
@@ -84,9 +108,11 @@
             xDirectMessages: [],
             xPostThreads: {},
             xGeneratedPosts: [],
+            xAccounts: [],
+            xTrends: defaultTrends.map((trend) => ({ ...trend })),
+            xAdvancePreferences: { ...defaultAdvancePreferences },
             xHomeBannerUrl: '',
-            xSearchBannerUrl: '',
-            xCurrentDate: defaultDate
+            xSearchBannerUrl: ''
         };
         const generatedImagePlaceholderUrl = 'assets/x/generated-image-placeholder.jpg';
 
@@ -168,13 +194,26 @@
         let dmChatInput = null;
         let dmSettingsSheet = null;
         let dmProfileView = null;
+        let currentProfileIdentity = null;
+        let charEditSheet = null;
+        let currentEditingCharId = null;
+        let charEditAvatarDraft = '';
+        let charEditCoverSeed = '';
+        let charEditCoverImageDraft = '';
+        let postForwardSheet = null;
+        let currentForwardPostId = null;
         let currentDmId = null;
         let searchGenerateSheet = null;
         let searchGenerateInput = null;
+        let searchGenerateMode = 'home';
+        let advanceSheet = null;
+        let advancePlotInput = null;
         let imagePreviewOverlay = null;
         let currentTopicContext = null;
         let postSettingsSheet = null;
         let currentActionPostId = null;
+        let currentComposeSuperId = null;
+        let composeImageDraft = '';
 
         function safeText(value, fallback = '') {
             const text = String(value == null ? '' : value).trim();
@@ -211,6 +250,23 @@
             return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         }
 
+        function hashPostMetricSeed(value) {
+            let hash = 2166136261;
+            const text = String(value || 'post');
+            for (let index = 0; index < text.length; index += 1) {
+                hash ^= text.charCodeAt(index);
+                hash = Math.imul(hash, 16777619);
+            }
+            return hash >>> 0;
+        }
+
+        function getFrontendPostMetrics(postId) {
+            const likes = 300 + (hashPostMetricSeed(`${postId}:likes`) % 29701);
+            const repostLimit = Math.max(25, Math.floor(likes * 0.24));
+            const reposts = 10 + (hashPostMetricSeed(`${postId}:reposts`) % repostLimit);
+            return { likes, reposts };
+        }
+
         function buildAvatarHtml(value, fallback = '?') {
             const avatar = safeText(value);
             if (avatar && (/^(data:|https?:|blob:)/i).test(avatar)) {
@@ -219,9 +275,15 @@
             return escapeHtml((avatar || fallback || '?').slice(0, 2));
         }
 
+        function buildAuthorAvatarButton(author = {}, className = 'x-avatar') {
+            const identity = resolveXAuthorIdentity(author.authorId, author.handle, author.name, author.avatar);
+            return `<button class="${escapeHtml(className)} x-author-avatar-btn" type="button" data-x-author-id="${escapeHtml(identity.id)}" data-x-author-name="${escapeHtml(identity.name)}" data-x-author-handle="${escapeHtml(identity.handle)}" data-x-author-avatar="${escapeHtml(identity.avatar)}" aria-label="查看 ${escapeHtml(identity.name)} 的主页">${buildAvatarHtml(identity.avatar, identity.name)}</button>`;
+        }
+
         function getCurrentCommentAuthor() {
             const name = safeText(currentProfile.name, 'Me');
             return {
+                authorId: 'me',
                 avatar: currentProfile.avatar || name.slice(0, 1).toUpperCase(),
                 name,
                 handle: `${currentProfile.handle || '@me'} · now`
@@ -302,22 +364,26 @@
             if (!text) return null;
             const name = safeText(comment.authorName || comment.name || comment.handle);
             if (!name) return null;
+            const identity = resolveXAuthorIdentity(comment.authorId || comment.accountId, comment.handle, name, comment.authorAvatar || comment.avatar);
             return {
                 id: String(comment.id || makeLocalId('comment')),
-                avatar: comment.authorAvatar || comment.avatar || name.slice(0, 1).toUpperCase(),
-                name,
-                handle: makeHandle(name, comment.handle || name),
+                authorId: identity.id,
+                avatar: identity.avatar,
+                name: identity.name,
+                handle: identity.handle,
                 text,
                 replies: (Array.isArray(comment.replies) ? comment.replies : []).map((reply, index) => {
                     const replyText = safeText(reply.text || reply.content);
                     if (!replyText) return null;
                     const replyName = safeText(reply.authorName || reply.name || reply.handle);
                     if (!replyName) return null;
+                    const replyIdentity = resolveXAuthorIdentity(reply.authorId || reply.accountId, reply.handle, replyName, reply.authorAvatar || reply.avatar);
                     return {
                         id: String(reply.id || makeLocalId('reply')),
-                        avatar: reply.authorAvatar || reply.avatar || replyName.slice(0, 1).toUpperCase(),
-                        name: replyName,
-                        handle: makeHandle(replyName, reply.handle || replyName),
+                        authorId: replyIdentity.id,
+                        avatar: replyIdentity.avatar,
+                        name: replyIdentity.name,
+                        handle: replyIdentity.handle,
                         text: replyText,
                         replies: []
                     };
@@ -328,7 +394,9 @@
         function normalizeGeneratedPost(raw, index = 0) {
             const authorName = safeText(raw.authorName || raw.name || raw.handle || raw.authorHandle);
             if (!authorName) return null;
+            const identity = resolveXAuthorIdentity(raw.authorId || raw.accountId, raw.handle || raw.authorHandle, authorName, raw.authorAvatar || raw.avatar);
             const id = String(raw.id || makeLocalId('xgen'));
+            const frontendMetrics = getFrontendPostMetrics(id);
             const text = safeText(raw.text || raw.desc || raw.content);
             if (!text && !raw.isMoment) return null;
             const imageText = safeText(raw.imageText || raw.imagePrompt || raw.image || raw.picture || raw.mediaDescription);
@@ -350,21 +418,25 @@
                 .filter(Boolean);
             return {
                 id,
-                avatar: raw.authorAvatar || raw.avatar || authorName.slice(0, 1).toUpperCase(),
-                name: authorName,
-                handle: makeHandle(authorName, raw.handle || raw.authorHandle || authorName),
+                authorId: identity.id,
+                avatar: identity.avatar,
+                name: identity.name,
+                handle: identity.handle,
                 text,
-                reposts: formatCompactCount(raw.reposts ?? raw.shares ?? 0),
-                likes: formatCompactCount(raw.likes ?? 0),
+                reposts: formatCompactCount(frontendMetrics.reposts),
+                likes: formatCompactCount(frontendMetrics.likes),
                 comments: formatCompactCount(Math.max(Number(raw.commentsCount) || 0, comments.length)),
                 commentList: comments,
                 images,
                 generated: true,
                 topicTag: raw.topicTag || '',
+                superTopicId: safeText(raw.superTopicId),
+                superTopicName: safeText(raw.superTopicName),
                 isMoment: !!raw.isMoment,
                 actionText: safeText(raw.actionText),
                 refPost: raw.refPost ? normalizeGeneratedPost(raw.refPost, 0) : null,
                 isFeatured: !!raw.isFeatured,
+                profileOwnerId: safeText(raw.profileOwnerId),
                 createdAt: raw.createdAt || Date.now()
             };
         }
@@ -379,7 +451,7 @@
                 <div class="x-generated-media-grid">
                     ${images.slice(0, 4).map((image) => `
                         <button class="x-post-image-thumb" type="button" data-image-text="${escapeHtml(image.text || 'Image')}" data-image-url="${escapeHtml(image.url || '')}">
-                            <img src="${escapeHtml(image.url || generatedImagePlaceholderUrl)}" alt="">
+                            <img src="${escapeHtml(image.url || generatedImagePlaceholderUrl)}" alt="" onerror="this.src='${escapeHtml(generatedImagePlaceholderUrl)}'">
                         </button>
                     `).join('')}
                 </div>
@@ -395,10 +467,105 @@
             return `@${base || 'user'}`;
         }
 
+        function canonicalAccountHandle(handle, name = '') {
+            const raw = safeText(handle).split('·')[0].trim();
+            return makeHandle(name, raw || name).toLocaleLowerCase();
+        }
+
+        function makeAccountId(handle, name = '') {
+            const key = canonicalAccountHandle(handle, name)
+                .replace(/^@/, '')
+                .replace(/[^a-z0-9_\u4e00-\u9fa5-]+/gi, '-');
+            return `account:${key || safeText(name, 'user').toLocaleLowerCase()}`;
+        }
+
+        function getStableExternalImage(seed, width = 1200, height = 480) {
+            const safeSeed = encodeURIComponent(safeText(seed, 'x-image').replace(/\s+/g, '-'));
+            return `https://picsum.photos/seed/${safeSeed}/${width}/${height}`;
+        }
+
+        function normalizeXAccount(raw = {}, index = 0) {
+            const name = safeText(raw.name || raw.authorName || raw.handle, 'X User');
+            const handle = makeHandle(name, raw.handle || raw.authorHandle || name);
+            const id = String(raw.id || raw.authorId || makeAccountId(handle, name));
+            return {
+                id,
+                name,
+                handle,
+                avatar: safeText(raw.avatar || raw.authorAvatar, name.slice(0, 1).toUpperCase()),
+                bio: safeText(raw.bio || raw.signature, '暂无简介'),
+                persona: safeText(raw.persona),
+                coverSeed: safeText(raw.coverSeed, `${id}-${index}-cover`),
+                isFollowing: raw.isFollowing !== false,
+                source: safeText(raw.source, 'generated'),
+                createdAt: Number(raw.createdAt) || Date.now()
+            };
+        }
+
+        function normalizeXAccounts(items = []) {
+            const seen = new Set();
+            return (Array.isArray(items) ? items : [])
+                .map((item, index) => normalizeXAccount(item, index))
+                .filter((item) => {
+                    if (seen.has(item.id)) return false;
+                    seen.add(item.id);
+                    return true;
+                });
+        }
+
+        function clampAdvanceCount(value, fallback) {
+            const parsed = Number.parseInt(value, 10);
+            if (!Number.isFinite(parsed)) return fallback;
+            return Math.min(20, Math.max(1, parsed));
+        }
+
+        function normalizeAdvancePreferences(raw = {}) {
+            const source = raw && typeof raw === 'object' ? raw : {};
+            return {
+                strangersEnabled: source.strangersEnabled !== false,
+                strangersCount: clampAdvanceCount(source.strangersCount, defaultAdvancePreferences.strangersCount),
+                trendsEnabled: source.trendsEnabled !== false,
+                trendsCount: clampAdvanceCount(source.trendsCount, defaultAdvancePreferences.trendsCount),
+                postsEnabled: source.postsEnabled !== false,
+                postsCount: clampAdvanceCount(source.postsCount, defaultAdvancePreferences.postsCount)
+            };
+        }
+
+        function normalizeTrend(raw = {}, index = 0) {
+            let title = safeText(raw.title || raw.topic || raw.name || raw.keyword);
+            if (!title) return null;
+            if (!title.startsWith('#')) title = `#${title.replace(/^#+/, '')}`;
+            const category = safeText(raw.category || raw.label || raw.type, 'Trending');
+            const heatValue = raw.heat ?? raw.count ?? raw.score ?? raw.hotness;
+            const heat = typeof heatValue === 'number'
+                ? formatCompactCount(heatValue)
+                : safeText(heatValue, 'Trending');
+            return {
+                id: String(raw.id || makeLocalId(`trend-${index}`)),
+                title,
+                category,
+                heat,
+                movement: ['up', 'down'].includes(raw.movement) ? raw.movement : 'none'
+            };
+        }
+
+        function normalizeTrendList(items = []) {
+            const seen = new Set();
+            return (Array.isArray(items) ? items : [])
+                .map((item, index) => normalizeTrend(item, index))
+                .filter((item) => {
+                    if (!item) return false;
+                    const key = item.title.toLocaleLowerCase();
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                });
+        }
+
         function normalizeXState(rawState) {
             const safe = rawState && typeof rawState === 'object' ? rawState : {};
             const xData = safe.xData && typeof safe.xData === 'object' ? safe.xData : {};
-            return {
+            const normalized = {
                 ...defaultXState,
                 ...safe,
                 xData: {
@@ -415,8 +582,14 @@
                     ? safe.xPostThreads
                     : {},
                 xGeneratedPosts: Array.isArray(safe.xGeneratedPosts) ? safe.xGeneratedPosts : [],
-                xCurrentDate: safe.xCurrentDate || defaultDate
+                xAccounts: normalizeXAccounts(safe.xAccounts),
+                xTrends: Array.isArray(safe.xTrends)
+                    ? normalizeTrendList(safe.xTrends)
+                    : defaultTrends.map((trend) => ({ ...trend })),
+                xAdvancePreferences: normalizeAdvancePreferences(safe.xAdvancePreferences)
             };
+            delete normalized.xCurrentDate;
+            return normalized;
         }
 
         function getXState() {
@@ -441,10 +614,91 @@
                 xVisitors: [...(previous.xVisitors || [])],
                 xDirectMessages: [...(previous.xDirectMessages || [])],
                 xPostThreads: { ...(previous.xPostThreads || {}) },
-                xGeneratedPosts: [...(previous.xGeneratedPosts || [])]
+                xGeneratedPosts: [...(previous.xGeneratedPosts || [])],
+                xAccounts: [...(previous.xAccounts || [])],
+                xTrends: [...(previous.xTrends || [])],
+                xAdvancePreferences: { ...(previous.xAdvancePreferences || defaultAdvancePreferences) }
             };
             mutator(draft);
             return saveXState(draft);
+        }
+
+        function resolveXAuthorIdentity(authorId, handle, name, avatar = '') {
+            const displayName = safeText(name || handle, 'X User');
+            const displayHandle = makeHandle(displayName, safeText(handle).split('·')[0].trim() || displayName);
+            const requestedId = safeText(authorId);
+            const currentHandle = canonicalAccountHandle(currentProfile?.handle, currentProfile?.name);
+            if (requestedId === 'me' || canonicalAccountHandle(displayHandle, displayName) === currentHandle) {
+                return {
+                    id: 'me',
+                    name: safeText(currentProfile?.name, displayName),
+                    handle: makeHandle(currentProfile?.name || displayName, currentProfile?.handle || displayHandle),
+                    avatar: safeText(currentProfile?.avatar, avatar || displayName.slice(0, 1).toUpperCase()),
+                    kind: 'me'
+                };
+            }
+
+            const state = getXState();
+            const chars = Array.isArray(state.xDirectMessages) ? state.xDirectMessages : [];
+            const char = chars.find((item) =>
+                (requestedId && String(item.id) === requestedId) ||
+                canonicalAccountHandle(item.handle, item.name) === canonicalAccountHandle(displayHandle, displayName)
+            );
+            if (char) {
+                return {
+                    id: String(char.id),
+                    name: safeText(char.name || char.nickname, displayName),
+                    handle: makeHandle(char.name || displayName, char.handle || displayHandle),
+                    avatar: safeText(char.avatar || char.avatarUrl, avatar || displayName.slice(0, 1).toUpperCase()),
+                    kind: 'char'
+                };
+            }
+
+            const accounts = Array.isArray(state.xAccounts) ? state.xAccounts : [];
+            const account = accounts.find((item) =>
+                (requestedId && String(item.id) === requestedId) ||
+                canonicalAccountHandle(item.handle, item.name) === canonicalAccountHandle(displayHandle, displayName)
+            );
+            if (account) return { ...normalizeXAccount(account), kind: 'account' };
+
+            return {
+                id: requestedId || makeAccountId(displayHandle, displayName),
+                name: displayName,
+                handle: displayHandle,
+                avatar: safeText(avatar, displayName.slice(0, 1).toUpperCase()),
+                kind: 'unknown'
+            };
+        }
+
+        function registerLightweightAccount(identity) {
+            const normalized = normalizeXAccount({ ...identity, source: 'generated' });
+            updateXState((draft) => {
+                const index = (draft.xAccounts || []).findIndex((account) => String(account.id) === String(normalized.id));
+                if (index >= 0) draft.xAccounts[index] = { ...draft.xAccounts[index], ...normalized };
+                else draft.xAccounts.unshift(normalized);
+            });
+            return normalized;
+        }
+
+        function getReusableAuthorContext() {
+            const state = getXState();
+            const chars = (state.xDirectMessages || [])
+                .filter((item) => Number(item.profileGeneratedAt) > 0 || (Array.isArray(item.profilePosts) && item.profilePosts.length > 0))
+                .map((item) => ({
+                    authorId: String(item.id),
+                    name: safeText(item.name || item.nickname, 'Char'),
+                    handle: makeHandle(item.name || 'Char', item.handle || item.name),
+                    bio: safeText(item.bio || item.signature),
+                    persona: safeText(item.persona)
+                }));
+            const accounts = normalizeXAccounts(state.xAccounts).map((account) => ({
+                authorId: account.id,
+                name: account.name,
+                handle: account.handle,
+                bio: account.bio,
+                persona: account.persona
+            }));
+            return [...chars, ...accounts].slice(0, 30);
         }
 
         function setupSectionHeader(header, rightButtonLabel) {
@@ -469,25 +723,26 @@
             header.dataset.xCentered = 'true';
         }
 
-        function renderGlobalDate() {
-            if (globalDateInput) {
-                globalDateInput.value = getXState().xCurrentDate || defaultDate;
+        function renderTrends() {
+            if (!trendList) return;
+            const trends = normalizeTrendList(getXState().xTrends || []);
+            if (trends.length === 0) {
+                trendList.innerHTML = '<div class="x-empty-state">暂无热搜，点击右上角搜索生成。</div>';
+                return;
             }
-        }
-
-        function setGlobalDate(dateStr) {
-            updateXState(draft => {
-                draft.xCurrentDate = dateStr;
-            });
-            renderGlobalDate();
-        }
-
-        function nextDay() {
-            const current = getXState().xCurrentDate || defaultDate;
-            const d = new Date(current);
-            d.setDate(d.getDate() + 1);
-            const nextStr = d.toISOString().split('T')[0];
-            setGlobalDate(nextStr);
+            trendList.innerHTML = trends.map((trend) => `
+                <div class="x-trend-row" role="button" tabindex="0" data-trend-title="${escapeHtml(trend.title)}">
+                    <div>
+                        <small>${escapeHtml(trend.category)}</small>
+                        <strong>${escapeHtml(trend.title)}</strong>
+                    </div>
+                    <span class="x-trend-rank-meta">
+                        ${trend.movement === 'up' ? '<i class="fas fa-arrow-up x-trend-up" aria-label="上升"></i>' : ''}
+                        ${trend.movement === 'down' ? '<i class="fas fa-arrow-down x-trend-down" aria-label="下降"></i>' : ''}
+                        <span>${escapeHtml(trend.heat)}</span>
+                    </span>
+                </div>
+            `).join('');
         }
 
         function ensureXChrome() {
@@ -498,11 +753,17 @@
                 superCreateBtn.addEventListener('click', openCreateTopicSheet);
             }
 
-            setupSectionHeader(document.querySelector('#x-discover-tab .x-section-header'), 'Filter');
+            setupSectionHeader(document.querySelector('#x-discover-tab .x-section-header'), 'Search');
             setupSectionHeader(document.querySelector('#x-messages-tab .x-section-header'), 'New message');
 
             const messageHeaderButton = document.querySelector('#x-messages-tab .x-section-header .x-header-button:last-child');
             if (messageHeaderButton) messageHeaderButton.id = 'x-add-dm-btn';
+            const discoverSearchButton = document.querySelector('#x-discover-tab .x-section-header .x-header-button:last-child');
+            if (discoverSearchButton) {
+                discoverSearchButton.id = 'x-discover-search-btn';
+                discoverSearchButton.setAttribute('aria-label', '搜索并生成热搜');
+                discoverSearchButton.innerHTML = '<i class="fas fa-search"></i>';
+            }
             const homeSearchButton = document.querySelector('#x-home-tab .x-header-actions .x-header-button:not(.x-compose-button)');
             if (homeSearchButton) homeSearchButton.id = 'x-search-generate-btn';
             const firstSummaryLabel = document.querySelector('#x-messages-tab .x-message-summary div:first-child span');
@@ -535,14 +796,18 @@
             setupDmChatView();
             setupDmSettingsSheet();
             setupDmProfileView();
+            setupCharEditSheet();
+            setupEditSuperTopicSheet();
+            setupPostForwardSheet();
             setupSearchGenerateSheet();
+            setupAdvanceSheet();
             setupImagePreviewOverlay();
             setupPostSettingsSheet();
             dmList = document.getElementById('x-dm-list') || document.querySelector('#x-messages-tab .x-message-list');
             if (dmList) dmList.id = 'x-dm-list';
             clearDefaultHomeFeedContent();
             renderHomeEmptyStates();
-            renderGlobalDate();
+            renderTrends();
         }
 
         function setupPostDetailControls() {
@@ -733,6 +998,99 @@
             }
         }
 
+        function setupCharEditSheet() {
+            charEditSheet = document.getElementById('x-char-edit-sheet');
+            if (charEditSheet) return;
+            charEditSheet = document.createElement('div');
+            charEditSheet.className = 'bottom-sheet-overlay detail-sheet-overlay x-char-edit-overlay';
+            charEditSheet.id = 'x-char-edit-sheet';
+            charEditSheet.style.zIndex = '278';
+            charEditSheet.innerHTML = `
+                <div class="bottom-sheet x-char-edit-sheet">
+                    <div class="sheet-handle"></div>
+                    <div class="x-edit-sheet-header">
+                        <button class="x-edit-sheet-text-btn" id="x-char-edit-close-btn" type="button">取消</button>
+                        <strong>Edit Char</strong>
+                        <button class="x-edit-sheet-save" id="x-char-edit-save-btn" type="button">保存</button>
+                    </div>
+                    <div class="x-char-edit-body">
+                        <div class="x-edit-avatar-row">
+                            <button class="x-edit-avatar-preview" id="x-char-edit-avatar-preview" type="button" aria-label="上传 Char 头像"><span>C</span></button>
+                            <input type="file" id="x-char-edit-avatar-input" accept="image/*" style="display:none;">
+                            <div><strong>Avatar</strong><p>仅修改 X 中的资料。</p></div>
+                        </div>
+                        <div class="x-edit-banner-row">
+                            <button class="x-edit-banner-preview" id="x-char-edit-cover-preview" type="button" aria-label="上传 Char 主页背景"><span>Cover</span></button>
+                            <input type="file" id="x-char-edit-cover-input" accept="image/*" style="display:none;">
+                            <div><strong>Background</strong><p>上传图片，或使用下方随机背景。</p></div>
+                        </div>
+                        <label class="x-edit-field"><span>Name</span><input id="x-char-edit-name" type="text" maxlength="32"></label>
+                        <label class="x-edit-field"><span>@ Account</span><input id="x-char-edit-handle" type="text" maxlength="32"></label>
+                        <label class="x-edit-field"><span>Signature</span><textarea id="x-char-edit-bio" maxlength="160"></textarea></label>
+                        <label class="x-edit-field"><span>Persona</span><textarea id="x-char-edit-persona" maxlength="800"></textarea></label>
+                        <button class="x-char-random-cover-btn" id="x-char-random-cover-btn" type="button"><i class="fas fa-image"></i> 更换随机背景</button>
+                    </div>
+                </div>
+            `;
+            view.appendChild(charEditSheet);
+        }
+
+        function setupEditSuperTopicSheet() {
+            editSuperTopicSheet = document.getElementById('x-edit-super-topic-sheet');
+            if (editSuperTopicSheet) return;
+            editSuperTopicSheet = document.createElement('div');
+            editSuperTopicSheet.className = 'bottom-sheet-overlay detail-sheet-overlay x-edit-super-topic-overlay';
+            editSuperTopicSheet.id = 'x-edit-super-topic-sheet';
+            editSuperTopicSheet.style.zIndex = '278';
+            editSuperTopicSheet.innerHTML = `
+                <div class="bottom-sheet x-edit-super-topic-sheet">
+                    <div class="sheet-handle"></div>
+                    <div class="x-edit-sheet-header">
+                        <button class="x-edit-sheet-text-btn" id="x-edit-super-topic-close-btn" type="button">取消</button>
+                        <strong>编辑超话</strong>
+                        <button class="x-edit-sheet-save" id="x-edit-super-topic-save-btn" type="button">保存</button>
+                    </div>
+                    <div class="x-char-edit-body">
+                        <div class="x-edit-avatar-row">
+                            <button class="x-edit-avatar-preview" id="x-edit-super-topic-avatar-preview" type="button" aria-label="上传超话头像"><span>超</span></button>
+                            <input type="file" id="x-edit-super-topic-avatar-input" accept="image/*" hidden>
+                            <div><strong>头像</strong><p>再次点击已选超话头像可进入此页面。</p></div>
+                        </div>
+                        <div class="x-edit-banner-row">
+                            <button class="x-edit-banner-preview" id="x-edit-super-topic-banner-preview" type="button" aria-label="上传超话封面"><span>Cover</span></button>
+                            <input type="file" id="x-edit-super-topic-banner-input" accept="image/*" hidden>
+                            <div><strong>封面</strong><p>用于超话主页顶部背景。</p></div>
+                        </div>
+                        <label class="x-edit-field"><span>超话名称</span><input id="x-edit-super-topic-name" type="text" maxlength="40"></label>
+                        <label class="x-edit-field"><span>粉丝数</span><input id="x-edit-super-topic-fans" type="text" maxlength="20"></label>
+                        <button class="x-topic-delete-btn" id="x-edit-super-topic-delete-btn" type="button"><i class="fas fa-trash-alt"></i> 删除此超话</button>
+                    </div>
+                </div>
+            `;
+            view.appendChild(editSuperTopicSheet);
+        }
+
+        function setupPostForwardSheet() {
+            postForwardSheet = document.getElementById('x-post-forward-sheet');
+            if (postForwardSheet) return;
+            postForwardSheet = document.createElement('div');
+            postForwardSheet.className = 'bottom-sheet-overlay detail-sheet-overlay x-post-forward-overlay';
+            postForwardSheet.id = 'x-post-forward-sheet';
+            postForwardSheet.style.zIndex = '279';
+            postForwardSheet.innerHTML = `
+                <div class="bottom-sheet x-post-forward-sheet">
+                    <div class="sheet-handle"></div>
+                    <div class="x-edit-sheet-header">
+                        <button class="x-edit-sheet-text-btn" id="x-post-forward-close-btn" type="button">取消</button>
+                        <strong>转发给私信</strong>
+                        <span class="x-settings-spacer"></span>
+                    </div>
+                    <div class="x-post-forward-list" id="x-post-forward-list"></div>
+                </div>
+            `;
+            view.appendChild(postForwardSheet);
+        }
+
         function setupSearchGenerateSheet() {
             searchGenerateSheet = document.getElementById('x-search-generate-sheet');
             if (!searchGenerateSheet) {
@@ -745,12 +1103,12 @@
                         <div class="sheet-handle"></div>
                         <div class="x-edit-sheet-header">
                             <button class="x-edit-sheet-text-btn" id="x-search-generate-close-btn" type="button">Close</button>
-                            <strong>搜索/生成帖子</strong>
+                            <strong id="x-search-generate-title">搜索/生成帖子</strong>
                             <button class="x-edit-sheet-save" id="x-search-generate-run-btn" type="button">Generate</button>
                         </div>
                         <div class="x-search-generate-body">
                             <label class="x-add-dm-field">
-                                <span>生成方向</span>
+                                <span id="x-search-generate-label">生成方向</span>
                                 <textarea id="x-search-generate-input" maxlength="500" placeholder="可留空，或输入想生成的帖子主题"></textarea>
                             </label>
                         </div>
@@ -760,6 +1118,62 @@
             }
             searchGenerateInput = document.getElementById('x-search-generate-input');
             searchGenerateSheet?.querySelectorAll('.x-settings-note').forEach((node) => node.remove());
+        }
+
+        function setupAdvanceSheet() {
+            advanceSheet = document.getElementById('x-advance-sheet');
+            if (!advanceSheet) {
+                advanceSheet = document.createElement('div');
+                advanceSheet.className = 'bottom-sheet-overlay detail-sheet-overlay x-advance-overlay';
+                advanceSheet.id = 'x-advance-sheet';
+                advanceSheet.style.zIndex = '276';
+                advanceSheet.innerHTML = `
+                    <div class="bottom-sheet x-advance-sheet">
+                        <div class="sheet-handle"></div>
+                        <div class="x-edit-sheet-header">
+                            <button class="x-edit-sheet-text-btn" id="x-advance-close-btn" type="button">关闭</button>
+                            <strong>推进到下一天</strong>
+                            <button class="x-edit-sheet-save" id="x-advance-run-btn" type="button">生成</button>
+                        </div>
+                        <div class="x-advance-body">
+                            <label class="x-advance-field">
+                                <span>想推进的剧情</span>
+                                <textarea id="x-advance-plot-input" maxlength="800" placeholder="可留空，留空时将随机延续当前剧情"></textarea>
+                            </label>
+                            <div class="x-advance-section-title">生成内容</div>
+                            <div class="x-advance-options">
+                                <label class="x-advance-option">
+                                    <input id="x-advance-strangers-toggle" type="checkbox">
+                                    <span class="x-advance-option-copy">
+                                        <strong>陌生人私信</strong>
+                                        <span>每人生成 2–5 条对方来信</span>
+                                    </span>
+                                    <input class="x-advance-count" id="x-advance-strangers-count" type="number" min="1" max="20" inputmode="numeric" aria-label="陌生人人数">
+                                </label>
+                                <label class="x-advance-option">
+                                    <input id="x-advance-trends-toggle" type="checkbox">
+                                    <span class="x-advance-option-copy">
+                                        <strong>推进热搜</strong>
+                                        <span>新热搜置顶，旧热搜依次下移</span>
+                                    </span>
+                                    <input class="x-advance-count" id="x-advance-trends-count" type="number" min="1" max="20" inputmode="numeric" aria-label="热搜数量">
+                                </label>
+                                <label class="x-advance-option">
+                                    <input id="x-advance-posts-toggle" type="checkbox">
+                                    <span class="x-advance-option-copy">
+                                        <strong>推进帖子</strong>
+                                        <span>每条新帖子至少生成 5 条评论</span>
+                                    </span>
+                                    <input class="x-advance-count" id="x-advance-posts-count" type="number" min="1" max="20" inputmode="numeric" aria-label="帖子数量">
+                                </label>
+                            </div>
+                            <p class="x-advance-note">将使用 X 已绑定的世界书和当前热搜、帖子作为剧情上下文。全部生成成功后才会保存。</p>
+                        </div>
+                    </div>
+                `;
+                view.appendChild(advanceSheet);
+            }
+            advancePlotInput = document.getElementById('x-advance-plot-input');
         }
 
         function setupPostSettingsSheet() {
@@ -966,6 +1380,38 @@
             else settingsSheet?.classList.remove('active');
         }
 
+        function resetAllXData() {
+            showXConfirm({
+                title: '初始化 X',
+                message: '将清空 X 内的帖子、超话、私信、热搜、主页资料和全部设置。此操作不可恢复。',
+                confirmText: '清空并初始化',
+                isDestructive: true,
+                onConfirm: () => {
+                    const freshState = JSON.parse(JSON.stringify(defaultXState));
+                    saveXState(freshState);
+                    currentActiveTopicId = null;
+                    currentProfileIdentity = null;
+                    currentDmId = null;
+                    closeXSettings();
+                    closeComposer();
+                    closePostDetail();
+                    closeTopicDetail();
+                    closeDmChat();
+                    closeDmProfile();
+                    closePostForwardSheet();
+                    renderProfile();
+                    renderWorldBookSummary();
+                    renderSuperFollowBar();
+                    renderGeneratedPosts();
+                    renderTrends();
+                    renderDirectMessages();
+                    renderVisitors();
+                    switchTab(0);
+                    if (typeof window.showToast === 'function') window.showToast('X 已恢复初始状态');
+                }
+            });
+        }
+
         function openWorldBookSelector() {
             const currentState = getXState();
             const selectedIds = currentState.boundWorldBookIds || [];
@@ -982,13 +1428,57 @@
             });
         }
 
-        function openComposer() {
+        function normalizeComposeTopicTag(value) {
+            const topic = safeText(value).replace(/^#+/, '').trim();
+            return topic ? `#${topic}` : '';
+        }
+
+        function renderComposeImageDraft() {
+            const icon = composeImageButton?.querySelector('i');
+            const label = composeImageButton?.querySelector('.x-compose-image-copy');
+            const hasImage = !!composeImageDraft;
+            composeImageButton?.classList.toggle('has-image', hasImage);
+            if (icon) icon.hidden = hasImage;
+            if (label) label.hidden = hasImage;
+            if (composeImagePreview) {
+                composeImagePreview.hidden = !hasImage;
+                composeImagePreview.src = hasImage ? composeImageDraft : '';
+            }
+            if (composeImageClearButton) composeImageClearButton.hidden = !hasImage;
+        }
+
+        function addComposeImageUrl() {
+            const url = safeText(composeImageUrlInput?.value);
+            if (!/^https?:\/\//i.test(url)) {
+                if (typeof window.showToast === 'function') window.showToast('请输入有效的 http(s) 图片 URL');
+                return;
+            }
+            composeImageDraft = url;
+            renderComposeImageDraft();
+        }
+
+        function openComposer(options = {}) {
+            const requestedSuperId = safeText(options?.superTopicId);
+            const topic = requestedSuperId
+                ? (getXState().xTopics || []).find((item) => String(item.id || item.name) === requestedSuperId)
+                : null;
+            currentComposeSuperId = topic ? String(topic.id || topic.name) : null;
+            composeImageDraft = '';
+            if (composeImageInput) composeImageInput.value = '';
+            if (composeImageUrlInput) composeImageUrlInput.value = '';
             if (composeTextInput) composeTextInput.value = '';
+            if (composeTopicInput) composeTopicInput.value = '';
+            if (composeSuperChip) composeSuperChip.hidden = !topic;
+            if (composeSuperName) composeSuperName.textContent = topic ? `超话：${safeText(topic.name || topic.title, '超话')}` : '';
+            renderComposeImageDraft();
             if (typeof window.openView === 'function') window.openView(composeSheet);
             else composeSheet?.classList.add('active');
         }
 
         function closeComposer() {
+            currentComposeSuperId = null;
+            composeImageDraft = '';
+            renderComposeImageDraft();
             if (typeof window.closeView === 'function') window.closeView(composeSheet);
             else composeSheet?.classList.remove('active');
         }
@@ -997,44 +1487,32 @@
             const text = safeText(composeTextInput?.value, '新帖子草稿');
             tempPostCounter += 1;
             const id = `temp-${Date.now()}-${tempPostCounter}`;
-            postData[id] = {
-                avatar: currentProfile.avatar || currentProfile.name.slice(0, 1).toUpperCase(),
-                name: currentProfile.name,
-                handle: `${currentProfile.handle} · now`,
+            const topicTag = normalizeComposeTopicTag(composeTopicInput?.value);
+            const superTopic = currentComposeSuperId
+                ? (getXState().xTopics || []).find((item) => String(item.id || item.name) === String(currentComposeSuperId))
+                : null;
+            const rawPost = {
+                id,
+                authorId: 'me',
+                authorAvatar: currentProfile.avatar || currentProfile.name.slice(0, 1).toUpperCase(),
+                authorName: currentProfile.name,
+                handle: currentProfile.handle,
                 text,
-                reposts: '0',
-                likes: '0',
-                comments: '0',
-                commentList: [
-                    { avatar: 'X', name: 'X App', handle: '@xapp · now', text: '这是本地临时发布的帖子。' }
-                ]
+                topicTag,
+                superTopicId: superTopic ? String(superTopic.id || superTopic.name) : '',
+                superTopicName: superTopic ? safeText(superTopic.name || superTopic.title, '超话') : '',
+                reposts: 0,
+                likes: 0,
+                commentsCount: 1,
+                comments: [
+                    { authorName: 'X App', handle: '@xapp', text: '帖子已发布。' }
+                ],
+                mediaType: composeImageDraft ? 'image' : 'text',
+                images: composeImageDraft ? [{ id: `${id}-image-0`, text: '用户上传图片', url: composeImageDraft }] : [],
+                createdAt: Date.now()
             };
-            const recommendPanel = view.querySelector('.x-feed-panel[data-feed-panel="recommend"]');
-            if (recommendPanel) {
-                clearHomeEmptyState(recommendPanel);
-                const card = document.createElement('article');
-                card.className = 'x-feed-card';
-                card.setAttribute('data-post-id', id);
-                card.setAttribute('tabindex', '0');
-                card.innerHTML = `
-                    <div class="x-feed-avatar x-avatar">${currentProfile.avatar ? `<img src="${escapeHtml(currentProfile.avatar)}" alt="">` : escapeHtml(currentProfile.name.slice(0, 1).toUpperCase())}</div>
-                    <div class="x-feed-body">
-                        <div class="x-feed-meta">
-                            <strong>${escapeHtml(currentProfile.name)}</strong>
-                            <span>${escapeHtml(currentProfile.handle)} · now</span>
-                        </div>
-                        <p>${escapeHtml(text)}</p>
-                        <div class="x-feed-actions">
-                            <span><i class="far fa-comment"></i> 0</span>
-                            <span><i class="fas fa-retweet"></i> 0</span>
-                            <span><i class="far fa-heart"></i> 0</span>
-                            <span><i class="far fa-share-square"></i></span>
-                        </div>
-                    </div>
-                `;
-                bindPostCard(card);
-                recommendPanel.prepend(card);
-            }
+            const added = appendGeneratedPosts([rawPost]);
+            if (superTopic && added.length) updateSuperHomeCard(superTopic);
             closeComposer();
         }
 
@@ -1073,23 +1551,31 @@
             });
         }
 
+        function buildPostLinkChips(post) {
+            const superName = safeText(post.superTopicName);
+            const superId = safeText(post.superTopicId);
+            const topicTag = normalizeComposeTopicTag(post.topicTag);
+            if (!superName && !topicTag) return '';
+            return `<div class="x-post-link-chips">
+                ${superName ? `<button class="x-post-super-link" type="button" data-super-topic-id="${escapeHtml(superId || superName)}"><i class="fas fa-users"></i>${escapeHtml(superName)}</button>` : ''}
+                ${topicTag ? `<button class="x-post-topic-link" type="button" data-topic-tag="${escapeHtml(topicTag)}"><i class="fas fa-hashtag"></i>${escapeHtml(topicTag.replace(/^#/, ''))}</button>` : ''}
+            </div>`;
+        }
+
         function buildFeedCardHtml(post) {
-            let textHtml = escapeHtml(post.text);
-            if (post.topicTag) {
-                 textHtml = textHtml.replace(new RegExp(`(${escapeHtml(post.topicTag)})`, 'g'), '<span style="color: #1d9bf0;">$1</span>');
-            }
             return `
-                <div class="x-feed-avatar x-avatar">${buildAvatarHtml(post.avatar, post.name)}</div>
+                ${buildAuthorAvatarButton(post, 'x-feed-avatar x-avatar')}
                 <div class="x-feed-body">
                     <div class="x-feed-meta">
                         <strong>${escapeHtml(post.name)}</strong>
                         <span>${escapeHtml(post.handle)} · now</span>
                     </div>
-                    <p>${textHtml}</p>
+                    <p>${escapeHtml(post.text)}</p>
                     ${renderPostImages(getPostImages(post))}
+                    ${buildPostLinkChips(post)}
                     <div class="x-feed-actions">
                         <span><i class="far fa-comment"></i> ${escapeHtml(post.comments || '0')}</span>
-                        <span><i class="fas fa-retweet"></i> ${escapeHtml(post.reposts || '0')}</span>
+                        <button class="x-feed-forward-btn" type="button" data-post-id="${escapeHtml(post.id)}" aria-label="转发帖子"><i class="fas fa-retweet"></i> <span>${escapeHtml(post.reposts || '0')}</span></button>
                         <span><i class="far fa-heart"></i> ${escapeHtml(post.likes || '0')}</span>
                         <span><i class="far fa-share-square"></i></span>
                     </div>
@@ -1178,6 +1664,7 @@
             topicDetailGenerateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
             try {
                 const worldbook = getSelectedWorldBookContext(`${topic} ${currentProfile.persona} ${currentProfile.bio}`);
+                const reusableAuthors = getReusableAuthorContext();
                 const prompt = `Return strict JSON only. Generate 1 to 3 X/Twitter style posts for the user's feed specifically about the topic: "${topic}".
 Important: Every post text MUST include the exact text "${topic}" within it as a hashtag or text.
 Each post must include: authorName, handle, text, likes, reposts, commentsCount, mediaType ("text" or "image"), optional imagePrompt/images, and comments.
@@ -1185,7 +1672,7 @@ Each post must have at least 10 comments. Across each post, replies inside comme
 Images are text placeholders: describe the image content in imagePrompt or images[].text.
 ALL text values, including imagePrompt and any text inside the images array describing the picture, MUST be written in Chinese (简体中文). Do not use English for image descriptions.
 X user: ${JSON.stringify(currentProfile)}
-Current Date: ${getXState().xCurrentDate || defaultDate}
+Reusable existing authors (optional; when used, return their exact authorId): ${JSON.stringify(reusableAuthors)}
 Worldbook:
 ${worldbook || 'None'}`;
                 
@@ -1245,22 +1732,34 @@ ${worldbook || 'None'}`;
             const countEl = document.getElementById('x-super-follow-count');
             if (!listEl) return;
             const topics = (getXState().xTopics || []).filter(Boolean);
+            const homeCard = view.querySelector('.x-super-home-card');
+            const contentTabs = document.getElementById('x-super-profile-tabs');
+            const feedPanels = Array.from(view.querySelectorAll('.x-super-feed[data-super-panel]'));
+            const setTopicContentVisible = (visible) => {
+                if (homeCard) homeCard.hidden = !visible;
+                if (contentTabs) contentTabs.hidden = !visible;
+                feedPanels.forEach((panel) => { panel.hidden = !visible; });
+            };
             if (countEl) countEl.textContent = `${topics.length} followed`;
             if (topics.length === 0) {
+                currentActiveTopicId = null;
+                setTopicContentVisible(false);
                 listEl.innerHTML = '<div class="x-super-empty-follow">暂无关注</div>';
                 return;
             }
+            setTopicContentVisible(true);
             listEl.innerHTML = topics.map((topic) => {
                 const name = safeText(topic.name || topic.title, '超话');
+                const topicId = String(topic.id || name);
                 const avatar = safeText(topic.avatar || topic.icon, name.slice(0, 1));
                 const avatarHtml = avatar.startsWith('data:') || avatar.startsWith('http')
                     ? `<img src="${escapeHtml(avatar)}" alt="">`
                     : escapeHtml(avatar.slice(0, 1));
                 return `
-                    <div class="x-super-follow-item" data-topic-id="${escapeHtml(topic.id || name)}">
+                    <button class="x-super-follow-item ${String(currentActiveTopicId) === topicId ? 'active' : ''}" type="button" data-topic-id="${escapeHtml(topicId)}" aria-label="${escapeHtml(name)}">
                         <div class="x-super-follow-avatar">${avatarHtml}</div>
                         <span>${escapeHtml(name)}</span>
-                    </div>
+                    </button>
                 `;
             }).join('');
             
@@ -1270,15 +1769,14 @@ ${worldbook || 'None'}`;
                     const topicId = item.dataset.topicId;
                     const topic = topics.find(t => String(t.id || t.name) === topicId);
                     if (topic) {
-                        updateSuperHomeCard(topic);
+                        if (String(currentActiveTopicId) === String(topicId)) openEditSuperTopicSheet(topicId);
+                        else updateSuperHomeCard(topic);
                     }
                 });
             });
             
-            // 默认渲染第一个
-            if(topics.length > 0) {
-                updateSuperHomeCard(topics[0]);
-            }
+            const activeTopic = topics.find((topic) => String(topic.id || topic.name) === String(currentActiveTopicId)) || topics[0];
+            updateSuperHomeCard(activeTopic);
         }
         
         let currentActiveTopicId = null;
@@ -1297,10 +1795,12 @@ ${worldbook || 'None'}`;
             }
 
             superUpdateBtn.disabled = true;
-            superUpdateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 更新中...';
+            superUpdateBtn.setAttribute('aria-label', '更新中');
+            superUpdateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
             
             try {
                 const worldbook = getSelectedWorldBookContext(`${topicName} ${charsInfo}`);
+                const reusableAuthors = getReusableAuthorContext();
                 
                 const prompt = `Return strict JSON only. You need to generate an update for a celebrity/entertainment "Super Topic" (超话) named "${topicName}" in a Chinese social app similar to Weibo.
 
@@ -1338,7 +1838,7 @@ ALL text values, including imagePrompt and any text inside the images array desc
 Topic Name: ${topicName}
 Topic Characters Info:
 ${charsInfo || 'None'}
-Current Date: ${getXState().xCurrentDate || defaultDate}
+Reusable existing authors (optional; when used, return their exact authorId): ${JSON.stringify(reusableAuthors)}
 Worldbook context:
 ${worldbook || 'None'}
 `;
@@ -1380,6 +1880,8 @@ ${worldbook || 'None'}
 
                 allItems.forEach(p => {
                     p.topicTag = topicName;
+                    p.superTopicId = String(topic.id || topic.name);
+                    p.superTopicName = topicName;
                 });
 
                 // Update the local object for immediate UI rendering
@@ -1396,7 +1898,8 @@ ${worldbook || 'None'}
                 if (typeof window.showToast === 'function') window.showToast('更新失败，请检查 API 配置');
             } finally {
                 superUpdateBtn.disabled = false;
-                superUpdateBtn.innerHTML = '<i class="fas fa-sync"></i> 更新';
+                superUpdateBtn.setAttribute('aria-label', '更新');
+                superUpdateBtn.innerHTML = '<i class="fas fa-sync"></i>';
             }
         }
 
@@ -1409,7 +1912,12 @@ ${worldbook || 'None'}
             const momentsPanel = view.querySelector('.x-super-feed[data-super-panel="moments"]');
             
             const posts = (getXState().xGeneratedPosts || [])
-                .filter(p => p.topicTag === topicName)
+                .filter((post) => {
+                    const topicId = String(topic.id || topic.name);
+                    if (post.superTopicId) return String(post.superTopicId) === topicId;
+                    if (post.superTopicName) return safeText(post.superTopicName) === topicName;
+                    return post.topicTag === topicName;
+                })
                 .map((post, index) => normalizeGeneratedPost(post, index))
                 .filter(Boolean)
                 .map((post) => ensureCommentDepth(post));
@@ -1481,7 +1989,7 @@ ${worldbook || 'None'}
                     card.innerHTML = `
                         <div class="x-feed-body" style="margin-left: 0;">
                             <div class="x-moment-action">
-                                <div class="x-avatar" style="width:24px;height:24px;font-size:10px;">${buildAvatarHtml(post.avatar, post.name)}</div>
+                                ${buildAuthorAvatarButton(post, 'x-avatar x-moment-avatar')}
                                 <span>${escapeHtml(post.name)} ${escapeHtml(actionText)}</span>
                             </div>
                             ${refHtml}
@@ -1553,6 +2061,9 @@ ${worldbook || 'None'}
 
         function updateSuperHomeCard(topic) {
             currentActiveTopicId = topic.id || topic.name;
+            view.querySelectorAll('.x-super-follow-item[data-topic-id]').forEach((item) => {
+                item.classList.toggle('active', String(item.dataset.topicId) === String(currentActiveTopicId));
+            });
             const coverEl = document.querySelector('.x-super-cover');
             const avatarEl = document.querySelector('.x-super-topic-avatar');
             const titleEl = document.querySelector('.x-super-title-row h3');
@@ -1589,7 +2100,7 @@ ${worldbook || 'None'}
             }
 
             if (signBtn) {
-                const currentDate = getXState().xCurrentDate || new Date().toISOString().split('T')[0];
+                const currentDate = new Date().toISOString().split('T')[0];
                 if (topic.lastSignDate === currentDate) {
                     signBtn.textContent = '已签到';
                     signBtn.disabled = true;
@@ -1605,8 +2116,28 @@ ${worldbook || 'None'}
             renderSuperTopicFeed(topic);
         }
 
+        function openSuperTopicById(topicId) {
+            const targetId = safeText(topicId);
+            const topics = getXState().xTopics || [];
+            const topic = topics.find((item) =>
+                String(item.id || item.name) === targetId || safeText(item.name || item.title) === targetId
+            );
+            if (!topic) {
+                if (typeof window.showToast === 'function') window.showToast('对应超话不存在');
+                return;
+            }
+            closePostDetail();
+            closeTopicDetail();
+            closeDmProfile();
+            closeComposer();
+            const superIndex = navItems.findIndex((item) => item.getAttribute('data-target') === 'x-super-tab');
+            if (superIndex >= 0) switchTab(superIndex);
+            renderSuperFollowBar();
+            updateSuperHomeCard(topic);
+        }
+
         function handleTopicSign(topicId) {
-            const currentDate = getXState().xCurrentDate || new Date().toISOString().split('T')[0];
+            const currentDate = new Date().toISOString().split('T')[0];
             
             updateXState(draft => {
                 const topic = (draft.xTopics || []).find(t => String(t.id || t.name) === String(topicId));
@@ -1626,6 +2157,104 @@ ${worldbook || 'None'}
                     window.showToast(`签到成功！已连续签到 ${topic.signDays} 天`);
                 }
             }
+        }
+
+        function openEditSuperTopicSheet(topicId) {
+            const id = safeText(topicId);
+            const topic = (getXState().xTopics || []).find((item) => String(item.id || item.name) === id);
+            if (!topic || !editSuperTopicSheet) return;
+            currentEditingSuperTopicId = String(topic.id || topic.name);
+            editSuperTopicAvatarDraft = safeText(topic.avatar || topic.icon);
+            editSuperTopicBannerDraft = safeText(topic.banner);
+            const nameInput = document.getElementById('x-edit-super-topic-name');
+            const fansInput = document.getElementById('x-edit-super-topic-fans');
+            if (nameInput) nameInput.value = safeText(topic.name || topic.title, '超话');
+            if (fansInput) fansInput.value = safeText(topic.fans, '0');
+            renderImagePreview(document.getElementById('x-edit-super-topic-avatar-preview'), editSuperTopicAvatarDraft, '超');
+            renderImagePreview(document.getElementById('x-edit-super-topic-banner-preview'), editSuperTopicBannerDraft, 'Cover');
+            if (typeof window.openView === 'function') window.openView(editSuperTopicSheet);
+            else editSuperTopicSheet.classList.add('active');
+        }
+
+        function closeEditSuperTopicSheet() {
+            currentEditingSuperTopicId = null;
+            editSuperTopicAvatarDraft = '';
+            editSuperTopicBannerDraft = '';
+            if (typeof window.closeView === 'function') window.closeView(editSuperTopicSheet);
+            else editSuperTopicSheet?.classList.remove('active');
+        }
+
+        function saveEditedSuperTopic() {
+            if (!currentEditingSuperTopicId) return;
+            const topicId = currentEditingSuperTopicId;
+            const name = safeText(document.getElementById('x-edit-super-topic-name')?.value);
+            const fans = safeText(document.getElementById('x-edit-super-topic-fans')?.value, '0');
+            if (!name) {
+                if (typeof window.showToast === 'function') window.showToast('请输入超话名称');
+                return;
+            }
+            let updatedTopic = null;
+            updateXState((draft) => {
+                const topic = (draft.xTopics || []).find((item) => String(item.id || item.name) === String(topicId));
+                if (!topic) return;
+                const previousName = safeText(topic.name || topic.title, '超话');
+                topic.name = name;
+                topic.title = name;
+                topic.fans = fans;
+                topic.avatar = editSuperTopicAvatarDraft;
+                topic.banner = editSuperTopicBannerDraft;
+                updatedTopic = { ...topic };
+                draft.xGeneratedPosts = (draft.xGeneratedPosts || []).map((post) => {
+                    const linked = String(post.superTopicId || '') === String(topicId)
+                        || (!post.superTopicId && post.topicTag === previousName)
+                        || post.superTopicName === previousName;
+                    if (!linked) return post;
+                    return {
+                        ...post,
+                        superTopicId: String(topicId),
+                        superTopicName: name,
+                        topicTag: post.topicTag === previousName ? name : post.topicTag
+                    };
+                });
+            });
+            closeEditSuperTopicSheet();
+            renderSuperFollowBar();
+            renderGeneratedPosts();
+            if (updatedTopic) updateSuperHomeCard(updatedTopic);
+            if (typeof window.showToast === 'function') window.showToast('超话信息已更新');
+        }
+
+        function deleteEditedSuperTopic() {
+            if (!currentEditingSuperTopicId) return;
+            const topicId = currentEditingSuperTopicId;
+            const topic = (getXState().xTopics || []).find((item) => String(item.id || item.name) === String(topicId));
+            if (!topic) return;
+            const topicName = safeText(topic.name || topic.title, '超话');
+            showXConfirm({
+                title: '删除超话',
+                message: `确定删除“${topicName}”及其关联帖子吗？此操作不可恢复。`,
+                confirmText: '删除',
+                isDestructive: true,
+                onConfirm: () => {
+                    updateXState((draft) => {
+                        draft.xTopics = (draft.xTopics || []).filter((item) => String(item.id || item.name) !== String(topicId));
+                        const removedIds = new Set();
+                        draft.xGeneratedPosts = (draft.xGeneratedPosts || []).filter((post) => {
+                            const linked = String(post.superTopicId || '') === String(topicId)
+                                || (!post.superTopicId && post.topicTag === topicName)
+                                || post.superTopicName === topicName;
+                            if (linked) removedIds.add(String(post.id));
+                            return !linked;
+                        });
+                        removedIds.forEach((postId) => { delete draft.xPostThreads[postId]; });
+                    });
+                    currentActiveTopicId = null;
+                    closeEditSuperTopicSheet();
+                    renderSuperFollowBar();
+                    renderGeneratedPosts();
+                    if (typeof window.showToast === 'function') window.showToast('超话已删除');
+                }
+            });
         }
 
         // --- Create Topic Logic ---
@@ -1804,14 +2433,17 @@ ${worldbook || 'None'}
 
         function getBaseThread(postId) {
             const post = postData[postId] || postData.island;
+            const frontendMetrics = getFrontendPostMetrics(postId);
             return {
-                likes: parseCompactCount(post.likes),
-                reposts: parseCompactCount(post.reposts),
+                likes: frontendMetrics.likes,
+                reposts: frontendMetrics.reposts,
                 commentsCount: parseCompactCount(post.comments),
                 liked: false,
                 reposted: false,
+                frontendMetricVersion: 1,
                 comments: (Array.isArray(post.commentList) ? post.commentList : []).map((comment, index) => ({
                     id: comment.id || `${postId}-comment-${index}`,
+                    authorId: comment.authorId || makeAccountId(comment.handle, comment.name),
                     avatar: comment.avatar || '?',
                     name: comment.name || 'User',
                     handle: comment.handle || '@user',
@@ -1825,15 +2457,17 @@ ${worldbook || 'None'}
             const base = getBaseThread(postId);
             const saved = getXState().xPostThreads?.[postId];
             if (!saved || typeof saved !== 'object') return base;
+            const useSavedMetrics = Number(saved.frontendMetricVersion) === 1;
             return {
                 ...base,
                 ...saved,
                 comments: Array.isArray(saved.comments) ? saved.comments : base.comments,
-                likes: Number.isFinite(Number(saved.likes)) ? Number(saved.likes) : base.likes,
-                reposts: Number.isFinite(Number(saved.reposts)) ? Number(saved.reposts) : base.reposts,
+                likes: useSavedMetrics && Number.isFinite(Number(saved.likes)) ? Number(saved.likes) : base.likes + (saved.liked ? 1 : 0),
+                reposts: useSavedMetrics && Number.isFinite(Number(saved.reposts)) ? Number(saved.reposts) : base.reposts + (saved.reposted ? 1 : 0),
                 commentsCount: Number.isFinite(Number(saved.commentsCount)) ? Number(saved.commentsCount) : base.commentsCount,
                 liked: !!saved.liked,
-                reposted: !!saved.reposted
+                reposted: !!saved.reposted,
+                frontendMetricVersion: 1
             };
         }
 
@@ -1855,17 +2489,18 @@ ${worldbook || 'None'}
                 post.reposts = formatCompactCount(thread.reposts);
                 post.comments = formatCompactCount(thread.commentsCount);
             }
-            const card = view.querySelector(`.x-feed-card[data-post-id="${escapeCssIdent(postId)}"]`);
-            const actionSpans = card ? Array.from(card.querySelectorAll('.x-feed-actions span')) : [];
-            if (actionSpans[0]) actionSpans[0].innerHTML = `<i class="far fa-comment"></i> ${escapeHtml(formatCompactCount(thread.commentsCount))}`;
-            if (actionSpans[1]) {
-                actionSpans[1].classList.toggle('active', !!thread.reposted);
-                actionSpans[1].innerHTML = `<i class="fas fa-retweet"></i> ${escapeHtml(formatCompactCount(thread.reposts))}`;
-            }
-            if (actionSpans[2]) {
-                actionSpans[2].classList.toggle('active', !!thread.liked);
-                actionSpans[2].innerHTML = `<i class="${thread.liked ? 'fas' : 'far'} fa-heart"></i> ${escapeHtml(formatCompactCount(thread.likes))}`;
-            }
+            view.querySelectorAll(`.x-feed-card[data-post-id="${escapeCssIdent(postId)}"]`).forEach((card) => {
+                const actionItems = Array.from(card.querySelector('.x-feed-actions')?.children || []);
+                if (actionItems[0]) actionItems[0].innerHTML = `<i class="far fa-comment"></i> ${escapeHtml(formatCompactCount(thread.commentsCount))}`;
+                if (actionItems[1]) {
+                    actionItems[1].classList.toggle('active', !!thread.reposted);
+                    actionItems[1].innerHTML = `<i class="fas fa-retweet"></i> <span>${escapeHtml(formatCompactCount(thread.reposts))}</span>`;
+                }
+                if (actionItems[2]) {
+                    actionItems[2].classList.toggle('active', !!thread.liked);
+                    actionItems[2].innerHTML = `<i class="${thread.liked ? 'fas' : 'far'} fa-heart"></i> ${escapeHtml(formatCompactCount(thread.likes))}`;
+                }
+            });
         }
 
         function renderDetailActions(thread) {
@@ -1907,7 +2542,7 @@ ${worldbook || 'None'}
                 const repliesHtml = replies.length
                     ? `<div class="x-comment-replies">${replies.map((reply) => `
                         <div class="x-comment-reply" data-comment-id="${escapeHtml(comment.id)}" data-reply-id="${escapeHtml(reply.id)}">
-                            <div class="x-avatar">${buildAvatarHtml(reply.avatar, reply.name)}</div>
+                            ${buildAuthorAvatarButton(reply, 'x-avatar')}
                             <div>
                                 <strong>${escapeHtml(reply.name)}</strong>
                                 <span>${escapeHtml(reply.handle)}</span>
@@ -1919,7 +2554,7 @@ ${worldbook || 'None'}
                     : '';
                 return `
                     <div class="x-comment-row" data-comment-id="${escapeHtml(comment.id)}">
-                        <div class="x-avatar">${buildAvatarHtml(comment.avatar, comment.name)}</div>
+                        ${buildAuthorAvatarButton(comment, 'x-avatar')}
                         <div class="x-comment-main">
                             <strong>${escapeHtml(comment.name)}</strong>
                             <span>${escapeHtml(comment.handle)}</span>
@@ -2060,8 +2695,7 @@ Root comment author: ${rootComment.name || ''}
 Root comment text: ${rootComment.text || ''}
 User display name: ${currentProfile.name} ${currentProfile.handle}
 User comment text: ${userReply.text}
-User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-level comment'}
-Current Date: ${getXState().xCurrentDate || defaultDate}`;
+User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-level comment'}`;
                 const raw = await requestXChatCompletion([
                     { role: 'system', content: 'You generate strict JSON for social-feed replies and profile visitors.' },
                     { role: 'user', content: prompt }
@@ -2129,22 +2763,57 @@ Current Date: ${getXState().xCurrentDate || defaultDate}`;
             openPostDetail(currentDetailPostId);
         }
 
+        function normalizePostSnapshot(snapshot = {}) {
+            const comments = Array.isArray(snapshot.comments) ? snapshot.comments : [];
+            return {
+                id: String(snapshot.id || makeLocalId('shared-post')),
+                authorId: safeText(snapshot.authorId),
+                name: safeText(snapshot.name || snapshot.authorName, 'X User'),
+                handle: safeText(snapshot.handle || snapshot.authorHandle),
+                avatar: safeText(snapshot.avatar || snapshot.authorAvatar),
+                text: safeText(snapshot.text || snapshot.content),
+                topicTag: safeText(snapshot.topicTag),
+                images: Array.isArray(snapshot.images) ? snapshot.images.slice(0, 4) : [],
+                comments: comments.map((comment) => ({
+                    authorId: safeText(comment.authorId),
+                    avatar: safeText(comment.avatar || comment.authorAvatar),
+                    name: safeText(comment.name || comment.authorName, 'User'),
+                    handle: safeText(comment.handle),
+                    text: safeText(comment.text || comment.content),
+                    replies: (Array.isArray(comment.replies) ? comment.replies : []).map((reply) => ({
+                        authorId: safeText(reply.authorId),
+                        avatar: safeText(reply.avatar || reply.authorAvatar),
+                        name: safeText(reply.name || reply.authorName, 'User'),
+                        handle: safeText(reply.handle),
+                        text: safeText(reply.text || reply.content)
+                    })).filter((reply) => reply.text)
+                })).filter((comment) => comment.text)
+            };
+        }
+
         function normalizeDmMessages(messages) {
             if (!Array.isArray(messages)) return [];
             return messages.map((message) => {
                 const source = message?.source || message?.sender;
+                const type = message?.type === 'post-card' ? 'post-card' : 'text';
                 return {
                     id: String(message?.id || makeLocalId('dm-msg')),
                     source: source === 'user' ? 'user' : 'char',
+                    type,
                     text: safeText(message?.text || message?.content || message?.message),
+                    postSnapshot: type === 'post-card' ? normalizePostSnapshot(message?.postSnapshot || message?.post) : null,
                     createdAt: Number(message?.createdAt || message?.timestamp || Date.now())
                 };
-            }).filter((message) => message.text);
+            }).filter((message) => message.text || message.type === 'post-card');
         }
 
         function getDmLastMessageText(item) {
             const messages = normalizeDmMessages(item?.messages);
-            return messages.length ? messages[messages.length - 1].text : safeText(item?.bio, '暂无签名');
+            if (!messages.length) return safeText(item?.bio, '暂无签名');
+            const last = messages[messages.length - 1];
+            return last.type === 'post-card'
+                ? `[帖子] ${safeText(last.postSnapshot?.text, '分享了一条帖子')}`
+                : last.text;
         }
 
         function updateMessageSummary(messages = []) {
@@ -2158,8 +2827,12 @@ Current Date: ${getXState().xCurrentDate || defaultDate}`;
             const name = safeText(source.nickname || source.name || source.realName, 'Char');
             const handleSource = source.handle || source.realName || source.signature || name;
             const avatar = safeText(source.avatarUrl || source.avatar);
+            const id = String(source.id || makeLocalId(origin));
+            const profilePosts = (Array.isArray(source.profilePosts) ? source.profilePosts : [])
+                .map((post, index) => normalizeGeneratedPost({ ...post, profileOwnerId: id, authorId: id }, index))
+                .filter(Boolean);
             return {
-                id: String(source.id || makeLocalId(origin)),
+                id,
                 origin,
                 sourceFriendId: source.sourceFriendId || (origin === 'imessage' ? source.id : ''),
                 name,
@@ -2168,6 +2841,11 @@ Current Date: ${getXState().xCurrentDate || defaultDate}`;
                 persona: safeText(source.persona || source.characterPersona || source.systemPrompt),
                 avatar: avatar,
                 messages: normalizeDmMessages(source.messages),
+                isFollowing: typeof source.isFollowing === 'boolean' ? source.isFollowing : origin !== 'generated',
+                coverSeed: safeText(source.coverSeed, `${id}-cover`),
+                coverImage: safeText(source.coverImage),
+                profilePosts,
+                profileGeneratedAt: Number(source.profileGeneratedAt) || 0,
                 addedAt: Number(source.addedAt) || Date.now()
             };
         }
@@ -2387,56 +3065,312 @@ Current Date: ${getXState().xCurrentDate || defaultDate}`;
             `;
         }
 
-        function openDmProfile(dmId = currentDmId) {
-            const item = dmId ? getDirectMessageById(dmId) : null;
+        function getIdentityProfilePosts(identity) {
+            const state = getXState();
+            const posts = [];
+            if (identity.kind === 'char') {
+                const item = getDirectMessageById(identity.id);
+                posts.push(...(item?.profilePosts || []));
+            }
+            posts.push(...(state.xGeneratedPosts || []).filter((post) => {
+                if (post.authorId && String(post.authorId) === String(identity.id)) return true;
+                return canonicalAccountHandle(post.handle || post.authorHandle, post.name || post.authorName) === canonicalAccountHandle(identity.handle, identity.name);
+            }));
+            const seen = new Set();
+            return posts.map((post, index) => normalizeGeneratedPost(post, index)).filter((post) => {
+                if (!post || seen.has(post.id)) return false;
+                seen.add(post.id);
+                postData[post.id] = ensureCommentDepth(post);
+                return true;
+            });
+        }
+
+        function buildProfilePostsHtml(posts) {
+            if (!posts.length) return '<div class="x-empty-state">暂无帖子</div>';
+            return posts.map((post) => `
+                <article class="x-feed-card x-generated-feed-card x-profile-feed-card" data-post-id="${escapeHtml(post.id)}" tabindex="0">
+                    ${buildFeedCardHtml(post)}
+                </article>
+            `).join('');
+        }
+
+        function buildProfilePhotosHtml(posts) {
+            const images = posts.flatMap((post) => getPostImages(post).map((image) => ({ ...image, postId: post.id })));
+            if (!images.length) return '<div class="x-empty-state">暂无照片</div>';
+            return `<div class="x-super-post-grid x-profile-photo-grid">${images.map((image) => `
+                <button class="x-post-image-thumb" type="button" data-image-text="${escapeHtml(image.text || 'Image')}" data-image-url="${escapeHtml(image.url || '')}" data-post-id="${escapeHtml(image.postId)}">
+                    <img src="${escapeHtml(image.url || generatedImagePlaceholderUrl)}" alt="" onerror="this.src='${escapeHtml(generatedImagePlaceholderUrl)}'">
+                </button>
+            `).join('')}</div>`;
+        }
+
+        function renderIdentityProfile(identity, charItem = null) {
             const body = document.getElementById('x-dm-profile-body');
-            if (!item || !body || !dmProfileView) return;
-            const sourceLabel = item.origin === 'imessage' ? 'iMessage 导入' : 'X 手动添加';
-            const postsCount = Math.max(0, normalizeDmMessages(item.messages).filter((message) => message.source === 'char').length);
-            const photosCount = getPostImages(item).length || 0;
+            if (!identity || !body || !dmProfileView) return;
+            const isChar = identity.kind === 'char' && !!charItem;
+            const posts = getIdentityProfilePosts(identity);
+            const photosCount = posts.reduce((sum, post) => sum + getPostImages(post).length, 0);
+            const coverSeed = safeText(charItem?.coverSeed || identity.coverSeed, `${identity.id}-cover`);
+            const coverUrl = safeText(charItem?.coverImage || identity.coverImage) || getStableExternalImage(coverSeed, 1200, 480);
+            const fallbackCover = safeText(currentProfile.banner || generatedImagePlaceholderUrl);
+            const following = isChar ? charItem.isFollowing !== false : identity.isFollowing !== false;
+            currentProfileIdentity = { ...identity, kind: isChar ? 'char' : 'account' };
+
             body.innerHTML = `
-                <div class="x-profile-cover x-dm-profile-cover">
-                    <div class="x-profile-cover-actions">
-                        <button class="x-header-button" id="x-dm-profile-back" type="button" aria-label="返回">
-                            <i class="fas fa-chevron-left"></i>
-                        </button>
-                        <span></span>
-                    </div>
-                    <div class="x-profile-cover-mark">X</div>
-                </div>
-                <div class="x-scroll-area x-profile-scroll x-dm-profile-scroll">
-                    <div class="x-profile-card">
-                        <div class="x-profile-avatar">${buildAvatarHtml(item.avatar, item.name)}</div>
-                        <div class="x-profile-edit x-dm-profile-source">${escapeHtml(sourceLabel)}</div>
-                        <h2>${escapeHtml(item.name)}</h2>
-                        <span>${escapeHtml(item.handle || '@char')}</span>
-                        <p>${escapeHtml(item.bio || '暂无签名')}</p>
-                        <div class="x-profile-stats">
-                            <div><strong>${escapeHtml(String(postsCount))}</strong><span>Posts</span></div>
-                            <div><strong>${escapeHtml(String(normalizeDmMessages(item.messages).length))}</strong><span>Messages</span></div>
-                            <div><strong>${escapeHtml(String(photosCount))}</strong><span>Photos</span></div>
+                <div class="x-dm-profile-page-scroll">
+                    <div class="x-profile-cover x-dm-profile-cover" style="background-image:linear-gradient(180deg,rgba(0,0,0,.04),rgba(0,0,0,.35)),url('${escapeHtml(fallbackCover)}')">
+                        <img class="x-dm-profile-cover-image" src="${escapeHtml(coverUrl)}" alt="" onerror="this.remove()">
+                        <div class="x-profile-cover-actions">
+                            <button class="x-header-button" id="x-dm-profile-back" type="button" aria-label="返回"><i class="fas fa-chevron-left"></i></button>
+                            ${isChar ? '<button class="x-header-button" id="x-char-profile-generate-btn" type="button" aria-label="生成 Char 主页内容"><i class="fas fa-search"></i></button>' : '<span></span>'}
                         </div>
                     </div>
-                    <div class="x-profile-tabs x-dm-profile-tabs">
-                        <button class="active" type="button" data-dm-profile-tab="posts">Posts</button>
-                        <button type="button" data-dm-profile-tab="photos">Photos</button>
-                    </div>
-                    <div class="x-profile-panel active" data-dm-profile-panel="posts">
-                        <div class="x-empty-state">${escapeHtml(item.persona || '暂无人设')}</div>
-                    </div>
-                    <div class="x-profile-panel" data-dm-profile-panel="photos">
-                        <div class="x-empty-state">暂无照片</div>
+                    <div class="x-profile-scroll x-dm-profile-scroll">
+                        <div class="x-profile-card">
+                            <div class="x-profile-avatar">${buildAvatarHtml(identity.avatar, identity.name)}</div>
+                            <div class="x-dm-profile-heading-row">
+                                <div class="x-dm-profile-identity">
+                                    <h2>${escapeHtml(identity.name)}</h2>
+                                    <span>${escapeHtml(identity.handle || '@user')}</span>
+                                </div>
+                                <div class="x-dm-profile-actions">
+                                    <button class="x-profile-follow-btn ${following ? 'active' : ''}" type="button" data-profile-follow-id="${escapeHtml(identity.id)}">${following ? '已关注' : '关注'}</button>
+                                    ${isChar ? `<button class="x-profile-edit" type="button" data-profile-edit-id="${escapeHtml(identity.id)}">Edit</button>` : ''}
+                                </div>
+                            </div>
+                            <p>${escapeHtml(identity.bio || '暂无简介')}</p>
+                            <div class="x-profile-stats">
+                                <div><strong>${posts.length}</strong><span>Posts</span></div>
+                                <div><strong>${isChar ? normalizeDmMessages(charItem.messages).length : 0}</strong><span>Messages</span></div>
+                                <div><strong>${photosCount}</strong><span>Photos</span></div>
+                            </div>
+                        </div>
+                        <div class="x-profile-tabs x-dm-profile-tabs">
+                            <button class="active" type="button" data-dm-profile-tab="posts">Posts</button>
+                            <button type="button" data-dm-profile-tab="photos">Photos</button>
+                        </div>
+                        <div class="x-profile-panel active x-profile-posts-panel" data-dm-profile-panel="posts">${buildProfilePostsHtml(posts)}</div>
+                        <div class="x-profile-panel" data-dm-profile-panel="photos">${buildProfilePhotosHtml(posts)}</div>
                     </div>
                 </div>
             `;
+            body.querySelectorAll('.x-profile-feed-card').forEach(bindPostCard);
             dmProfileView.classList.add('active');
             dmProfileView.setAttribute('aria-hidden', 'false');
         }
 
+        function openDmProfile(dmId = currentDmId) {
+            const item = dmId ? getDirectMessageById(dmId) : null;
+            if (!item) return;
+            renderIdentityProfile({
+                id: item.id,
+                name: item.name,
+                handle: item.handle,
+                avatar: item.avatar,
+                bio: item.bio,
+                persona: item.persona,
+                coverSeed: item.coverSeed,
+                coverImage: item.coverImage,
+                isFollowing: item.isFollowing,
+                kind: 'char'
+            }, item);
+        }
+
+        function openAuthorProfile(authorId, name, handle, avatar) {
+            const identity = resolveXAuthorIdentity(authorId, handle, name, avatar);
+            if (identity.kind === 'me') {
+                const meIndex = navItems.findIndex((item) => item.getAttribute('data-target') === 'x-me-tab');
+                if (meIndex >= 0) switchTab(meIndex);
+                return;
+            }
+            if (identity.kind === 'char') {
+                openDmProfile(identity.id);
+                return;
+            }
+            const account = identity.kind === 'account' ? identity : registerLightweightAccount(identity);
+            renderIdentityProfile({ ...account, kind: 'account' });
+        }
+
         function closeDmProfile() {
             releaseFocusBeforeHide(dmProfileView);
+            currentProfileIdentity = null;
             dmProfileView?.classList.remove('active');
             dmProfileView?.setAttribute('aria-hidden', 'true');
+        }
+
+        function toggleProfileFollow(profileId) {
+            const item = getDirectMessageById(profileId);
+            if (item) {
+                const updated = updateDirectMessage(profileId, (draft) => {
+                    draft.isFollowing = draft.isFollowing === false;
+                    return draft;
+                });
+                if (updated) openDmProfile(profileId);
+                return;
+            }
+            let updatedAccount = null;
+            updateXState((draft) => {
+                draft.xAccounts = (draft.xAccounts || []).map((account) => {
+                    if (String(account.id) !== String(profileId)) return account;
+                    updatedAccount = { ...account, isFollowing: account.isFollowing === false };
+                    return updatedAccount;
+                });
+            });
+            if (updatedAccount) renderIdentityProfile({ ...normalizeXAccount(updatedAccount), kind: 'account' });
+        }
+
+        function openCharEditSheet(charId) {
+            const item = getDirectMessageById(charId);
+            if (!item || !charEditSheet) return;
+            currentEditingCharId = String(item.id);
+            charEditAvatarDraft = item.avatar || '';
+            charEditCoverSeed = item.coverSeed || `${item.id}-cover`;
+            charEditCoverImageDraft = item.coverImage || '';
+            const nameInput = document.getElementById('x-char-edit-name');
+            const handleInput = document.getElementById('x-char-edit-handle');
+            const bioInput = document.getElementById('x-char-edit-bio');
+            const personaInput = document.getElementById('x-char-edit-persona');
+            if (nameInput) nameInput.value = item.name;
+            if (handleInput) handleInput.value = item.handle;
+            if (bioInput) bioInput.value = item.bio;
+            if (personaInput) personaInput.value = item.persona;
+            renderImagePreview(document.getElementById('x-char-edit-avatar-preview'), charEditAvatarDraft, item.name.slice(0, 1).toUpperCase());
+            renderImagePreview(
+                document.getElementById('x-char-edit-cover-preview'),
+                charEditCoverImageDraft || getStableExternalImage(charEditCoverSeed, 600, 240),
+                'Cover'
+            );
+            if (typeof window.openView === 'function') window.openView(charEditSheet);
+            else charEditSheet.classList.add('active');
+        }
+
+        function closeCharEditSheet() {
+            currentEditingCharId = null;
+            charEditCoverImageDraft = '';
+            if (typeof window.closeView === 'function') window.closeView(charEditSheet);
+            else charEditSheet?.classList.remove('active');
+        }
+
+        function saveCharEdit() {
+            if (!currentEditingCharId) return;
+            const name = safeText(document.getElementById('x-char-edit-name')?.value, 'Char');
+            const updated = updateDirectMessage(currentEditingCharId, (draft) => {
+                draft.name = name;
+                draft.handle = makeHandle(name, document.getElementById('x-char-edit-handle')?.value);
+                draft.bio = safeText(document.getElementById('x-char-edit-bio')?.value, '暂无签名');
+                draft.persona = safeText(document.getElementById('x-char-edit-persona')?.value);
+                draft.avatar = charEditAvatarDraft;
+                draft.coverSeed = charEditCoverSeed;
+                draft.coverImage = charEditCoverImageDraft;
+                return draft;
+            });
+            const id = currentEditingCharId;
+            closeCharEditSheet();
+            renderDirectMessages();
+            renderDmChat();
+            if (updated) openDmProfile(id);
+        }
+
+        function refreshCharEditCover() {
+            if (!currentEditingCharId) return;
+            charEditCoverSeed = `${currentEditingCharId}-cover-${Date.now()}`;
+            charEditCoverImageDraft = '';
+            renderImagePreview(
+                document.getElementById('x-char-edit-cover-preview'),
+                getStableExternalImage(charEditCoverSeed, 600, 240),
+                'Cover'
+            );
+            if (typeof window.showToast === 'function') window.showToast('已更换主页背景');
+        }
+
+        function normalizeCharProfilePosts(rawPosts, item) {
+            return (Array.isArray(rawPosts) ? rawPosts : []).map((rawPost, index) => {
+                const post = normalizeGeneratedPost({
+                    ...rawPost,
+                    authorId: item.id,
+                    authorName: item.name,
+                    handle: item.handle,
+                    authorAvatar: item.avatar,
+                    profileOwnerId: item.id
+                }, index);
+                if (!post || getPostImages(post).length === 0 || post.commentList.length < 10) return null;
+                post.images = getPostImages(post).map((image, imageIndex) => ({
+                    ...image,
+                    url: getStableExternalImage(`${item.id}-${post.id}-${imageIndex}`, 900, 900)
+                }));
+                return ensureCommentDepth(post);
+            }).filter(Boolean);
+        }
+
+        async function requestCharProfilePostBatch(item, count, excludedTexts = []) {
+            const recentChat = normalizeDmMessages(item.messages).slice(-12).map(serializeDmMessageForAi).join('\n');
+            const worldbook = getSelectedWorldBookContext(`${item.name} ${item.bio} ${item.persona} ${currentProfile.persona}`);
+            const prompt = `Return strict JSON only: {"posts":[{"authorName":"","handle":"","text":"","likes":0,"reposts":0,"commentsCount":10,"mediaType":"image","imagePrompt":"详细图片描述","comments":[{"authorName":"","handle":"","text":""}]}]}.
+Generate exactly ${count} new X profile posts written by this Char. Every post MUST contain at least one imagePrompt or images item and at least 10 distinct top-level comment objects in comments. Replies do not count toward the 10-comment minimum. Posts must feel like the Char's own public life and remain consistent with their persona, recent private conversation, User relationship and worldbook.
+All user-facing text and image descriptions must be Simplified Chinese. Do not return image URLs.
+Char: ${JSON.stringify({ id: item.id, name: item.name, handle: item.handle, bio: item.bio, persona: item.persona })}
+User: ${JSON.stringify({ name: currentProfile.name, handle: currentProfile.handle, bio: currentProfile.bio, persona: currentProfile.persona })}
+Recent private chat: ${recentChat || 'None'}
+Do not repeat these post texts: ${excludedTexts.length ? excludedTexts.join(' | ') : 'None'}
+Worldbook:
+${worldbook || 'None'}`;
+            const raw = await requestXChatCompletion([
+                { role: 'system', content: 'Generate strict JSON for a fictional X character profile. Output JSON only.' },
+                { role: 'user', content: prompt }
+            ], { temperature: 0.9 });
+            const parsed = parseJsonPayload(raw);
+            const posts = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.posts) ? parsed.posts : []);
+            return normalizeCharProfilePosts(posts, item);
+        }
+
+        async function generateCurrentCharProfile() {
+            if (currentProfileIdentity?.kind !== 'char') return;
+            const item = getDirectMessageById(currentProfileIdentity.id);
+            const button = document.getElementById('x-char-profile-generate-btn');
+            if (!item || !button) return;
+            button.disabled = true;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            try {
+                const collected = [];
+                const existingTexts = (item.profilePosts || []).map((post) => safeText(post.text)).filter(Boolean);
+                const seen = new Set(existingTexts.map((text) => text.toLocaleLowerCase()));
+                const addPosts = (posts) => posts.forEach((post) => {
+                    const key = post.text.toLocaleLowerCase();
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        collected.push(post);
+                    }
+                });
+                addPosts(await requestCharProfilePostBatch(item, 5, existingTexts));
+                let imageCount = collected.reduce((sum, post) => sum + getPostImages(post).length, 0);
+                if (collected.length < 5 || imageCount < 5) {
+                    addPosts(await requestCharProfilePostBatch(
+                        item,
+                        Math.max(1, 5 - collected.length, 5 - imageCount),
+                        [...existingTexts, ...collected.map((post) => post.text)]
+                    ));
+                    imageCount = collected.reduce((sum, post) => sum + getPostImages(post).length, 0);
+                }
+                if (collected.length < 5 || imageCount < 5 || collected.some((post) => post.commentList.length < 10)) {
+                    throw new Error('Insufficient Char profile content');
+                }
+                updateDirectMessage(item.id, (draft) => {
+                    draft.profilePosts = prependUniquePosts(draft.profilePosts || [], collected);
+                    draft.profileGeneratedAt = Date.now();
+                    return draft;
+                });
+                openDmProfile(item.id);
+                if (typeof window.showToast === 'function') window.showToast(`已生成 ${collected.length} 条帖子和 ${imageCount} 张图片`);
+            } catch (error) {
+                console.error('[X] Generate Char profile failed', error);
+                if (typeof window.showToast === 'function') window.showToast('主页生成失败，未修改现有内容');
+            } finally {
+                const nextButton = document.getElementById('x-char-profile-generate-btn');
+                if (nextButton) {
+                    nextButton.disabled = false;
+                    nextButton.innerHTML = '<i class="fas fa-search"></i>';
+                }
+            }
         }
 
         function showXConfirm(options = {}) {
@@ -2535,6 +3469,128 @@ Current Date: ${getXState().xCurrentDate || defaultDate}`;
             return message;
         }
 
+        function appendDmPostCard(dmId, postSnapshot) {
+            const message = {
+                id: makeLocalId('dm-post'),
+                source: 'user',
+                type: 'post-card',
+                text: '[转发帖子]',
+                postSnapshot: normalizePostSnapshot(postSnapshot),
+                createdAt: Date.now()
+            };
+            updateDirectMessage(dmId, (item) => {
+                item.messages.push(message);
+                return item;
+            });
+            renderDirectMessages();
+            if (currentDmId && String(currentDmId) === String(dmId)) renderDmChat();
+            return message;
+        }
+
+        function createPostSnapshot(postId) {
+            const post = postData[postId];
+            if (!post) return null;
+            const thread = getPostThread(postId);
+            return normalizePostSnapshot({
+                id: postId,
+                authorId: post.authorId,
+                name: post.name,
+                handle: post.handle,
+                avatar: post.avatar,
+                text: post.text,
+                topicTag: post.topicTag,
+                images: getPostImages(post).map((image) => ({ ...image })),
+                comments: (thread.comments || []).map((comment) => ({
+                    ...comment,
+                    replies: (comment.replies || []).map((reply) => ({ ...reply }))
+                }))
+            });
+        }
+
+        function openPostForwardSheet(postId) {
+            const snapshot = createPostSnapshot(postId);
+            const list = document.getElementById('x-post-forward-list');
+            if (!snapshot || !list || !postForwardSheet) return;
+            currentForwardPostId = String(postId);
+            const recipients = (getXState().xDirectMessages || [])
+                .map((item) => normalizeDmChar(item, item?.origin || 'manual'))
+                .filter((item) => item.isFollowing === true);
+            list.innerHTML = recipients.length
+                ? recipients.map((item) => `
+                    <button class="x-post-forward-recipient" type="button" data-forward-dm-id="${escapeHtml(item.id)}">
+                        <span class="x-avatar">${buildAvatarHtml(item.avatar, item.name)}</span>
+                        <span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.handle || '@char')}</small></span>
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                `).join('')
+                : '<div class="x-empty-state">暂无已关注的 Char，请先进入 Char 主页关注。</div>';
+            if (typeof window.openView === 'function') window.openView(postForwardSheet);
+            else postForwardSheet.classList.add('active');
+        }
+
+        function closePostForwardSheet() {
+            currentForwardPostId = null;
+            if (typeof window.closeView === 'function') window.closeView(postForwardSheet);
+            else postForwardSheet?.classList.remove('active');
+        }
+
+        function forwardPostToDm(dmId) {
+            const postId = currentForwardPostId;
+            const recipient = getDirectMessageById(dmId);
+            const snapshot = postId ? createPostSnapshot(postId) : null;
+            if (!recipient || !snapshot) return;
+            appendDmPostCard(recipient.id, snapshot);
+            const thread = getPostThread(postId);
+            thread.reposts = Math.max(0, Number(thread.reposts) || 0) + 1;
+            thread.reposted = true;
+            savePostThread(postId, thread);
+            updatePostCountNodes(postId, thread);
+            closePostForwardSheet();
+            if (postDetailView?.classList.contains('active') && String(currentDetailPostId) === String(postId)) {
+                openPostDetail(postId);
+            }
+            if (typeof window.showToast === 'function') window.showToast(`已转发给 ${recipient.name}`);
+        }
+
+        function serializeDmMessageForAi(message) {
+            if (message?.type !== 'post-card') {
+                return `${message?.source === 'user' ? currentProfile.name : 'Char'}: ${safeText(message?.text)}`;
+            }
+            const post = normalizePostSnapshot(message.postSnapshot);
+            const contextLines = [];
+            for (const comment of post.comments) {
+                if (contextLines.length >= 20) break;
+                contextLines.push(`${comment.name}: ${comment.text}`);
+                for (const reply of comment.replies) {
+                    if (contextLines.length >= 20) break;
+                    contextLines.push(`↳ ${reply.name}: ${reply.text}`);
+                }
+            }
+            const comments = contextLines.join('\n');
+            return `${currentProfile.name} 转发了一条帖子：
+作者：${post.name} ${post.handle}
+正文：${post.text}
+话题：${post.topicTag || '无'}
+评论：
+${comments || '暂无评论'}`;
+        }
+
+        function buildDmPostCardHtml(message) {
+            const post = normalizePostSnapshot(message.postSnapshot);
+            const image = post.images[0];
+            return `
+                <div class="x-dm-post-card" data-shared-post-id="${escapeHtml(post.id)}">
+                    <div class="x-dm-post-card-author">
+                        <span class="x-avatar">${buildAvatarHtml(post.avatar, post.name)}</span>
+                        <span><strong>${escapeHtml(post.name)}</strong><small>${escapeHtml(post.handle)}</small></span>
+                    </div>
+                    <p>${escapeHtml(post.text || '分享了一条帖子')}</p>
+                    ${image ? `<img src="${escapeHtml(image.url || generatedImagePlaceholderUrl)}" alt="" onerror="this.src='${escapeHtml(generatedImagePlaceholderUrl)}'">` : ''}
+                    <span class="x-dm-post-card-label"><i class="fab fa-x-twitter"></i> X Post</span>
+                </div>
+            `;
+        }
+
         function openDmChat(dmId) {
             currentDmId = String(dmId);
             renderDmChat();
@@ -2568,8 +3624,8 @@ Current Date: ${getXState().xCurrentDate || defaultDate}`;
                 const introHtml = renderDmProfileIntro(item);
                 dmChatMessagesEl.innerHTML = messages.length
                     ? `${introHtml}${messages.map((message) => `
-                        <div class="x-dm-chat-bubble-row ${message.source === 'user' ? 'user' : 'char'}">
-                            <div class="x-dm-chat-bubble">${escapeHtml(message.text)}</div>
+                        <div class="x-dm-chat-bubble-row ${message.source === 'user' ? 'user' : 'char'} ${message.type === 'post-card' ? 'post-card' : ''}">
+                            ${message.type === 'post-card' ? buildDmPostCardHtml(message) : `<div class="x-dm-chat-bubble">${escapeHtml(message.text)}</div>`}
                         </div>
                     `).join('')}`
                     : `${introHtml}<div class="x-dm-chat-empty">暂无消息</div>`;
@@ -2597,7 +3653,9 @@ Current Date: ${getXState().xCurrentDate || defaultDate}`;
             apiBtn?.setAttribute('disabled', 'true');
             try {
                 const recent = normalizeDmMessages(item.messages).slice(-12)
-                    .map((message) => `${message.source === 'user' ? currentProfile.name : item.name}: ${message.text}`)
+                    .map((message) => message.type === 'post-card'
+                        ? serializeDmMessageForAi(message)
+                        : `${message.source === 'user' ? currentProfile.name : item.name}: ${message.text}`)
                     .join('\n');
                 const worldbook = getSelectedWorldBookContext(`${item.name} ${item.bio} ${currentProfile.persona}`);
                 const content = await requestXChatCompletion([
@@ -2607,7 +3665,6 @@ Persona: ${item.persona || 'ordinary user'}
 Bio/signature: ${item.bio || ''}
 User profile: ${currentProfile.name} ${currentProfile.handle}
 User persona: ${currentProfile.persona || currentProfile.bio || ''}
-Current Date: ${getXState().xCurrentDate || defaultDate}
 Worldbook:
 ${worldbook || 'None'}
 Recent chat:
@@ -2684,8 +3741,34 @@ Generate the character reply now.` }
             });
         }
 
-        function openSearchGenerateSheet() {
+        function prependUniquePosts(existingPosts, newPosts) {
+            const seen = new Set();
+            return [...(newPosts || []), ...(existingPosts || [])].filter((post) => {
+                if (!post) return false;
+                const key = String(post.id || '');
+                if (!key || seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+        }
+
+        function openSearchGenerateSheet(mode = 'home') {
+            searchGenerateMode = mode === 'discover' ? 'discover' : 'home';
             if (searchGenerateInput) searchGenerateInput.value = '';
+            const title = document.getElementById('x-search-generate-title');
+            const label = document.getElementById('x-search-generate-label');
+            const runBtn = document.getElementById('x-search-generate-run-btn');
+            if (searchGenerateMode === 'discover') {
+                if (title) title.textContent = '生成热搜';
+                if (label) label.textContent = '想搜索什么';
+                if (searchGenerateInput) searchGenerateInput.placeholder = '可留空，留空时随机生成热搜';
+                if (runBtn) runBtn.textContent = '生成';
+            } else {
+                if (title) title.textContent = '搜索/生成帖子';
+                if (label) label.textContent = '生成方向';
+                if (searchGenerateInput) searchGenerateInput.placeholder = '可留空，或输入想生成的帖子主题';
+                if (runBtn) runBtn.textContent = 'Generate';
+            }
             if (typeof window.openView === 'function') window.openView(searchGenerateSheet);
             else searchGenerateSheet?.classList.add('active');
         }
@@ -2695,19 +3778,88 @@ Generate the character reply now.` }
             else searchGenerateSheet?.classList.remove('active');
         }
 
-        async function generateSearchPosts() {
-            const runBtn = document.getElementById('x-search-generate-run-btn');
+        function normalizeDiscoverTrendEntries(payload) {
+            const rawTrends = Array.isArray(payload)
+                ? payload
+                : (Array.isArray(payload?.trends) ? payload.trends : []);
+            return rawTrends.map((rawTrend, trendIndex) => {
+                const trend = normalizeTrend(rawTrend, trendIndex);
+                if (!trend) return null;
+                const rawPosts = Array.isArray(rawTrend?.posts) ? rawTrend.posts : [];
+                const posts = rawPosts.slice(0, 3)
+                    .map((rawPost, postIndex) => normalizeGeneratedPost({
+                        ...rawPost,
+                        topicTag: trend.title
+                    }, postIndex))
+                    .filter(Boolean)
+                    .map((post) => {
+                        post.topicTag = trend.title;
+                        return ensureCommentDepth(post);
+                    });
+                if (posts.length < 1 || posts.length > 3) return null;
+                return { trend, posts };
+            }).filter(Boolean);
+        }
+
+        async function requestDiscoverTrendBatch(topic, count, excludedTitles = []) {
+            const worldbook = getSelectedWorldBookContext(`${topic} ${currentProfile.bio} ${currentProfile.persona}`);
+            const reusableAuthors = getReusableAuthorContext();
+            const prompt = `Return strict JSON only in this shape: {"trends":[{"title":"#话题","category":"分类 · Trending","heat":"12.3K","posts":[{"authorName":"","handle":"","text":"","likes":0,"reposts":0,"commentsCount":0,"mediaType":"text","comments":[]}]}]}.
+Generate exactly ${count} unique realistic Chinese Weibo/X hot-search topics. Each trend MUST contain 1 to 3 directly related posts. Do not return a trend without a valid post.
+Use varied categories, account types, viewpoints and plausible heat values. All user-facing text must be Simplified Chinese. Avoid generic filler.
+Search intent: ${topic || '随机发现内容'}
+Do not repeat these trend titles: ${excludedTitles.length ? excludedTitles.join('、') : 'None'}
+X user: ${JSON.stringify({ name: currentProfile.name, handle: currentProfile.handle, bio: currentProfile.bio })}
+Reusable existing authors (optional; when used for a post, return their exact authorId): ${JSON.stringify(reusableAuthors)}
+Worldbook:
+${worldbook || 'None'}`;
+            const raw = await requestXChatCompletion([
+                { role: 'system', content: 'You generate strict JSON for a fictional Chinese social feed. Output JSON only.' },
+                { role: 'user', content: prompt }
+            ], { temperature: 0.9 });
+            return normalizeDiscoverTrendEntries(parseJsonPayload(raw));
+        }
+
+        async function generateDiscoverSearchResults() {
             const topic = safeText(searchGenerateInput?.value);
-            runBtn?.classList.add('loading');
-            if (runBtn) runBtn.textContent = 'Generating';
-            try {
-                const worldbook = getSelectedWorldBookContext(`${topic} ${currentProfile.bio}`);
-                const searchUserProfile = {
-                    name: currentProfile.name,
-                    handle: currentProfile.handle,
-                    bio: currentProfile.bio
-                };
-                const prompt = `Return strict JSON only. Generate 5 to 10 realistic Weibo/X-style posts for the user's feed.
+            const entries = [];
+            const seen = new Set();
+            const addEntries = (items) => {
+                items.forEach((entry) => {
+                    const key = entry.trend.title.toLocaleLowerCase();
+                    if (seen.has(key) || entries.length >= 10) return;
+                    seen.add(key);
+                    entries.push(entry);
+                });
+            };
+            addEntries(await requestDiscoverTrendBatch(topic, 10));
+            if (entries.length < 10) {
+                addEntries(await requestDiscoverTrendBatch(topic, 10 - entries.length, entries.map((entry) => entry.trend.title)));
+            }
+            if (entries.length < 10) throw new Error('API returned fewer than 10 valid trends');
+
+            const state = getXState();
+            const newPosts = entries.flatMap((entry) => entry.posts);
+            saveXState({
+                ...state,
+                xTrends: entries.slice(0, 10).map((entry) => ({ ...entry.trend, movement: 'none' })),
+                xGeneratedPosts: prependUniquePosts(state.xGeneratedPosts, newPosts)
+            });
+            renderTrends();
+            renderGeneratedPosts();
+            return `已生成 10 条热搜和 ${newPosts.length} 条关联帖子`;
+        }
+
+        async function generateHomeSearchPosts() {
+            const topic = safeText(searchGenerateInput?.value);
+            const worldbook = getSelectedWorldBookContext(`${topic} ${currentProfile.bio}`);
+            const searchUserProfile = {
+                name: currentProfile.name,
+                handle: currentProfile.handle,
+                bio: currentProfile.bio
+            };
+            const reusableAuthors = getReusableAuthorContext();
+            const prompt = `Return strict JSON only. Generate 5 to 10 realistic Weibo/X-style posts for the user's feed.
 Mix account types: official brand/media accounts, personal accounts, fan accounts, passers-by, marketing accounts, and niche community accounts.
 Mix tones: serious analysis, funny meme-style posts, subtle sarcasm, heated/controversial takes, recommendations, complaints, fan enthusiasm, and deliberately argument-starting opinions. Keep it plausible, not generic.
 Every post must be grounded in the topic, minimal user profile, and worldbook context when available. Avoid template-like filler.
@@ -2721,24 +3873,345 @@ If mediaType is "image", describe the image subject, composition, light, mood, a
 ALL text values, including imagePrompt and any text inside the images array describing the picture, MUST be written in Chinese (简体中文). Do not use English for image descriptions.
 Topic: ${topic || 'open recommendation feed'}
 User profile: ${JSON.stringify(searchUserProfile)}
-Current Date: ${getXState().xCurrentDate || defaultDate}
+Reusable existing authors (optional; when used, return their exact authorId): ${JSON.stringify(reusableAuthors)}
 Worldbook:
 ${worldbook || 'None'}`;
-                const raw = await requestXChatCompletion([
-                    { role: 'system', content: 'You are a JSON generator for a fictional X feed. Output only valid JSON.' },
-                    { role: 'user', content: prompt }
-                ], { temperature: 0.9 });
-                const parsed = parseJsonPayload(raw);
-                const posts = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.posts) ? parsed.posts : []);
-                const added = appendGeneratedPosts(posts);
+            const raw = await requestXChatCompletion([
+                { role: 'system', content: 'You are a JSON generator for a fictional X feed. Output only valid JSON.' },
+                { role: 'user', content: prompt }
+            ], { temperature: 0.9 });
+            const parsed = parseJsonPayload(raw);
+            const posts = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.posts) ? parsed.posts : []);
+            const added = appendGeneratedPosts(posts);
+            return added.length ? `已生成 ${added.length} 条帖子` : '没有生成可用帖子';
+        }
+
+        async function runSearchGeneration() {
+            const runBtn = document.getElementById('x-search-generate-run-btn');
+            const idleText = searchGenerateMode === 'discover' ? '生成' : 'Generate';
+            runBtn?.classList.add('loading');
+            if (runBtn) runBtn.textContent = searchGenerateMode === 'discover' ? '生成中...' : 'Generating';
+            try {
+                const message = searchGenerateMode === 'discover'
+                    ? await generateDiscoverSearchResults()
+                    : await generateHomeSearchPosts();
                 closeSearchGenerateSheet();
-                if (typeof window.showToast === 'function') window.showToast(added.length ? `已生成 ${added.length} 条帖子` : '没有生成可用帖子');
+                if (typeof window.showToast === 'function') window.showToast(message);
             } catch (error) {
-                console.error('[X] Generate posts failed', error);
+                console.error('[X] Search generation failed', error);
                 if (typeof window.showToast === 'function') window.showToast('生成失败，请检查 API 配置或返回格式');
             } finally {
                 runBtn?.classList.remove('loading');
-                if (runBtn) runBtn.textContent = 'Generate';
+                if (runBtn) runBtn.textContent = idleText;
+            }
+        }
+
+        function getAdvanceControls() {
+            return {
+                strangersToggle: document.getElementById('x-advance-strangers-toggle'),
+                strangersCount: document.getElementById('x-advance-strangers-count'),
+                trendsToggle: document.getElementById('x-advance-trends-toggle'),
+                trendsCount: document.getElementById('x-advance-trends-count'),
+                postsToggle: document.getElementById('x-advance-posts-toggle'),
+                postsCount: document.getElementById('x-advance-posts-count'),
+                runButton: document.getElementById('x-advance-run-btn')
+            };
+        }
+
+        function readAdvancePreferences() {
+            const controls = getAdvanceControls();
+            return normalizeAdvancePreferences({
+                strangersEnabled: !!controls.strangersToggle?.checked,
+                strangersCount: controls.strangersCount?.value,
+                trendsEnabled: !!controls.trendsToggle?.checked,
+                trendsCount: controls.trendsCount?.value,
+                postsEnabled: !!controls.postsToggle?.checked,
+                postsCount: controls.postsCount?.value
+            });
+        }
+
+        function syncAdvanceControls() {
+            const controls = getAdvanceControls();
+            if (controls.strangersCount) controls.strangersCount.disabled = !controls.strangersToggle?.checked;
+            if (controls.trendsCount) controls.trendsCount.disabled = !controls.trendsToggle?.checked;
+            if (controls.postsCount) controls.postsCount.disabled = !controls.postsToggle?.checked;
+            const hasSelection = !!(controls.strangersToggle?.checked || controls.trendsToggle?.checked || controls.postsToggle?.checked);
+            if (controls.runButton && !controls.runButton.classList.contains('loading')) controls.runButton.disabled = !hasSelection;
+        }
+
+        function populateAdvanceControls() {
+            const preferences = normalizeAdvancePreferences(getXState().xAdvancePreferences);
+            const controls = getAdvanceControls();
+            if (controls.strangersToggle) controls.strangersToggle.checked = preferences.strangersEnabled;
+            if (controls.strangersCount) controls.strangersCount.value = String(preferences.strangersCount);
+            if (controls.trendsToggle) controls.trendsToggle.checked = preferences.trendsEnabled;
+            if (controls.trendsCount) controls.trendsCount.value = String(preferences.trendsCount);
+            if (controls.postsToggle) controls.postsToggle.checked = preferences.postsEnabled;
+            if (controls.postsCount) controls.postsCount.value = String(preferences.postsCount);
+            syncAdvanceControls();
+        }
+
+        function persistAdvancePreferences() {
+            const preferences = readAdvancePreferences();
+            updateXState((draft) => {
+                draft.xAdvancePreferences = preferences;
+            });
+            return preferences;
+        }
+
+        function openAdvanceSheet() {
+            if (advancePlotInput) advancePlotInput.value = '';
+            populateAdvanceControls();
+            if (typeof window.openView === 'function') window.openView(advanceSheet);
+            else advanceSheet?.classList.add('active');
+        }
+
+        function closeAdvanceSheet() {
+            if (advanceSheet?.querySelector('.x-advance-sheet')?.classList.contains('is-loading')) return;
+            if (typeof window.closeView === 'function') window.closeView(advanceSheet);
+            else advanceSheet?.classList.remove('active');
+        }
+
+        function setAdvanceLoading(loading) {
+            const sheet = advanceSheet?.querySelector('.x-advance-sheet');
+            const runBtn = document.getElementById('x-advance-run-btn');
+            sheet?.classList.toggle('is-loading', loading);
+            runBtn?.classList.toggle('loading', loading);
+            if (runBtn) {
+                runBtn.disabled = loading;
+                runBtn.textContent = loading ? '生成中...' : '生成';
+            }
+            if (!loading) syncAdvanceControls();
+        }
+
+        function buildAdvanceStoryContext(state) {
+            const recentPosts = (state.xGeneratedPosts || []).slice(0, 20).map((post) => ({
+                author: post.authorName || post.name || post.handle,
+                topic: post.topicTag || '',
+                text: post.text || post.content || '',
+                comments: (Array.isArray(post.commentList) ? post.commentList : [])
+                    .slice(0, 3)
+                    .map((comment) => comment.text || comment.content || '')
+            }));
+            return JSON.stringify({
+                user: {
+                    name: currentProfile.name,
+                    handle: currentProfile.handle,
+                    bio: currentProfile.bio,
+                    persona: currentProfile.persona
+                },
+                trends: normalizeTrendList(state.xTrends || []).slice(0, 30),
+                recentPosts
+            });
+        }
+
+        async function collectExactGeneratedItems({ total, batchSize, blockedKeys = [], getKey, requestBatch, label }) {
+            const items = [];
+            const seen = new Set(blockedKeys.map((key) => String(key).toLocaleLowerCase()));
+            const addItems = (batch) => {
+                (Array.isArray(batch) ? batch : []).forEach((item) => {
+                    const key = safeText(getKey(item)).toLocaleLowerCase();
+                    if (!key || seen.has(key) || items.length >= total) return;
+                    seen.add(key);
+                    items.push(item);
+                });
+            };
+            const batchCount = Math.ceil(total / batchSize);
+            for (let index = 0; index < batchCount && items.length < total; index += 1) {
+                addItems(await requestBatch(Math.min(batchSize, total - items.length), Array.from(seen)));
+            }
+            if (items.length < total) {
+                addItems(await requestBatch(total - items.length, Array.from(seen)));
+            }
+            if (items.length < total) throw new Error(`${label} returned fewer than ${total} valid items`);
+            return items.slice(0, total);
+        }
+
+        function normalizeGeneratedStranger(raw = {}, index = 0) {
+            const name = safeText(raw.name || raw.nickname || raw.handle);
+            if (!name) return null;
+            const rawMessages = Array.isArray(raw.messages) ? raw.messages : [];
+            const baseTime = Date.now() + index * 10;
+            const messages = rawMessages.map((message, messageIndex) => ({
+                id: makeLocalId('dm-msg'),
+                source: 'char',
+                text: safeText(typeof message === 'string' ? message : (message?.text || message?.content || message?.message)),
+                createdAt: baseTime + messageIndex
+            })).filter((message) => message.text).slice(0, 5);
+            if (messages.length < 2) return null;
+            return normalizeDmChar({
+                id: raw.id || makeLocalId('stranger'),
+                origin: 'generated',
+                name,
+                handle: raw.handle,
+                bio: raw.bio || raw.signature,
+                persona: raw.persona,
+                avatar: raw.avatar,
+                isFollowing: false,
+                messages,
+                addedAt: baseTime
+            }, 'generated');
+        }
+
+        async function requestAdvanceStrangerBatch(count, excludedKeys, plot, storyContext, worldbook) {
+            const prompt = `Return strict JSON only: {"strangers":[{"name":"","handle":"","bio":"","persona":"","messages":["消息1","消息2"]}]}.
+Generate exactly ${count} unique strangers who proactively send private messages to the X user. Each stranger must send 2 to 5 incoming messages; do not write messages for the user. Messages should form a natural short sequence related to the ongoing plot.
+Every stranger must have a concrete reason to contact this specific User. Their identity, opening topic, tone and message details MUST reference or logically derive from the User profile/persona below, not only from the general plot. Avoid generic greetings that could be sent to anyone.
+All user-facing text must be Simplified Chinese.
+Plot direction: ${plot || '随机延续当前剧情'}
+User profile/persona: ${JSON.stringify({ name: currentProfile.name, handle: currentProfile.handle, bio: currentProfile.bio, persona: currentProfile.persona })}
+Do not repeat these names or handles: ${excludedKeys.length ? excludedKeys.join('、') : 'None'}
+Current story context: ${storyContext}
+Worldbook:
+${worldbook || 'None'}`;
+            const raw = await requestXChatCompletion([
+                { role: 'system', content: 'Generate strict JSON for fictional incoming X private messages. Output JSON only.' },
+                { role: 'user', content: prompt }
+            ], { temperature: 0.9 });
+            const parsed = parseJsonPayload(raw);
+            const strangers = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.strangers) ? parsed.strangers : []);
+            return strangers.map(normalizeGeneratedStranger).filter(Boolean);
+        }
+
+        async function requestAdvanceTrendBatch(count, excludedKeys, plot, storyContext, worldbook) {
+            const prompt = `Return strict JSON only: {"trends":[{"title":"#话题","category":"分类 · Trending","heat":"12.3K"}]}.
+Generate exactly ${count} unique new Chinese hot-search topics that continue and evolve the existing trends and posts. New trends must be relevant to the requested plot and feel like later developments, not paraphrases.
+All user-facing text must be Simplified Chinese.
+Plot direction: ${plot || '随机延续当前剧情'}
+Do not repeat these titles: ${excludedKeys.length ? excludedKeys.join('、') : 'None'}
+Current story context: ${storyContext}
+Worldbook:
+${worldbook || 'None'}`;
+            const raw = await requestXChatCompletion([
+                { role: 'system', content: 'Generate strict JSON for fictional Chinese hot searches. Output JSON only.' },
+                { role: 'user', content: prompt }
+            ], { temperature: 0.9 });
+            const parsed = parseJsonPayload(raw);
+            const trends = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.trends) ? parsed.trends : []);
+            return normalizeTrendList(trends);
+        }
+
+        function matchTrendTitle(value, availableTrends) {
+            const target = safeText(value).replace(/^#+/, '').toLocaleLowerCase();
+            if (!target) return '';
+            const match = availableTrends.find((trend) => trend.title.replace(/^#+/, '').toLocaleLowerCase() === target);
+            return match?.title || '';
+        }
+
+        async function requestAdvancePostBatch(count, excludedKeys, plot, storyContext, worldbook, availableTrends, newTrendTitles) {
+            const topicTitles = availableTrends.map((trend) => trend.title);
+            const reusableAuthors = getReusableAuthorContext();
+            const prompt = `Return strict JSON only: {"posts":[{"authorName":"","handle":"","text":"","topicTag":"#精确热搜名","likes":0,"reposts":0,"commentsCount":5,"mediaType":"text","comments":[{"authorName":"","handle":"","text":""}]}]}.
+Generate exactly ${count} new Chinese Weibo/X posts that advance the current plot. Every post must use one exact topicTag from the allowed trend list and contain at least 5 valid, concrete comments in its comments array. Comments must respond to details in their own post.
+Prefer newly generated trends while still allowing continuation of older trends. Use varied authors and viewpoints. All user-facing text must be Simplified Chinese.
+Plot direction: ${plot || '随机延续当前剧情'}
+Allowed trends: ${topicTitles.join('、')}
+New trends to prioritize: ${newTrendTitles.length ? newTrendTitles.join('、') : 'None'}
+Reusable existing authors (optional; when used, return their exact authorId): ${JSON.stringify(reusableAuthors)}
+Do not repeat these post identifiers or summaries: ${excludedKeys.length ? excludedKeys.join('、') : 'None'}
+Current story context: ${storyContext}
+Worldbook:
+${worldbook || 'None'}`;
+            const raw = await requestXChatCompletion([
+                { role: 'system', content: 'Generate strict JSON for fictional Chinese social posts. Output JSON only.' },
+                { role: 'user', content: prompt }
+            ], { temperature: 0.9 });
+            const parsed = parseJsonPayload(raw);
+            const posts = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.posts) ? parsed.posts : []);
+            return posts.map((rawPost, index) => {
+                const topicTag = matchTrendTitle(rawPost?.topicTag || rawPost?.topic || rawPost?.trend, availableTrends);
+                if (!topicTag) return null;
+                const post = normalizeGeneratedPost({ ...rawPost, topicTag }, index);
+                if (!post || !Array.isArray(post.commentList) || post.commentList.length < 5) return null;
+                post.topicTag = topicTag;
+                return ensureCommentDepth(post);
+            }).filter(Boolean);
+        }
+
+        async function runAdvanceGeneration() {
+            const preferences = persistAdvancePreferences();
+            if (!preferences.strangersEnabled && !preferences.trendsEnabled && !preferences.postsEnabled) {
+                if (typeof window.showToast === 'function') window.showToast('请至少开启一项生成内容');
+                return;
+            }
+            const plot = safeText(advancePlotInput?.value);
+            setAdvanceLoading(true);
+            try {
+                const state = getXState();
+                const storyContext = buildAdvanceStoryContext(state);
+                const worldbook = getSelectedWorldBookContext(`${plot} ${currentProfile.bio} ${currentProfile.persona}`);
+                const existingTrends = normalizeTrendList(state.xTrends || []);
+                let newTrends = [];
+                let newPosts = [];
+                let newStrangers = [];
+
+                if (preferences.trendsEnabled) {
+                    newTrends = await collectExactGeneratedItems({
+                        total: preferences.trendsCount,
+                        batchSize: 10,
+                        blockedKeys: existingTrends.map((trend) => trend.title),
+                        getKey: (trend) => trend.title,
+                        requestBatch: (count, excluded) => requestAdvanceTrendBatch(count, excluded, plot, storyContext, worldbook),
+                        label: 'Trends'
+                    });
+                    newTrends = newTrends.map((trend) => ({ ...trend, movement: 'up' }));
+                }
+
+                const shiftedTrends = preferences.trendsEnabled
+                    ? existingTrends.map((trend) => ({ ...trend, movement: 'down' }))
+                    : existingTrends;
+                const availableTrends = normalizeTrendList([...newTrends, ...shiftedTrends]);
+                if (preferences.postsEnabled) {
+                    if (availableTrends.length === 0) throw new Error('No trends available for generated posts');
+                    newPosts = await collectExactGeneratedItems({
+                        total: preferences.postsCount,
+                        batchSize: 5,
+                        getKey: (post) => `${post.name}|${post.text}`,
+                        requestBatch: (count, excluded) => requestAdvancePostBatch(
+                            count,
+                            excluded,
+                            plot,
+                            storyContext,
+                            worldbook,
+                            availableTrends,
+                            newTrends.map((trend) => trend.title)
+                        ),
+                        label: 'Posts'
+                    });
+                }
+
+                if (preferences.strangersEnabled) {
+                    const existingDmKeys = (state.xDirectMessages || []).map((item) => `${safeText(item.name)}|${safeText(item.handle)}`);
+                    newStrangers = await collectExactGeneratedItems({
+                        total: preferences.strangersCount,
+                        batchSize: 10,
+                        blockedKeys: existingDmKeys,
+                        getKey: (item) => `${item.name}|${item.handle}`,
+                        requestBatch: (count, excluded) => requestAdvanceStrangerBatch(count, excluded, plot, storyContext, worldbook),
+                        label: 'Strangers'
+                    });
+                }
+
+                saveXState({
+                    ...state,
+                    xAdvancePreferences: preferences,
+                    xTrends: availableTrends,
+                    xGeneratedPosts: prependUniquePosts(state.xGeneratedPosts, newPosts),
+                    xDirectMessages: [...newStrangers, ...(state.xDirectMessages || [])]
+                });
+                renderTrends();
+                renderGeneratedPosts();
+                renderDirectMessages();
+                setAdvanceLoading(false);
+                closeAdvanceSheet();
+                if (typeof window.showToast === 'function') {
+                    window.showToast(`已生成 ${newStrangers.length} 个陌生人、${newTrends.length} 条热搜、${newPosts.length} 条帖子`);
+                }
+            } catch (error) {
+                console.error('[X] Advance generation failed', error);
+                if (typeof window.showToast === 'function') window.showToast('推进失败，未修改现有内容');
+            } finally {
+                setAdvanceLoading(false);
             }
         }
 
@@ -2756,6 +4229,7 @@ ${worldbook || 'None'}`;
         function switchTab(index) {
             if (index < 0 || index >= navItems.length) return;
             currentIndex = index;
+            view.scrollTop = 0;
 
             navItems.forEach((item, itemIndex) => {
                 item.classList.toggle('active', itemIndex === index);
@@ -2768,6 +4242,7 @@ ${worldbook || 'None'}`;
 
             updateIndicator(navItems[index]);
             if (navItems[index]?.getAttribute('data-target') === 'x-super-tab') renderSuperFollowBar();
+            if (navItems[index]?.getAttribute('data-target') === 'x-discover-tab') renderTrends();
             if (navItems[index]?.getAttribute('data-target') === 'x-messages-tab') renderDirectMessages();
             closePostDetail();
         }
@@ -2790,7 +4265,7 @@ ${worldbook || 'None'}`;
             if (detailPost) {
                 detailPost.innerHTML = `
                     <div class="x-detail-author">
-                        <div class="x-avatar">${buildAvatarHtml(post.avatar, post.name)}</div>
+                        ${buildAuthorAvatarButton(post, 'x-avatar')}
                         <div>
                             <strong>${escapeHtml(post.name)}</strong>
                             <span>${escapeHtml(post.handle)}</span>
@@ -2798,6 +4273,7 @@ ${worldbook || 'None'}`;
                     </div>
                     <p class="x-detail-text">${escapeHtml(post.text)}</p>
                     ${renderPostImages(getPostImages(post))}
+                    ${buildPostLinkChips(post)}
                     <div class="x-detail-inline-actions">
                         <button id="x-detail-repost-btn" type="button" class="x-detail-inline-action ${thread.reposted ? 'active' : ''}" aria-label="Repost">
                             <i class="fas fa-retweet"></i><span>${escapeHtml(formatCompactCount(thread.reposts))}</span>
@@ -2820,6 +4296,7 @@ ${worldbook || 'None'}`;
             renderCommentsList(postId, thread);
             updatePostCountNodes(postId, thread);
 
+            if (postDetailView) postDetailView.style.zIndex = topicDetailView?.classList.contains('active') ? '94' : '90';
             postDetailView?.classList.add('active');
             postDetailView?.setAttribute('aria-hidden', 'false');
         }
@@ -2830,6 +4307,7 @@ ${worldbook || 'None'}`;
             }
             postDetailView?.classList.remove('active');
             postDetailView?.setAttribute('aria-hidden', 'true');
+            if (postDetailView) postDetailView.style.zIndex = '90';
             currentDetailPostId = null;
             replyTarget = null;
         }
@@ -2839,7 +4317,7 @@ ${worldbook || 'None'}`;
             if (!postId || card.dataset.xBound === 'true') return;
             card.dataset.xBound = 'true';
             card.addEventListener('click', (event) => {
-                if (event.target.closest('.x-post-image-thumb')) return;
+                if (event.target.closest('.x-post-image-thumb, .x-author-avatar-btn, .x-feed-forward-btn, .x-post-topic-link, .x-post-super-link')) return;
                 
                 const ref = event.target.closest('.x-ref-post');
                 if (ref) {
@@ -2864,11 +4342,13 @@ ${worldbook || 'None'}`;
         function openXApp(event) {
             if (event) event.stopPropagation();
             if (window.isJiggleMode) return;
+            view.scrollTop = 0;
             ensureXChrome();
             renderProfile();
             renderWorldBookSummary();
             renderSuperFollowBar();
             renderGeneratedPosts();
+            renderTrends();
             renderDirectMessages();
             view.classList.add('active');
             requestAnimationFrame(() => switchTab(currentIndex));
@@ -2887,6 +4367,10 @@ ${worldbook || 'None'}`;
             closeDmSettingsSheet();
             closeDmProfile();
             closeSearchGenerateSheet();
+            closeAdvanceSheet();
+            closeCharEditSheet();
+            closeEditSuperTopicSheet();
+            closePostForwardSheet();
             closeImagePreview();
             view.classList.remove('active');
         }
@@ -2918,16 +4402,28 @@ ${worldbook || 'None'}`;
         document.getElementById('x-add-dm-btn')?.addEventListener('click', openAddDmSheet);
         document.getElementById('x-add-dm-close-btn')?.addEventListener('click', closeAddDmSheet);
         document.getElementById('x-manual-char-add-btn')?.addEventListener('click', addManualChar);
-        if (globalDateInput) {
-            globalDateInput.addEventListener('change', (e) => setGlobalDate(e.target.value));
-        }
-        if (nextDayBtn) {
-            nextDayBtn.addEventListener('click', nextDay);
-        }
+        nextDayBtn?.addEventListener('click', openAdvanceSheet);
 
-        document.getElementById('x-search-generate-btn')?.addEventListener('click', openSearchGenerateSheet);
+        document.getElementById('x-search-generate-btn')?.addEventListener('click', () => openSearchGenerateSheet('home'));
+        document.getElementById('x-discover-search-btn')?.addEventListener('click', () => openSearchGenerateSheet('discover'));
         document.getElementById('x-search-generate-close-btn')?.addEventListener('click', closeSearchGenerateSheet);
-        document.getElementById('x-search-generate-run-btn')?.addEventListener('click', generateSearchPosts);
+        document.getElementById('x-search-generate-run-btn')?.addEventListener('click', runSearchGeneration);
+        document.getElementById('x-advance-close-btn')?.addEventListener('click', closeAdvanceSheet);
+        document.getElementById('x-advance-run-btn')?.addEventListener('click', runAdvanceGeneration);
+        ['x-advance-strangers-toggle', 'x-advance-trends-toggle', 'x-advance-posts-toggle'].forEach((id) => {
+            document.getElementById(id)?.addEventListener('change', () => {
+                syncAdvanceControls();
+                persistAdvancePreferences();
+            });
+        });
+        ['x-advance-strangers-count', 'x-advance-trends-count', 'x-advance-posts-count'].forEach((id) => {
+            const input = document.getElementById(id);
+            input?.addEventListener('input', persistAdvancePreferences);
+            input?.addEventListener('change', () => {
+                persistAdvancePreferences();
+                populateAdvanceControls();
+            });
+        });
         document.getElementById('x-post-settings-close-btn')?.addEventListener('click', closePostSettingsSheet);
         document.getElementById('x-post-delete-btn')?.addEventListener('click', deleteTargetPost);
         document.getElementById('x-post-detail-menu-btn')?.addEventListener('click', () => {
@@ -2939,6 +4435,17 @@ ${worldbook || 'None'}`;
         document.getElementById('x-dm-clear-chat-btn')?.addEventListener('click', clearCurrentDmChat);
         document.getElementById('x-dm-delete-chat-btn')?.addEventListener('click', deleteCurrentDmChat);
         document.getElementById('x-dm-profile-back')?.addEventListener('click', closeDmProfile);
+        document.getElementById('x-char-edit-close-btn')?.addEventListener('click', closeCharEditSheet);
+        document.getElementById('x-char-edit-save-btn')?.addEventListener('click', saveCharEdit);
+        document.getElementById('x-char-random-cover-btn')?.addEventListener('click', refreshCharEditCover);
+        document.getElementById('x-char-edit-avatar-preview')?.addEventListener('click', () => document.getElementById('x-char-edit-avatar-input')?.click());
+        document.getElementById('x-char-edit-cover-preview')?.addEventListener('click', () => document.getElementById('x-char-edit-cover-input')?.click());
+        document.getElementById('x-edit-super-topic-close-btn')?.addEventListener('click', closeEditSuperTopicSheet);
+        document.getElementById('x-edit-super-topic-save-btn')?.addEventListener('click', saveEditedSuperTopic);
+        document.getElementById('x-edit-super-topic-delete-btn')?.addEventListener('click', deleteEditedSuperTopic);
+        document.getElementById('x-edit-super-topic-avatar-preview')?.addEventListener('click', () => document.getElementById('x-edit-super-topic-avatar-input')?.click());
+        document.getElementById('x-edit-super-topic-banner-preview')?.addEventListener('click', () => document.getElementById('x-edit-super-topic-banner-input')?.click());
+        document.getElementById('x-post-forward-close-btn')?.addEventListener('click', closePostForwardSheet);
         document.getElementById('x-dm-chat-composer')?.addEventListener('submit', (event) => {
             event.preventDefault();
             sendDmUserMessage();
@@ -2970,14 +4477,94 @@ ${worldbook || 'None'}`;
         editSaveButton?.addEventListener('click', saveProfile);
         settingsCloseButton?.addEventListener('click', closeXSettings);
         settingsWorldBookButton?.addEventListener('click', openWorldBookSelector);
+        document.getElementById('x-settings-clear-data-btn')?.addEventListener('click', resetAllXData);
         composeCancelButton?.addEventListener('click', closeComposer);
         composeSubmitButton?.addEventListener('click', submitComposer);
-        document.querySelector('.x-compose-button')?.addEventListener('click', openComposer);
-        document.querySelector('.x-post-button')?.addEventListener('click', openComposer);
+        composeImageButton?.addEventListener('click', () => composeImageInput?.click());
+        composeImageUrlButton?.addEventListener('click', addComposeImageUrl);
+        composeImageUrlInput?.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                addComposeImageUrl();
+            }
+        });
+        composeImageClearButton?.addEventListener('click', () => {
+            composeImageDraft = '';
+            if (composeImageInput) composeImageInput.value = '';
+            if (composeImageUrlInput) composeImageUrlInput.value = '';
+            renderComposeImageDraft();
+        });
+        document.querySelector('.x-compose-button')?.addEventListener('click', () => openComposer());
+        document.querySelector('.x-post-button')?.addEventListener('click', () => openComposer());
+        document.getElementById('x-super-compose-btn')?.addEventListener('click', () => {
+            if (currentActiveTopicId) openComposer({ superTopicId: currentActiveTopicId });
+        });
+        document.getElementById('x-compose-topic-focus-btn')?.addEventListener('click', () => composeTopicInput?.focus());
+        composeSuperChip?.addEventListener('click', () => {
+            if (currentComposeSuperId) openSuperTopicById(currentComposeSuperId);
+        });
         editAvatarPreview?.addEventListener('click', () => editAvatarInput?.click());
         editBannerPreview?.addEventListener('click', () => editBannerInput?.click());
 
         view.addEventListener('click', (event) => {
+            const superLink = event.target.closest('.x-post-super-link[data-super-topic-id]');
+            if (superLink) {
+                event.preventDefault();
+                event.stopPropagation();
+                openSuperTopicById(superLink.dataset.superTopicId);
+                return;
+            }
+            const topicLink = event.target.closest('.x-post-topic-link[data-topic-tag]');
+            if (topicLink) {
+                event.preventDefault();
+                event.stopPropagation();
+                closePostDetail();
+                openTopicDetail(topicLink.dataset.topicTag);
+                return;
+            }
+            const authorButton = event.target.closest('.x-author-avatar-btn');
+            if (authorButton) {
+                event.preventDefault();
+                event.stopPropagation();
+                openAuthorProfile(
+                    authorButton.dataset.xAuthorId,
+                    authorButton.dataset.xAuthorName,
+                    authorButton.dataset.xAuthorHandle,
+                    authorButton.dataset.xAuthorAvatar
+                );
+                return;
+            }
+            const profileFollow = event.target.closest('[data-profile-follow-id]');
+            if (profileFollow) {
+                event.preventDefault();
+                toggleProfileFollow(profileFollow.dataset.profileFollowId);
+                return;
+            }
+            const profileEdit = event.target.closest('[data-profile-edit-id]');
+            if (profileEdit) {
+                event.preventDefault();
+                openCharEditSheet(profileEdit.dataset.profileEditId);
+                return;
+            }
+            const profileGenerate = event.target.closest('#x-char-profile-generate-btn');
+            if (profileGenerate) {
+                event.preventDefault();
+                generateCurrentCharProfile();
+                return;
+            }
+            const forwardButton = event.target.closest('.x-feed-forward-btn');
+            if (forwardButton) {
+                event.preventDefault();
+                event.stopPropagation();
+                openPostForwardSheet(forwardButton.dataset.postId || forwardButton.closest('[data-post-id]')?.dataset.postId);
+                return;
+            }
+            const forwardRecipient = event.target.closest('.x-post-forward-recipient[data-forward-dm-id]');
+            if (forwardRecipient) {
+                event.preventDefault();
+                forwardPostToDm(forwardRecipient.dataset.forwardDmId);
+                return;
+            }
             const dmProfileBack = event.target.closest('#x-dm-profile-back');
             if (dmProfileBack) {
                 event.preventDefault();
@@ -3010,7 +4597,7 @@ ${worldbook || 'None'}`;
             const detailRepost = event.target.closest('#x-detail-repost-btn');
             if (detailRepost) {
                 event.preventDefault();
-                toggleDetailAction('repost');
+                openPostForwardSheet(currentDetailPostId);
                 return;
             }
             const dmRow = event.target.closest('.x-dm-row[data-dm-id]');
@@ -3055,10 +4642,8 @@ ${worldbook || 'None'}`;
             }
             const trendRow = event.target.closest('.x-trend-row');
             if (trendRow) {
-                const topicStrong = trendRow.querySelector('strong');
-                if (topicStrong) {
-                    openTopicDetail(topicStrong.textContent.trim());
-                }
+                const topic = trendRow.dataset.trendTitle || trendRow.querySelector('strong')?.textContent.trim();
+                if (topic) openTopicDetail(topic);
                 return;
             }
 
@@ -3070,16 +4655,28 @@ ${worldbook || 'None'}`;
             }
         });
 
-        [visitorsSheet, addDmSheet, dmSettingsSheet, searchGenerateSheet, imagePreviewOverlay, createTopicSheet, postSettingsSheet].forEach((sheet) => {
+        view.addEventListener('keydown', (event) => {
+            const trendRow = event.target.closest?.('.x-trend-row');
+            if (!trendRow || (event.key !== 'Enter' && event.key !== ' ')) return;
+            event.preventDefault();
+            const topic = trendRow.dataset.trendTitle || trendRow.querySelector('strong')?.textContent.trim();
+            if (topic) openTopicDetail(topic);
+        });
+
+        [visitorsSheet, addDmSheet, dmSettingsSheet, searchGenerateSheet, advanceSheet, imagePreviewOverlay, createTopicSheet, postSettingsSheet, charEditSheet, editSuperTopicSheet, postForwardSheet].forEach((sheet) => {
             sheet?.addEventListener('click', (event) => {
                 if (event.target === sheet) {
                     if (sheet === visitorsSheet) closeVisitorsSheet();
                     if (sheet === addDmSheet) closeAddDmSheet();
                     if (sheet === dmSettingsSheet) closeDmSettingsSheet();
                     if (sheet === searchGenerateSheet) closeSearchGenerateSheet();
+                    if (sheet === advanceSheet) closeAdvanceSheet();
                     if (sheet === imagePreviewOverlay) closeImagePreview();
                     if (sheet === createTopicSheet) closeCreateTopicSheet();
                     if (sheet === postSettingsSheet) closePostSettingsSheet();
+                    if (sheet === charEditSheet) closeCharEditSheet();
+                    if (sheet === editSuperTopicSheet) closeEditSuperTopicSheet();
+                    if (sheet === postForwardSheet) closePostForwardSheet();
                 }
             });
         });
@@ -3111,6 +4708,35 @@ ${worldbook || 'None'}`;
         bindFilePreview(editBannerInput, (src) => {
             bannerDraft = src;
             renderImagePreview(editBannerPreview, bannerDraft, 'Cover');
+        });
+
+        bindFilePreview(document.getElementById('x-char-edit-avatar-input'), (src) => {
+            charEditAvatarDraft = src;
+            renderImagePreview(
+                document.getElementById('x-char-edit-avatar-preview'),
+                charEditAvatarDraft,
+                safeText(document.getElementById('x-char-edit-name')?.value, 'C').slice(0, 1).toUpperCase()
+            );
+        });
+
+        bindFilePreview(document.getElementById('x-char-edit-cover-input'), (src) => {
+            charEditCoverImageDraft = src;
+            renderImagePreview(document.getElementById('x-char-edit-cover-preview'), src, 'Cover');
+        });
+
+        bindFilePreview(document.getElementById('x-edit-super-topic-avatar-input'), (src) => {
+            editSuperTopicAvatarDraft = src;
+            renderImagePreview(document.getElementById('x-edit-super-topic-avatar-preview'), src, '超');
+        });
+
+        bindFilePreview(document.getElementById('x-edit-super-topic-banner-input'), (src) => {
+            editSuperTopicBannerDraft = src;
+            renderImagePreview(document.getElementById('x-edit-super-topic-banner-preview'), src, 'Cover');
+        });
+
+        bindFilePreview(composeImageInput, (src) => {
+            composeImageDraft = src;
+            renderComposeImageDraft();
         });
 
         const homeFeedButtons = Array.from(view.querySelectorAll('.x-home-feed-tabs button[data-feed]'));
@@ -3188,6 +4814,7 @@ ${worldbook || 'None'}`;
         renderWorldBookSummary();
         renderSuperFollowBar();
         renderGeneratedPosts();
+        renderTrends();
         renderDirectMessages();
         requestAnimationFrame(() => switchTab(0));
     });
