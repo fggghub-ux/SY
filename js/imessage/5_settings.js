@@ -1509,13 +1509,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 showCustomModal({
                     title: '清空聊天记录',
-                    message: '确定清空这个 NPC 的所有聊天记录吗？此操作不可恢复。',
+                    message: '确定清空这个 NPC 的聊天记录、上下文、全部记忆和状态栏吗？此操作不可恢复。',
                     isDestructive: true,
                     confirmText: '清空',
                     onConfirm: async () => {
                         const friendId = friend.id;
-                        const saved = window.imApp.resetFriendMessages
-                            ? await window.imApp.resetFriendMessages(friendId, { silent: true })
+                        const saved = window.imApp.resetFriendConversation
+                            ? await window.imApp.resetFriendConversation(friendId, { silent: true })
                             : await commitSettingsFriendChange((targetFriend) => {
                                 targetFriend.messages = [];
                             }, { silent: true, metaOnly: false, includeMessages: true });
@@ -1960,13 +1960,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (window.imData.currentSettingsFriend) {
                 showCustomModal({
                     title: '清空聊天记录',
-                    message: '确定清空所有聊天记录吗？此操作不可恢复。',
+                    message: '确定清空聊天记录、上下文、全部记忆和状态栏吗？此操作不可恢复。',
                     isDestructive: true,
                     confirmText: '清空',
                     onConfirm: async () => {
                         const friendId = window.imData.currentSettingsFriend.id;
-                        const saved = window.imApp.resetFriendMessages
-                            ? await window.imApp.resetFriendMessages(friendId, { silent: true })
+                        const saved = window.imApp.resetFriendConversation
+                            ? await window.imApp.resetFriendConversation(friendId, { silent: true })
                             : await commitSettingsFriendChange((targetFriend) => {
                                 targetFriend.messages = [];
                                 if (window.imApp.syncActiveFriendReference) {

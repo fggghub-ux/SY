@@ -10,12 +10,33 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const aiReplyInFlight = new Set();
+    const aiReplyControllers = new Map();
+    const conversationEpochs = new Map();
     const autonomousActivityInFlight = new Set();
     const autonomousMomentInFlight = new Set();
 
     function getFriendKey(friendOrId) {
         const rawId = friendOrId && typeof friendOrId === 'object' ? friendOrId.id : friendOrId;
         return rawId == null ? '' : String(rawId);
+    }
+
+    function getConversationEpoch(friendOrId) {
+        const friendKey = getFriendKey(friendOrId);
+        return friendKey ? (conversationEpochs.get(friendKey) || 0) : 0;
+    }
+
+    function invalidateFriendConversation(friendOrId) {
+        const friendKey = getFriendKey(friendOrId);
+        if (!friendKey) return false;
+        conversationEpochs.set(friendKey, getConversationEpoch(friendKey) + 1);
+        const controller = aiReplyControllers.get(friendKey);
+        if (controller) controller.abort();
+        aiReplyControllers.delete(friendKey);
+        aiReplyInFlight.delete(friendKey);
+
+        const page = document.getElementById(`chat-interface-${friendKey}`);
+        page?.querySelectorAll('.typing-row').forEach(row => row.remove());
+        return true;
     }
 
     function normalizeAutonomousTask(task) {
@@ -489,8 +510,8 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
         return '';
     }
 
-    async function fetchChatCompletionWithTimeout(endpoint, apiConfig, messages, timeoutMs = 60000) {
-        const controller = new AbortController();
+    async function fetchChatCompletionWithTimeout(endpoint, apiConfig, messages, timeoutMs = 60000, externalController = null) {
+        const controller = externalController || new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
         try {
@@ -1234,12 +1255,17 @@ ${latestMessages || 'None'}
 
         let typingRow = null;
         const apiRunId = createApiRunId(friendKey);
+        const conversationEpoch = getConversationEpoch(friendKey);
+        const requestController = new AbortController();
+        const isConversationCurrent = () => getConversationEpoch(friendKey) === conversationEpoch && !requestController.signal.aborted;
         aiReplyInFlight.add(friendKey);
+        aiReplyControllers.set(friendKey, requestController);
 
         try {
             if (window.imApp?.ensureStickersReady) {
                 await window.imApp.ensureStickersReady();
             }
+            if (!isConversationCurrent()) return;
             friend = getLiveFriendById(friend.id) || friend;
 
             if (container) {
@@ -1820,7 +1846,8 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                 endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
             }
 
-            const response = await fetchChatCompletionWithTimeout(endpoint, currentApiConfig, messages, 60000);
+            const response = await fetchChatCompletionWithTimeout(endpoint, currentApiConfig, messages, 60000, requestController);
+            if (!isConversationCurrent()) return;
 
             if (!response.ok) {
                 let errorMsg = 'API Error';
@@ -1833,6 +1860,7 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                 throw new Error(`API Error: ${errorMsg}`);
             }
             const data = await response.json();
+            if (!isConversationCurrent()) return;
             let fullReply = getAiResponseContent(data);
 
             console.log('[iMessage API] response received', {
@@ -2066,8 +2094,9 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
             }
 
             // 处理 Loves App 接受邀请
-            if (inviteAccepted && window.lovesApp && typeof window.lovesApp.handleInviteAccepted === 'function') {
-                window.lovesApp.handleInviteAccepted(friend);
+            if (inviteAccepted && isConversationCurrent() && window.lovesApp && typeof window.lovesApp.handleInviteAccepted === 'function') {
+                await window.lovesApp.handleInviteAccepted(friend);
+                if (!isConversationCurrent()) return;
             }
 
             let queueItems = [];
@@ -2242,8 +2271,7 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                 queueItems = sentences.map((text, index) => ({
                     text,
                     translation: fullTranslation || '',
-                    thought: (index === 0 && fullThinking) ? fullThinking : (typeof aiThought === 'string' ? aiThought : ''),
-                    speaker: currentSpeakerName
+                    thought: (index === 0 && fullThinking) ? fullThinking : (typeof aiThought === 'string' ? aiThought : '')
                 }));
             }
 
@@ -2296,6 +2324,7 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
             let lastGroupSpeaker = null;
 
             async function processNextSentence() {
+                if (!isConversationCurrent()) return false;
                 const currentItem = queueItems[qIndex] || {};
 
                 if (currentItem.kind === 'action_narration') {
@@ -2685,6 +2714,7 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                 if (tr && tr.parentNode) {
                     tr.remove();
                 }
+                if (!isConversationCurrent()) return false;
 
                 const nowMsg = Date.now();
                 const msgObj = isStickerReply
@@ -2783,6 +2813,7 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                 }
             }
 
+            if (!isConversationCurrent()) return;
             const latestFriend = getLiveFriendById(friend.id) || friend;
             const redPacketChanged = latestFriend.type === 'group'
                 ? window.imChat.processPendingGroupRedPackets(latestFriend)
@@ -2811,6 +2842,7 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
 
         } catch (error) {
             if (typingRow && typingRow.parentNode) typingRow.remove();
+            if (!isConversationCurrent()) return;
 
             const isTimeout = error && error.name === 'AbortError';
             const message = isTimeout
@@ -2821,7 +2853,10 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
             console.error('[iMessage API] request failed', error);
             if (btnEl) btnEl.style.opacity = '1';
         } finally {
-            aiReplyInFlight.delete(friendKey);
+            if (aiReplyControllers.get(friendKey) === requestController) {
+                aiReplyControllers.delete(friendKey);
+                aiReplyInFlight.delete(friendKey);
+            }
         }
     }
 
@@ -2955,6 +2990,7 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
     window.imChat.parseJsonArrayFromText = parseJsonArrayFromText;
     window.imChat.normalizeProfilePanelPayload = normalizeProfilePanelPayload;
     window.imChat.handleAiReply = handleAiReply;
+    window.imChat.invalidateFriendConversation = invalidateFriendConversation;
     window.imChat.regenerateLastAiReply = regenerateLastAiReply;
     window.imChat.runLinkedAccountBotNow = runLinkedAccountBotNow;
     window.imChat.runAutonomousActivityForFriend = runAutonomousActivityForFriend;

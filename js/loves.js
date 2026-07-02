@@ -10,6 +10,9 @@ window.lovesApp = {
     currentFriend: null,
     currentSelectedFriendId: null,
     lovesProgrammaticScrollUntil: 0,
+    _realTimeJobsStarted: false,
+    _realTimeTimer: null,
+    _momentReplyQueues: new Map(),
 
     persistFriendState: async function(friend = this.currentFriend, options = {}) {
         if (!friend) return false;
@@ -117,6 +120,144 @@ window.lovesApp = {
         return new Date(parts[0], parts[1] - 1, parts[2]);
     },
 
+    getLocalDayOrdinal: function(value = new Date()) {
+        const date = value instanceof Date ? value : new Date(value);
+        if (Number.isNaN(date.getTime())) return this.getLocalDayOrdinal(new Date());
+        return Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000);
+    },
+
+    addLocalDateDays: function(dateKey, amount = 1) {
+        const date = this.parseDateKey(dateKey);
+        date.setDate(date.getDate() + amount);
+        return this.getLocalDateKey(date);
+    },
+
+    findLovesAcceptanceTimestamp: function(friend) {
+        const messages = Array.isArray(friend?.messages) ? friend.messages : [];
+        const acceptedMessage = messages.find((message) => {
+            const text = String(message?.text || message?.content || '');
+            return text.includes('[ACCEPT_INVITE]')
+                || text.includes('【邀请已接受】')
+                || text.includes('【情侣空间】我接受了你的邀请')
+                || text.includes('TA 已接受了你的情侣空间邀请')
+                || text.includes('我已经接受了你的情侣空间邀请');
+        });
+        const timestamp = Number(acceptedMessage?.timestamp);
+        return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0;
+    },
+
+    ensureLovesStartTime: function(friend, fallbackTimestamp = Date.now()) {
+        if (!friend || !friend.hasLovesSpace) return { timestamp: 0, changed: false };
+        const existing = Number(friend.lovesSpaceStartTime);
+        if (Number.isFinite(existing) && existing > 0) {
+            return { timestamp: existing, changed: false };
+        }
+
+        const recovered = this.findLovesAcceptanceTimestamp(friend);
+        const fallback = Number(fallbackTimestamp);
+        const timestamp = recovered || (Number.isFinite(fallback) && fallback > 0 ? fallback : Date.now());
+        friend.lovesSpaceStartTime = timestamp;
+        return { timestamp, changed: true };
+    },
+
+    getLovesDaysCount: function(friend, now = new Date()) {
+        const startTimestamp = Number(friend?.lovesSpaceStartTime);
+        if (!Number.isFinite(startTimestamp) || startTimestamp <= 0) return 1;
+        const startDay = this.getLocalDayOrdinal(new Date(startTimestamp));
+        const currentDay = this.getLocalDayOrdinal(now);
+        return Math.max(1, currentDay - startDay + 1);
+    },
+
+    syncDailySavingsForFriend: async function(friend, now = new Date(), options = {}) {
+        if (!friend || !friend.hasLovesSpace) return false;
+        const startState = this.ensureLovesStartTime(friend, now.getTime());
+        const startDateKey = this.getLocalDateKey(startState.timestamp);
+        const todayKey = this.getLocalDateKey(now);
+        const savings = this.ensureSavingsData(friend);
+        const existingDailyDates = new Set(
+            savings.records
+                .filter(record => record?.source === 'char_daily' || String(record?.id || '').startsWith('sav_char_daily_'))
+                .map(record => record.date)
+                .filter(Boolean)
+        );
+
+        let cursor = this.getLocalDayOrdinal(this.parseDateKey(startDateKey)) > this.getLocalDayOrdinal(now)
+            ? todayKey
+            : startDateKey;
+        let changed = startState.changed;
+        let safety = 0;
+
+        while (cursor <= todayKey && safety < 20000) {
+            if (!existingDailyDates.has(cursor)) {
+                const isToday = cursor === todayKey;
+                const recordDate = isToday ? new Date(now) : this.parseDateKey(cursor);
+                if (!isToday) recordDate.setHours(12, 0, 0, 0);
+                savings.records.unshift({
+                    id: `sav_char_daily_${cursor}`,
+                    amount: Math.floor(Math.random() * 100) + 1,
+                    actor: 'char',
+                    date: cursor,
+                    note: 'Char 每日存钱',
+                    source: 'char_daily',
+                    timestamp: recordDate.getTime()
+                });
+                existingDailyDates.add(cursor);
+                changed = true;
+            }
+            if (cursor === todayKey) break;
+            cursor = this.addLocalDateDays(cursor, 1);
+            safety += 1;
+        }
+
+        if (changed && options.persist !== false) {
+            await this.persistFriendState(friend, { metaOnly: true, silent: true });
+        }
+        return changed;
+    },
+
+    syncAllLovesRealTimeData: async function() {
+        if (window.imApp?.ensureDataReady) await window.imApp.ensureDataReady();
+        const friends = Array.isArray(window.imData?.friends) ? window.imData.friends : [];
+        const acceptedFriends = friends.filter(friend => friend?.hasLovesSpace);
+
+        for (const friend of acceptedFriends) {
+            if (!Number(friend.lovesSpaceStartTime) && window.imApp?.ensureFriendMessagesLoaded) {
+                await window.imApp.ensureFriendMessagesLoaded(friend);
+            }
+            await this.syncDailySavingsForFriend(friend);
+        }
+
+        if (this.currentFriend?.hasLovesSpace) this.updateDaysCount(this.currentFriend);
+        if (document.getElementById('lovers-savings-view')?.classList.contains('active')) {
+            this.renderSavingsJar();
+        }
+    },
+
+    scheduleNextRealTimeSync: function() {
+        if (this._realTimeTimer) clearTimeout(this._realTimeTimer);
+        const now = new Date();
+        const nextMidnight = new Date(now);
+        nextMidnight.setHours(24, 0, 1, 0);
+        this._realTimeTimer = setTimeout(async () => {
+            await this.syncAllLovesRealTimeData();
+            this.scheduleNextRealTimeSync();
+        }, Math.max(1000, nextMidnight.getTime() - now.getTime()));
+    },
+
+    startRealTimeJobs: function() {
+        if (this._realTimeJobsStarted) return;
+        this._realTimeJobsStarted = true;
+
+        const refresh = () => {
+            void this.syncAllLovesRealTimeData().finally(() => this.scheduleNextRealTimeSync());
+        };
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') refresh();
+        });
+        window.addEventListener('focus', refresh);
+        refresh();
+    },
+
     formatMoney: function(amount) {
         const value = Number(amount) || 0;
         return '¥' + value.toLocaleString('zh-CN', {
@@ -135,6 +276,7 @@ window.lovesApp = {
         
         this.bindEvents();
         this.initialized = true;
+        this.startRealTimeJobs();
         console.log('Loves app initialized');
     },
     
@@ -667,20 +809,10 @@ window.lovesApp = {
     
     updateDaysCount: function(friend) {
         const daysEl = document.getElementById('lovers-space-days');
-        if (!daysEl) return;
-        
-        let startTimestamp = friend.lovesSpaceStartTime;
-        if (!startTimestamp) {
-            // 如果没有记录时间，则以当前时间为准存入
-            startTimestamp = Date.now();
-            friend.lovesSpaceStartTime = startTimestamp;
-            this.persistFriendState(friend, { silent: true });
-        }
-        
-        const diffMs = Date.now() - startTimestamp;
-        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1; // 至少1天
-        
-        daysEl.textContent = diffDays;
+        if (!daysEl || !friend) return;
+        const startState = this.ensureLovesStartTime(friend);
+        daysEl.textContent = String(this.getLovesDaysCount(friend));
+        if (startState.changed) void this.persistFriendState(friend, { metaOnly: true, silent: true });
     },
 
     toggleMomentMenu: function(idx) {
@@ -768,10 +900,11 @@ window.lovesApp = {
             this.persistFriendState();
             this.renderLovesMoments();
 
-            if (m.isChar === true) {
+            if (targetComment.isChar === true) {
                 this.requestCharComment(mIdx, {
                     reason: 'user_comment',
                     userComment: replyText.trim(),
+                    targetCommentText: String(targetComment.text || '').trim(),
                     silentMissingApi: true
                 });
             }
@@ -779,162 +912,201 @@ window.lovesApp = {
     },
 
     requestCharComment: function(idx, options = {}) {
-        if (!this.currentFriend || !this.currentFriend.lovesData || !this.currentFriend.lovesData.moments) return;
-        const m = this.currentFriend.lovesData.moments[idx];
-        if (!m) return;
-        
+        const friend = this.currentFriend;
+        const moment = friend?.lovesData?.moments?.[idx];
+        if (!friend || !moment) return Promise.resolve(false);
+        if (!moment.id) {
+            moment.id = `lm_${Number(moment.timestamp) || Date.now()}_${idx}`;
+            void this.persistFriendState(friend, { metaOnly: true, silent: true });
+        }
+
         const targetMenu = document.getElementById(`loves-moment-menu-${idx}`);
         if (targetMenu) targetMenu.style.display = 'none';
+        return this.queueCharCommentRequest(friend.id, moment.id, options);
+    },
 
-        if (!window.apiConfig || !window.apiConfig.endpoint || !window.apiConfig.apiKey) {
-            if (!options.silentMissingApi && window.showToast) window.showToast('请先在系统设置中配置 API');
-            return;
+    queueCharCommentRequest: function(friendId, momentId, options = {}) {
+        const queueKey = `${friendId}:${momentId}`;
+        const previous = this._momentReplyQueues.get(queueKey) || Promise.resolve();
+        const next = previous
+            .catch(() => false)
+            .then(() => this.executeCharCommentRequest(friendId, momentId, { ...options }))
+            .finally(() => {
+                if (this._momentReplyQueues.get(queueKey) === next) {
+                    this._momentReplyQueues.delete(queueKey);
+                }
+            });
+        this._momentReplyQueues.set(queueKey, next);
+        return next;
+    },
+
+    executeCharCommentRequest: async function(friendId, momentId, options = {}) {
+        let friend = window.imData?.friends?.find(item => String(item.id) === String(friendId));
+        let moment = friend?.lovesData?.moments?.find(item => String(item.id) === String(momentId));
+        if (!friend || !moment) return false;
+
+        const apiConfig = window.getApiConfig ? window.getApiConfig() : (window.apiConfig || {});
+        if (!apiConfig.endpoint || !apiConfig.apiKey) {
+            if (window.showToast) window.showToast('请先在系统设置中配置 API');
+            return false;
         }
-        
-        if (m._charReplyPending) return;
-        m._charReplyPending = true;
+
+        moment._charReplyPendingCount = Math.max(0, Number(moment._charReplyPendingCount) || 0) + 1;
+        moment._charReplyPending = true;
         if (window.showToast) window.showToast(options.reason === 'user_comment' ? 'TA 正在回复...' : '正在生成评论...');
 
-        let globalRule = '';
-        if (window.getGlobalWorldBookContextByPosition) {
-            globalRule = window.getGlobalWorldBookContextByPosition('system_depth') || '';
-            const beforeRole = window.getGlobalWorldBookContextByPosition('before_role');
-            if (beforeRole) globalRule += '\n' + beforeRole;
-        }
-        
-        const userPersona = window.userState?.persona || '普通用户';
-        const charPersona = this.currentFriend.persona || '普通角色';
-        
-        let chatContext = '';
-        if (this.currentFriend && Array.isArray(this.currentFriend.messages)) {
-            const msgs = this.currentFriend.messages.slice(-10);
-            if (msgs.length > 0) {
-                chatContext = msgs.map(msg => {
-                    const sender = msg.sender === 'me' ? 'User' : 'Char';
-                    return `${sender}: ${msg.text || '[特殊消息]'}`;
-                }).join('\n');
+        try {
+            if (window.imApp?.ensureFriendMessagesLoaded) {
+                await window.imApp.ensureFriendMessagesLoaded(friend);
+                friend = window.imData?.friends?.find(item => String(item.id) === String(friendId)) || friend;
+                moment = friend?.lovesData?.moments?.find(item => String(item.id) === String(momentId));
+                if (!moment) return false;
             }
-        }
-        
-        const momentContent = m.text || '[只有图片]';
-        const imageCount = (m.images && m.images.length) || 0;
-        const isCharMoment = m.isChar === true;
-        const momentAuthor = isCharMoment ? '角色(Char)' : '用户(User)';
-        let momentDesc = `${momentAuthor}刚才发布了一条动态：\n文字内容：${momentContent}\n附带图片数量：${imageCount} 张`;
-        if (options.userComment) {
-            momentDesc += `\nUser刚刚在这条动态下评论：${options.userComment}`;
-        }
 
-        let prompt = options.reason === 'user_comment'
-            ? `你现在要扮演给定的角色(Char)。这条朋友圈动态是 Char 自己发布的，User 刚在下面评论了。请为 Char 生成1条自然回复 User 评论的动态评论，并且可选生成0-2条相关私聊消息。\n`
-            : isCharMoment
-            ? `你现在要扮演给定的角色(Char)。这条朋友圈动态是 Char 自己刚发布的，请为 Char 生成1-3条对自己动态的延续、补充说明或额外感想，并且给用户(User)的iMessage聊天界面发送1-3条相关私聊消息，可以提醒 User 快去看，也可以聊和这条动态有关的事。\n`
-            : `你现在要扮演给定的角色(Char)，为用户(User)刚发布的朋友圈动态写1~2条符合人设的评论，并且根据动态内容，给用户(User)的iMessage聊天界面发送1-3条相关私聊消息。\n`;
-        if (globalRule) prompt += `\n【世界书设定】：\n${globalRule}\n`;
-        prompt += `\n【角色 (Char) 人设】：\n${charPersona}\n`;
-        prompt += `\n【用户 (User) 人设】：\n${userPersona}\n`;
-        if (chatContext) prompt += `\n【近期聊天上下文(最近10条)】：\n${chatContext}\n`;
-        prompt += `\n【刚才发布的动态】：\n${momentDesc}\n`;
-        
-        prompt += `\n要求：
-1. 你的评论和私聊消息必须极度符合当前的人设、世界观设定以及近期聊天上下文带来的情绪。
-2. 返回一个纯 JSON 对象，包含 comments 数组（${options.reason === 'user_comment' ? '1条 Char 回复 User 评论的字符串' : isCharMoment ? '1-3条 Char 对自己动态的补充评论字符串' : '1-2条评论字符串'}）和 messages 数组（${options.reason === 'user_comment' ? '0-2条私聊消息字符串，可以为空数组' : '1-3条私聊消息字符串'}）。不要包含任何 Markdown 标记 (如 \`\`\`json 等)，直接输出合法的 JSON 格式。
-3. ${options.reason === 'user_comment' ? 'comments 必须像 Char 直接回复 User 刚刚的评论，可以自然接话，不要写成无关补充。messages 如果生成，要像 Char 私下继续聊这条评论。' : isCharMoment ? 'comments 要像 Char 在自己动态下继续补充想法，不要写成第三方夸赞。messages 要像 Char 主动找 User 聊这条动态。' : 'comments 要像 Char 在评论 User 的动态，messages 要像 Char 私下和 User 聊这条动态。'}
-4. 例如：{"comments": ["刚刚发的时候还想补一句。", "这件事其实我还挺在意的。"], "messages": ["我刚发了动态，你有空去看一下。", "其实那条动态里还有点话想跟你说。"]}`;
+            let globalRule = '';
+            if (window.getGlobalWorldBookContextByPosition) {
+                globalRule = window.getGlobalWorldBookContextByPosition('system_depth') || '';
+                const beforeRole = window.getGlobalWorldBookContextByPosition('before_role');
+                if (beforeRole) globalRule += '\n' + beforeRole;
+            }
 
-        const messages = [
-            { role: "system", content: "你是一个角色扮演对话助手，严格返回 JSON 格式的字符串数组。" },
-            { role: "user", content: prompt }
-        ];
-        
-        const model = window.apiConfig.model || 'gpt-3.5-turbo';
-        let endpoint = window.apiConfig.endpoint;
-        if (endpoint && !endpoint.endsWith('/chat/completions')) {
-            if (endpoint.endsWith('/')) endpoint += 'v1/chat/completions';
-            else if (endpoint.endsWith('/v1')) endpoint += '/chat/completions';
-            else endpoint += '/v1/chat/completions';
-        }
+            const userPersona = (window.getUserState ? window.getUserState() : window.userState || {})?.persona || '普通用户';
+            const charPersona = friend.persona || '普通角色';
+            const chatContext = Array.isArray(friend.messages)
+                ? friend.messages.slice(-10).map((msg) => {
+                    const sender = msg?.role === 'user' || msg?.sender === 'me' ? 'User' : 'Char';
+                    return `${sender}: ${msg?.text || msg?.content || '[特殊消息]'}`;
+                }).join('\n')
+                : '';
 
-        fetch(endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + window.apiConfig.apiKey
-            },
-            body: JSON.stringify({
-                model: model,
-                messages: messages,
-                temperature: 0.7
-            })
-        })
-        .then(response => {
-            if (!response.ok) throw new Error('API Request Failed');
-            return response.json();
-        })
-        .then(async data => {
-            let resultText = data.choices?.[0]?.message?.content || "";
+            const momentContent = moment.text || '[只有图片]';
+            const imageCount = Array.isArray(moment.images) ? moment.images.length : 0;
+            const isCharMoment = moment.isChar === true;
+            const momentAuthor = isCharMoment ? '角色(Char)' : '用户(User)';
+            let momentDesc = `${momentAuthor}发布了一条动态：\n文字内容：${momentContent}\n附带图片数量：${imageCount} 张`;
+            if (options.targetCommentText) {
+                momentDesc += `\nChar 之前在动态下评论：${options.targetCommentText}`;
+                momentDesc += `\nUser 刚刚回复 Char：${options.userComment || ''}`;
+            } else if (options.userComment) {
+                momentDesc += `\nUser 刚刚在这条 Char 动态下评论：${options.userComment}`;
+            }
+
+            let prompt = options.reason === 'user_comment'
+                ? '你现在要扮演给定的角色(Char)。User 刚刚在动态评论区直接回应了你。请生成2-5条连续、自然的公开评论回复，并且可选生成0-2条相关私聊消息。\n'
+                : isCharMoment
+                ? '你现在要扮演给定的角色(Char)。这条动态是 Char 自己发布的，请生成1-3条补充评论，并给 User 发送1-3条相关私聊消息。\n'
+                : '你现在要扮演给定的角色(Char)，为 User 发布的动态写1-2条评论，并给 User 发送1-3条相关私聊消息。\n';
+            if (globalRule) prompt += `\n【世界书设定】：\n${globalRule}\n`;
+            prompt += `\n【角色 (Char) 人设】：\n${charPersona}\n`;
+            prompt += `\n【用户 (User) 人设】：\n${userPersona}\n`;
+            if (chatContext) prompt += `\n【近期聊天上下文(最近10条)】：\n${chatContext}\n`;
+            prompt += `\n【动态与评论现场】：\n${momentDesc}\n`;
+            prompt += `\n要求：
+1. 内容必须符合人设、世界观和近期关系氛围。
+2. 只返回纯 JSON 对象，格式为 {"comments":["公开回复"],"messages":["私聊消息"]}，不要返回 Markdown。
+3. comments ${options.reason === 'user_comment' ? '必须包含2-5条 Char 对 User 的连续直接回复' : (isCharMoment ? '包含1-3条' : '包含1-2条')}；messages ${options.reason === 'user_comment' ? '包含0-2条，可以为空数组' : '包含1-3条'}。
+4. 每个数组元素只写一条自然消息，不要带 Char/User 标签，不要把多条回复合并在一个字符串里。`;
+
+            let endpoint = apiConfig.endpoint;
+            if (endpoint && !endpoint.endsWith('/chat/completions')) {
+                if (endpoint.endsWith('/')) endpoint += 'v1/chat/completions';
+                else if (endpoint.endsWith('/v1')) endpoint += '/chat/completions';
+                else endpoint += '/v1/chat/completions';
+            }
+
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + apiConfig.apiKey
+                },
+                body: JSON.stringify({
+                    model: apiConfig.model || 'gpt-3.5-turbo',
+                    messages: [
+                        { role: 'system', content: '你是角色扮演对话助手，必须严格返回指定 JSON 对象。' },
+                        { role: 'user', content: prompt }
+                    ],
+                    temperature: parseFloat(apiConfig.temperature) || 0.7
+                })
+            });
+            if (!response.ok) throw new Error(`API Request Failed: ${response.status}`);
+
+            const data = await response.json();
+            const resultText = data.choices?.[0]?.message?.content || '';
             let jsonStr = resultText.replace(/```json/gi, '').replace(/```/g, '').trim();
             const match = jsonStr.match(/\{[\s\S]*\}/);
             if (match) jsonStr = match[0];
-            
-            try {
-                const parsed = JSON.parse(jsonStr);
-                const parsedComments = parsed.comments;
-                const parsedMessages = parsed.messages;
-
-                let updated = false;
-
-                if (Array.isArray(parsedComments) && parsedComments.length > 0) {
-                    if (!m.comments) m.comments = [];
-                    parsedComments.forEach(text => {
-                        m.comments.push({ text: text, isChar: true, timestamp: Date.now() });
-                    });
-                    updated = true;
-                }
-                
-                if (Array.isArray(parsedMessages) && parsedMessages.length > 0) {
-                    const appendTasks = parsedMessages.map((msgText, msgIdx) => {
-                        const msgObj = {
-                            id: window.imChat && window.imChat.createMessageId ? window.imChat.createMessageId('msg') : 'msg_' + Date.now() + '_' + msgIdx,
-                            sender: this.currentFriend.id,
-                            role: 'assistant',
-                            text: msgText,
-                            content: msgText,
-                            timestamp: Date.now() + msgIdx * 1000,
-                            time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }),
-                            type: 'text'
-                        };
-                        
-                        if (window.imApp && window.imApp.appendFriendMessage) {
-                            return window.imApp.appendFriendMessage(this.currentFriend.id, msgObj, { silent: false });
-                        } else if (this.currentFriend.messages && Array.isArray(this.currentFriend.messages)) {
-                            this.currentFriend.messages.push(msgObj);
-                        }
-                        return Promise.resolve(true);
-                    });
-                    await Promise.all(appendTasks);
-                    updated = true;
-                }
-
-                if (updated) {
-                    await this.persistFriendState(this.currentFriend, { metaOnly: true });
-                    if (window.showToast) window.showToast('评论与消息发送成功');
-                    this.renderLovesMoments();
-                } else {
-                    throw new Error('No comments or messages generated');
-                }
-            } catch (e) {
-                console.error('Comment Parse error', e, '\nOriginal Text:', resultText);
-                if (window.showToast) window.showToast('AI 生成格式错误，请重试');
+            const parsed = JSON.parse(jsonStr);
+            const normalizeTextList = (list, limit) => Array.isArray(list)
+                ? list.map(item => typeof item === 'string' ? item.trim() : String(item?.text || '').trim()).filter(Boolean).slice(0, limit)
+                : [];
+            const comments = normalizeTextList(parsed.comments, options.reason === 'user_comment' ? 5 : (isCharMoment ? 3 : 2));
+            const privateMessages = normalizeTextList(parsed.messages, options.reason === 'user_comment' ? 2 : 3);
+            if (options.reason === 'user_comment' && comments.length < 2) {
+                throw new Error('API must return 2-5 public replies');
             }
-        })
-        .catch(err => {
-            console.error('Comment API Error:', err);
-            if (window.showToast) window.showToast('API 请求失败，无法评论');
-        })
-        .finally(() => {
-            if (m) m._charReplyPending = false;
-        });
+            if (options.reason !== 'user_comment' && comments.length === 0 && privateMessages.length === 0) {
+                throw new Error('No comments or messages generated');
+            }
+
+            friend = window.imData?.friends?.find(item => String(item.id) === String(friendId));
+            moment = friend?.lovesData?.moments?.find(item => String(item.id) === String(momentId));
+            if (!friend || !moment) return false;
+            if (!Array.isArray(moment.comments)) moment.comments = [];
+            const baseTime = Date.now();
+            comments.forEach((text, index) => {
+                moment.comments.push({
+                    id: `lmc_${baseTime}_${index}`,
+                    text,
+                    isChar: true,
+                    timestamp: baseTime + index
+                });
+            });
+
+            for (let index = 0; index < privateMessages.length; index += 1) {
+                const msgText = privateMessages[index];
+                const timestamp = baseTime + (index + 1) * 1000;
+                const msgObj = {
+                    id: window.imChat?.createMessageId ? window.imChat.createMessageId('msg') : `msg_${timestamp}_${index}`,
+                    sender: friend.id,
+                    role: 'assistant',
+                    text: msgText,
+                    content: msgText,
+                    timestamp,
+                    time: new Date(timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }),
+                    type: 'text'
+                };
+                if (window.imApp?.appendFriendMessage) {
+                    await window.imApp.appendFriendMessage(friend.id, msgObj, { silent: false });
+                } else {
+                    if (!Array.isArray(friend.messages)) friend.messages = [];
+                    friend.messages.push(msgObj);
+                }
+            }
+
+            await this.persistFriendState(friend, { metaOnly: true });
+            if (this.currentFriend && String(this.currentFriend.id) === String(friendId)) {
+                this.currentFriend = friend;
+                this.renderLovesMoments();
+            }
+            if (window.showToast) window.showToast(privateMessages.length > 0 ? '评论与消息发送成功' : '回复已生成');
+            return true;
+        } catch (error) {
+            console.error('Comment API Error:', error);
+            if (window.showToast) {
+                window.showToast(error instanceof SyntaxError || /2-5 public replies/.test(String(error?.message || ''))
+                    ? 'AI 生成格式错误，请重试'
+                    : 'API 请求失败，无法评论');
+            }
+            return false;
+        } finally {
+            const liveFriend = window.imData?.friends?.find(item => String(item.id) === String(friendId));
+            const liveMoment = liveFriend?.lovesData?.moments?.find(item => String(item.id) === String(momentId));
+            if (liveMoment) {
+                liveMoment._charReplyPendingCount = Math.max(0, Number(liveMoment._charReplyPendingCount) || 1) - 1;
+                liveMoment._charReplyPending = liveMoment._charReplyPendingCount > 0;
+            }
+        }
     },
     
     toggleMomentLike: function(idx) {
@@ -966,6 +1138,7 @@ window.lovesApp = {
             actor: record.actor === 'char' ? 'char' : 'user',
             date: record.date || this.getLocalDateKey(record.timestamp || new Date()),
             note: String(record.note || ''),
+            source: record.source === 'char_daily' || String(record.id || '').startsWith('sav_char_daily_') ? 'char_daily' : '',
             timestamp: Number(record.timestamp) || Date.now()
         })).filter(record => record.amount > 0);
         if (!Array.isArray(savings.withdrawals)) savings.withdrawals = [];
@@ -1745,6 +1918,9 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                         // Found acceptance
                         friend.hasLovesSpace = true;
                         friend.pendingLovesInvite = false;
+                        if (!Number(friend.lovesSpaceStartTime)) {
+                            friend.lovesSpaceStartTime = Number(msg.timestamp) || Date.now();
+                        }
                         
                         // Replace the tag in the original message
                         msg.text = msg.text.replace(/\[ACCEPT_INVITE\]/g, '').trim();
@@ -1771,6 +1947,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                         };
                         
                         msgs.push(acceptMsg);
+                        void this.syncDailySavingsForFriend(friend, new Date(), { persist: false });
                         updated = true;
                         break; // Stop scanning for this friend
                     }
@@ -1787,9 +1964,11 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
 
     handleInviteAccepted: async function(friend) {
         if (!friend) return;
-        
+
+        const acceptedAt = Date.now();
         friend.hasLovesSpace = true;
         friend.pendingLovesInvite = false;
+        if (!Number(friend.lovesSpaceStartTime)) friend.lovesSpaceStartTime = acceptedAt;
         
         const acceptMsg = {
             id: window.imChat && window.imChat.createMessageId ? window.imChat.createMessageId('msg') : 'msg_' + Date.now(),
@@ -1803,7 +1982,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                 <div style="font-size:13px; color:#333; line-height:1.4;">我已经接受了你的情侣空间邀请，现在我们可以一起使用了。</div>
             </div>`,
             text: '【情侣空间】我接受了你的邀请',
-            timestamp: Date.now() - 100, // 稍微提早一点以便排在前面
+            timestamp: acceptedAt - 100, // 稍微提早一点以便排在前面
             type: 'html'
         };
         
@@ -1813,6 +1992,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
             friend.messages.push(acceptMsg);
         }
         
+        await this.syncDailySavingsForFriend(friend, new Date(acceptedAt), { persist: false });
         await this.persistFriendState(friend, { metaOnly: true });
         
         // 尝试立即渲染到聊天面板中
@@ -2342,6 +2522,12 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
             
             this.currentFriend = friend;
             this.bindSharedSavingsButton(friend);
+            this.updateDaysCount(friend);
+            void this.syncDailySavingsForFriend(friend).then((changed) => {
+                if (changed && document.getElementById('lovers-savings-view')?.classList.contains('active')) {
+                    this.renderSavingsJar();
+                }
+            });
             
             // 绑定点击
             this.bindFabClick();

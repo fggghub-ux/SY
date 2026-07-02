@@ -1068,13 +1068,60 @@ window.imApp.clearFriendRuntimeMessageContext = function(friend) {
     if (!friend) return;
     if (friend.pendingRegenerateContext) delete friend.pendingRegenerateContext;
     if (window.imData.currentReplyText) window.imData.currentReplyText = null;
+    const safeFriendId = String(friend.id);
+    if (window.imData.profilePanelUiStateByFriendId) {
+        delete window.imData.profilePanelUiStateByFriendId[safeFriendId];
+    }
     const page = document.getElementById(`chat-interface-${friend.id}`);
     const replyPreview = page ? page.querySelector('.reply-preview-container') : null;
-    if (replyPreview) replyPreview.style.display = 'none';
+    if (replyPreview) {
+        replyPreview.style.display = 'none';
+        replyPreview.querySelectorAll('[data-reply-text], .reply-preview-text').forEach(node => {
+            node.textContent = '';
+        });
+    }
+    page?.querySelectorAll('.typing-row').forEach(row => row.remove());
+    page?.querySelectorAll('.chat-profile-panel-overlay').forEach((overlay) => {
+        overlay.classList.remove('active');
+        overlay.style.display = 'none';
+    });
     if (window.imData.currentActiveRow) {
         window.imData.currentActiveRow.classList?.remove('message-active');
         window.imData.currentActiveRow = null;
     }
+};
+
+window.imApp.createClearedConversationMemory = function(memory = {}) {
+    const normalizedMemory = window.imApp.normalizeFriendData({
+        id: '__conversation_reset__',
+        memory
+    }).memory;
+    const cleared = window.imApp.createDefaultMemory();
+
+    cleared.context = {
+        enabled: normalizedMemory.context.enabled,
+        limit: normalizedMemory.context.limit,
+        notes: ''
+    };
+    cleared.summary = {
+        enabled: normalizedMemory.summary.enabled,
+        limit: normalizedMemory.summary.limit,
+        prompt: normalizedMemory.summary.prompt || ''
+    };
+    cleared.autonomous = window.imApp.cloneDataSnapshot(normalizedMemory.autonomous);
+    cleared.schedule = {
+        enabled: !!normalizedMemory.schedule.enabled,
+        sleepTime: normalizedMemory.schedule.sleepTime || '23:00',
+        wakeTime: normalizedMemory.schedule.wakeTime || '07:00',
+        events: []
+    };
+    cleared.userOverride = normalizedMemory.userOverride
+        ? window.imApp.cloneDataSnapshot(normalizedMemory.userOverride)
+        : null;
+    cleared.mountSettings = window.imApp.cloneDataSnapshot(normalizedMemory.mountSettings || {});
+    cleared.mountLimits = window.imApp.cloneDataSnapshot(normalizedMemory.mountLimits || {});
+    cleared.lastSummaryMessageCount = 0;
+    return cleared;
 };
 
 window.imApp.resolveFriendId = function(friendOrId) {
@@ -1545,6 +1592,83 @@ window.imApp.resetFriendMessages = async function(friendId, options = {}) {
         window.imApp.saveState.lastError = e;
         if (!options.silent && window.showToast) {
             window.showToast('聊天记录清空失败');
+        }
+        return false;
+    }
+};
+
+window.imApp.resetFriendConversation = async function(friendId, options = {}) {
+    const safeFriendId = String(friendId);
+    const targetFriend = (window.imData.friends || []).find(
+        friend => String(friend.id) === safeFriendId
+    );
+    if (!targetFriend) return false;
+
+    if (window.imApp.ensureFriendMessagesLoaded) {
+        await window.imApp.ensureFriendMessagesLoaded(targetFriend);
+    }
+
+    const previousFriend = window.imApp.cloneDataSnapshot(targetFriend);
+    const pendingTimer = window.imApp.saveState.friendTimers.get(safeFriendId);
+    if (pendingTimer) clearTimeout(pendingTimer);
+    window.imApp.saveState.friendTimers.delete(safeFriendId);
+    window.imApp.saveState.friendDirtyIds.delete(safeFriendId);
+    if (window.imChat?.invalidateFriendConversation) {
+        window.imChat.invalidateFriendConversation(safeFriendId);
+    }
+
+    targetFriend.messages = [];
+    targetFriend.unreadCount = 0;
+    targetFriend.memory = window.imApp.createClearedConversationMemory(targetFriend.memory || {});
+    targetFriend.profilePanel = window.imApp.createDefaultProfilePanel({});
+    targetFriend.latestThought = '';
+    targetFriend.status = 'online';
+    if (targetFriend.type === 'group') targetFriend.memberProfiles = {};
+    if (targetFriend.pendingRegenerateContext) delete targetFriend.pendingRegenerateContext;
+    window.imApp.syncFriendMessageSummary(targetFriend);
+    window.imApp.clearFriendRuntimeMessageContext(targetFriend);
+    window.imApp.syncActiveFriendReference(targetFriend);
+    window.imApp.syncSettingsFriendReference(targetFriend);
+
+    try {
+        if (window.imApp.ensureDataReady) await window.imApp.ensureDataReady();
+        if (!window.imStorage?.replaceFriendMessages || !window.imStorage?.saveFriendMeta) {
+            throw new Error('Friend conversation reset persistence unavailable');
+        }
+
+        await window.imApp.runFriendPersistenceTask(safeFriendId, async () => {
+            await window.imStorage.replaceFriendMessages(safeFriendId, []);
+            await window.imStorage.saveFriendMeta(targetFriend);
+            return true;
+        });
+
+        window.imApp.saveState.lastError = null;
+        if (window.imApp.updateChatsUnreadBadges) window.imApp.updateChatsUnreadBadges();
+        return true;
+    } catch (error) {
+        console.error('Failed to reset friend conversation', error);
+        Object.keys(targetFriend).forEach(key => delete targetFriend[key]);
+        Object.assign(targetFriend, previousFriend);
+        window.imApp.reindexFriendMessages(targetFriend);
+        window.imApp.syncFriendMessageSummary(targetFriend);
+        window.imApp.syncActiveFriendReference(targetFriend);
+        window.imApp.syncSettingsFriendReference(targetFriend);
+        window.imApp.saveState.lastError = error;
+
+        try {
+            if (window.imStorage?.replaceFriendMessages && window.imStorage?.saveFriendMeta) {
+                await window.imApp.runFriendPersistenceTask(safeFriendId, async () => {
+                    await window.imStorage.replaceFriendMessages(safeFriendId, previousFriend.messages || []);
+                    await window.imStorage.saveFriendMeta(previousFriend);
+                    return true;
+                });
+            }
+        } catch (rollbackError) {
+            console.error('Failed to roll back friend conversation reset', rollbackError);
+        }
+
+        if (!options.silent && window.showToast) {
+            window.showToast('聊天记录与上下文清空失败');
         }
         return false;
     }

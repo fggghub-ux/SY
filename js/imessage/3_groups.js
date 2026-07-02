@@ -882,11 +882,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!currentViewingGroup) return;
             window.showCustomModal({
                 title: '清空聊天记录',
-                message: `确定要清空群聊 "${currentViewingGroup.nickname}" 的聊天记录吗？此操作不可恢复。`,
+                message: `确定要清空群聊 "${currentViewingGroup.nickname}" 的聊天记录、全部记忆和成员状态栏吗？此操作不可恢复。`,
                 confirmText: '清空',
                 isDestructive: true,
                 onConfirm: async () => {
-                    const success = await window.imApp.resetFriendMessages(currentViewingGroup.id);
+                    const success = await window.imApp.resetFriendConversation(currentViewingGroup.id);
                     if (success) {
                         if (window.showToast) window.showToast('聊天记录已清空');
                         if (window.imApp.openChatTab) window.imApp.openChatTab(currentViewingGroup);

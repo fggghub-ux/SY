@@ -41,7 +41,6 @@
         const editSheet = document.getElementById('x-edit-profile-sheet');
         const settingsSheet = document.getElementById('x-settings-sheet');
         const composeSheet = document.getElementById('x-compose-sheet');
-        const editButton = document.getElementById('x-profile-edit-btn');
         const settingsButton = document.getElementById('x-profile-settings-btn');
         const editCancelButton = document.getElementById('x-edit-cancel-btn');
         const editSaveButton = document.getElementById('x-edit-save-btn');
@@ -115,6 +114,23 @@
             xSearchBannerUrl: ''
         };
         const generatedImagePlaceholderUrl = 'assets/x/generated-image-placeholder.jpg';
+        const xImageCompressionPresets = Object.freeze({
+            avatar: Object.freeze({ maxWidth: 512, maxHeight: 512, quality: 0.82 }),
+            cover: Object.freeze({ maxWidth: 1600, maxHeight: 900, quality: 0.82 }),
+            post: Object.freeze({ maxWidth: 1600, maxHeight: 1600, quality: 0.82 })
+        });
+        const xAcceptedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+        const maxXTrends = 15;
+        const xLandscapeAvatarImages = Object.freeze([
+            'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=256&h=256&q=82',
+            'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=256&h=256&q=82',
+            'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=256&h=256&q=82',
+            'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=256&h=256&q=82',
+            'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=256&h=256&q=82',
+            'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=256&h=256&q=82',
+            'https://images.unsplash.com/photo-1501854140801-50d01698950b?auto=format&fit=crop&w=256&h=256&q=82',
+            'https://images.unsplash.com/photo-1473448912268-2022ce9509d8?auto=format&fit=crop&w=256&h=256&q=82'
+        ]);
 
         const postData = {
             island: {
@@ -267,12 +283,21 @@
             return { likes, reposts };
         }
 
-        function buildAvatarHtml(value, fallback = '?') {
+        function getStableLandscapeAvatar(seed) {
+            const index = hashPostMetricSeed(`x-avatar:${safeText(seed, 'account')}`) % xLandscapeAvatarImages.length;
+            return xLandscapeAvatarImages[index];
+        }
+
+        function normalizePersonAvatar(value, seed = '') {
             const avatar = safeText(value);
-            if (avatar && (/^(data:|https?:|blob:)/i).test(avatar)) {
-                return `<img src="${escapeHtml(avatar)}" alt="">`;
-            }
-            return escapeHtml((avatar || fallback || '?').slice(0, 2));
+            const isImageSource = /^(?:data:image\/|blob:|https?:\/\/|\/|\.\.?\/|assets\/)/i.test(avatar)
+                || /\.(?:avif|jpe?g|png|webp)(?:[?#].*)?$/i.test(avatar);
+            return isImageSource ? avatar : getStableLandscapeAvatar(seed || avatar || 'account');
+        }
+
+        function buildAvatarHtml(value, fallback = '?') {
+            const avatar = normalizePersonAvatar(value, fallback);
+            return `<img src="${escapeHtml(avatar)}" alt="" loading="lazy" referrerpolicy="no-referrer">`;
         }
 
         function buildAuthorAvatarButton(author = {}, className = 'x-avatar') {
@@ -284,7 +309,7 @@
             const name = safeText(currentProfile.name, 'Me');
             return {
                 authorId: 'me',
-                avatar: currentProfile.avatar || name.slice(0, 1).toUpperCase(),
+                avatar: normalizePersonAvatar(currentProfile.avatar, `me:${currentProfile.handle || name}`),
                 name,
                 handle: `${currentProfile.handle || '@me'} · now`
             };
@@ -300,6 +325,17 @@
             return endpoint;
         }
 
+        function buildXUserBoundaryPrompt() {
+            const profile = currentProfile || {};
+            return `HIGHEST-PRIORITY IDENTITY BOUNDARY:
+The current User (${safeText(profile.name, 'User')} ${safeText(profile.handle, '@user')}) is controlled exclusively by the human. Treat the User profile, persona, posts, comments, replies, and chat messages as read-only context.
+Never generate or invent any outbound post, comment, reply, quote, private message, or other social action authored by the User. Never use the User's name, handle, avatar, account identity, or authorId "me" as the author of generated content.
+Generate content only for explicitly requested non-User characters or accounts. When replying in private messages, speak only as the named Char or incoming stranger, never as the User. If a task requests reactions to User content, generate only other accounts reacting to it.
+
+INTERNATIONAL X CONTENT RULE:
+X is a global app. Non-User authors may write in the language that naturally fits their identity, location, persona and context; do not force everyone to write in Chinese. In every JSON object containing user-facing text, comment, reply, bio or private-message content, include a sibling "translation" field. If the original content is not Simplified Chinese, "translation" must be an accurate, natural Simplified Chinese translation. If the original is already Simplified Chinese, set "translation" to an empty string. Arrays of private messages must use objects shaped as {"text":"","translation":""}, not bare strings. Image descriptions may use Simplified Chinese for reliable rendering.`;
+        }
+
         async function requestXChatCompletion(messages, options = {}) {
             const config = typeof window.getApiConfig === 'function' ? window.getApiConfig() : (window.apiConfig || {});
             const endpoint = normalizeApiEndpoint(config);
@@ -312,7 +348,10 @@
                 },
                 body: JSON.stringify({
                     model: config.model || 'gpt-3.5-turbo',
-                    messages,
+                    messages: [
+                        { role: 'system', content: buildXUserBoundaryPrompt() },
+                        ...(Array.isArray(messages) ? messages : [])
+                    ],
                     temperature: parseFloat(config.temperature) || options.temperature || 0.8
                 })
             });
@@ -359,6 +398,62 @@
             return parts.join('\n\n');
         }
 
+        function isCurrentXUserAuthor(raw = {}) {
+            const authorId = safeText(raw.authorId || raw.accountId || raw.id).toLocaleLowerCase();
+            if (authorId === 'me' || authorId === 'user:self' || authorId === 'current-user') return true;
+
+            const candidateHandle = safeText(raw.handle || raw.authorHandle || raw.accountHandle);
+            const userHandle = safeText(currentProfile?.handle);
+            if (candidateHandle && userHandle
+                && canonicalAccountHandle(candidateHandle, raw.authorName || raw.name) === canonicalAccountHandle(userHandle, currentProfile?.name)) {
+                return true;
+            }
+
+            const candidateName = safeText(raw.authorName || raw.name || raw.displayName).toLocaleLowerCase();
+            const userName = safeText(currentProfile?.name).toLocaleLowerCase();
+            return !!candidateName && !!userName && candidateName === userName;
+        }
+
+        function sanitizeApiGeneratedComment(rawComment) {
+            if (!rawComment || typeof rawComment !== 'object' || isCurrentXUserAuthor(rawComment)) return null;
+            const sanitized = { ...rawComment };
+            if (Array.isArray(rawComment.replies)) {
+                sanitized.replies = rawComment.replies.map(sanitizeApiGeneratedComment).filter(Boolean);
+            }
+            return sanitized;
+        }
+
+        function sanitizeApiGeneratedPost(rawPost, options = {}) {
+            if (!rawPost || typeof rawPost !== 'object') return null;
+            if (!options.forceOuterAuthor && isCurrentXUserAuthor(rawPost)) return null;
+            const sanitized = { ...rawPost };
+            if (Array.isArray(rawPost.comments)) {
+                sanitized.comments = rawPost.comments.map(sanitizeApiGeneratedComment).filter(Boolean);
+            }
+            if (Array.isArray(rawPost.commentList)) {
+                sanitized.commentList = rawPost.commentList.map(sanitizeApiGeneratedComment).filter(Boolean);
+            }
+            if (rawPost.refPost) sanitized.refPost = sanitizeApiGeneratedPost(rawPost.refPost);
+            return sanitized;
+        }
+
+        function sanitizeApiGeneratedPosts(rawPosts, options = {}) {
+            return (Array.isArray(rawPosts) ? rawPosts : [])
+                .map((post) => sanitizeApiGeneratedPost(post, options))
+                .filter(Boolean);
+        }
+
+        function sanitizeApiGeneratedAuthors(items = []) {
+            return (Array.isArray(items) ? items : []).filter((item) => item && !isCurrentXUserAuthor(item));
+        }
+
+        function getGeneratedTranslation(raw = {}, originalText = '') {
+            const translation = safeText(
+                raw.translation || raw.translationZh || raw.zhTranslation || raw.translatedText || raw.textZh || raw.chineseTranslation
+            );
+            return translation && translation !== safeText(originalText) ? translation : '';
+        }
+
         function normalizeGeneratedComment(comment, fallbackIndex = 0) {
             const text = safeText(comment.text || comment.content);
             if (!text) return null;
@@ -372,6 +467,7 @@
                 name: identity.name,
                 handle: identity.handle,
                 text,
+                translation: getGeneratedTranslation(comment, text),
                 replies: (Array.isArray(comment.replies) ? comment.replies : []).map((reply, index) => {
                     const replyText = safeText(reply.text || reply.content);
                     if (!replyText) return null;
@@ -385,6 +481,7 @@
                         name: replyIdentity.name,
                         handle: replyIdentity.handle,
                         text: replyText,
+                        translation: getGeneratedTranslation(reply, replyText),
                         replies: []
                     };
                 }).filter(Boolean)
@@ -423,6 +520,7 @@
                 name: identity.name,
                 handle: identity.handle,
                 text,
+                translation: getGeneratedTranslation(raw, text),
                 reposts: formatCompactCount(frontendMetrics.reposts),
                 likes: formatCompactCount(frontendMetrics.likes),
                 comments: formatCompactCount(Math.max(Number(raw.commentsCount) || 0, comments.length)),
@@ -492,7 +590,7 @@
                 id,
                 name,
                 handle,
-                avatar: safeText(raw.avatar || raw.authorAvatar, name.slice(0, 1).toUpperCase()),
+                avatar: normalizePersonAvatar(raw.avatar || raw.authorAvatar, `${id}:${handle}`),
                 bio: safeText(raw.bio || raw.signature, '暂无简介'),
                 persona: safeText(raw.persona),
                 coverSeed: safeText(raw.coverSeed, `${id}-${index}-cover`),
@@ -513,10 +611,10 @@
                 });
         }
 
-        function clampAdvanceCount(value, fallback) {
+        function clampAdvanceCount(value, fallback, maximum = 20) {
             const parsed = Number.parseInt(value, 10);
             if (!Number.isFinite(parsed)) return fallback;
-            return Math.min(20, Math.max(1, parsed));
+            return Math.min(maximum, Math.max(1, parsed));
         }
 
         function normalizeAdvancePreferences(raw = {}) {
@@ -525,7 +623,7 @@
                 strangersEnabled: source.strangersEnabled !== false,
                 strangersCount: clampAdvanceCount(source.strangersCount, defaultAdvancePreferences.strangersCount),
                 trendsEnabled: source.trendsEnabled !== false,
-                trendsCount: clampAdvanceCount(source.trendsCount, defaultAdvancePreferences.trendsCount),
+                trendsCount: clampAdvanceCount(source.trendsCount, defaultAdvancePreferences.trendsCount, maxXTrends),
                 postsEnabled: source.postsEnabled !== false,
                 postsCount: clampAdvanceCount(source.postsCount, defaultAdvancePreferences.postsCount)
             };
@@ -584,7 +682,7 @@
                 xGeneratedPosts: Array.isArray(safe.xGeneratedPosts) ? safe.xGeneratedPosts : [],
                 xAccounts: normalizeXAccounts(safe.xAccounts),
                 xTrends: Array.isArray(safe.xTrends)
-                    ? normalizeTrendList(safe.xTrends)
+                    ? normalizeTrendList(safe.xTrends).slice(0, maxXTrends)
                     : defaultTrends.map((trend) => ({ ...trend })),
                 xAdvancePreferences: normalizeAdvancePreferences(safe.xAdvancePreferences)
             };
@@ -633,7 +731,7 @@
                     id: 'me',
                     name: safeText(currentProfile?.name, displayName),
                     handle: makeHandle(currentProfile?.name || displayName, currentProfile?.handle || displayHandle),
-                    avatar: safeText(currentProfile?.avatar, avatar || displayName.slice(0, 1).toUpperCase()),
+                    avatar: normalizePersonAvatar(currentProfile?.avatar || avatar, `me:${currentHandle || displayName}`),
                     kind: 'me'
                 };
             }
@@ -649,7 +747,7 @@
                     id: String(char.id),
                     name: safeText(char.name || char.nickname, displayName),
                     handle: makeHandle(char.name || displayName, char.handle || displayHandle),
-                    avatar: safeText(char.avatar || char.avatarUrl, avatar || displayName.slice(0, 1).toUpperCase()),
+                    avatar: normalizePersonAvatar(char.avatar || char.avatarUrl || avatar, `char:${char.id || displayHandle}`),
                     kind: 'char'
                 };
             }
@@ -665,7 +763,7 @@
                 id: requestedId || makeAccountId(displayHandle, displayName),
                 name: displayName,
                 handle: displayHandle,
-                avatar: safeText(avatar, displayName.slice(0, 1).toUpperCase()),
+                avatar: normalizePersonAvatar(avatar, `account:${requestedId || displayHandle || displayName}`),
                 kind: 'unknown'
             };
         }
@@ -725,7 +823,7 @@
 
         function renderTrends() {
             if (!trendList) return;
-            const trends = normalizeTrendList(getXState().xTrends || []);
+            const trends = normalizeTrendList(getXState().xTrends || []).slice(0, maxXTrends);
             if (trends.length === 0) {
                 trendList.innerHTML = '<div class="x-empty-state">暂无热搜，点击右上角搜索生成。</div>';
                 return;
@@ -1016,12 +1114,12 @@
                     <div class="x-char-edit-body">
                         <div class="x-edit-avatar-row">
                             <button class="x-edit-avatar-preview" id="x-char-edit-avatar-preview" type="button" aria-label="上传 Char 头像"><span>C</span></button>
-                            <input type="file" id="x-char-edit-avatar-input" accept="image/*" style="display:none;">
+                            <input type="file" id="x-char-edit-avatar-input" accept="image/jpeg,image/png,image/webp" style="display:none;">
                             <div><strong>Avatar</strong><p>仅修改 X 中的资料。</p></div>
                         </div>
                         <div class="x-edit-banner-row">
                             <button class="x-edit-banner-preview" id="x-char-edit-cover-preview" type="button" aria-label="上传 Char 主页背景"><span>Cover</span></button>
-                            <input type="file" id="x-char-edit-cover-input" accept="image/*" style="display:none;">
+                            <input type="file" id="x-char-edit-cover-input" accept="image/jpeg,image/png,image/webp" style="display:none;">
                             <div><strong>Background</strong><p>上传图片，或使用下方随机背景。</p></div>
                         </div>
                         <label class="x-edit-field"><span>Name</span><input id="x-char-edit-name" type="text" maxlength="32"></label>
@@ -1053,12 +1151,12 @@
                     <div class="x-char-edit-body">
                         <div class="x-edit-avatar-row">
                             <button class="x-edit-avatar-preview" id="x-edit-super-topic-avatar-preview" type="button" aria-label="上传超话头像"><span>超</span></button>
-                            <input type="file" id="x-edit-super-topic-avatar-input" accept="image/*" hidden>
+                            <input type="file" id="x-edit-super-topic-avatar-input" accept="image/jpeg,image/png,image/webp" hidden>
                             <div><strong>头像</strong><p>再次点击已选超话头像可进入此页面。</p></div>
                         </div>
                         <div class="x-edit-banner-row">
                             <button class="x-edit-banner-preview" id="x-edit-super-topic-banner-preview" type="button" aria-label="上传超话封面"><span>Cover</span></button>
-                            <input type="file" id="x-edit-super-topic-banner-input" accept="image/*" hidden>
+                            <input type="file" id="x-edit-super-topic-banner-input" accept="image/jpeg,image/png,image/webp" hidden>
                             <div><strong>封面</strong><p>用于超话主页顶部背景。</p></div>
                         </div>
                         <label class="x-edit-field"><span>超话名称</span><input id="x-edit-super-topic-name" type="text" maxlength="40"></label>
@@ -1156,7 +1254,7 @@
                                         <strong>推进热搜</strong>
                                         <span>新热搜置顶，旧热搜依次下移</span>
                                     </span>
-                                    <input class="x-advance-count" id="x-advance-trends-count" type="number" min="1" max="20" inputmode="numeric" aria-label="热搜数量">
+                                    <input class="x-advance-count" id="x-advance-trends-count" type="number" min="1" max="15" inputmode="numeric" aria-label="热搜数量">
                                 </label>
                                 <label class="x-advance-option">
                                     <input id="x-advance-posts-toggle" type="checkbox">
@@ -1265,7 +1363,10 @@
                 handle: makeHandle(name, source.handle || fallback.handle),
                 bio: safeText(source.bio || source.signature, fallback.bio || defaultProfile.bio),
                 persona: safeText(source.persona, fallback.persona || ''),
-                avatar: safeText(source.avatar || source.avatarUrl, fallback.avatar || ''),
+                avatar: normalizePersonAvatar(
+                    source.avatar || source.avatarUrl || fallback.avatar,
+                    `me:${source.handle || fallback.handle || name}`
+                ),
                 banner: safeText(source.banner || source.bannerUrl, fallback.banner || '')
             };
         }
@@ -1273,40 +1374,82 @@
         function setAvatarNode(node, profile) {
             if (!node) return;
             const name = safeText(profile.name, 'User');
-            const initial = name.slice(0, 1).toUpperCase();
-            if (profile.avatar) {
-                node.innerHTML = `<img src="${escapeHtml(profile.avatar)}" alt="">`;
-            } else {
-                node.textContent = initial;
-            }
+            node.innerHTML = buildAvatarHtml(profile.avatar, `me:${profile.handle || name}`);
+        }
+
+        function buildUnifiedProfileContentHtml({ identity, posts = [], stats = [], actionsHtml = '', isSelf = false }) {
+            const safeIdentity = identity || {};
+            const name = safeText(safeIdentity.name, 'User');
+            const handle = makeHandle(name, safeIdentity.handle);
+            const bio = safeText(safeIdentity.bio, '暂无简介');
+            const avatarId = isSelf ? ' id="x-profile-avatar"' : '';
+            const nameId = isSelf ? ' id="x-profile-name"' : '';
+            const handleId = isSelf ? ' id="x-profile-handle"' : '';
+            const bioId = isSelf ? ' id="x-profile-bio"' : '';
+            const normalizedStats = (Array.isArray(stats) ? stats : []).slice(0, 3);
+
+            return `
+                <div class="x-profile-card x-unified-profile-card">
+                    <div class="x-profile-avatar"${avatarId}>${buildAvatarHtml(safeIdentity.avatar, `${safeIdentity.id || handle}:${name}`)}</div>
+                    <div class="x-dm-profile-heading-row">
+                        <div class="x-dm-profile-identity">
+                            <h2${nameId}>${escapeHtml(name)}</h2>
+                            <span${handleId}>${escapeHtml(handle)}</span>
+                        </div>
+                        <div class="x-dm-profile-actions x-unified-profile-actions">${actionsHtml}</div>
+                    </div>
+                    <p${bioId}>${escapeHtml(bio)}</p>
+                    <div class="x-profile-stats">
+                        ${normalizedStats.map((stat) => `<div><strong>${escapeHtml(stat.value)}</strong><span>${escapeHtml(stat.label)}</span></div>`).join('')}
+                    </div>
+                </div>
+                <div class="x-profile-tabs x-unified-profile-tabs">
+                    <button class="active" type="button" data-x-profile-tab="posts">Posts</button>
+                    <button type="button" data-x-profile-tab="photos">Photos</button>
+                </div>
+                <div class="x-profile-panel active x-profile-posts-panel" data-x-profile-panel="posts">${buildProfilePostsHtml(posts)}</div>
+                <div class="x-profile-panel" data-x-profile-panel="photos">${buildProfilePhotosHtml(posts)}</div>
+            `;
         }
 
         function renderProfile() {
             currentProfile = resolveProfile();
-            const nameEl = document.getElementById('x-profile-name');
-            const handleEl = document.getElementById('x-profile-handle');
-            const bioEl = document.getElementById('x-profile-bio');
             const coverEl = document.getElementById('x-profile-cover');
-            const postNameEl = document.getElementById('x-profile-post-name');
-            const postHandleEl = document.getElementById('x-profile-post-handle');
-
-            if (nameEl) nameEl.textContent = currentProfile.name;
-            if (handleEl) handleEl.textContent = currentProfile.handle;
-            if (bioEl) bioEl.textContent = currentProfile.bio;
-            if (postNameEl) postNameEl.textContent = currentProfile.name;
-            if (postHandleEl) postHandleEl.textContent = `${currentProfile.handle} · pinned`;
+            const profileScroll = document.getElementById('x-profile-scroll');
+            setAvatarNode(document.getElementById('x-compose-author-avatar'), currentProfile);
             if (coverEl) {
                 coverEl.style.backgroundImage = currentProfile.banner
                     ? `linear-gradient(180deg, rgba(0,0,0,0.08), rgba(0,0,0,0.34)), url("${currentProfile.banner}")`
                     : '';
             }
 
-            setAvatarNode(document.getElementById('x-profile-avatar'), currentProfile);
-            setAvatarNode(document.getElementById('x-profile-post-avatar'), currentProfile);
-
-            postData.profile.avatar = currentProfile.avatar || currentProfile.name.slice(0, 1).toUpperCase();
+            postData.profile.avatar = normalizePersonAvatar(currentProfile.avatar, `me:${currentProfile.handle || currentProfile.name}`);
             postData.profile.name = currentProfile.name;
             postData.profile.handle = `${currentProfile.handle} · pinned`;
+
+            if (profileScroll) {
+                const identity = {
+                    id: 'me',
+                    kind: 'me',
+                    name: currentProfile.name,
+                    handle: currentProfile.handle,
+                    avatar: currentProfile.avatar,
+                    bio: currentProfile.bio
+                };
+                const posts = getIdentityProfilePosts(identity);
+                profileScroll.innerHTML = buildUnifiedProfileContentHtml({
+                    identity,
+                    posts,
+                    isSelf: true,
+                    actionsHtml: '<button class="x-profile-edit" id="x-profile-edit-btn" type="button">Edit profile</button>',
+                    stats: [
+                        { value: posts.length, label: 'Posts' },
+                        { value: '13.1K', label: 'Followers' },
+                        { value: '520', label: 'Following' }
+                    ]
+                });
+                profileScroll.querySelectorAll('.x-profile-feed-card').forEach(bindPostCard);
+            }
         }
 
         function renderImagePreview(button, src, fallbackText) {
@@ -1433,6 +1576,36 @@
             return topic ? `#${topic}` : '';
         }
 
+        function renderPostTextHtml(post = {}) {
+            const topicTag = normalizeComposeTopicTag(post.topicTag);
+            let text = safeText(post.text);
+            const hashtagPattern = /#[^\s#，。！？、,.!?;；:：]+/g;
+            const existingTags = text.match(hashtagPattern) || [];
+            const hasTopicTag = topicTag && existingTags.some((tag) => tag.toLocaleLowerCase() === topicTag.toLocaleLowerCase());
+            if (topicTag && !hasTopicTag) text = `${text}${text ? ' ' : ''}${topicTag}`;
+
+            let cursor = 0;
+            let html = '';
+            text.replace(hashtagPattern, (tag, offset) => {
+                html += escapeHtml(text.slice(cursor, offset));
+                const normalizedTag = normalizeComposeTopicTag(tag);
+                html += `<button class="x-post-topic-link" type="button" data-topic-tag="${escapeHtml(normalizedTag)}">${escapeHtml(tag)}</button>`;
+                cursor = offset + tag.length;
+                return tag;
+            });
+            html += escapeHtml(text.slice(cursor));
+            return html;
+        }
+
+        function buildExpandableTranslationHtml(translation, extraClass = '') {
+            const text = safeText(translation);
+            if (!text) return '';
+            return `
+                <button class="x-translation-toggle ${escapeHtml(extraClass)}" type="button" aria-expanded="false">翻译</button>
+                <p class="x-translation-text" hidden>${escapeHtml(text)}</p>
+            `;
+        }
+
         function renderComposeImageDraft() {
             const icon = composeImageButton?.querySelector('i');
             const label = composeImageButton?.querySelector('.x-compose-image-copy');
@@ -1487,14 +1660,15 @@
             const text = safeText(composeTextInput?.value, '新帖子草稿');
             tempPostCounter += 1;
             const id = `temp-${Date.now()}-${tempPostCounter}`;
-            const topicTag = normalizeComposeTopicTag(composeTopicInput?.value);
             const superTopic = currentComposeSuperId
                 ? (getXState().xTopics || []).find((item) => String(item.id || item.name) === String(currentComposeSuperId))
                 : null;
+            const topicTag = normalizeComposeTopicTag(composeTopicInput?.value)
+                || normalizeComposeTopicTag(superTopic?.name || superTopic?.title);
             const rawPost = {
                 id,
                 authorId: 'me',
-                authorAvatar: currentProfile.avatar || currentProfile.name.slice(0, 1).toUpperCase(),
+                authorAvatar: normalizePersonAvatar(currentProfile.avatar, `me:${currentProfile.handle || currentProfile.name}`),
                 authorName: currentProfile.name,
                 handle: currentProfile.handle,
                 text,
@@ -1551,17 +1725,6 @@
             });
         }
 
-        function buildPostLinkChips(post) {
-            const superName = safeText(post.superTopicName);
-            const superId = safeText(post.superTopicId);
-            const topicTag = normalizeComposeTopicTag(post.topicTag);
-            if (!superName && !topicTag) return '';
-            return `<div class="x-post-link-chips">
-                ${superName ? `<button class="x-post-super-link" type="button" data-super-topic-id="${escapeHtml(superId || superName)}"><i class="fas fa-users"></i>${escapeHtml(superName)}</button>` : ''}
-                ${topicTag ? `<button class="x-post-topic-link" type="button" data-topic-tag="${escapeHtml(topicTag)}"><i class="fas fa-hashtag"></i>${escapeHtml(topicTag.replace(/^#/, ''))}</button>` : ''}
-            </div>`;
-        }
-
         function buildFeedCardHtml(post) {
             return `
                 ${buildAuthorAvatarButton(post, 'x-feed-avatar x-avatar')}
@@ -1570,9 +1733,8 @@
                         <strong>${escapeHtml(post.name)}</strong>
                         <span>${escapeHtml(post.handle)} · now</span>
                     </div>
-                    <p>${escapeHtml(post.text)}</p>
+                    <p>${renderPostTextHtml(post)}</p>
                     ${renderPostImages(getPostImages(post))}
-                    ${buildPostLinkChips(post)}
                     <div class="x-feed-actions">
                         <span><i class="far fa-comment"></i> ${escapeHtml(post.comments || '0')}</span>
                         <button class="x-feed-forward-btn" type="button" data-post-id="${escapeHtml(post.id)}" aria-label="转发帖子"><i class="fas fa-retweet"></i> <span>${escapeHtml(post.reposts || '0')}</span></button>
@@ -1666,11 +1828,12 @@
                 const worldbook = getSelectedWorldBookContext(`${topic} ${currentProfile.persona} ${currentProfile.bio}`);
                 const reusableAuthors = getReusableAuthorContext();
                 const prompt = `Return strict JSON only. Generate 1 to 3 X/Twitter style posts for the user's feed specifically about the topic: "${topic}".
+The current User is context only. Every generated post, comment and reply must be authored by a distinct non-User account.
 Important: Every post text MUST include the exact text "${topic}" within it as a hashtag or text.
-Each post must include: authorName, handle, text, likes, reposts, commentsCount, mediaType ("text" or "image"), optional imagePrompt/images, and comments.
+Each post must include: authorName, handle, text, translation, likes, reposts, commentsCount, mediaType ("text" or "image"), optional imagePrompt/images, and comments. Every comment and reply must also include translation.
 Each post must have at least 10 comments. Across each post, replies inside comments must total at least 10.
 Images are text placeholders: describe the image content in imagePrompt or images[].text.
-ALL text values, including imagePrompt and any text inside the images array describing the picture, MUST be written in Chinese (简体中文). Do not use English for image descriptions.
+Authors may use any language that naturally fits their identity and context. For every non-Chinese post, comment or reply, provide an accurate Simplified Chinese translation in its translation field; use "" when the original is already Chinese. Keep imagePrompt descriptions in Simplified Chinese.
 X user: ${JSON.stringify(currentProfile)}
 Reusable existing authors (optional; when used, return their exact authorId): ${JSON.stringify(reusableAuthors)}
 Worldbook:
@@ -1682,7 +1845,7 @@ ${worldbook || 'None'}`;
                 ], { temperature: 0.9 });
                 
                 const parsed = parseJsonPayload(raw);
-                const posts = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.posts) ? parsed.posts : []);
+                const posts = sanitizeApiGeneratedPosts(Array.isArray(parsed) ? parsed : (Array.isArray(parsed.posts) ? parsed.posts : []));
                 
                 posts.forEach(p => {
                     if (!p.text.includes(topic)) {
@@ -1802,10 +1965,11 @@ ${worldbook || 'None'}`;
                 const worldbook = getSelectedWorldBookContext(`${topicName} ${charsInfo}`);
                 const reusableAuthors = getReusableAuthorContext();
                 
-                const prompt = `Return strict JSON only. You need to generate an update for a celebrity/entertainment "Super Topic" (超话) named "${topicName}" in a Chinese social app similar to Weibo.
+                const prompt = `Return strict JSON only. Generate an update for a celebrity/entertainment community named "${topicName}" inside the international X app.
 
 Please generate a JSON OBJECT containing the celebrity's online status and an array of 15 to 20 feed items.
 The feed items should be a mix of fan posts, photo posts, featured high-quality posts, and moments.
+The current User is context only and must never appear as the author of any post, comment, reply, moment, or nested refPost.
 
 JSON Format Requirements:
 {
@@ -1815,10 +1979,10 @@ JSON Format Requirements:
   },
   "items": [
     // 1. "Posts" (帖子): Fan/entertainment text posts.
-    // Format: { "authorName": "", "handle": "", "text": "", "likes": 0, "reposts": 0, "commentsCount": 10, "mediaType": "text", "comments": [ {"authorName": "", "text": ""} ] }
+    // Format: { "authorName": "", "handle": "", "text": "", "translation": "", "likes": 0, "reposts": 0, "commentsCount": 10, "mediaType": "text", "comments": [ {"authorName": "", "text": "", "translation": ""} ] }
 
     // 2. "Photos" (图片): Posts containing images. 
-    // Format: { "authorName": "", "handle": "", "text": "", "likes": 0, "reposts": 0, "commentsCount": 10, "mediaType": "image", "imagePrompt": "Description of image", "comments": [ {"authorName": "", "text": ""} ] }
+    // Format: { "authorName": "", "handle": "", "text": "", "translation": "", "likes": 0, "reposts": 0, "commentsCount": 10, "mediaType": "image", "imagePrompt": "简体中文图片描述", "comments": [ {"authorName": "", "text": "", "translation": ""} ] }
 
     // 3. "Featured" (精选): High-quality hot posts (can be text or image). MUST add "isFeatured": true.
     // Format: { "authorName": "", "handle": "", "text": "", "likes": 5000, "reposts": 1000, "commentsCount": 50, "mediaType": "text|image", "isFeatured": true, "comments": [...] }
@@ -1833,7 +1997,7 @@ JSON Format Requirements:
 CRITICAL REQUIREMENT: EVERY SINGLE POST (including normal feed items AND the nested "refPost" inside moments) MUST contain an array of "comments" with at least 10 valid comment objects. For nested "replies" inside comments, they also count towards the total of 10. If the moment actionText says the celebrity "评论了这条帖子" (commented on this post), YOU MUST include the celebrity's comment directly inside the refPost's "comments" array!
 
 Ensure the "items" array has at least 3 items with "isFeatured": true, at least 3 items with "mediaType": "image", and at least 3 items with "isMoment": true.
-ALL text values, including imagePrompt and any text inside the images array describing the picture, MUST be written in Chinese (简体中文). Do not use English for image descriptions.
+Authors may use any language natural to their identity and context. Every post, nested refPost, comment and reply must include translation: an accurate Simplified Chinese translation for non-Chinese originals, or "" for Chinese originals. Keep imagePrompt descriptions in Simplified Chinese.
 
 Topic Name: ${topicName}
 Topic Characters Info:
@@ -1878,6 +2042,7 @@ ${worldbook || 'None'}
                     }
                 });
 
+                allItems = sanitizeApiGeneratedPosts(allItems);
                 allItems.forEach(p => {
                     p.topicTag = topicName;
                     p.superTopicId = String(topic.id || topic.name);
@@ -1982,9 +2147,9 @@ ${worldbook || 'None'}
                                 <strong>${escapeHtml(post.refPost.name)}</strong>
                                 <span>${escapeHtml(post.refPost.handle)}</span>
                             </div>
-                            <p>${escapeHtml(post.refPost.text)}</p>
+                            <p>${renderPostTextHtml(post.refPost)}</p>
                         </div>
-                    ` : `<p>${escapeHtml(post.text)}</p>`;
+                    ` : `<p>${renderPostTextHtml(post)}</p>`;
 
                     card.innerHTML = `
                         <div class="x-feed-body" style="margin-left: 0;">
@@ -2083,7 +2248,7 @@ ${worldbook || 'None'}
             if (avatarEl) {
                 const avatar = safeText(topic.avatar || topic.icon, safeText(topic.name || topic.title, '超').slice(0, 1));
                 if (avatar.startsWith('data:') || avatar.startsWith('http')) {
-                    avatarEl.innerHTML = `<img src="${escapeHtml(avatar)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:12px;">`;
+                    avatarEl.innerHTML = `<img src="${escapeHtml(avatar)}" alt="">`;
                 } else {
                     avatarEl.textContent = avatar;
                 }
@@ -2448,6 +2613,7 @@ ${worldbook || 'None'}
                     name: comment.name || 'User',
                     handle: comment.handle || '@user',
                     text: comment.text || '',
+                    translation: safeText(comment.translation),
                     replies: Array.isArray(comment.replies) ? comment.replies : []
                 }))
             };
@@ -2534,6 +2700,39 @@ ${worldbook || 'None'}
                 .find((reply) => String(reply.id) === String(replyId)) || null;
         }
 
+        function deletePostComment(commentId, replyId = '') {
+            if (!currentDetailPostId || !commentId) return;
+            const thread = getPostThread(currentDetailPostId);
+            const rootComment = findCommentById(thread, commentId);
+            if (!rootComment) return;
+            let removedCount = 0;
+
+            if (replyId) {
+                const replies = Array.isArray(rootComment.replies) ? rootComment.replies : [];
+                const replyIndex = replies.findIndex((reply) => String(reply.id) === String(replyId));
+                if (replyIndex < 0) return;
+                replies.splice(replyIndex, 1);
+                rootComment.replies = replies;
+                removedCount = 1;
+            } else {
+                const commentIndex = thread.comments.findIndex((comment) => String(comment.id) === String(commentId));
+                if (commentIndex < 0) return;
+                removedCount = 1 + (Array.isArray(thread.comments[commentIndex].replies) ? thread.comments[commentIndex].replies.length : 0);
+                thread.comments.splice(commentIndex, 1);
+            }
+
+            thread.commentsCount = Math.max(0, Number(thread.commentsCount) - removedCount);
+            savePostThread(currentDetailPostId, thread);
+            if (String(replyTarget?.commentId || '') === String(commentId)
+                && (!replyId || String(replyTarget?.replyId || '') === String(replyId))) {
+                setReplyTarget(null);
+            }
+            renderCommentsList(currentDetailPostId, thread);
+            updatePostCountNodes(currentDetailPostId, thread);
+            const commentsEl = document.getElementById('x-detail-comments');
+            if (commentsEl) commentsEl.textContent = formatCompactCount(thread.commentsCount);
+        }
+
         function renderCommentsList(postId, thread) {
             const commentsList = document.getElementById('x-comments-list');
             if (!commentsList) return;
@@ -2547,7 +2746,12 @@ ${worldbook || 'None'}
                                 <strong>${escapeHtml(reply.name)}</strong>
                                 <span>${escapeHtml(reply.handle)}</span>
                                 <p>${reply.replyToName ? `<b>回复 @${escapeHtml(reply.replyToName)}</b> ` : ''}${escapeHtml(reply.text)}</p>
-                                <button class="x-comment-reply-btn" type="button" data-comment-id="${escapeHtml(comment.id)}" data-reply-id="${escapeHtml(reply.id)}" data-reply-name="${escapeHtml(reply.name)}">Reply</button>
+                                <div class="x-comment-action-row">
+                                    <button class="x-comment-reply-btn" type="button" data-comment-id="${escapeHtml(comment.id)}" data-reply-id="${escapeHtml(reply.id)}" data-reply-name="${escapeHtml(reply.name)}">回复</button>
+                                    ${reply.translation ? '<button class="x-translation-toggle x-comment-translation-toggle" type="button" aria-expanded="false">翻译</button>' : ''}
+                                    <button class="x-comment-delete-btn" type="button" data-comment-id="${escapeHtml(comment.id)}" data-reply-id="${escapeHtml(reply.id)}">删除</button>
+                                </div>
+                                ${reply.translation ? `<p class="x-translation-text" hidden>${escapeHtml(reply.translation)}</p>` : ''}
                             </div>
                         </div>
                     `).join('')}</div>`
@@ -2559,7 +2763,12 @@ ${worldbook || 'None'}
                             <strong>${escapeHtml(comment.name)}</strong>
                             <span>${escapeHtml(comment.handle)}</span>
                             <p>${escapeHtml(comment.text)}</p>
-                            <button class="x-comment-reply-btn" type="button" data-comment-id="${escapeHtml(comment.id)}">Reply</button>
+                            <div class="x-comment-action-row">
+                                <button class="x-comment-reply-btn" type="button" data-comment-id="${escapeHtml(comment.id)}">回复</button>
+                                ${comment.translation ? '<button class="x-translation-toggle x-comment-translation-toggle" type="button" aria-expanded="false">翻译</button>' : ''}
+                                <button class="x-comment-delete-btn" type="button" data-comment-id="${escapeHtml(comment.id)}">删除</button>
+                            </div>
+                            ${comment.translation ? `<p class="x-translation-text" hidden>${escapeHtml(comment.translation)}</p>` : ''}
                             ${repliesHtml}
                         </div>
                     </div>
@@ -2645,10 +2854,11 @@ ${worldbook || 'None'}
             if (!text || !name) return null;
             return {
                 id: String(reply.id || makeLocalId('auto-reply')),
-                avatar: reply.authorAvatar || reply.avatar || name.slice(0, 1).toUpperCase(),
+                avatar: normalizePersonAvatar(reply.authorAvatar || reply.avatar, `reply:${reply.authorId || reply.handle || name}`),
                 name,
                 handle: makeHandle(name, reply.handle || name),
                 text,
+                translation: getGeneratedTranslation(reply, text),
                 replyToId: replyTo.id || '',
                 replyToName: replyTo.name || '',
                 replies: []
@@ -2660,7 +2870,7 @@ ${worldbook || 'None'}
             if (!name) return null;
             return {
                 id: String(visitor.id || makeLocalId('x-visitor')),
-                avatar: visitor.avatar || visitor.authorAvatar || name.slice(0, 1).toUpperCase(),
+                avatar: normalizePersonAvatar(visitor.avatar || visitor.authorAvatar, `visitor:${visitor.id || visitor.handle || name}`),
                 name,
                 handle: makeHandle(name, visitor.handle || name),
                 bio: safeText(visitor.bio || visitor.reason || visitor.text),
@@ -2678,14 +2888,16 @@ ${worldbook || 'None'}
                 const prompt = `Return strict JSON only. A user just commented in an X/Twitter-style post detail page. Generate engagement around this user's exact comment.
 Output JSON shape:
 {
-  "replies": [{"authorName":"", "handle":"", "text":""}],
-  "visitors": [{"name":"", "handle":"", "bio":"", "avatar":"", "time":"now"}]
+  "replies": [{"authorName":"", "handle":"", "text":"", "translation":""}],
+  "visitors": [{"name":"", "handle":"", "bio":"", "translation":"", "avatar":"", "time":"now"}]
 }
 Rules:
 - replies must contain at least 5 items.
 - visitors must contain 2 to 5 items.
+- Every generated reply and visitor must be a non-User identity. Never write another comment or reply as the current User.
 - Replies must directly respond to the user's comment, not to the whole post in general.
 - Keep replies short, social, varied, and realistic. Mix agreement, disagreement, teasing, clarification, and curiosity.
+- Each account may use the language natural to its identity. For non-Chinese reply or bio text, translation must contain Simplified Chinese; for Chinese originals use "".
 - Visitors are people who visited the user's profile because of this comment; bio should briefly explain the vibe or reason.
 - Do not include markdown or extra text.
 
@@ -2701,8 +2913,8 @@ User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-leve
                     { role: 'user', content: prompt }
                 ], { temperature: 0.9 });
                 const parsed = parseJsonPayload(raw);
-                const rawReplies = Array.isArray(parsed?.replies) ? parsed.replies : [];
-                const rawVisitors = Array.isArray(parsed?.visitors) ? parsed.visitors : [];
+                const rawReplies = sanitizeApiGeneratedAuthors(Array.isArray(parsed?.replies) ? parsed.replies : []);
+                const rawVisitors = sanitizeApiGeneratedAuthors(Array.isArray(parsed?.visitors) ? parsed.visitors : []);
                 const replyTo = isNestedReply ? { id: userReply.id, name: userReply.name } : {};
                 const generatedReplies = rawReplies
                     .map((reply, index) => normalizeEngagementReply(reply, index, replyTo))
@@ -2772,6 +2984,7 @@ User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-leve
                 handle: safeText(snapshot.handle || snapshot.authorHandle),
                 avatar: safeText(snapshot.avatar || snapshot.authorAvatar),
                 text: safeText(snapshot.text || snapshot.content),
+                translation: getGeneratedTranslation(snapshot, snapshot.text || snapshot.content),
                 topicTag: safeText(snapshot.topicTag),
                 images: Array.isArray(snapshot.images) ? snapshot.images.slice(0, 4) : [],
                 comments: comments.map((comment) => ({
@@ -2780,12 +2993,14 @@ User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-leve
                     name: safeText(comment.name || comment.authorName, 'User'),
                     handle: safeText(comment.handle),
                     text: safeText(comment.text || comment.content),
+                    translation: getGeneratedTranslation(comment, comment.text || comment.content),
                     replies: (Array.isArray(comment.replies) ? comment.replies : []).map((reply) => ({
                         authorId: safeText(reply.authorId),
                         avatar: safeText(reply.avatar || reply.authorAvatar),
                         name: safeText(reply.name || reply.authorName, 'User'),
                         handle: safeText(reply.handle),
-                        text: safeText(reply.text || reply.content)
+                        text: safeText(reply.text || reply.content),
+                        translation: getGeneratedTranslation(reply, reply.text || reply.content)
                     })).filter((reply) => reply.text)
                 })).filter((comment) => comment.text)
             };
@@ -2802,6 +3017,7 @@ User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-leve
                     type,
                     text: safeText(message?.text || message?.content || message?.message),
                     postSnapshot: type === 'post-card' ? normalizePostSnapshot(message?.postSnapshot || message?.post) : null,
+                    translation: getGeneratedTranslation(message, message?.text || message?.content || message?.message),
                     createdAt: Number(message?.createdAt || message?.timestamp || Date.now())
                 };
             }).filter((message) => message.text || message.type === 'post-card');
@@ -2816,18 +3032,53 @@ User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-leve
                 : last.text;
         }
 
+        function getDmUnreadCount(item) {
+            const lastReadAt = Number(item?.lastReadAt) || 0;
+            return normalizeDmMessages(item?.messages)
+                .filter((message) => message.source === 'char' && message.createdAt > lastReadAt)
+                .length;
+        }
+
+        function getDmLatestIncomingAt(item) {
+            return normalizeDmMessages(item?.messages).reduce((latest, message) => (
+                message.source === 'char' ? Math.max(latest, message.createdAt) : latest
+            ), 0);
+        }
+
+        function formatDmTimestamp(value) {
+            const date = new Date(Number(value));
+            if (Number.isNaN(date.getTime())) return '';
+            const now = new Date();
+            const time = new Intl.DateTimeFormat('zh-CN', {
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+            }).format(date);
+            if (date.toDateString() === now.toDateString()) return time;
+            if (date.getFullYear() === now.getFullYear()) {
+                return `${date.getMonth() + 1}月${date.getDate()}日 ${time}`;
+            }
+            return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${time}`;
+        }
+
         function updateMessageSummary(messages = []) {
             const summaryValues = document.querySelectorAll('#x-messages-tab .x-message-summary strong');
+            const unreadCount = messages.reduce((total, item) => total + getDmUnreadCount(item), 0);
             if (summaryValues[0]) summaryValues[0].textContent = String(messages.length);
-            if (summaryValues[1]) summaryValues[1].textContent = '0';
+            if (summaryValues[1]) summaryValues[1].textContent = String(unreadCount);
             if (summaryValues[2]) summaryValues[2].textContent = '0';
+            const messagesNavItem = navItems.find((item) => item.getAttribute('data-target') === 'x-messages-tab');
+            if (messagesNavItem) {
+                messagesNavItem.classList.toggle('has-unread', unreadCount > 0);
+                messagesNavItem.setAttribute('aria-label', unreadCount > 0 ? `Messages，${unreadCount} 条未读` : 'Messages');
+            }
         }
 
         function normalizeDmChar(source = {}, origin = 'manual') {
             const name = safeText(source.nickname || source.name || source.realName, 'Char');
             const handleSource = source.handle || source.realName || source.signature || name;
-            const avatar = safeText(source.avatarUrl || source.avatar);
             const id = String(source.id || makeLocalId(origin));
+            const avatar = normalizePersonAvatar(source.avatarUrl || source.avatar, `char:${id}:${handleSource}`);
             const profilePosts = (Array.isArray(source.profilePosts) ? source.profilePosts : [])
                 .map((post, index) => normalizeGeneratedPost({ ...post, profileOwnerId: id, authorId: id }, index))
                 .filter(Boolean);
@@ -2846,7 +3097,8 @@ User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-leve
                 coverImage: safeText(source.coverImage),
                 profilePosts,
                 profileGeneratedAt: Number(source.profileGeneratedAt) || 0,
-                addedAt: Number(source.addedAt) || Date.now()
+                addedAt: Number(source.addedAt) || Date.now(),
+                lastReadAt: Number(source.lastReadAt) || 0
             };
         }
 
@@ -2862,7 +3114,8 @@ User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-leve
                         ...existing,
                         ...item,
                         messages: item.messages.length ? item.messages : existing.messages,
-                        addedAt: existing.addedAt || item.addedAt
+                        addedAt: existing.addedAt || item.addedAt,
+                        lastReadAt: Math.max(Number(existing.lastReadAt) || 0, Number(item.lastReadAt) || 0)
                     };
                     draft.xDirectMessages.splice(existingIndex, 1);
                     draft.xDirectMessages.unshift(merged);
@@ -2895,16 +3148,22 @@ User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-leve
                 `;
                 return;
             }
-            dmList.innerHTML = messages.map((item) => `
-                <button class="x-message-row x-dm-row" type="button" data-dm-id="${escapeHtml(item.id)}">
+            dmList.innerHTML = messages.map((item) => {
+                const unreadCount = getDmUnreadCount(item);
+                return `
+                <button class="x-message-row x-dm-row ${unreadCount > 0 ? 'has-unread' : ''}" type="button" data-dm-id="${escapeHtml(item.id)}">
                     <div class="x-avatar">${buildAvatarHtml(item.avatar, item.name)}</div>
                     <div>
                         <strong>${escapeHtml(item.name)}</strong>
                         <p>${escapeHtml(getDmLastMessageText(item))}</p>
                     </div>
-                    <span>${escapeHtml(item.origin === 'imessage' ? 'iMessage' : 'X')}</span>
+                    <span class="x-dm-row-side">
+                        <span>${escapeHtml(item.origin === 'imessage' ? 'iMessage' : 'X')}</span>
+                        ${unreadCount > 0 ? `<i class="x-dm-unread-dot" aria-label="${unreadCount} 条未读"></i>` : ''}
+                    </span>
                 </button>
-            `).join('');
+            `;
+            }).join('');
         }
 
         function renderVisitors() {
@@ -3109,12 +3368,28 @@ User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-leve
             if (!identity || !body || !dmProfileView) return;
             const isChar = identity.kind === 'char' && !!charItem;
             const posts = getIdentityProfilePosts(identity);
-            const photosCount = posts.reduce((sum, post) => sum + getPostImages(post).length, 0);
+            const socialSeed = `${identity.id || ''}:${identity.handle || identity.name || ''}`;
+            const followersCount = 1200 + (hashPostMetricSeed(`followers:${socialSeed}`) % 198800);
+            const followingCount = 80 + (hashPostMetricSeed(`following:${socialSeed}`) % 1920);
             const coverSeed = safeText(charItem?.coverSeed || identity.coverSeed, `${identity.id}-cover`);
             const coverUrl = safeText(charItem?.coverImage || identity.coverImage) || getStableExternalImage(coverSeed, 1200, 480);
             const fallbackCover = safeText(currentProfile.banner || generatedImagePlaceholderUrl);
             const following = isChar ? charItem.isFollowing !== false : identity.isFollowing !== false;
             currentProfileIdentity = { ...identity, kind: isChar ? 'char' : 'account' };
+            const actionsHtml = `
+                <button class="x-profile-follow-btn ${following ? 'active' : ''}" type="button" data-profile-follow-id="${escapeHtml(identity.id)}">${following ? '已关注' : '关注'}</button>
+                ${isChar ? `<button class="x-profile-edit" type="button" data-profile-edit-id="${escapeHtml(identity.id)}">Edit</button>` : ''}
+            `;
+            const profileContentHtml = buildUnifiedProfileContentHtml({
+                identity,
+                posts,
+                actionsHtml,
+                stats: [
+                    { value: posts.length, label: 'Posts' },
+                    { value: formatCompactCount(followersCount), label: 'Followers' },
+                    { value: formatCompactCount(followingCount), label: 'Following' }
+                ]
+            });
 
             body.innerHTML = `
                 <div class="x-dm-profile-page-scroll">
@@ -3126,31 +3401,7 @@ User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-leve
                         </div>
                     </div>
                     <div class="x-profile-scroll x-dm-profile-scroll">
-                        <div class="x-profile-card">
-                            <div class="x-profile-avatar">${buildAvatarHtml(identity.avatar, identity.name)}</div>
-                            <div class="x-dm-profile-heading-row">
-                                <div class="x-dm-profile-identity">
-                                    <h2>${escapeHtml(identity.name)}</h2>
-                                    <span>${escapeHtml(identity.handle || '@user')}</span>
-                                </div>
-                                <div class="x-dm-profile-actions">
-                                    <button class="x-profile-follow-btn ${following ? 'active' : ''}" type="button" data-profile-follow-id="${escapeHtml(identity.id)}">${following ? '已关注' : '关注'}</button>
-                                    ${isChar ? `<button class="x-profile-edit" type="button" data-profile-edit-id="${escapeHtml(identity.id)}">Edit</button>` : ''}
-                                </div>
-                            </div>
-                            <p>${escapeHtml(identity.bio || '暂无简介')}</p>
-                            <div class="x-profile-stats">
-                                <div><strong>${posts.length}</strong><span>Posts</span></div>
-                                <div><strong>${isChar ? normalizeDmMessages(charItem.messages).length : 0}</strong><span>Messages</span></div>
-                                <div><strong>${photosCount}</strong><span>Photos</span></div>
-                            </div>
-                        </div>
-                        <div class="x-profile-tabs x-dm-profile-tabs">
-                            <button class="active" type="button" data-dm-profile-tab="posts">Posts</button>
-                            <button type="button" data-dm-profile-tab="photos">Photos</button>
-                        </div>
-                        <div class="x-profile-panel active x-profile-posts-panel" data-dm-profile-panel="posts">${buildProfilePostsHtml(posts)}</div>
-                        <div class="x-profile-panel" data-dm-profile-panel="photos">${buildProfilePhotosHtml(posts)}</div>
+                        ${profileContentHtml}
                     </div>
                 </div>
             `;
@@ -3253,6 +3504,7 @@ User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-leve
 
         function saveCharEdit() {
             if (!currentEditingCharId) return;
+            const previous = getDirectMessageById(currentEditingCharId);
             const name = safeText(document.getElementById('x-char-edit-name')?.value, 'Char');
             const updated = updateDirectMessage(currentEditingCharId, (draft) => {
                 draft.name = name;
@@ -3265,9 +3517,12 @@ User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-leve
                 return draft;
             });
             const id = currentEditingCharId;
+            if (updated) syncCharPostIdentity(updated, previous);
             closeCharEditSheet();
             renderDirectMessages();
             renderDmChat();
+            renderGeneratedPosts();
+            renderSuperFollowBar();
             if (updated) openDmProfile(id);
         }
 
@@ -3285,15 +3540,17 @@ User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-leve
 
         function normalizeCharProfilePosts(rawPosts, item) {
             return (Array.isArray(rawPosts) ? rawPosts : []).map((rawPost, index) => {
+                const charAvatar = normalizePersonAvatar(item.avatar, `char:${item.id}:${item.handle || item.name}`);
                 const post = normalizeGeneratedPost({
                     ...rawPost,
                     authorId: item.id,
                     authorName: item.name,
                     handle: item.handle,
-                    authorAvatar: item.avatar,
+                    authorAvatar: charAvatar,
                     profileOwnerId: item.id
                 }, index);
                 if (!post || getPostImages(post).length === 0 || post.commentList.length < 10) return null;
+                post.avatar = charAvatar;
                 post.images = getPostImages(post).map((image, imageIndex) => ({
                     ...image,
                     url: getStableExternalImage(`${item.id}-${post.id}-${imageIndex}`, 900, 900)
@@ -3305,9 +3562,10 @@ User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-leve
         async function requestCharProfilePostBatch(item, count, excludedTexts = []) {
             const recentChat = normalizeDmMessages(item.messages).slice(-12).map(serializeDmMessageForAi).join('\n');
             const worldbook = getSelectedWorldBookContext(`${item.name} ${item.bio} ${item.persona} ${currentProfile.persona}`);
-            const prompt = `Return strict JSON only: {"posts":[{"authorName":"","handle":"","text":"","likes":0,"reposts":0,"commentsCount":10,"mediaType":"image","imagePrompt":"详细图片描述","comments":[{"authorName":"","handle":"","text":""}]}]}.
+            const prompt = `Return strict JSON only: {"posts":[{"authorName":"","handle":"","text":"","translation":"","likes":0,"reposts":0,"commentsCount":10,"mediaType":"image","imagePrompt":"简体中文图片描述","comments":[{"authorName":"","handle":"","text":"","translation":"","replies":[{"authorName":"","handle":"","text":"","translation":""}]}]}]}.
 Generate exactly ${count} new X profile posts written by this Char. Every post MUST contain at least one imagePrompt or images item and at least 10 distinct top-level comment objects in comments. Replies do not count toward the 10-comment minimum. Posts must feel like the Char's own public life and remain consistent with their persona, recent private conversation, User relationship and worldbook.
-All user-facing text and image descriptions must be Simplified Chinese. Do not return image URLs.
+Only the named Char may author the posts. All generated commenters and repliers must be non-User accounts; never write a comment or reply as the current User.
+The Char and commenters may use any language natural to their identity and context. Every post, comment and reply must include translation: Simplified Chinese for non-Chinese originals, or "" for Chinese originals. Image descriptions must remain Simplified Chinese. Do not return image URLs.
 Char: ${JSON.stringify({ id: item.id, name: item.name, handle: item.handle, bio: item.bio, persona: item.persona })}
 User: ${JSON.stringify({ name: currentProfile.name, handle: currentProfile.handle, bio: currentProfile.bio, persona: currentProfile.persona })}
 Recent private chat: ${recentChat || 'None'}
@@ -3319,7 +3577,10 @@ ${worldbook || 'None'}`;
                 { role: 'user', content: prompt }
             ], { temperature: 0.9 });
             const parsed = parseJsonPayload(raw);
-            const posts = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.posts) ? parsed.posts : []);
+            const posts = sanitizeApiGeneratedPosts(
+                Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.posts) ? parsed.posts : []),
+                { forceOuterAuthor: true }
+            );
             return normalizeCharProfilePosts(posts, item);
         }
 
@@ -3451,22 +3712,105 @@ ${worldbook || 'None'}`;
             return updated;
         }
 
-        function appendDmMessage(dmId, source, text) {
+        function syncCharPostIdentity(char, previous = {}) {
+            if (!char) return;
+            const charId = String(char.id || '');
+            const currentHandle = canonicalAccountHandle(char.handle, char.name);
+            const previousHandle = canonicalAccountHandle(previous?.handle, previous?.name);
+            const avatar = normalizePersonAvatar(char.avatar, `char:${charId}:${char.handle || char.name}`);
+            const matchesChar = (post = {}) => {
+                if (charId && String(post.authorId || post.accountId || '') === charId) return true;
+                const postHandle = canonicalAccountHandle(post.handle || post.authorHandle, post.name || post.authorName);
+                return Boolean(postHandle && (postHandle === currentHandle || postHandle === previousHandle));
+            };
+            const applyIdentity = (post = {}, force = false) => {
+                const refPost = post.refPost ? applyIdentity(post.refPost) : post.refPost;
+                if (!force && !matchesChar(post)) return refPost === post.refPost ? post : { ...post, refPost };
+                return {
+                    ...post,
+                    refPost,
+                    authorId: charId,
+                    authorName: char.name,
+                    name: char.name,
+                    handle: char.handle,
+                    authorAvatar: avatar,
+                    avatar
+                };
+            };
+
+            updateXState((draft) => {
+                draft.xGeneratedPosts = (draft.xGeneratedPosts || []).map((post) => applyIdentity(post));
+                draft.xDirectMessages = (draft.xDirectMessages || []).map((item) => ({
+                    ...item,
+                    profilePosts: String(item.id) === charId
+                        ? (item.profilePosts || []).map((post) => applyIdentity(post, true))
+                        : (item.profilePosts || []).map((post) => applyIdentity(post)),
+                    messages: (item.messages || []).map((message) => ({
+                        ...message,
+                        postSnapshot: message.postSnapshot ? applyIdentity(message.postSnapshot) : message.postSnapshot
+                    }))
+                }));
+            });
+
+            Object.keys(postData).forEach((postId) => {
+                const refreshed = applyIdentity(postData[postId]);
+                if (refreshed !== postData[postId]) postData[postId] = refreshed;
+            });
+        }
+
+        function appendDmMessage(dmId, source, text, translation = '') {
             const content = safeText(text);
             if (!content) return null;
+            const isIncoming = source !== 'user';
+            const isOpenConversation = isIncoming
+                && String(currentDmId || '') === String(dmId)
+                && dmChatView?.classList.contains('active');
             const message = {
                 id: makeLocalId('dm-msg'),
                 source: source === 'user' ? 'user' : 'char',
                 text: content,
+                translation: safeText(translation),
                 createdAt: Date.now()
             };
             updateDirectMessage(dmId, (item) => {
                 item.messages.push(message);
+                if (isOpenConversation) item.lastReadAt = message.createdAt;
                 return item;
             });
             renderDirectMessages();
             renderDmChat();
             return message;
+        }
+
+        function appendDmMessageBatch(dmId, source, entries = []) {
+            const isIncoming = source !== 'user';
+            const isOpenConversation = isIncoming
+                && String(currentDmId || '') === String(dmId)
+                && dmChatView?.classList.contains('active');
+            const createdAt = Date.now();
+            const messages = (Array.isArray(entries) ? entries : [])
+                .map((entry, index) => {
+                    const text = safeText(entry?.text || entry?.content || entry?.message);
+                    if (!text) return null;
+                    return {
+                        id: makeLocalId(`dm-msg-${index}`),
+                        source: source === 'user' ? 'user' : 'char',
+                        text,
+                        translation: getGeneratedTranslation(entry, text),
+                        createdAt: createdAt + index
+                    };
+                })
+                .filter(Boolean);
+            if (!messages.length) return [];
+
+            updateDirectMessage(dmId, (item) => {
+                item.messages.push(...messages);
+                if (isOpenConversation) item.lastReadAt = messages[messages.length - 1].createdAt;
+                return item;
+            });
+            renderDirectMessages();
+            renderDmChat();
+            return messages;
         }
 
         function appendDmPostCard(dmId, postSnapshot) {
@@ -3584,7 +3928,7 @@ ${comments || '暂无评论'}`;
                         <span class="x-avatar">${buildAvatarHtml(post.avatar, post.name)}</span>
                         <span><strong>${escapeHtml(post.name)}</strong><small>${escapeHtml(post.handle)}</small></span>
                     </div>
-                    <p>${escapeHtml(post.text || '分享了一条帖子')}</p>
+                    <p>${renderPostTextHtml({ ...post, text: post.text || '分享了一条帖子' })}</p>
                     ${image ? `<img src="${escapeHtml(image.url || generatedImagePlaceholderUrl)}" alt="" onerror="this.src='${escapeHtml(generatedImagePlaceholderUrl)}'">` : ''}
                     <span class="x-dm-post-card-label"><i class="fab fa-x-twitter"></i> X Post</span>
                 </div>
@@ -3593,6 +3937,11 @@ ${comments || '暂无评论'}`;
 
         function openDmChat(dmId) {
             currentDmId = String(dmId);
+            updateDirectMessage(currentDmId, (item) => {
+                item.lastReadAt = Math.max(Number(item.lastReadAt) || 0, getDmLatestIncomingAt(item));
+                return item;
+            });
+            renderDirectMessages();
             renderDmChat();
             dmChatView?.classList.add('active');
             dmChatView?.setAttribute('aria-hidden', 'false');
@@ -3622,10 +3971,17 @@ ${comments || '暂无评论'}`;
             if (handleEl) handleEl.textContent = item.handle || '@char';
             if (dmChatMessagesEl) {
                 const introHtml = renderDmProfileIntro(item);
+                const timestampHtml = messages.length
+                    ? `<time class="x-dm-time-divider" datetime="${escapeHtml(new Date(messages[0].createdAt).toISOString())}">${escapeHtml(formatDmTimestamp(messages[0].createdAt))}</time>`
+                    : '';
                 dmChatMessagesEl.innerHTML = messages.length
-                    ? `${introHtml}${messages.map((message) => `
+                    ? `${introHtml}${timestampHtml}${messages.map((message) => `
                         <div class="x-dm-chat-bubble-row ${message.source === 'user' ? 'user' : 'char'} ${message.type === 'post-card' ? 'post-card' : ''}">
-                            ${message.type === 'post-card' ? buildDmPostCardHtml(message) : `<div class="x-dm-chat-bubble">${escapeHtml(message.text)}</div>`}
+                            ${message.type === 'post-card'
+                                ? buildDmPostCardHtml(message)
+                                : (message.translation
+                                    ? `<button class="x-dm-chat-bubble x-dm-translation-bubble" type="button" aria-expanded="false" title="点击展开翻译"><span class="x-dm-original-text">${escapeHtml(message.text)}</span><span class="x-dm-expanded-translation" hidden>${escapeHtml(message.translation)}</span></button>`
+                                    : `<div class="x-dm-chat-bubble">${escapeHtml(message.text)}</div>`)}
                         </div>
                     `).join('')}`
                     : `${introHtml}<div class="x-dm-chat-empty">暂无消息</div>`;
@@ -3646,7 +4002,8 @@ ${comments || '暂无评论'}`;
 
         async function generateDmApiReply() {
             if (!currentDmId) return;
-            const item = getDirectMessageById(currentDmId);
+            const requestedDmId = String(currentDmId);
+            const item = getDirectMessageById(requestedDmId);
             if (!item) return;
             const apiBtn = document.getElementById('x-dm-chat-api-btn');
             apiBtn?.classList.add('loading');
@@ -3659,7 +4016,7 @@ ${comments || '暂无评论'}`;
                     .join('\n');
                 const worldbook = getSelectedWorldBookContext(`${item.name} ${item.bio} ${currentProfile.persona}`);
                 const content = await requestXChatCompletion([
-                    { role: 'system', content: 'Reply as the X private-message character. Return only one natural short message, no JSON.' },
+                    { role: 'system', content: 'Reply only as the named X private-message Char, never as the User. Return strict JSON only: {"messages":[{"text":"","translation":""}]}.' },
                     { role: 'user', content: `Character: ${item.name} ${item.handle || ''}
 Persona: ${item.persona || 'ordinary user'}
 Bio/signature: ${item.bio || ''}
@@ -3669,9 +4026,31 @@ Worldbook:
 ${worldbook || 'None'}
 Recent chat:
 ${recent || 'No previous chat.'}
-Generate the character reply now.` }
+Generate between 3 and 8 natural incoming private-message bubbles from this Character.
+Rules:
+- The messages array MUST contain 3 to 8 objects, inclusive.
+- Every message is authored by the Character. Never generate a message, action, narration or reply authored by the User.
+- Write one coherent conversational burst: each bubble should advance the thought or reaction, without repeating the same sentence.
+- Keep individual bubbles concise and realistic. Splitting a longer thought across multiple bubbles is encouraged.
+- Continue naturally from the most recent chat and respond to concrete details. If the latest context contains a forwarded post, react specifically to that post.
+- Do not prefix messages with a name, handle, role label or quotation marks. Do not include markdown or text outside the JSON object.
+- Each message object must contain text and translation. If text is not Simplified Chinese, translation must be an accurate Simplified Chinese translation; otherwise translation must be an empty string.` }
                 ], { temperature: 0.85 });
-                appendDmMessage(currentDmId, 'char', content);
+                const parsed = parseJsonPayload(content);
+                const rawReplies = Array.isArray(parsed)
+                    ? parsed
+                    : (Array.isArray(parsed?.messages)
+                        ? parsed.messages
+                        : (Array.isArray(parsed?.replies) ? parsed.replies : (parsed?.text ? [parsed] : [])));
+                const replies = rawReplies
+                    .map((reply) => ({
+                        text: safeText(reply?.text || reply?.content || reply?.message),
+                        translation: getGeneratedTranslation(reply, reply?.text || reply?.content || reply?.message)
+                    }))
+                    .filter((reply) => reply.text)
+                    .slice(0, 8);
+                if (replies.length < 3) throw new Error('DM reply batch must contain at least 3 messages');
+                appendDmMessageBatch(requestedDmId, 'char', replies);
             } catch (error) {
                 console.error('[X] DM API reply failed', error);
                 if (typeof window.showToast === 'function') window.showToast('API 调用失败，请稍后重试');
@@ -3785,7 +4164,7 @@ Generate the character reply now.` }
             return rawTrends.map((rawTrend, trendIndex) => {
                 const trend = normalizeTrend(rawTrend, trendIndex);
                 if (!trend) return null;
-                const rawPosts = Array.isArray(rawTrend?.posts) ? rawTrend.posts : [];
+                const rawPosts = sanitizeApiGeneratedPosts(Array.isArray(rawTrend?.posts) ? rawTrend.posts : []);
                 const posts = rawPosts.slice(0, 3)
                     .map((rawPost, postIndex) => normalizeGeneratedPost({
                         ...rawPost,
@@ -3804,9 +4183,10 @@ Generate the character reply now.` }
         async function requestDiscoverTrendBatch(topic, count, excludedTitles = []) {
             const worldbook = getSelectedWorldBookContext(`${topic} ${currentProfile.bio} ${currentProfile.persona}`);
             const reusableAuthors = getReusableAuthorContext();
-            const prompt = `Return strict JSON only in this shape: {"trends":[{"title":"#话题","category":"分类 · Trending","heat":"12.3K","posts":[{"authorName":"","handle":"","text":"","likes":0,"reposts":0,"commentsCount":0,"mediaType":"text","comments":[]}]}]}.
-Generate exactly ${count} unique realistic Chinese Weibo/X hot-search topics. Each trend MUST contain 1 to 3 directly related posts. Do not return a trend without a valid post.
-Use varied categories, account types, viewpoints and plausible heat values. All user-facing text must be Simplified Chinese. Avoid generic filler.
+            const prompt = `Return strict JSON only in this shape: {"trends":[{"title":"#Topic","translation":"","category":"Category · Trending","heat":"12.3K","posts":[{"authorName":"","handle":"","text":"","translation":"","likes":0,"reposts":0,"commentsCount":0,"mediaType":"text","comments":[{"authorName":"","handle":"","text":"","translation":""}]}]}]}.
+Generate exactly ${count} unique realistic global X hot-search topics. Each trend MUST contain 1 to 3 directly related posts. Do not return a trend without a valid post.
+The current User is context only. Every generated post, comment and reply must use a non-User author.
+Use varied regions, languages, categories, account types, viewpoints and plausible heat values. Authors should use their natural language. Every non-Chinese post, comment and reply must include an accurate Simplified Chinese translation; Chinese originals use "". Avoid generic filler.
 Search intent: ${topic || '随机发现内容'}
 Do not repeat these trend titles: ${excludedTitles.length ? excludedTitles.join('、') : 'None'}
 X user: ${JSON.stringify({ name: currentProfile.name, handle: currentProfile.handle, bio: currentProfile.bio })}
@@ -3814,7 +4194,7 @@ Reusable existing authors (optional; when used for a post, return their exact au
 Worldbook:
 ${worldbook || 'None'}`;
             const raw = await requestXChatCompletion([
-                { role: 'system', content: 'You generate strict JSON for a fictional Chinese social feed. Output JSON only.' },
+                { role: 'system', content: 'You generate strict JSON for a fictional international X social feed. Output JSON only.' },
                 { role: 'user', content: prompt }
             ], { temperature: 0.9 });
             return normalizeDiscoverTrendEntries(parseJsonPayload(raw));
@@ -3860,17 +4240,18 @@ ${worldbook || 'None'}`;
             };
             const reusableAuthors = getReusableAuthorContext();
             const prompt = `Return strict JSON only. Generate 5 to 10 realistic Weibo/X-style posts for the user's feed.
+The current User is context only. Never author a generated post, comment or reply as the User; use only distinct non-User accounts.
 Mix account types: official brand/media accounts, personal accounts, fan accounts, passers-by, marketing accounts, and niche community accounts.
 Mix tones: serious analysis, funny meme-style posts, subtle sarcasm, heated/controversial takes, recommendations, complaints, fan enthusiasm, and deliberately argument-starting opinions. Keep it plausible, not generic.
 Every post must be grounded in the topic, minimal user profile, and worldbook context when available. Avoid template-like filler.
-Each post must include: authorName, handle, text, likes, reposts, commentsCount, mediaType ("text" or "image"), comments, and optional imagePrompt/images only when mediaType is "image".
+Each post must include: authorName, handle, text, translation, likes, reposts, commentsCount, mediaType ("text" or "image"), comments, and optional imagePrompt/images only when mediaType is "image". Every comment and reply must include translation.
 Posts can be pure text. Prefer text posts unless an image clearly adds value.
 Each post must have at least 5 comments.
-Comments should feel like a real Chinese social feed: disagreements, jokes, memes, clarifications, fans defending someone, skeptical passers-by, and occasional heated replies are allowed.
+Comments should feel like a real international X feed: disagreements, jokes, memes, clarifications, fans defending someone, skeptical passers-by, and occasional heated replies are allowed.
 Every comment must be directly related to its own post. It must reference at least one concrete detail from the post text, topic, author stance, event, character, imagePrompt, or images[].text. Do not write generic reactions such as "interesting", "same", "nice", or comments that could fit any post.
 Replies are optional. If replies are included, each reply must respond to the parent comment's concrete point and connect back to the post.
 If mediaType is "image", describe the image subject, composition, light, mood, and relevant post detail in imagePrompt or images[].text. Do not invent inaccessible URLs.
-ALL text values, including imagePrompt and any text inside the images array describing the picture, MUST be written in Chinese (简体中文). Do not use English for image descriptions.
+Authors may use any language natural to their identity and context. For every non-Chinese post, comment or reply, translation must contain accurate Simplified Chinese; Chinese originals use "". Keep imagePrompt and images[].text descriptions in Simplified Chinese.
 Topic: ${topic || 'open recommendation feed'}
 User profile: ${JSON.stringify(searchUserProfile)}
 Reusable existing authors (optional; when used, return their exact authorId): ${JSON.stringify(reusableAuthors)}
@@ -3881,7 +4262,7 @@ ${worldbook || 'None'}`;
                 { role: 'user', content: prompt }
             ], { temperature: 0.9 });
             const parsed = parseJsonPayload(raw);
-            const posts = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.posts) ? parsed.posts : []);
+            const posts = sanitizeApiGeneratedPosts(Array.isArray(parsed) ? parsed : (Array.isArray(parsed.posts) ? parsed.posts : []));
             const added = appendGeneratedPosts(posts);
             return added.length ? `已生成 ${added.length} 条帖子` : '没有生成可用帖子';
         }
@@ -4000,7 +4381,7 @@ ${worldbook || 'None'}`;
                     bio: currentProfile.bio,
                     persona: currentProfile.persona
                 },
-                trends: normalizeTrendList(state.xTrends || []).slice(0, 30),
+                trends: normalizeTrendList(state.xTrends || []).slice(0, maxXTrends),
                 recentPosts
             });
         }
@@ -4032,12 +4413,16 @@ ${worldbook || 'None'}`;
             if (!name) return null;
             const rawMessages = Array.isArray(raw.messages) ? raw.messages : [];
             const baseTime = Date.now() + index * 10;
-            const messages = rawMessages.map((message, messageIndex) => ({
-                id: makeLocalId('dm-msg'),
-                source: 'char',
-                text: safeText(typeof message === 'string' ? message : (message?.text || message?.content || message?.message)),
-                createdAt: baseTime + messageIndex
-            })).filter((message) => message.text).slice(0, 5);
+            const messages = rawMessages.map((message, messageIndex) => {
+                const text = safeText(typeof message === 'string' ? message : (message?.text || message?.content || message?.message));
+                return {
+                    id: makeLocalId('dm-msg'),
+                    source: 'char',
+                    text,
+                    translation: typeof message === 'object' ? getGeneratedTranslation(message, text) : '',
+                    createdAt: baseTime + messageIndex
+                };
+            }).filter((message) => message.text).slice(0, 5);
             if (messages.length < 2) return null;
             return normalizeDmChar({
                 id: raw.id || makeLocalId('stranger'),
@@ -4054,10 +4439,11 @@ ${worldbook || 'None'}`;
         }
 
         async function requestAdvanceStrangerBatch(count, excludedKeys, plot, storyContext, worldbook) {
-            const prompt = `Return strict JSON only: {"strangers":[{"name":"","handle":"","bio":"","persona":"","messages":["消息1","消息2"]}]}.
+            const prompt = `Return strict JSON only: {"strangers":[{"name":"","handle":"","bio":"","translation":"","persona":"","messages":[{"text":"","translation":""},{"text":"","translation":""}]}]}.
 Generate exactly ${count} unique strangers who proactively send private messages to the X user. Each stranger must send 2 to 5 incoming messages; do not write messages for the user. Messages should form a natural short sequence related to the ongoing plot.
+Every message is incoming from the named stranger. Never generate an outbound User message or reuse the User identity as a stranger.
 Every stranger must have a concrete reason to contact this specific User. Their identity, opening topic, tone and message details MUST reference or logically derive from the User profile/persona below, not only from the general plot. Avoid generic greetings that could be sent to anyone.
-All user-facing text must be Simplified Chinese.
+Each stranger may use the language natural to their identity. Every non-Chinese bio and message must include an accurate Simplified Chinese translation; Chinese originals use "".
 Plot direction: ${plot || '随机延续当前剧情'}
 User profile/persona: ${JSON.stringify({ name: currentProfile.name, handle: currentProfile.handle, bio: currentProfile.bio, persona: currentProfile.persona })}
 Do not repeat these names or handles: ${excludedKeys.length ? excludedKeys.join('、') : 'None'}
@@ -4069,21 +4455,21 @@ ${worldbook || 'None'}`;
                 { role: 'user', content: prompt }
             ], { temperature: 0.9 });
             const parsed = parseJsonPayload(raw);
-            const strangers = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.strangers) ? parsed.strangers : []);
+            const strangers = sanitizeApiGeneratedAuthors(Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.strangers) ? parsed.strangers : []));
             return strangers.map(normalizeGeneratedStranger).filter(Boolean);
         }
 
         async function requestAdvanceTrendBatch(count, excludedKeys, plot, storyContext, worldbook) {
-            const prompt = `Return strict JSON only: {"trends":[{"title":"#话题","category":"分类 · Trending","heat":"12.3K"}]}.
-Generate exactly ${count} unique new Chinese hot-search topics that continue and evolve the existing trends and posts. New trends must be relevant to the requested plot and feel like later developments, not paraphrases.
-All user-facing text must be Simplified Chinese.
+            const prompt = `Return strict JSON only: {"trends":[{"title":"#Topic","translation":"","category":"Category · Trending","heat":"12.3K"}]}.
+Generate exactly ${count} unique new global hot-search topics that continue and evolve the existing trends and posts. New trends must be relevant to the requested plot and feel like later developments, not paraphrases.
+Topics may originate from any region or language. For non-Chinese title/category text include accurate Simplified Chinese in translation; Chinese originals use "".
 Plot direction: ${plot || '随机延续当前剧情'}
 Do not repeat these titles: ${excludedKeys.length ? excludedKeys.join('、') : 'None'}
 Current story context: ${storyContext}
 Worldbook:
 ${worldbook || 'None'}`;
             const raw = await requestXChatCompletion([
-                { role: 'system', content: 'Generate strict JSON for fictional Chinese hot searches. Output JSON only.' },
+                { role: 'system', content: 'Generate strict JSON for fictional international X hot searches. Output JSON only.' },
                 { role: 'user', content: prompt }
             ], { temperature: 0.9 });
             const parsed = parseJsonPayload(raw);
@@ -4101,9 +4487,10 @@ ${worldbook || 'None'}`;
         async function requestAdvancePostBatch(count, excludedKeys, plot, storyContext, worldbook, availableTrends, newTrendTitles) {
             const topicTitles = availableTrends.map((trend) => trend.title);
             const reusableAuthors = getReusableAuthorContext();
-            const prompt = `Return strict JSON only: {"posts":[{"authorName":"","handle":"","text":"","topicTag":"#精确热搜名","likes":0,"reposts":0,"commentsCount":5,"mediaType":"text","comments":[{"authorName":"","handle":"","text":""}]}]}.
-Generate exactly ${count} new Chinese Weibo/X posts that advance the current plot. Every post must use one exact topicTag from the allowed trend list and contain at least 5 valid, concrete comments in its comments array. Comments must respond to details in their own post.
-Prefer newly generated trends while still allowing continuation of older trends. Use varied authors and viewpoints. All user-facing text must be Simplified Chinese.
+            const prompt = `Return strict JSON only: {"posts":[{"authorName":"","handle":"","text":"","translation":"","topicTag":"#精确热搜名","likes":0,"reposts":0,"commentsCount":5,"mediaType":"text","comments":[{"authorName":"","handle":"","text":"","translation":""}]}]}.
+Generate exactly ${count} new international X posts that advance the current plot. Every post must use one exact topicTag from the allowed trend list and contain at least 5 valid, concrete comments in its comments array. Comments must respond to details in their own post.
+Never use the current User as a generated post, comment or reply author. All generated authors must be non-User accounts.
+Prefer newly generated trends while still allowing continuation of older trends. Use varied countries, languages, authors and viewpoints. Every non-Chinese post, comment and reply must include an accurate Simplified Chinese translation; Chinese originals use "".
 Plot direction: ${plot || '随机延续当前剧情'}
 Allowed trends: ${topicTitles.join('、')}
 New trends to prioritize: ${newTrendTitles.length ? newTrendTitles.join('、') : 'None'}
@@ -4113,11 +4500,11 @@ Current story context: ${storyContext}
 Worldbook:
 ${worldbook || 'None'}`;
             const raw = await requestXChatCompletion([
-                { role: 'system', content: 'Generate strict JSON for fictional Chinese social posts. Output JSON only.' },
+                { role: 'system', content: 'Generate strict JSON for fictional international X posts. Output JSON only.' },
                 { role: 'user', content: prompt }
             ], { temperature: 0.9 });
             const parsed = parseJsonPayload(raw);
-            const posts = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.posts) ? parsed.posts : []);
+            const posts = sanitizeApiGeneratedPosts(Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.posts) ? parsed.posts : []));
             return posts.map((rawPost, index) => {
                 const topicTag = matchTrendTitle(rawPost?.topicTag || rawPost?.topic || rawPost?.trend, availableTrends);
                 if (!topicTag) return null;
@@ -4160,7 +4547,7 @@ ${worldbook || 'None'}`;
                 const shiftedTrends = preferences.trendsEnabled
                     ? existingTrends.map((trend) => ({ ...trend, movement: 'down' }))
                     : existingTrends;
-                const availableTrends = normalizeTrendList([...newTrends, ...shiftedTrends]);
+                const availableTrends = normalizeTrendList([...newTrends, ...shiftedTrends]).slice(0, maxXTrends);
                 if (preferences.postsEnabled) {
                     if (availableTrends.length === 0) throw new Error('No trends available for generated posts');
                     newPosts = await collectExactGeneratedItems({
@@ -4271,9 +4658,9 @@ ${worldbook || 'None'}`;
                             <span>${escapeHtml(post.handle)}</span>
                         </div>
                     </div>
-                    <p class="x-detail-text">${escapeHtml(post.text)}</p>
+                    <p class="x-detail-text">${renderPostTextHtml(post)}</p>
+                    ${buildExpandableTranslationHtml(post.translation, 'x-post-translation-toggle')}
                     ${renderPostImages(getPostImages(post))}
-                    ${buildPostLinkChips(post)}
                     <div class="x-detail-inline-actions">
                         <button id="x-detail-repost-btn" type="button" class="x-detail-inline-action ${thread.reposted ? 'active' : ''}" aria-label="Repost">
                             <i class="fas fa-retweet"></i><span>${escapeHtml(formatCompactCount(thread.reposts))}</span>
@@ -4317,7 +4704,7 @@ ${worldbook || 'None'}`;
             if (!postId || card.dataset.xBound === 'true') return;
             card.dataset.xBound = 'true';
             card.addEventListener('click', (event) => {
-                if (event.target.closest('.x-post-image-thumb, .x-author-avatar-btn, .x-feed-forward-btn, .x-post-topic-link, .x-post-super-link')) return;
+                if (event.target.closest('.x-post-image-thumb, .x-author-avatar-btn, .x-feed-forward-btn, .x-post-topic-link, .x-translation-toggle')) return;
                 
                 const ref = event.target.closest('.x-ref-post');
                 if (ref) {
@@ -4343,6 +4730,7 @@ ${worldbook || 'None'}`;
             if (event) event.stopPropagation();
             if (window.isJiggleMode) return;
             view.scrollTop = 0;
+            saveXState(getXState());
             ensureXChrome();
             renderProfile();
             renderWorldBookSummary();
@@ -4375,13 +4763,67 @@ ${worldbook || 'None'}`;
             view.classList.remove('active');
         }
 
-        function bindFilePreview(input, onLoad) {
-            input?.addEventListener('change', () => {
+        function readXImageFile(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result || ''));
+                reader.onerror = () => reject(reader.error || new Error('读取图片失败'));
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function loadXImage(dataUrl) {
+            return new Promise((resolve, reject) => {
+                const image = new Image();
+                image.onload = () => resolve(image);
+                image.onerror = () => reject(new Error('解析图片失败'));
+                image.src = dataUrl;
+            });
+        }
+
+        async function compressXImageFile(file, options = xImageCompressionPresets.post) {
+            if (!file || !xAcceptedImageTypes.has(String(file.type || '').toLocaleLowerCase())) {
+                throw new Error('仅支持 JPG、PNG 或 WebP 图片');
+            }
+            const rawDataUrl = await readXImageFile(file);
+            const image = await loadXImage(rawDataUrl);
+            const width = image.naturalWidth || image.width || 0;
+            const height = image.naturalHeight || image.height || 0;
+            if (!width || !height) throw new Error('无法读取图片尺寸');
+
+            const scale = Math.min(1, options.maxWidth / width, options.maxHeight / height);
+            const targetWidth = Math.max(1, Math.round(width * scale));
+            const targetHeight = Math.max(1, Math.round(height * scale));
+            const canvas = document.createElement('canvas');
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+            const context = canvas.getContext('2d');
+            if (!context) throw new Error('当前浏览器无法压缩图片');
+            context.imageSmoothingEnabled = true;
+            context.imageSmoothingQuality = 'high';
+            context.drawImage(image, 0, 0, targetWidth, targetHeight);
+            const compressedDataUrl = canvas.toDataURL('image/webp', options.quality ?? 0.82);
+            if (!compressedDataUrl.startsWith('data:image/webp')) throw new Error('WebP 压缩失败');
+            return compressedDataUrl;
+        }
+
+        function bindFilePreview(input, options, onLoad) {
+            input?.addEventListener('change', async () => {
                 const file = input.files && input.files[0];
                 if (!file) return;
-                const reader = new FileReader();
-                reader.onload = () => onLoad(String(reader.result || ''));
-                reader.readAsDataURL(file);
+                input.disabled = true;
+                try {
+                    const src = await compressXImageFile(file, options);
+                    onLoad(src);
+                } catch (error) {
+                    console.warn('[X] Image compression failed', error);
+                    if (typeof window.showToast === 'function') {
+                        window.showToast(error?.message || '图片压缩失败，请重新选择');
+                    }
+                } finally {
+                    input.value = '';
+                    input.disabled = false;
+                }
             });
         }
 
@@ -4395,7 +4837,6 @@ ${worldbook || 'None'}`;
         postDetailBack?.addEventListener('click', closePostDetail);
         topicDetailBack?.addEventListener('click', closeTopicDetail);
         topicDetailGenerateBtn?.addEventListener('click', generateTopicPosts);
-        editButton?.addEventListener('click', openEditProfile);
         settingsButton?.addEventListener('click', openXSettings);
         document.getElementById('x-profile-visitors-btn')?.addEventListener('click', openVisitorsSheet);
         document.getElementById('x-visitors-close-btn')?.addEventListener('click', closeVisitorsSheet);
@@ -4499,7 +4940,6 @@ ${worldbook || 'None'}`;
         document.getElementById('x-super-compose-btn')?.addEventListener('click', () => {
             if (currentActiveTopicId) openComposer({ superTopicId: currentActiveTopicId });
         });
-        document.getElementById('x-compose-topic-focus-btn')?.addEventListener('click', () => composeTopicInput?.focus());
         composeSuperChip?.addEventListener('click', () => {
             if (currentComposeSuperId) openSuperTopicById(currentComposeSuperId);
         });
@@ -4507,11 +4947,32 @@ ${worldbook || 'None'}`;
         editBannerPreview?.addEventListener('click', () => editBannerInput?.click());
 
         view.addEventListener('click', (event) => {
-            const superLink = event.target.closest('.x-post-super-link[data-super-topic-id]');
-            if (superLink) {
+            const translationToggle = event.target.closest('.x-translation-toggle');
+            if (translationToggle) {
                 event.preventDefault();
                 event.stopPropagation();
-                openSuperTopicById(superLink.dataset.superTopicId);
+                let translationText = translationToggle.nextElementSibling;
+                if (!translationText?.classList.contains('x-translation-text')) {
+                    translationText = translationToggle.closest('.x-comment-action-row')?.nextElementSibling;
+                }
+                if (!translationText?.classList.contains('x-translation-text')) return;
+                const willExpand = translationText.hidden;
+                translationText.hidden = !willExpand;
+                translationToggle.setAttribute('aria-expanded', String(willExpand));
+                translationToggle.textContent = willExpand ? '收起翻译' : '翻译';
+                return;
+            }
+            const translationBubble = event.target.closest('.x-dm-translation-bubble');
+            if (translationBubble) {
+                event.preventDefault();
+                event.stopPropagation();
+                const translationText = translationBubble.querySelector('.x-dm-expanded-translation');
+                if (!translationText) return;
+                const willExpand = translationText.hidden;
+                translationText.hidden = !willExpand;
+                translationBubble.setAttribute('aria-expanded', String(willExpand));
+                translationBubble.classList.toggle('translated', willExpand);
+                translationBubble.title = willExpand ? '点击收起翻译' : '点击展开翻译';
                 return;
             }
             const topicLink = event.target.closest('.x-post-topic-link[data-topic-tag]');
@@ -4520,6 +4981,12 @@ ${worldbook || 'None'}`;
                 event.stopPropagation();
                 closePostDetail();
                 openTopicDetail(topicLink.dataset.topicTag);
+                return;
+            }
+            const selfProfileEdit = event.target.closest('#x-profile-edit-btn');
+            if (selfProfileEdit) {
+                event.preventDefault();
+                openEditProfile();
                 return;
             }
             const authorButton = event.target.closest('.x-author-avatar-btn');
@@ -4571,14 +5038,14 @@ ${worldbook || 'None'}`;
                 closeDmProfile();
                 return;
             }
-            const dmProfileTab = event.target.closest('.x-dm-profile-tabs button[data-dm-profile-tab]');
-            if (dmProfileTab) {
+            const profileTab = event.target.closest('.x-unified-profile-tabs button[data-x-profile-tab]');
+            if (profileTab) {
                 event.preventDefault();
-                const nextTab = dmProfileTab.getAttribute('data-dm-profile-tab');
-                const profileView = dmProfileTab.closest('.x-dm-profile-view');
-                const tabButtons = Array.from(profileView?.querySelectorAll('.x-dm-profile-tabs button[data-dm-profile-tab]') || []);
-                const panels = Array.from(profileView?.querySelectorAll('.x-profile-panel[data-dm-profile-panel]') || []);
-                switchButtonTabs(tabButtons, panels, 'data-dm-profile-tab', 'data-dm-profile-panel', nextTab);
+                const nextTab = profileTab.getAttribute('data-x-profile-tab');
+                const profileRoot = profileTab.closest('#x-profile-scroll, .x-dm-profile-scroll');
+                const tabButtons = Array.from(profileRoot?.querySelectorAll('.x-unified-profile-tabs button[data-x-profile-tab]') || []);
+                const panels = Array.from(profileRoot?.querySelectorAll('.x-profile-panel[data-x-profile-panel]') || []);
+                switchButtonTabs(tabButtons, panels, 'data-x-profile-tab', 'data-x-profile-panel', nextTab);
                 return;
             }
             const imageButton = event.target.closest('.x-post-image-thumb');
@@ -4622,6 +5089,13 @@ ${worldbook || 'None'}`;
             if (closeTrigger) {
                 event.preventDefault();
                 closeXApp();
+                return;
+            }
+            const deleteCommentButton = event.target.closest('.x-comment-delete-btn');
+            if (deleteCommentButton) {
+                event.preventDefault();
+                event.stopPropagation();
+                deletePostComment(deleteCommentButton.dataset.commentId, deleteCommentButton.dataset.replyId || '');
                 return;
             }
             const replyButton = event.target.closest('.x-comment-reply-btn');
@@ -4689,28 +5163,28 @@ ${worldbook || 'None'}`;
         superUpdateBtn?.addEventListener('click', generateSuperTopicUpdate);
 
         createTopicAvatarPreview?.addEventListener('click', () => createTopicAvatarInput?.click());
-        bindFilePreview(createTopicAvatarInput, (src) => {
+        bindFilePreview(createTopicAvatarInput, xImageCompressionPresets.avatar, (src) => {
             createTopicAvatarDraft = src;
             renderImagePreview(createTopicAvatarPreview, src, '超');
         });
 
         createTopicBannerPreview?.addEventListener('click', () => createTopicBannerInput?.click());
-        bindFilePreview(createTopicBannerInput, (src) => {
+        bindFilePreview(createTopicBannerInput, xImageCompressionPresets.cover, (src) => {
             createTopicBannerDraft = src;
             renderImagePreview(createTopicBannerPreview, src, 'Cover');
         });
 
-        bindFilePreview(editAvatarInput, (src) => {
+        bindFilePreview(editAvatarInput, xImageCompressionPresets.avatar, (src) => {
             avatarDraft = src;
             renderImagePreview(editAvatarPreview, avatarDraft, safeText(editNameInput?.value, 'U').slice(0, 1).toUpperCase());
         });
 
-        bindFilePreview(editBannerInput, (src) => {
+        bindFilePreview(editBannerInput, xImageCompressionPresets.cover, (src) => {
             bannerDraft = src;
             renderImagePreview(editBannerPreview, bannerDraft, 'Cover');
         });
 
-        bindFilePreview(document.getElementById('x-char-edit-avatar-input'), (src) => {
+        bindFilePreview(document.getElementById('x-char-edit-avatar-input'), xImageCompressionPresets.avatar, (src) => {
             charEditAvatarDraft = src;
             renderImagePreview(
                 document.getElementById('x-char-edit-avatar-preview'),
@@ -4719,22 +5193,22 @@ ${worldbook || 'None'}`;
             );
         });
 
-        bindFilePreview(document.getElementById('x-char-edit-cover-input'), (src) => {
+        bindFilePreview(document.getElementById('x-char-edit-cover-input'), xImageCompressionPresets.cover, (src) => {
             charEditCoverImageDraft = src;
             renderImagePreview(document.getElementById('x-char-edit-cover-preview'), src, 'Cover');
         });
 
-        bindFilePreview(document.getElementById('x-edit-super-topic-avatar-input'), (src) => {
+        bindFilePreview(document.getElementById('x-edit-super-topic-avatar-input'), xImageCompressionPresets.avatar, (src) => {
             editSuperTopicAvatarDraft = src;
             renderImagePreview(document.getElementById('x-edit-super-topic-avatar-preview'), src, '超');
         });
 
-        bindFilePreview(document.getElementById('x-edit-super-topic-banner-input'), (src) => {
+        bindFilePreview(document.getElementById('x-edit-super-topic-banner-input'), xImageCompressionPresets.cover, (src) => {
             editSuperTopicBannerDraft = src;
             renderImagePreview(document.getElementById('x-edit-super-topic-banner-preview'), src, 'Cover');
         });
 
-        bindFilePreview(composeImageInput, (src) => {
+        bindFilePreview(composeImageInput, xImageCompressionPresets.post, (src) => {
             composeImageDraft = src;
             renderComposeImageDraft();
         });
@@ -4744,14 +5218,6 @@ ${worldbook || 'None'}`;
         homeFeedButtons.forEach((button) => {
             button.addEventListener('click', () => {
                 switchButtonTabs(homeFeedButtons, homeFeedPanels, 'data-feed', 'data-feed-panel', button.getAttribute('data-feed'));
-            });
-        });
-
-        const profileTabButtons = Array.from(view.querySelectorAll('.x-profile-tabs button[data-profile-tab]'));
-        const profilePanels = Array.from(view.querySelectorAll('.x-profile-panel[data-profile-panel]'));
-        profileTabButtons.forEach((button) => {
-            button.addEventListener('click', () => {
-                switchButtonTabs(profileTabButtons, profilePanels, 'data-profile-tab', 'data-profile-panel', button.getAttribute('data-profile-tab'));
             });
         });
 

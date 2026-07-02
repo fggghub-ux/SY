@@ -36,7 +36,7 @@
     <link rel="stylesheet" href="css/bstage.css">
     <link rel="stylesheet" href="css/tiktok.css">
     <link rel="stylesheet" href="css/shopping.css">
-    <link rel="stylesheet" href="css/x.css">
+    <link rel="stylesheet" href="css/x.css?v=20260702-x-dm-reply-batch-v8">
     
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -4282,30 +4282,7 @@
                             </div>
                             <div class="x-profile-cover-mark">X</div>
                         </div>
-                        <div class="x-scroll-area x-profile-scroll">
-                            <div class="x-profile-card">
-                                <div class="x-profile-avatar" id="x-profile-avatar">U</div>
-                                <button class="x-profile-edit" id="x-profile-edit-btn" type="button">Edit profile</button>
-                                <h2 id="x-profile-name">User Name</h2>
-                                <span id="x-profile-handle">@username</span>
-                                <p id="x-profile-bio">以 X 的黑白视觉重排微博式个人主页。这里先展示静态资料、数据和内容分段。</p>
-                                <div class="x-profile-stats">
-                                    <div><strong>128</strong><span>Posts</span></div>
-                                    <div><strong>13.1K</strong><span>Followers</span></div>
-                                    <div><strong>520</strong><span>Following</span></div>
-                                </div>
-                            </div>
-                            <div class="x-profile-tabs" id="x-profile-tabs">
-                                <button class="active" type="button" data-profile-tab="posts">Posts</button>
-                                <button type="button" data-profile-tab="photos">Photos</button>
-                            </div>
-                            <div class="x-profile-panel active" data-profile-panel="posts">
-                                <div class="x-empty-state">暂无帖子</div>
-                            </div>
-                            <div class="x-profile-panel" data-profile-panel="photos">
-                                <div class="x-empty-state">暂无照片</div>
-                            </div>
-                        </div>
+                        <div class="x-scroll-area x-profile-scroll" id="x-profile-scroll"></div>
                     </section>
                 </div>
 
@@ -4370,7 +4347,7 @@
                                 <button class="x-edit-banner-preview" id="x-create-topic-banner-preview" type="button" aria-label="Upload cover">
                                     <span>Cover</span>
                                 </button>
-                                <input type="file" id="x-create-topic-banner-input" accept="image/*" style="display:none;">
+                                <input type="file" id="x-create-topic-banner-input" accept="image/jpeg,image/png,image/webp" style="display:none;">
                                 <div>
                                     <strong>超话背景</strong>
                                 </div>
@@ -4380,7 +4357,7 @@
                                 <button class="x-edit-avatar-preview" id="x-create-topic-avatar-preview" type="button" aria-label="Upload avatar">
                                     <span>超</span>
                                 </button>
-                                <input type="file" id="x-create-topic-avatar-input" accept="image/*" style="display:none;">
+                                <input type="file" id="x-create-topic-avatar-input" accept="image/jpeg,image/png,image/webp" style="display:none;">
                                 <div>
                                     <strong>超话头像</strong>
                                 </div>
@@ -4434,7 +4411,7 @@
                                 <button class="x-edit-avatar-preview" id="x-edit-avatar-preview" type="button" aria-label="Upload avatar">
                                     <span>U</span>
                                 </button>
-                                <input type="file" id="x-edit-avatar-input" accept="image/*" style="display:none;">
+                                <input type="file" id="x-edit-avatar-input" accept="image/jpeg,image/png,image/webp" style="display:none;">
                                 <div>
                                     <strong>Avatar</strong>
                                     <p>Use the current account avatar first, then override it for X.</p>
@@ -4452,7 +4429,7 @@
                                 <button class="x-edit-banner-preview" id="x-edit-banner-preview" type="button" aria-label="Upload cover">
                                     <span>Cover</span>
                                 </button>
-                                <input type="file" id="x-edit-banner-input" accept="image/*" style="display:none;">
+                                <input type="file" id="x-edit-banner-input" accept="image/jpeg,image/png,image/webp" style="display:none;">
                                 <div>
                                     <strong>Background</strong>
                                     <p>Upload a cover image for the Me page header.</p>
@@ -4504,13 +4481,13 @@
                     <div class="bottom-sheet x-compose-sheet">
                         <div class="sheet-handle"></div>
                         <div class="x-edit-sheet-header">
-                            <button class="x-edit-sheet-text-btn" id="x-compose-cancel-btn" type="button">Cancel</button>
-                            <strong>New Post</strong>
-                            <button class="x-edit-sheet-save" id="x-compose-submit-btn" type="button">Post</button>
+                            <button class="x-edit-sheet-text-btn" id="x-compose-cancel-btn" type="button">取消</button>
+                            <strong>发布新帖</strong>
+                            <button class="x-edit-sheet-save" id="x-compose-submit-btn" type="button">发布</button>
                         </div>
                         <div class="x-compose-body">
                             <div class="x-compose-editor">
-                                <div class="x-avatar x-avatar-dark">X</div>
+                                <div class="x-avatar x-compose-author-avatar" id="x-compose-author-avatar"></div>
                                 <textarea id="x-compose-text-input" maxlength="280" placeholder="有什么新鲜事?"></textarea>
                             </div>
                             <button class="x-compose-super-chip" id="x-compose-super-chip" type="button" hidden>
@@ -4523,22 +4500,16 @@
                                 <input id="x-compose-topic-input" type="text" maxlength="40" placeholder="添加一个话题（可选）">
                             </label>
                             <div class="x-compose-media-card">
-                                <button class="x-compose-image-placeholder" id="x-compose-image-placeholder" type="button">
+                                <button class="x-compose-image-placeholder" id="x-compose-image-placeholder" type="button" aria-label="从系统相册选择图片" title="从系统相册选择图片">
                                     <i class="far fa-image"></i>
-                                    <span class="x-compose-image-copy"><strong>上传本地图片</strong><small>点击选择 JPG、PNG 或 GIF</small></span>
                                     <img id="x-compose-image-preview" alt="" hidden>
                                 </button>
-                                <input id="x-compose-image-input" type="file" accept="image/*" hidden>
+                                <input id="x-compose-image-input" type="file" accept="image/jpeg,image/png,image/webp" hidden>
                                 <div class="x-compose-image-url-row">
                                     <input id="x-compose-image-url-input" type="url" inputmode="url" placeholder="粘贴图片 URL">
                                     <button id="x-compose-image-url-btn" type="button">添加</button>
                                 </div>
-                                <button class="x-compose-image-clear" id="x-compose-image-clear-btn" type="button" hidden>移除当前图片</button>
-                            </div>
-                            <div class="x-compose-chip-row">
-                                <button class="active" type="button">Recommend</button>
-                                <button type="button">Following</button>
-                                <button type="button" id="x-compose-topic-focus-btn"># Topic</button>
+                                <button class="x-compose-image-clear" id="x-compose-image-clear-btn" type="button" aria-label="移除当前图片" title="移除当前图片" hidden><i class="fas fa-xmark"></i></button>
                             </div>
                         </div>
                     </div>
@@ -7049,7 +7020,7 @@
     <script src="js/youtube/8_user_live.js"></script>
     <script src="js/netflix.js"></script>
     <script src="js/shopping.js"></script>
-    <script src="js/xapp.js"></script>
+    <script src="js/xapp.js?v=20260702-x-dm-reply-batch-v8"></script>
     <script src="js/home_desktop.js"></script>
     <script src="js/home_widget_panel_enhance.js"></script>
     <!-- 引入主逻辑脚本 -->
