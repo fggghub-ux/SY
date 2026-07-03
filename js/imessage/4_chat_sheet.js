@@ -202,6 +202,12 @@ function createAttachmentSheet(page) {
                                 </div>
                                 <div class="attachment-more-voice-label">Voice</div>
                             </div>
+                            <div class="attachment-more-listen-entry" style="display:none;">
+                                <div class="attachment-more-listen-icon">
+                                    <i class="fas fa-headphones"></i>
+                                </div>
+                                <div class="attachment-more-listen-label">一起听</div>
+                            </div>
                             <div class="attachment-more-offline-entry" id="open-offline-taverns-btn">
                                 <div class="attachment-more-offline-icon">
                                     <i class="fas fa-people-arrows"></i>
@@ -231,6 +237,7 @@ function createAttachmentSheet(page) {
 
                         .attachment-more-pay-entry,
                         .attachment-more-voice-entry,
+                        .attachment-more-listen-entry,
                         .attachment-more-narration-entry,
                         .attachment-more-dynamic-action-entry,
                         .attachment-more-offline-entry {
@@ -243,6 +250,7 @@ function createAttachmentSheet(page) {
                         }
                         .attachment-more-pay-entry:active,
                         .attachment-more-voice-entry:active,
+                        .attachment-more-listen-entry:active,
                         .attachment-more-narration-entry:active,
                         .attachment-more-dynamic-action-entry:active,
                         .attachment-more-offline-entry:active {
@@ -456,6 +464,7 @@ function createAttachmentSheet(page) {
         const payEntry = attachmentSheet.querySelector('.attachment-more-pay-entry');
         const regenerateEntry = attachmentSheet.querySelector('.attachment-more-regenerate-entry');
         const voiceEntry = attachmentSheet.querySelector('.attachment-more-voice-entry');
+        const listenEntry = attachmentSheet.querySelector('.attachment-more-listen-entry');
         const narrationEntry = attachmentSheet.querySelector('.attachment-more-narration-entry');
         const dynamicActionEntry = attachmentSheet.querySelector('.attachment-more-dynamic-action-entry');
         const dynamicActionLabel = attachmentSheet.querySelector('.attachment-more-dynamic-action-label');
@@ -4775,6 +4784,15 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             });
         }
 
+        if (listenEntry) {
+            listenEntry.addEventListener('click', () => {
+                const activeFriend = window.imData.currentActiveFriend;
+                if (!activeFriend || activeFriend.type !== 'char') return;
+                closeSheet();
+                window.libraryApp?.openTogetherListeningPicker?.(activeFriend);
+            });
+        }
+
         if (narrationEntry) {
             narrationEntry.addEventListener('click', () => {
                 openNarrationForm();
@@ -5229,12 +5247,22 @@ function openAttachmentSheet() {
         const label = sheet.querySelector('.attachment-more-offline-label');
         const dynamicEntry = sheet.querySelector('.attachment-more-dynamic-action-entry');
         const dynamicLabel = sheet.querySelector('.attachment-more-dynamic-action-label');
+        const listenEntry = sheet.querySelector('.attachment-more-listen-entry');
+        const listenLabel = sheet.querySelector('.attachment-more-listen-label');
+        const activeFriend = window.imData.currentActiveFriend;
         const isOffline = !!window.imData.currentActiveFriend?.offlineMeetEnabled;
         const isDynamicActionEnabled = !!window.imData.currentActiveFriend?.dynamicActionNarrationEnabled;
+        const canListenTogether = activeFriend?.type === 'char';
+        const isListeningTogether = canListenTogether && !!window.libraryApp?.getTogetherListeningSnapshot?.(activeFriend.id);
         if (label) label.textContent = isOffline ? '退出线下' : '线下';
         if (entry) entry.classList.toggle('active', isOffline);
         if (dynamicLabel) dynamicLabel.textContent = isDynamicActionEnabled ? '关闭' : '动描';
         if (dynamicEntry) dynamicEntry.classList.toggle('active', isDynamicActionEnabled);
+        if (listenEntry) {
+            listenEntry.style.display = canListenTogether ? 'flex' : 'none';
+            listenEntry.classList.toggle('active', isListeningTogether);
+        }
+        if (listenLabel) listenLabel.textContent = isListeningTogether ? '退出一起听' : '一起听';
     };
     window.imChat.identifyChatImage = identifyChatImage;
     window.imChat.sendImageMessage = sendImageMessage;

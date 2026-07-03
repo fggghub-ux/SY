@@ -114,6 +114,55 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function renderTogetherListeningPlayer(friendOrId) {
+        const friendId = String(typeof friendOrId === 'object' ? (friendOrId?.id ?? '') : (friendOrId ?? ''));
+        if (!friendId) return;
+        const friend = (window.imData?.friends || []).find((item) => String(item.id) === friendId)
+            || (typeof friendOrId === 'object' ? friendOrId : null);
+        const page = document.getElementById(`chat-interface-${friendId}`);
+        const card = page?.querySelector('.im-together-listening-player');
+        if (!card) return;
+        const snapshot = friend?.type === 'char' && window.libraryApp?.getTogetherListeningSnapshot
+            ? window.libraryApp.getTogetherListeningSnapshot(friendId)
+            : null;
+        card.hidden = !snapshot;
+        if (!snapshot) return;
+
+        const art = card.querySelector('.im-together-listening-art');
+        const title = card.querySelector('.im-together-listening-title');
+        const artist = card.querySelector('.im-together-listening-artist');
+        const play = card.querySelector('[data-together-listening-control="toggle"]');
+        if (art) {
+            art.innerHTML = snapshot.coverUrl ? '' : '<i class="fas fa-music"></i>';
+            if (snapshot.coverUrl) {
+                const image = document.createElement('img');
+                image.src = snapshot.coverUrl;
+                image.alt = '';
+                image.referrerPolicy = 'no-referrer';
+                art.appendChild(image);
+            }
+        }
+        if (title) title.textContent = snapshot.title || '未知歌曲';
+        if (artist) artist.textContent = snapshot.artist || '未知歌手';
+        if (play) {
+            play.innerHTML = `<i class="fas ${snapshot.isPlaying ? 'fa-pause' : 'fa-play'}"></i>`;
+            play.setAttribute('aria-label', snapshot.isPlaying ? '暂停' : '播放');
+        }
+        card.style.setProperty('--together-progress', `${Math.round((snapshot.progress || 0) * 10000) / 100}%`);
+    }
+
+    imChat.renderTogetherListeningPlayer = renderTogetherListeningPlayer;
+    if (!imChat._togetherListeningEventBound) {
+        imChat._togetherListeningEventBound = true;
+        window.addEventListener('library:together-listening-change', () => {
+            document.querySelectorAll('.im-together-listening-player').forEach((card) => {
+                const page = card.closest('.active-chat-interface');
+                const friendId = String(page?.id || '').replace(/^chat-interface-/, '');
+                if (friendId) renderTogetherListeningPlayer(friendId);
+            });
+        });
+    }
+
     function getGroupAvatarInitial(friend) {
         return String(friend?.nickname || friend?.realName || 'G').charAt(0).toUpperCase();
     }
@@ -401,6 +450,15 @@ async function openChatTab(friend) {
                 </div>
                 <div class="ins-chat-messages"></div>
                 <div class="ins-chat-input-container">
+                    <div class="im-together-listening-player" hidden>
+                        <button class="im-together-listening-main" type="button" aria-label="打开正在播放">
+                            <span class="im-together-listening-art"><i class="fas fa-music"></i></span>
+                            <span class="im-together-listening-copy"><strong class="im-together-listening-title">未知歌曲</strong><small class="im-together-listening-artist">未知歌手</small></span>
+                        </button>
+                        <button class="im-together-listening-control" type="button" data-together-listening-control="toggle" aria-label="播放"><i class="fas fa-play"></i></button>
+                        <button class="im-together-listening-control" type="button" data-together-listening-control="next" aria-label="下一首"><i class="fas fa-forward-step"></i></button>
+                        <span class="im-together-listening-progress"></span>
+                    </div>
                     <div class="reply-preview-container" style="display:none; padding: 10px 14px; background: #f2f2f7; border-radius: 18px; margin-bottom: 10px; font-size: 13px; color: #8e8e93; position: relative; margin-left: 10px; margin-right: 10px; max-width: fit-content; border: 1px solid #e5e5ea; ">
                         <div class="reply-preview-text" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 24px; color: #333; max-width: 250px;"></div>
                         <div class="reply-cancel-btn" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px; border-radius: 50%; background: #ccc; color: #fff; display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 10px;"><i class="fas fa-times"></i></div>
@@ -827,6 +885,20 @@ async function openChatTab(friend) {
             const micBtn = page.querySelector('.mic-btn');
             const plusBtn = page.querySelector('.plus-btn');
             const msgContainer = page.querySelector('.ins-chat-messages');
+            const togetherPlayer = page.querySelector('.im-together-listening-player');
+
+            if (togetherPlayer) {
+                togetherPlayer.querySelector('.im-together-listening-main')?.addEventListener('click', () => {
+                    window.libraryApp?.openTogetherListeningPlayer?.(friend.id);
+                });
+                togetherPlayer.querySelectorAll('[data-together-listening-control]').forEach((button) => {
+                    button.addEventListener('click', () => {
+                        const action = button.dataset.togetherListeningControl;
+                        window.libraryApp?.controlTogetherListening?.(friend.id, { action });
+                    });
+                });
+                renderTogetherListeningPlayer(friend);
+            }
 
             const onPlusClick = (e) => {
                 if (e && typeof e.preventDefault === 'function') e.preventDefault();
@@ -837,8 +909,7 @@ async function openChatTab(friend) {
             };
 
             if (plusBtn) {
-                plusBtn.addEventListener('mousedown', onPlusClick);
-                plusBtn.addEventListener('touchstart', onPlusClick, { passive: false });
+                plusBtn.addEventListener('click', onPlusClick);
             }
 
             if (input) {

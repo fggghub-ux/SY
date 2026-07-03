@@ -37,8 +37,14 @@
         chapters: [],
         lyrics: [],
         lyricIndex: -1,
+        lyricsStatus: 'idle',
+        lyricsTrackId: null,
+        lyricsRequestId: 0,
         playerShowsLyrics: false,
         together: null,
+        togetherListening: null,
+        togetherPicker: null,
+        playerReturnToChatFriendId: null,
         readerLastActivityAt: 0,
         pendingReadingSeconds: 0,
         pendingListeningSeconds: 0,
@@ -53,6 +59,8 @@
     const audio = new Audio();
     audio.preload = 'metadata';
     audio.playsInline = true;
+    let togetherListeningEventTimer = null;
+    let lastTogetherListeningEventAt = 0;
 
     function $(id) {
         return document.getElementById(id);
@@ -237,6 +245,7 @@
         if (dom.reader_view.classList.contains('active')) closeReader();
         dom.playlist_view.classList.remove('active');
         dom.player_view.classList.remove('active');
+        state.playerReturnToChatFriendId = null;
         closeAllModals();
         dom.view.classList.remove('active');
         dom.view.setAttribute('aria-hidden', 'true');
@@ -750,6 +759,342 @@
 </together_reading_context>`;
     }
 
+    function getTogetherListeningFriendId(friendOrId) {
+        return String(typeof friendOrId === 'object' ? (friendOrId?.id ?? '') : (friendOrId ?? ''));
+    }
+
+    function isPlayableTrack(track) {
+        return !!track && track.available !== false && !!safeHttpUrl(track.mediaUrl);
+    }
+
+    function getTogetherListeningSnapshot(friendOrId) {
+        const session = state.togetherListening;
+        if (!session) return null;
+        const requestedFriendId = getTogetherListeningFriendId(friendOrId);
+        if (requestedFriendId && String(session.friendId) !== requestedFriendId) return null;
+
+        const track = state.currentTrack;
+        const playlist = getPlaylist(session.playlistId);
+        const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+        const currentTime = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+        const currentLyric = state.lyricIndex >= 0 ? state.lyrics[state.lyricIndex] || null : null;
+        return {
+            friendId: String(session.friendId),
+            playlistId: String(session.playlistId),
+            playlistName: playlist?.name || '未命名歌单',
+            queue: [...session.queue],
+            trackId: track?.id || '',
+            title: track?.name || '未知歌曲',
+            artist: track?.artist || '未知歌手',
+            coverUrl: safeImageSource(track?.coverUrl),
+            isPlaying: !!track && !audio.paused,
+            currentTime,
+            duration,
+            progress: duration > 0 ? Math.max(0, Math.min(1, currentTime / duration)) : 0,
+            lyricIndex: state.lyricIndex,
+            currentLyric: currentLyric ? { ...currentLyric } : null,
+            lyricsStatus: state.lyricsStatus
+        };
+    }
+
+    function emitTogetherListeningChange(immediate = false) {
+        const dispatch = () => {
+            togetherListeningEventTimer = null;
+            lastTogetherListeningEventAt = Date.now();
+            const detail = state.togetherListening ? getTogetherListeningSnapshot(state.togetherListening.friendId) : null;
+            window.dispatchEvent(new CustomEvent('library:together-listening-change', { detail }));
+        };
+        const elapsed = Date.now() - lastTogetherListeningEventAt;
+        if (immediate || elapsed >= 750) {
+            if (togetherListeningEventTimer) clearTimeout(togetherListeningEventTimer);
+            dispatch();
+            return;
+        }
+        if (!togetherListeningEventTimer) togetherListeningEventTimer = setTimeout(dispatch, 750 - elapsed);
+    }
+
+    function closeTogetherListeningPicker() {
+        const picker = $('library-together-listening-picker');
+        if (picker) {
+            picker.classList.remove('active');
+            picker.setAttribute('aria-hidden', 'true');
+        }
+        state.togetherPicker = null;
+    }
+
+    function renderTogetherListeningPlaylists() {
+        const picker = ensureTogetherListeningPicker();
+        const list = picker.querySelector('.library-together-playlist-list');
+        const empty = picker.querySelector('.library-together-empty');
+        const sorted = [...state.playlists].sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
+        empty.hidden = sorted.length > 0;
+        list.hidden = sorted.length === 0;
+        list.innerHTML = sorted.map((playlist) => {
+            const tracks = playlistTracks(playlist);
+            const cover = safeImageSource(playlist.coverUrl || tracks.find((track) => track?.coverUrl)?.coverUrl);
+            const playableCount = tracks.filter(isPlayableTrack).length;
+            return `<button class="library-together-playlist-item" type="button" data-together-playlist-id="${escapeHtml(playlist.id)}">
+                <span class="library-together-picker-art">${cover ? `<img src="${escapeHtml(cover)}" alt="" referrerpolicy="no-referrer">` : '<i class="fas fa-music"></i>'}</span>
+                <span class="library-together-picker-copy"><strong>${escapeHtml(playlist.name || '未命名歌单')}</strong><small>${tracks.length} 首歌曲 · ${playableCount} 首可播放</small></span>
+                <i class="fas fa-chevron-right"></i>
+            </button>`;
+        }).join('');
+    }
+
+    function renderTogetherListeningTracks() {
+        const picker = ensureTogetherListeningPicker();
+        const pickerState = state.togetherPicker;
+        if (!pickerState?.playlistId) return;
+        const playlist = getPlaylist(pickerState.playlistId);
+        const tracks = playlistTracks(playlist);
+        const query = String(pickerState.query || '').trim().toLocaleLowerCase('zh-CN');
+        const filteredTracks = tracks.filter((track) => !query || `${track.name || ''} ${track.artist || ''}`.toLocaleLowerCase('zh-CN').includes(query));
+        const list = picker.querySelector('.library-together-track-list');
+        const noResults = picker.querySelector('.library-together-no-results');
+        const confirm = picker.querySelector('[data-together-picker-action="confirm"]');
+        const selected = getTrack(pickerState.selectedTrackId);
+
+        picker.querySelector('.library-together-picker-title').textContent = playlist?.name || '选择歌曲';
+        noResults.hidden = filteredTracks.length > 0;
+        list.hidden = filteredTracks.length === 0;
+        list.innerHTML = filteredTracks.map((track, index) => {
+            const playable = isPlayableTrack(track);
+            const cover = safeImageSource(track.coverUrl);
+            const isSelected = playable && String(track.id) === String(pickerState.selectedTrackId);
+            return `<button class="library-together-track-item${isSelected ? ' selected' : ''}" type="button" data-together-track-id="${escapeHtml(track.id)}" ${playable ? '' : 'disabled'}>
+                <span class="library-together-track-index">${isSelected ? '<i class="fas fa-check"></i>' : index + 1}</span>
+                <span class="library-together-picker-art">${cover ? `<img src="${escapeHtml(cover)}" alt="" referrerpolicy="no-referrer">` : '<i class="fas fa-music"></i>'}</span>
+                <span class="library-together-picker-copy"><strong>${escapeHtml(track.name || '未知歌曲')}</strong><small>${escapeHtml(track.artist || '未知歌手')}${playable ? '' : ' · 不可播放'}</small></span>
+            </button>`;
+        }).join('');
+        confirm.disabled = !isPlayableTrack(selected) || !tracks.some((track) => String(track.id) === String(selected?.id));
+    }
+
+    function showTogetherListeningPlaylistStep() {
+        const picker = ensureTogetherListeningPicker();
+        picker.classList.remove('show-tracks');
+        picker.querySelector('.library-together-picker-title').textContent = '选择歌单';
+        picker.querySelector('.library-together-picker-search').value = '';
+        renderTogetherListeningPlaylists();
+    }
+
+    function showTogetherListeningTrackStep(playlistId) {
+        const playlist = getPlaylist(playlistId);
+        if (!playlist || !state.togetherPicker) return;
+        const tracks = playlistTracks(playlist);
+        const firstPlayable = tracks.find(isPlayableTrack) || null;
+        state.togetherPicker.playlistId = String(playlist.id);
+        state.togetherPicker.selectedTrackId = firstPlayable?.id || '';
+        state.togetherPicker.query = '';
+        const picker = ensureTogetherListeningPicker();
+        picker.classList.add('show-tracks');
+        picker.querySelector('.library-together-picker-search').value = '';
+        renderTogetherListeningTracks();
+    }
+
+    async function startTogetherListening(friend, playlist, track) {
+        if (!friend || friend.type !== 'char' || !playlist || !isPlayableTrack(track)) return false;
+        const queue = playlistTracks(playlist).map((item) => item.id);
+        state.togetherListening = {
+            friendId: String(friend.id),
+            playlistId: String(playlist.id),
+            queue
+        };
+        closeTogetherListeningPicker();
+        emitTogetherListeningChange(true);
+        await playTrack(track, queue);
+        toast(`已和 ${friend.nickname || friend.realName || 'Char'} 一起听`);
+        return true;
+    }
+
+    function stopTogetherListening(friendOrId, options = {}) {
+        const session = state.togetherListening;
+        if (!session) return false;
+        const requestedFriendId = getTogetherListeningFriendId(friendOrId);
+        if (requestedFriendId && requestedFriendId !== String(session.friendId)) return false;
+        state.togetherListening = null;
+        state.playerReturnToChatFriendId = null;
+        emitTogetherListeningChange(true);
+        if (!options.silent) toast('已退出一起听，音乐将继续播放');
+        return true;
+    }
+
+    function ensureTogetherListeningPicker() {
+        let picker = $('library-together-listening-picker');
+        if (picker) return picker;
+        picker = document.createElement('section');
+        picker.id = 'library-together-listening-picker';
+        picker.className = 'library-together-picker';
+        picker.setAttribute('aria-hidden', 'true');
+        picker.innerHTML = `
+            <div class="library-together-picker-backdrop" data-together-picker-action="close"></div>
+            <div class="library-together-picker-card" role="dialog" aria-modal="true" aria-label="选择一起听的歌曲">
+                <header>
+                    <button class="library-together-picker-back" type="button" data-together-picker-action="back" aria-label="返回"><i class="fas fa-chevron-left"></i></button>
+                    <strong class="library-together-picker-title">选择歌单</strong>
+                    <button type="button" data-together-picker-action="close" aria-label="关闭"><i class="fas fa-times"></i></button>
+                </header>
+                <div class="library-together-picker-playlists">
+                    <div class="library-together-playlist-list"></div>
+                    <div class="library-together-empty" hidden>
+                        <i class="fas fa-music"></i><strong>Library 还没有歌单</strong><span>先添加歌单或歌曲，再来和 Char 一起听。</span>
+                        <button type="button" data-together-picker-action="open-library">前往 Library 添加</button>
+                    </div>
+                </div>
+                <div class="library-together-picker-tracks">
+                    <label class="library-together-search"><i class="fas fa-search"></i><input class="library-together-picker-search" type="search" placeholder="搜索歌曲或歌手" autocomplete="off"></label>
+                    <div class="library-together-track-list"></div>
+                    <div class="library-together-no-results" hidden>没有找到匹配的歌曲</div>
+                    <button class="library-together-confirm" type="button" data-together-picker-action="confirm">确定并开始一起听</button>
+                </div>
+            </div>`;
+        ($('imessage-view') || document.body).appendChild(picker);
+
+        picker.addEventListener('click', async (event) => {
+            const action = event.target.closest('[data-together-picker-action]')?.dataset.togetherPickerAction;
+            if (action === 'close') return closeTogetherListeningPicker();
+            if (action === 'back') return showTogetherListeningPlaylistStep();
+            if (action === 'open-library') {
+                closeTogetherListeningPicker();
+                openApp('music');
+                return;
+            }
+            const playlistButton = event.target.closest('[data-together-playlist-id]');
+            if (playlistButton) return showTogetherListeningTrackStep(playlistButton.dataset.togetherPlaylistId);
+            const trackButton = event.target.closest('[data-together-track-id]');
+            if (trackButton && !trackButton.disabled && state.togetherPicker) {
+                state.togetherPicker.selectedTrackId = trackButton.dataset.togetherTrackId;
+                renderTogetherListeningTracks();
+                return;
+            }
+            if (action === 'confirm' && state.togetherPicker) {
+                const friend = (window.imData?.friends || []).find((item) => String(item.id) === String(state.togetherPicker.friendId));
+                const playlist = getPlaylist(state.togetherPicker.playlistId);
+                const track = getTrack(state.togetherPicker.selectedTrackId);
+                await startTogetherListening(friend, playlist, track);
+            }
+        });
+        picker.querySelector('.library-together-picker-search').addEventListener('input', (event) => {
+            if (!state.togetherPicker) return;
+            state.togetherPicker.query = event.target.value;
+            renderTogetherListeningTracks();
+        });
+        return picker;
+    }
+
+    function openTogetherListeningPicker(friend) {
+        if (!state.ready) return toast('Library 正在加载，请稍后再试');
+        if (!friend || friend.type !== 'char') return toast('一起听仅支持 Char 单聊');
+        if (getTogetherListeningSnapshot(friend)) {
+            stopTogetherListening(friend);
+            return;
+        }
+        state.togetherPicker = {
+            friendId: String(friend.id),
+            playlistId: '',
+            selectedTrackId: '',
+            query: ''
+        };
+        const picker = ensureTogetherListeningPicker();
+        showTogetherListeningPlaylistStep();
+        picker.classList.add('active');
+        picker.setAttribute('aria-hidden', 'false');
+    }
+
+    async function controlTogetherListening(friendOrId, command = {}) {
+        const snapshot = getTogetherListeningSnapshot(friendOrId);
+        if (!snapshot) return false;
+        const action = String(command.action || '').trim().toLowerCase();
+        if (action === 'toggle') {
+            togglePlayback();
+            return true;
+        }
+        if (action === 'next' || action === 'previous') {
+            state.queue = [...snapshot.queue];
+            state.queueIndex = state.queue.findIndex((id) => String(id) === String(snapshot.trackId));
+            playQueueDirection(action === 'next' ? 1 : -1);
+            return true;
+        }
+        if (action !== 'play_track') return false;
+        const trackId = String(command.trackId || '').trim();
+        if (!trackId || !snapshot.queue.some((id) => String(id) === trackId)) return false;
+        const track = getTrack(trackId);
+        if (!isPlayableTrack(track) || String(track.playlistId) !== String(snapshot.playlistId)) return false;
+        await playTrack(track, snapshot.queue);
+        return true;
+    }
+
+    function openTogetherListeningPlayer(friendOrId) {
+        const snapshot = getTogetherListeningSnapshot(friendOrId);
+        if (!snapshot || !state.currentTrack) return false;
+        state.playerReturnToChatFriendId = snapshot.friendId;
+        openApp('music');
+        openPlayer();
+        return true;
+    }
+
+    function formatLrcTimestamp(seconds) {
+        const safe = Math.max(0, Number(seconds) || 0);
+        const minutes = Math.floor(safe / 60);
+        const secs = Math.floor(safe % 60);
+        const hundredths = Math.floor((safe - Math.floor(safe)) * 100);
+        return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(hundredths).padStart(2, '0')}`;
+    }
+
+    function getTogetherListeningContext(friendOrId) {
+        const snapshot = getTogetherListeningSnapshot(friendOrId);
+        if (!snapshot) return '';
+        const session = state.togetherListening;
+        const playlist = getPlaylist(snapshot.playlistId);
+        const track = state.currentTrack;
+        if (!session || !playlist || !track) return '';
+        const xml = (value) => String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&apos;');
+        const lyricsStatusText = {
+            loading: '歌词正在加载，当前不可用',
+            unavailable: '歌曲没有歌词地址，歌词不可用',
+            error: '歌词加载失败，歌词不可用',
+            ready: '歌词已完整加载',
+            idle: '歌词尚未加载'
+        }[state.lyricsStatus] || '歌词状态未知';
+        const fullLyrics = state.lyrics.length
+            ? state.lyrics.map((line, index) => `${index === state.lyricIndex ? '▶ ' : ''}[${formatLrcTimestamp(line.time)}] ${line.text}`).join('\n')
+            : `（${lyricsStatusText}）`;
+        const currentLine = snapshot.currentLyric
+            ? `[${formatLrcTimestamp(snapshot.currentLyric.time)}] ${snapshot.currentLyric.text}`
+            : '（尚未播放到第一句，或当前没有可用歌词）';
+        const catalog = playlistTracks(playlist).map((item) =>
+            `<track id="${xml(item.id)}" available="${isPlayableTrack(item) ? 'true' : 'false'}"><title>${xml(item.name || '未知歌曲')}</title><artist>${xml(item.artist || '未知歌手')}</artist></track>`
+        ).join('\n');
+        return `<together_listening_context>
+<scene>你正在和 User 同步听歌。以下播放状态是本次 API 请求发起时的实时快照。</scene>
+<listening_rules>
+- 你可以自然谈论当前歌曲、歌手、完整歌词和正在播放到的这一句，但不要机械复述全部歌词。
+- 歌词不可用时必须明确承认不知道歌词，绝对禁止编造歌词。
+- 只有 User 明确要求切歌或点歌时，才可以输出一个 music_control；不得主动切歌，每轮最多一个。
+- “下一首”使用 {"type":"music_control","action":"next"}，“上一首”使用 {"type":"music_control","action":"previous"}。
+- 指定歌曲只能从 available_playlist_tracks 中选择 available=true 的歌曲，并使用准确 ID：{"type":"music_control","action":"play_track","trackId":"歌曲ID"}。
+- 歌名有歧义、没有命中或歌曲不可播放时，不要输出 music_control，改为在普通聊天气泡中询问或说明。
+</listening_rules>
+<playlist id="${xml(snapshot.playlistId)}">${xml(snapshot.playlistName)}</playlist>
+<current_track id="${xml(snapshot.trackId)}"><title>${xml(snapshot.title)}</title><artist>${xml(snapshot.artist)}</artist></current_track>
+<playback_state>${snapshot.isPlaying ? 'playing' : 'paused'}</playback_state>
+<position seconds="${snapshot.currentTime.toFixed(2)}" duration="${snapshot.duration.toFixed(2)}">${xml(formatClock(snapshot.currentTime))} / ${xml(formatClock(snapshot.duration))}</position>
+<lyrics_status>${xml(lyricsStatusText)}</lyrics_status>
+<current_lyric index="${snapshot.lyricIndex}">${xml(currentLine)}</current_lyric>
+<available_playlist_tracks>
+${catalog}
+</available_playlist_tracks>
+<full_timed_lyrics>
+${xml(fullLyrics)}
+</full_timed_lyrics>
+</together_listening_context>`;
+    }
+
     function renderPlaylists() {
         const sorted = [...state.playlists].sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
         dom.playlist_count.textContent = `${sorted.length} ${sorted.length === 1 ? 'PLAYLIST' : 'PLAYLISTS'}`;
@@ -1011,23 +1356,37 @@
     }
 
     async function loadLyrics(track) {
+        const requestId = ++state.lyricsRequestId;
         state.lyrics = [];
         state.lyricIndex = -1;
+        state.lyricsTrackId = track?.id || null;
+        state.lyricsStatus = 'loading';
         dom.lyrics.innerHTML = '<p class="active">正在读取歌词…</p>';
+        emitTogetherListeningChange(true);
         if (!track?.lyricUrl) {
+            state.lyricsStatus = 'unavailable';
             dom.lyrics.innerHTML = '<p class="active">这首歌暂时没有歌词</p>';
+            emitTogetherListeningChange(true);
             return;
         }
         try {
             const response = await fetch(track.lyricUrl, { mode: 'cors', credentials: 'omit' });
             if (!response.ok) throw new Error('Lyric request failed');
-            state.lyrics = parseLrc(await response.text());
+            const parsedLyrics = parseLrc(await response.text());
+            if (requestId !== state.lyricsRequestId || String(state.currentTrack?.id || '') !== String(track.id || '')) return;
+            state.lyrics = parsedLyrics;
+            state.lyricsStatus = state.lyrics.length ? 'ready' : 'unavailable';
             dom.lyrics.innerHTML = state.lyrics.length
                 ? state.lyrics.map((line, index) => `<p data-lyric-index="${index}">${escapeHtml(line.text)}</p>`).join('')
                 : '<p class="active">这首歌暂时没有歌词</p>';
+            updateLyrics(Number(audio.currentTime) || 0);
+            emitTogetherListeningChange(true);
         } catch (error) {
+            if (requestId !== state.lyricsRequestId || String(state.currentTrack?.id || '') !== String(track?.id || '')) return;
             console.warn('[Library] Lyrics unavailable:', error);
+            state.lyricsStatus = 'error';
             dom.lyrics.innerHTML = '<p class="active">歌词加载失败</p>';
+            emitTogetherListeningChange(true);
         }
     }
 
@@ -1074,6 +1433,7 @@
         audio.src = track.mediaUrl;
         audio.load();
         updatePlayerUi();
+        emitTogetherListeningChange(true);
         loadLyrics(track);
         try {
             await audio.play();
@@ -1084,6 +1444,7 @@
             console.warn('[Library] Playback failed:', error);
             toast('当前歌曲暂时无法播放');
             updatePlayerUi();
+            emitTogetherListeningChange(true);
         }
     }
 
@@ -1122,6 +1483,12 @@
     function closePlayer() {
         dom.player_view.classList.remove('active');
         dom.player_view.setAttribute('aria-hidden', 'true');
+        if (state.playerReturnToChatFriendId) {
+            state.playerReturnToChatFriendId = null;
+            dom.view.classList.remove('active');
+            dom.view.setAttribute('aria-hidden', 'true');
+            $('imessage-view')?.classList.add('active');
+        }
     }
 
     function updatePlayerUi() {
@@ -1408,11 +1775,11 @@
         }));
         bindNavigation();
 
-        audio.addEventListener('play', updatePlayerUi);
-        audio.addEventListener('pause', () => { updatePlayerUi(); flushListeningStats().catch(console.error); });
-        audio.addEventListener('loadedmetadata', () => { state.lastMediaTime = audio.currentTime || 0; updatePlayerUi(); });
+        audio.addEventListener('play', () => { updatePlayerUi(); emitTogetherListeningChange(true); });
+        audio.addEventListener('pause', () => { updatePlayerUi(); emitTogetherListeningChange(true); flushListeningStats().catch(console.error); });
+        audio.addEventListener('loadedmetadata', () => { state.lastMediaTime = audio.currentTime || 0; updatePlayerUi(); emitTogetherListeningChange(true); });
         audio.addEventListener('seeking', () => { state.isSeeking = true; });
-        audio.addEventListener('seeked', () => { state.lastMediaTime = audio.currentTime || 0; state.isSeeking = false; });
+        audio.addEventListener('seeked', () => { state.lastMediaTime = audio.currentTime || 0; state.isSeeking = false; updateLyrics(audio.currentTime || 0); emitTogetherListeningChange(true); });
         audio.addEventListener('timeupdate', () => {
             const current = Number(audio.currentTime) || 0;
             const delta = current - state.lastMediaTime;
@@ -1423,12 +1790,14 @@
             state.lastMediaTime = current;
             updatePlayerUi();
             updateLyrics(current);
+            emitTogetherListeningChange(false);
         });
         audio.addEventListener('ended', () => { flushListeningStats().catch(console.error); playQueueDirection(1); });
         audio.addEventListener('error', () => {
             if (!state.currentTrack || !audio.src) return;
             toast('当前歌曲暂时无法播放');
             updatePlayerUi();
+            emitTogetherListeningChange(true);
         });
 
         window.addEventListener('pagehide', () => {
@@ -1481,7 +1850,13 @@
         open: (tab) => openApp(tab),
         close: closeApp,
         importNetEasePlaylist,
-        getTogetherReadingContext
+        getTogetherReadingContext,
+        openTogetherListeningPicker,
+        getTogetherListeningSnapshot,
+        getTogetherListeningContext,
+        controlTogetherListening,
+        stopTogetherListening,
+        openTogetherListeningPlayer
     };
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });

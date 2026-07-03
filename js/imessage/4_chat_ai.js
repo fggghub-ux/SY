@@ -1753,6 +1753,7 @@ Reply naturally as your character in a chat app.
 8. quote 只有在你确实想引用用户某句消息时才填写，否则必须是空字符串。
 8a. 【引用回复检查】：如果你要引用回复，quote 字段必须直接填写你想回复的用户原话或原话片段。绝对禁止在 quote 中复述、反问、总结、改写、扩写用户的话；不要把你自己的理解、评价或追问写进 quote。你的回应只能写在 text 字段里。
 9. 如果你觉得当前对话氛围有必要主动给用户打电话，或者用户明确要求你打电话，可以输出一个特殊对象格式：{"type": "call", "action": "发起语音通话"}。
+9a. 如果系统提供了 <together_listening_context>，仅在 User 明确要求切歌或点歌时，可以额外输出一个无气泡音乐控制对象：{"type":"music_control","action":"next|previous|play_track","trackId":"歌曲ID"}。每轮最多一个；play_track 的 trackId 必须来自当前歌单目录。该对象只控制播放器，不代替正常聊天回复。
 10. 除 <chat_json> 外，不要输出任何聊天正文。
 11. 你必须额外输出 1 个 <profile_panel>...</profile_panel>，用于更新角色资料卡。${languageRequirement}
 
@@ -1840,6 +1841,16 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
             messages.push({
                 role: 'system',
                 content: String(togetherReadingContext)
+            });
+        }
+
+        const togetherListeningContext = window.libraryApp?.getTogetherListeningContext
+            ? window.libraryApp.getTogetherListeningContext(friend)
+            : '';
+        if (togetherListeningContext) {
+            messages.push({
+                role: 'system',
+                content: String(togetherListeningContext)
             });
         }
 
@@ -2121,6 +2132,16 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                         return { kind: 'call' };
                     }
 
+                    if (itemType === 'music_control') {
+                        const action = typeof item.action === 'string' ? item.action.trim().toLowerCase() : '';
+                        if (!['next', 'previous', 'play_track'].includes(action)) return null;
+                        return {
+                            kind: 'music_control',
+                            action,
+                            trackId: typeof item.trackId === 'string' ? item.trackId.trim() : ''
+                        };
+                    }
+
                     if (itemType === 'action_narration' || itemType === 'dynamic_action' || itemType === 'action_notice') {
                         const text = typeof item.text === 'string'
                             ? item.text.trim()
@@ -2382,6 +2403,16 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                     if (activeFriend.type !== 'group' && window.imChat && window.imChat.openVoiceCall) {
                         window.imChat.openVoiceCall(activeFriend, true);
                     }
+                    qIndex++;
+                    return true;
+                }
+
+                if (currentItem.kind === 'music_control') {
+                    const controlled = await window.libraryApp?.controlTogetherListening?.(friend.id, {
+                        action: currentItem.action,
+                        trackId: currentItem.trackId
+                    });
+                    if (!controlled) console.warn('[iMessage] Ignored invalid together-listening control:', currentItem);
                     qIndex++;
                     return true;
                 }
