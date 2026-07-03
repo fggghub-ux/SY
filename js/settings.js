@@ -155,7 +155,7 @@
             { id: 'app-icon-3', name: 'b.stage', icon: null },
             { id: 'app-icon-4', name: 'X', icon: null },
             { id: 'app-icon-5', name: 'Shop', icon: null },
-            { id: 'app-icon-6', name: 'call', icon: null },
+            { id: 'app-icon-6', name: 'Library', icon: null },
             { id: 'app-icon-7', name: 'Netflix', icon: null },
             { id: 'app-icon-8', name: 'Loves', icon: null },
             { id: 'dock-icon-settings', name: '设置', icon: null },
@@ -208,7 +208,9 @@
                         const existingApp = themeState.apps.find(a => a.id === savedApp.id);
                         if (existingApp) {
                             existingApp.icon = savedApp.icon;
-                            if (savedApp.id === 'app-icon-8' && savedApp.name === 'Diary') {
+                            if (savedApp.id === 'app-icon-6') {
+                                existingApp.name = 'Library';
+                            } else if (savedApp.id === 'app-icon-8' && savedApp.name === 'Diary') {
                                 existingApp.name = 'Loves';
                             } else {
                                 existingApp.name = savedApp.name || existingApp.name;
@@ -1622,10 +1624,11 @@
                     iconDiv.style.color = '#1c1c1e';
                     ensureIconElement('fas fa-shopping-bag', 'color: #1c1c1e; font-size: 30px; filter: none;');
                 } else if (app.id === 'app-icon-6') {
-                    iconDiv.style.background = defaultBg;
+                    iconDiv.style.background = '#ffffff';
                     iconDiv.style.color = '#1c1c1e';
-                    iconDiv.style.fontSize = '30px';
-                    ensureIconElement('fas fa-phone', 'color: #1c1c1e; font-size: 30px; filter: none;');
+                    iconDiv.style.fontSize = '27px';
+                    iconDiv.style.border = '1px solid #e5e5ea';
+                    ensureIconElement('fas fa-book-open', 'color: #1c1c1e; font-size: 27px; filter: none;');
                 } else if (app.id === 'app-icon-7') {
                     iconDiv.style.background = defaultBg;
                     iconDiv.style.color = '#1c1c1e';

@@ -6,8 +6,8 @@
 
 (function() {
     const DB_NAME = 'iiso_app_storage';
-    const DB_VERSION = 3;
-    const STORAGE_SCHEMA_VERSION = 4;
+    const DB_VERSION = 4;
+    const STORAGE_SCHEMA_VERSION = 5;
     const BACKUP_APP_NAME = 'u2phone';
     const PERSISTENT_LOCALSTORAGE_EXCLUDE_PREFIXES = ['iiso_auth_'];
     const MANAGED_LOCALSTORAGE_EXACT_KEYS = new Set([
@@ -35,7 +35,11 @@
         imMessages: 'im_messages',
         imMoments: 'im_moments',
         imMomentMessages: 'im_moment_messages',
-        imStickers: 'im_stickers'
+        imStickers: 'im_stickers',
+        libraryBooks: 'library_books',
+        libraryPlaylists: 'library_playlists',
+        libraryTracks: 'library_tracks',
+        libraryDailyStats: 'library_daily_stats'
     };
 
     const META_KEYS = {
@@ -544,6 +548,29 @@
                 if (!db.objectStoreNames.contains(STORES.imStickers)) {
                     db.createObjectStore(STORES.imStickers, { keyPath: 'categoryName' });
                 }
+
+                if (!db.objectStoreNames.contains(STORES.libraryBooks)) {
+                    const booksStore = db.createObjectStore(STORES.libraryBooks, { keyPath: 'id' });
+                    booksStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains(STORES.libraryPlaylists)) {
+                    const playlistsStore = db.createObjectStore(STORES.libraryPlaylists, { keyPath: 'id' });
+                    playlistsStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains(STORES.libraryTracks)) {
+                    const tracksStore = db.createObjectStore(STORES.libraryTracks, { keyPath: 'id' });
+                    tracksStore.createIndex('playlistId', 'playlistId', { unique: false });
+                    tracksStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains(STORES.libraryDailyStats)) {
+                    const statsStore = db.createObjectStore(STORES.libraryDailyStats, { keyPath: 'id' });
+                    statsStore.createIndex('date', 'date', { unique: false });
+                    statsStore.createIndex('kind', 'kind', { unique: false });
+                    statsStore.createIndex('date_kind', ['date', 'kind'], { unique: false });
+                }
             };
 
             request.onsuccess = () => {
@@ -625,6 +652,114 @@
         return withStore([storeName], 'readonly', async (stores) => {
             const rows = await requestToPromise(stores[storeName].getAll());
             return Array.isArray(rows) ? rows : [];
+        });
+    }
+
+    function sanitizeLibraryRecord(record) {
+        return sanitizePersistentValue(cloneDeep(record || {}));
+    }
+
+    async function loadLibraryBooks() {
+        return cloneDeep(await getAllRecords(STORES.libraryBooks));
+    }
+
+    async function saveLibraryBook(book) {
+        const record = sanitizeLibraryRecord(book);
+        if (!record.id) throw new Error('Library book id is required.');
+        await putRecord(STORES.libraryBooks, record);
+        return cloneDeep(record);
+    }
+
+    async function deleteLibraryBook(bookId) {
+        return deleteRecord(STORES.libraryBooks, String(bookId || ''));
+    }
+
+    async function loadLibraryPlaylists() {
+        return cloneDeep(await getAllRecords(STORES.libraryPlaylists));
+    }
+
+    async function loadLibraryTracks() {
+        return cloneDeep(await getAllRecords(STORES.libraryTracks));
+    }
+
+    async function saveLibraryPlaylistBundle(playlist, tracks = [], options = {}) {
+        const playlistRecord = sanitizeLibraryRecord(playlist);
+        if (!playlistRecord.id) throw new Error('Library playlist id is required.');
+        const trackRecords = (Array.isArray(tracks) ? tracks : [])
+            .map(sanitizeLibraryRecord)
+            .filter((track) => track.id);
+
+        await withStore([STORES.libraryPlaylists, STORES.libraryTracks], 'readwrite', async (stores) => {
+            if (options.replaceTracks) {
+                const keepIds = new Set(trackRecords.map((track) => track.id));
+                const existingTracks = await requestToPromise(stores[STORES.libraryTracks].getAll());
+                (Array.isArray(existingTracks) ? existingTracks : []).forEach((track) => {
+                    if (track?.playlistId === playlistRecord.id && !keepIds.has(track.id)) {
+                        stores[STORES.libraryTracks].delete(track.id);
+                    }
+                });
+            }
+            stores[STORES.libraryPlaylists].put(playlistRecord);
+            trackRecords.forEach((track) => stores[STORES.libraryTracks].put(track));
+        });
+
+        return {
+            playlist: cloneDeep(playlistRecord),
+            tracks: cloneDeep(trackRecords)
+        };
+    }
+
+    async function saveLibraryTrack(track) {
+        const record = sanitizeLibraryRecord(track);
+        if (!record.id) throw new Error('Library track id is required.');
+        await putRecord(STORES.libraryTracks, record);
+        return cloneDeep(record);
+    }
+
+    async function deleteLibraryTrack(trackId) {
+        return deleteRecord(STORES.libraryTracks, String(trackId || ''));
+    }
+
+    async function deleteLibraryPlaylist(playlistId) {
+        const safePlaylistId = String(playlistId || '');
+        if (!safePlaylistId) return;
+
+        return withStore([STORES.libraryPlaylists, STORES.libraryTracks], 'readwrite', async (stores) => {
+            const trackRows = await requestToPromise(stores[STORES.libraryTracks].getAll());
+            (Array.isArray(trackRows) ? trackRows : []).forEach((track) => {
+                if (track && track.playlistId === safePlaylistId) {
+                    stores[STORES.libraryTracks].delete(track.id);
+                }
+            });
+            stores[STORES.libraryPlaylists].delete(safePlaylistId);
+        });
+    }
+
+    async function loadLibraryDailyStats() {
+        return cloneDeep(await getAllRecords(STORES.libraryDailyStats));
+    }
+
+    async function incrementLibraryDailyStat({ date, kind, itemId, seconds }) {
+        const safeDate = String(date || '');
+        const safeKind = String(kind || '');
+        const safeItemId = String(itemId || 'all');
+        const safeSeconds = Number(seconds);
+        if (!safeDate || !safeKind || !Number.isFinite(safeSeconds) || safeSeconds <= 0) return null;
+
+        const id = `${safeDate}|${safeKind}|${safeItemId}`;
+        return withStore([STORES.libraryDailyStats], 'readwrite', async (stores) => {
+            const store = stores[STORES.libraryDailyStats];
+            const existing = await requestToPromise(store.get(id));
+            const record = {
+                id,
+                date: safeDate,
+                kind: safeKind,
+                itemId: safeItemId,
+                seconds: Math.max(0, Number(existing?.seconds) || 0) + safeSeconds,
+                updatedAt: Date.now()
+            };
+            store.put(record);
+            return cloneDeep(record);
         });
     }
 
@@ -2584,6 +2719,17 @@
         saveStickers,
         loadStickers,
         saveMomentsCover,
-        loadMomentsCoverUrl
+        loadMomentsCoverUrl,
+        loadLibraryBooks,
+        saveLibraryBook,
+        deleteLibraryBook,
+        loadLibraryPlaylists,
+        loadLibraryTracks,
+        saveLibraryPlaylistBundle,
+        saveLibraryTrack,
+        deleteLibraryTrack,
+        deleteLibraryPlaylist,
+        loadLibraryDailyStats,
+        incrementLibraryDailyStat
     };
 })();

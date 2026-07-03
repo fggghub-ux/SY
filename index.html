@@ -42,6 +42,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
     <link rel="stylesheet" href="css/loves.css">
+    <link rel="stylesheet" href="css/library.css?v=20260703-library-v4">
     <!-- App Styles -->
     <link rel="stylesheet" href="css/settings.css">
     <link rel="stylesheet" href="css/youtube.css">
@@ -235,9 +236,9 @@
                         </div>
                         <span class="app-name">Shop</span>
                     </div>
-                    <div class="app-item" id="app-phone-btn" style="cursor: pointer;" onclick="document.getElementById('friend-phonecall-view').style.display='flex'">
-                        <div class="app-icon icon-placeholder" id="app-icon-6" style="background: #ffffff; color: #1c1c1e; border: 1px solid #e5e5ea; display: flex; justify-content: center; align-items: center; font-size: 30px;"><i class="fas fa-phone"></i></div>
-                        <span class="app-name">call</span>
+                    <div class="app-item library-app-item" id="app-phone-btn" style="cursor: pointer;">
+                        <div class="app-icon icon-placeholder library-home-icon" id="app-icon-6"><i class="fas fa-book-open"></i></div>
+                        <span class="app-name">Library</span>
                     </div>
 
                     <!-- Couple Widget (Right side, Row 3-4, 2x2 = 4 slots) -->
@@ -351,8 +352,218 @@
         
 
         
+        <!-- Library App -->
+        <div class="app-view library-app" id="library-view" aria-hidden="true">
+            <header class="library-header">
+                <button class="library-icon-button" id="library-back-btn" type="button" aria-label="返回主屏幕">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <div class="library-header-title">
+                    <span>资料库</span>
+                    <small>LIBRARY</small>
+                </div>
+                <button class="library-icon-button library-header-action" id="library-header-action" type="button" aria-label="添加">
+                    <i class="fas fa-plus"></i>
+                </button>
+            </header>
 
+            <main class="library-main">
+                <section class="library-page active" id="library-books-page" data-library-page="books">
+                    <div class="library-page-intro">
+                        <div>
+                            <span class="library-eyebrow">BOOK COLLECTION</span>
+                            <h1>我的书架</h1>
+                            <p>把想读的文字留在这里，安静地读完。</p>
+                        </div>
+                        <button class="library-round-action" id="library-book-upload-btn" type="button" aria-label="导入书籍">
+                            <i class="fas fa-arrow-up-from-bracket"></i>
+                        </button>
+                    </div>
+                    <input type="file" id="library-book-file-input" accept=".txt,.text,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+                    <div class="library-section-heading">
+                        <span>书架</span>
+                        <small id="library-book-count">0 BOOKS</small>
+                    </div>
+                    <div class="library-book-grid" id="library-book-grid"></div>
+                    <div class="library-empty" id="library-books-empty">
+                        <div class="library-empty-icon"><i class="fas fa-book-open"></i></div>
+                        <strong>书架还是空的</strong>
+                        <span>导入 TXT 或 DOCX，开始第一段阅读。</span>
+                        <button type="button" data-library-action="upload-book">导入书籍</button>
+                    </div>
+                </section>
 
+                <section class="library-page" id="library-music-page" data-library-page="music">
+                    <div class="library-page-intro library-music-intro">
+                        <div>
+                            <span class="library-eyebrow">LISTENING ROOM</span>
+                            <h1>音乐收藏</h1>
+                            <p>歌单、旋律和此刻的心情。</p>
+                        </div>
+                        <button class="library-round-action" id="library-music-add-btn" type="button" aria-label="添加音乐">
+                            <i class="fas fa-plus"></i>
+                        </button>
+                    </div>
+                    <div class="library-music-actions">
+                        <button type="button" id="library-import-netease-btn">
+                            <i class="fas fa-cloud-arrow-down"></i>
+                            <span><strong>导入网易云歌单</strong><small>NETEASE PLAYLIST</small></span>
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
+                        <button type="button" id="library-add-track-btn">
+                            <i class="fas fa-link"></i>
+                            <span><strong>添加歌曲链接</strong><small>AUDIO URL</small></span>
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                    <div class="library-section-heading">
+                        <span>我的歌单</span>
+                        <small id="library-playlist-count">0 PLAYLISTS</small>
+                    </div>
+                    <div class="library-playlist-list" id="library-playlist-list"></div>
+                    <div class="library-empty" id="library-music-empty">
+                        <div class="library-empty-icon"><i class="fas fa-music"></i></div>
+                        <strong>还没有音乐</strong>
+                        <span>粘贴网易云歌单，或添加可播放的音频链接。</span>
+                    </div>
+                </section>
+
+                <section class="library-page" id="library-overview-page" data-library-page="overview">
+                    <div class="library-page-intro">
+                        <div>
+                            <span class="library-eyebrow">WEEKLY RHYTHM</span>
+                            <h1>时间概览</h1>
+                            <p>读过的句子，听过的旋律，都有迹可循。</p>
+                        </div>
+                    </div>
+                    <div class="library-metric-grid">
+                        <article class="library-metric-card reading">
+                            <span><i class="fas fa-book-open"></i> 今日阅读</span>
+                            <strong id="library-today-reading">0分钟</strong>
+                            <small>READING TIME</small>
+                        </article>
+                        <article class="library-metric-card listening">
+                            <span><i class="fas fa-headphones"></i> 今日听歌</span>
+                            <strong id="library-today-listening">0分钟</strong>
+                            <small>LISTENING TIME</small>
+                        </article>
+                    </div>
+                    <article class="library-overview-card">
+                        <div class="library-card-title">
+                            <div><strong>近 7 天</strong><small>ACTIVITY</small></div>
+                            <span id="library-week-total">0分钟</span>
+                        </div>
+                        <div class="library-week-chart" id="library-week-chart"></div>
+                        <div class="library-chart-legend"><span><i class="reading"></i>阅读</span><span><i class="listening"></i>听歌</span></div>
+                    </article>
+                    <article class="library-overview-card">
+                        <div class="library-card-title library-ranking-title">
+                            <div><strong>听歌排行</strong><small>MOST PLAYED</small></div>
+                            <div class="library-range-switch" role="group" aria-label="排行榜时间范围">
+                                <button class="active" type="button" data-range="week">近7天</button>
+                                <button type="button" data-range="all">全部</button>
+                            </div>
+                        </div>
+                        <div class="library-ranking-list" id="library-ranking-list"></div>
+                    </article>
+                </section>
+            </main>
+
+            <div class="library-mini-player" id="library-mini-player" hidden>
+                <button class="library-mini-main" id="library-mini-open" type="button">
+                    <span class="library-mini-art" id="library-mini-art"><i class="fas fa-music"></i></span>
+                    <span class="library-mini-copy"><strong id="library-mini-title">未在播放</strong><small id="library-mini-artist">Library</small></span>
+                </button>
+                <button class="library-mini-control" id="library-mini-play" type="button" aria-label="播放"><i class="fas fa-play"></i></button>
+                <button class="library-mini-control" id="library-mini-next" type="button" aria-label="下一首"><i class="fas fa-forward-step"></i></button>
+                <span class="library-mini-progress" id="library-mini-progress"></span>
+            </div>
+
+            <nav class="library-floating-nav" id="library-floating-nav" aria-label="Library 页面切换">
+                <span class="library-nav-indicator"></span>
+                <button class="active" type="button" data-library-tab="books"><i class="fas fa-book-open"></i><span>书架</span></button>
+                <button type="button" data-library-tab="music"><i class="fas fa-music"></i><span>音乐</span></button>
+                <button type="button" data-library-tab="overview"><i class="fas fa-chart-simple"></i><span>概览</span></button>
+            </nav>
+
+            <section class="library-subview library-reader" id="library-reader-view" aria-hidden="true">
+                <header class="library-subview-header">
+                    <button type="button" id="library-reader-back"><i class="fas fa-chevron-left"></i></button>
+                    <div><strong id="library-reader-title">书名</strong><small id="library-reader-progress-label">0%</small></div>
+                    <span class="library-reader-actions">
+                        <button type="button" id="library-reader-toc-button" aria-label="目录"><i class="fas fa-list-ul"></i></button>
+                        <button type="button" id="library-reader-settings" aria-label="排版设置"><i class="fas fa-text-height"></i></button>
+                    </span>
+                </header>
+                <div class="library-reader-scroll" id="library-reader-scroll"><article id="library-reader-content"></article></div>
+                <aside class="library-reader-toc" id="library-reader-toc" hidden>
+                    <div class="library-reader-toc-heading"><div><small>CONTENTS</small><strong>目录</strong></div><button type="button" id="library-reader-toc-close"><i class="fas fa-times"></i></button></div>
+                    <div class="library-reader-toc-list" id="library-reader-toc-list"></div>
+                </aside>
+                <div class="library-reader-panel" id="library-reader-panel" hidden>
+                    <div><span>字号</span><button type="button" data-reader-font="-1">A−</button><button type="button" data-reader-font="1">A＋</button></div>
+                    <div><span>行距</span><button type="button" data-reader-line="-1"><i class="fas fa-compress"></i></button><button type="button" data-reader-line="1"><i class="fas fa-arrows-up-down"></i></button></div>
+                    <div class="library-reader-themes"><button class="active" type="button" data-reader-theme="light">浅色</button><button type="button" data-reader-theme="paper">护眼</button><button type="button" data-reader-theme="dark">深色</button></div>
+                </div>
+            </section>
+
+            <section class="library-subview library-playlist-detail" id="library-playlist-view" aria-hidden="true">
+                <header class="library-subview-header">
+                    <button type="button" id="library-playlist-back"><i class="fas fa-chevron-left"></i></button>
+                    <div><strong>歌单</strong><small>PLAYLIST</small></div>
+                    <button type="button" id="library-playlist-delete"><i class="fas fa-trash-can"></i></button>
+                </header>
+                <div class="library-playlist-hero">
+                    <span id="library-playlist-cover"><i class="fas fa-music"></i></span>
+                    <div><h2 id="library-playlist-title">我的歌单</h2><p id="library-playlist-meta">0 首歌曲</p><button type="button" id="library-play-all"><i class="fas fa-play"></i> 全部播放</button></div>
+                </div>
+                <div class="library-track-list" id="library-track-list"></div>
+            </section>
+
+            <section class="library-subview library-player" id="library-player-view" aria-hidden="true">
+                <div class="library-player-wash" id="library-player-wash"></div>
+                <header class="library-subview-header library-player-header">
+                    <button type="button" id="library-player-close"><i class="fas fa-chevron-down"></i></button>
+                    <div><strong>正在播放</strong><small>NOW PLAYING</small></div>
+                    <span></span>
+                </header>
+                <div class="library-player-body">
+                    <div class="library-player-art" id="library-player-art"><i class="fas fa-music"></i></div>
+                    <div class="library-player-copy"><h2 id="library-player-title">未在播放</h2><p id="library-player-artist">Library</p></div>
+                    <div class="library-player-progress-row">
+                        <input type="range" id="library-player-progress" min="0" max="1000" value="0" aria-label="播放进度">
+                        <div><span id="library-player-current">0:00</span><span id="library-player-duration">0:00</span></div>
+                    </div>
+                    <div class="library-player-controls">
+                        <button type="button" id="library-player-prev"><i class="fas fa-backward-step"></i></button>
+                        <button class="primary" type="button" id="library-player-play"><i class="fas fa-play"></i></button>
+                        <button type="button" id="library-player-next"><i class="fas fa-forward-step"></i></button>
+                    </div>
+                    <div class="library-lyrics" id="library-lyrics"><p class="active">播放歌曲后显示歌词</p></div>
+                </div>
+            </section>
+
+            <div class="library-modal-backdrop" id="library-import-modal" hidden>
+                <form class="library-modal-card" id="library-import-form">
+                    <div class="library-modal-heading"><div><small>NETEASE</small><h2>导入网易云歌单</h2></div><button type="button" data-close-library-modal><i class="fas fa-times"></i></button></div>
+                    <label>歌单分享链接或分享文字<textarea id="library-netease-input" rows="4" placeholder="粘贴网易云歌单链接或完整分享文字" required></textarea></label>
+                    <p>支持 music.163.com 长链接与 163cn.tv 短链接。</p>
+                    <button class="library-primary-button" type="submit">开始导入</button>
+                </form>
+            </div>
+
+            <div class="library-modal-backdrop" id="library-track-modal" hidden>
+                <form class="library-modal-card" id="library-track-form">
+                    <div class="library-modal-heading"><div><small>AUDIO URL</small><h2>添加歌曲</h2></div><button type="button" data-close-library-modal><i class="fas fa-times"></i></button></div>
+                    <label>歌曲名称<input id="library-track-name" type="text" maxlength="80" required></label>
+                    <label>歌手<input id="library-track-artist" type="text" maxlength="80" placeholder="未知歌手"></label>
+                    <label>音频 URL<input id="library-track-url" type="url" inputmode="url" placeholder="https://example.com/song.mp3" required></label>
+                    <label>封面 URL（可选）<input id="library-track-cover-url" type="url" inputmode="url"></label>
+                    <label>LRC 歌词 URL（可选）<input id="library-track-lyric-url" type="url" inputmode="url"></label>
+                    <button class="library-primary-button" type="submit">保存到我的歌单</button>
+                </form>
+            </div>
+        </div>
 
         <div class="app-view youtube-view" id="youtube-view">
                         <!-- Header -->
@@ -6969,7 +7180,7 @@
 
 
     
-<script src="js/storage/app_storage.js"></script>
+<script src="js/storage/app_storage.js?v=20260703-library-v4"></script>
     <script src="js/storage/imessage_storage.js"></script>
     <script src="storage.js"></script>
     <script src="js/app_state_bridge.js"></script>
@@ -7005,7 +7216,8 @@
     <script src="js/worldbook.js"></script>
     <!-- 引入核心 UI 管理与设置模块脚本 -->
     <script src="js/ui.js"></script>
-    <script src="js/settings.js"></script>
+    <script src="js/settings.js?v=20260703-library-v4"></script>
+    <script src="js/library.js?v=20260703-library-v4"></script>
     <script src="js/loves.js"></script>
     <script src="js/tiktok/2_core.js"></script>
     <script src="js/tiktok/3_home.js"></script>
