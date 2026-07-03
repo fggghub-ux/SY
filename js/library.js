@@ -29,6 +29,7 @@
         preferences: { ...DEFAULT_PREFERENCES },
         activeTab: 'books',
         currentBook: null,
+        detailBook: null,
         currentPlaylist: null,
         currentTrack: null,
         queue: [],
@@ -36,6 +37,8 @@
         chapters: [],
         lyrics: [],
         lyricIndex: -1,
+        playerShowsLyrics: false,
+        together: null,
         readerLastActivityAt: 0,
         pendingReadingSeconds: 0,
         pendingListeningSeconds: 0,
@@ -67,18 +70,26 @@
             'library-mini-artist', 'library-mini-play', 'library-mini-next', 'library-mini-progress',
             'library-reader-view', 'library-reader-back', 'library-reader-title',
             'library-reader-progress-label', 'library-reader-settings', 'library-reader-toc-button',
+            'library-reader-together',
             'library-reader-toc', 'library-reader-toc-close', 'library-reader-toc-list', 'library-reader-scroll',
             'library-reader-content', 'library-reader-panel', 'library-playlist-view',
             'library-playlist-back', 'library-playlist-delete', 'library-playlist-cover',
             'library-playlist-title', 'library-playlist-meta', 'library-play-all',
             'library-track-list', 'library-player-view', 'library-player-close',
             'library-player-wash', 'library-player-art', 'library-player-title',
+            'library-player-stage',
             'library-player-artist', 'library-player-progress', 'library-player-current',
             'library-player-duration', 'library-player-prev', 'library-player-play',
             'library-player-next', 'library-lyrics', 'library-import-modal',
             'library-import-form', 'library-netease-input', 'library-track-modal',
             'library-track-form', 'library-track-name', 'library-track-artist',
             'library-track-url', 'library-track-cover-url', 'library-track-lyric-url',
+            'library-book-detail-modal', 'library-book-detail-cover', 'library-book-detail-name',
+            'library-book-detail-author', 'library-book-detail-progress', 'library-book-detail-progress-bar',
+            'library-book-detail-synopsis', 'library-book-detail-start', 'library-book-detail-edit',
+            'library-book-detail-delete', 'library-book-detail-actions', 'library-book-edit-form', 'library-book-edit-title',
+            'library-book-edit-author', 'library-book-edit-synopsis', 'library-book-edit-cancel',
+            'library-char-picker-modal', 'library-char-picker-list', 'library-char-picker-empty',
             'library-today-reading', 'library-today-listening', 'library-week-total',
             'library-week-chart', 'library-ranking-list'
         ].forEach((id) => {
@@ -112,6 +123,14 @@
         } catch (error) {
             return '';
         }
+    }
+
+    function safeImageSource(value) {
+        const source = String(value || '').trim();
+        if (/^https?:\/\//i.test(source)) return safeHttpUrl(source);
+        if (/^data:image\/(?:png|jpe?g|gif|webp|avif);base64,/i.test(source)) return source;
+        if (/^blob:/i.test(source) || /^(?:\.\/)?assets\//i.test(source)) return source;
+        return '';
     }
 
     function uid(prefix) {
@@ -189,7 +208,11 @@
             repo.loadLibraryDailyStats(),
             repo.getSetting('libraryPreferences', DEFAULT_PREFERENCES)
         ]);
-        state.books = Array.isArray(books) ? books : [];
+        state.books = (Array.isArray(books) ? books : []).map((book) => ({
+            ...book,
+            author: String(book?.author || '').trim() || '未知作者',
+            synopsis: String(book?.synopsis || '').trim() || '暂无简介'
+        }));
         state.playlists = Array.isArray(playlists) ? playlists : [];
         state.tracks = Array.isArray(tracks) ? tracks : [];
         state.stats = Array.isArray(stats) ? stats : [];
@@ -243,20 +266,14 @@
         dom.book_grid.hidden = sorted.length === 0;
         dom.book_grid.innerHTML = sorted.map((book) => {
             const palette = BOOK_PALETTES[hashString(book.id) % BOOK_PALETTES.length];
-            const progress = Math.round(Math.max(0, Math.min(1, Number(book.progress) || 0)) * 100);
             return `
                 <article class="library-book-card" data-book-id="${escapeHtml(book.id)}">
-                    <button class="library-book-open" type="button" data-book-action="open">
+                    <button class="library-book-open" type="button" data-book-action="details" aria-label="查看《${escapeHtml(book.title || '未命名')}》详情">
                         <span class="library-book-cover" style="background:${palette[0]};color:${palette[1]}">
                             <small>${escapeHtml(String(book.sourceType || 'TEXT').toUpperCase())}</small>
                             <strong>${escapeHtml(book.title || '未命名')}</strong>
                         </span>
-                        <span class="library-book-info"><strong>${escapeHtml(book.title || '未命名')}</strong><span>${progress ? `已读 ${progress}%` : '尚未开始'}</span></span>
                     </button>
-                    <div class="library-book-menu">
-                        <button type="button" data-book-action="rename">重命名</button>
-                        <button type="button" data-book-action="delete">删除</button>
-                    </div>
                 </article>`;
         }).join('');
     }
@@ -311,6 +328,8 @@
                 title: fileBaseName(file.name),
                 sourceType: lower.endsWith('.docx') ? 'DOCX' : 'TXT',
                 text,
+                author: '未知作者',
+                synopsis: '暂无简介',
                 progress: 0,
                 createdAt: now,
                 updatedAt: now,
@@ -363,12 +382,72 @@
             if (state.currentBook?.id === book.id) closeReader();
             await storage().deleteLibraryBook(book.id);
             state.books = state.books.filter((item) => item.id !== book.id);
+            if (state.detailBook?.id === book.id) {
+                state.detailBook = null;
+                if (dom.book_detail_modal) dom.book_detail_modal.hidden = true;
+            }
             renderBooks();
             toast('书籍已删除');
         };
         if (window.showCustomModal) {
             window.showCustomModal({ title: '删除书籍', message: `确定删除《${book.title}》吗？`, confirmText: '删除', isDestructive: true, onConfirm: remove });
         } else if (window.confirm(`确定删除《${book.title}》吗？`)) remove();
+    }
+
+    function setBookDetailEditing(editing) {
+        if (!dom.book_edit_form) return;
+        dom.book_edit_form.hidden = !editing;
+        dom.book_detail_actions?.toggleAttribute('hidden', editing);
+        if (editing) requestAnimationFrame(() => dom.book_edit_title?.focus());
+    }
+
+    function renderBookDetail() {
+        const book = state.detailBook;
+        if (!book) return;
+        const palette = BOOK_PALETTES[hashString(book.id) % BOOK_PALETTES.length];
+        const progress = Math.round(Math.max(0, Math.min(1, Number(book.progress) || 0)) * 100);
+        dom.book_detail_cover.style.background = palette[0];
+        dom.book_detail_cover.style.color = palette[1];
+        dom.book_detail_cover.innerHTML = `<small>${escapeHtml(String(book.sourceType || 'TEXT').toUpperCase())}</small><strong>${escapeHtml(book.title || '未命名')}</strong>`;
+        dom.book_detail_name.textContent = book.title || '未命名';
+        dom.book_detail_author.textContent = book.author || '未知作者';
+        dom.book_detail_progress.textContent = `${progress}%`;
+        dom.book_detail_progress_bar.style.width = `${progress}%`;
+        dom.book_detail_synopsis.textContent = book.synopsis || '暂无简介';
+        dom.book_detail_start.textContent = progress > 0 ? '继续阅读' : '开始阅读';
+        dom.book_edit_title.value = book.title || '';
+        dom.book_edit_author.value = book.author === '未知作者' ? '' : (book.author || '');
+        dom.book_edit_synopsis.value = book.synopsis === '暂无简介' ? '' : (book.synopsis || '');
+    }
+
+    function openBookDetail(book) {
+        if (!book) return;
+        state.detailBook = book;
+        renderBookDetail();
+        setBookDetailEditing(false);
+        openModal(dom.book_detail_modal, { focus: false });
+    }
+
+    async function saveBookDetail(event) {
+        event.preventDefault();
+        const book = state.detailBook;
+        if (!book) return;
+        const title = dom.book_edit_title.value.trim();
+        if (!title) return toast('书名不能为空');
+        book.title = title.slice(0, 100);
+        book.author = dom.book_edit_author.value.trim().slice(0, 80) || '未知作者';
+        book.synopsis = dom.book_edit_synopsis.value.trim().slice(0, 2000) || '暂无简介';
+        book.updatedAt = Date.now();
+        try {
+            await storage().saveLibraryBook(book);
+            renderBooks();
+            renderBookDetail();
+            setBookDetailEditing(false);
+            toast('书籍资料已保存');
+        } catch (error) {
+            console.error('[Library] Book detail save failed:', error);
+            toast('书籍资料保存失败');
+        }
     }
 
     function applyReaderPreferences() {
@@ -412,13 +491,20 @@
         const lines = String(text || '').split('\n');
         const chapters = [{ title: '开始阅读', anchorId: 'library-reader-start' }];
         let chapterIndex = 0;
+        let textOffset = 0;
         const html = lines.map((line, lineIndex) => {
-            if (!isChapterHeading(line)) return escapeHtml(line);
-            chapterIndex += 1;
-            const anchorId = `library-reader-chapter-${chapterIndex}`;
-            chapters.push({ title: line.trim().replace(/^#{1,3}\s*/, ''), anchorId, lineIndex });
-            return `<span class="library-reader-chapter" id="${anchorId}">${escapeHtml(line)}</span>`;
-        }).join('\n');
+            const start = textOffset;
+            const end = start + line.length;
+            textOffset = end + 1;
+            let content = escapeHtml(line) || '&#8203;';
+            if (isChapterHeading(line)) {
+                chapterIndex += 1;
+                const anchorId = `library-reader-chapter-${chapterIndex}`;
+                chapters.push({ title: line.trim().replace(/^#{1,3}\s*/, ''), anchorId, lineIndex });
+                content = `<span class="library-reader-chapter" id="${anchorId}">${content}</span>`;
+            }
+            return `<span class="library-reader-line" data-reader-line="${lineIndex}" data-text-start="${start}" data-text-end="${end}">${content}</span>`;
+        }).join('');
         dom.reader_content.innerHTML = `<span id="library-reader-start"></span>${html}`;
         state.chapters = chapters;
         dom.reader_toc_list.innerHTML = chapters.map((chapter, index) => `
@@ -428,6 +514,27 @@
             </button>`).join('') + (chapters.length === 1
             ? '<p class="library-reader-toc-empty">未识别到明确章节标题。支持“第×章”、Chapter、Markdown 标题和数字标题。</p>'
             : '');
+    }
+
+    function getVisibleReaderText() {
+        const book = state.currentBook;
+        if (!book || !dom.reader_scroll) return '';
+        const viewport = dom.reader_scroll.getBoundingClientRect();
+        const visibleLines = [...dom.reader_content.querySelectorAll('[data-reader-line]')].filter((line) => {
+            const rect = line.getBoundingClientRect();
+            return rect.bottom >= viewport.top && rect.top <= viewport.bottom;
+        });
+        const visibleText = visibleLines.map((line) => line.textContent || '').join('\n').trim();
+        if (visibleText && visibleText.length <= 6000) return visibleText;
+        if (visibleText && visibleLines.length > 1) return visibleText.slice(0, 6000);
+
+        const fullText = String(book.text || '');
+        if (!fullText) return '';
+        const maxScroll = Math.max(1, dom.reader_scroll.scrollHeight - dom.reader_scroll.clientHeight);
+        const ratio = Math.max(0, Math.min(1, dom.reader_scroll.scrollTop / maxScroll));
+        const center = Math.round(fullText.length * ratio);
+        const start = Math.max(0, Math.min(fullText.length - 6000, center - 3000));
+        return fullText.slice(start, start + 6000).trim();
     }
 
     function openReader(book) {
@@ -460,6 +567,7 @@
             dom.reader_view.classList.remove('active');
             return;
         }
+        stopTogether();
         updateReaderProgress(true);
         flushReadingStats().catch(console.error);
         dom.reader_panel.hidden = true;
@@ -468,6 +576,168 @@
         dom.reader_view.setAttribute('aria-hidden', 'true');
         state.currentBook = null;
         renderBooks();
+    }
+
+    function updateTogetherControls() {
+        const active = !!state.together;
+        if (dom.reader_together) {
+            dom.reader_together.classList.toggle('is-active', active);
+            dom.reader_together.innerHTML = active
+                ? '<i class="fas fa-user-xmark"></i>'
+                : '<i class="fas fa-user-group"></i>';
+            dom.reader_together.setAttribute('aria-label', active ? '退出一起看' : '一起看小说');
+            dom.reader_together.setAttribute('title', active ? '退出一起看' : '一起看小说');
+        }
+    }
+
+    function getTogetherFriend() {
+        const friendId = state.together?.friendId;
+        if (!friendId) return null;
+        return (window.imData?.friends || []).find((friend) => String(friend.id) === String(friendId)) || null;
+    }
+
+    function ensureTogetherFloat(friend) {
+        let button = $('library-together-float');
+        if (!button) {
+            button = document.createElement('button');
+            button.id = 'library-together-float';
+            button.className = 'library-together-float';
+            button.type = 'button';
+            button.hidden = true;
+            button.addEventListener('click', restoreTogetherPopup);
+            dom.reader_view.appendChild(button);
+        }
+        const avatar = safeImageSource(friend?.avatarUrl);
+        button.innerHTML = avatar
+            ? `<img src="${escapeHtml(avatar)}" alt="">`
+            : '<i class="fas fa-user"></i>';
+        button.setAttribute('aria-label', `继续与 ${friend?.nickname || 'Char'} 一起看`);
+        return button;
+    }
+
+    async function renderCharPicker() {
+        if (window.imApp?.ensureDataReady) await window.imApp.ensureDataReady();
+        const chars = (window.imData?.friends || []).filter((friend) => friend?.type === 'char');
+        dom.char_picker_empty.hidden = chars.length > 0;
+        dom.char_picker_list.hidden = chars.length === 0;
+        dom.char_picker_list.innerHTML = chars.map((friend) => {
+            const avatar = safeImageSource(friend.avatarUrl);
+            const subtitle = friend.signature || friend.realName || '点击邀请一起看';
+            return `<button class="library-char-picker-item" type="button" data-library-char-id="${escapeHtml(friend.id)}">
+                <span class="library-char-picker-avatar">${avatar ? `<img src="${escapeHtml(avatar)}" alt="">` : '<i class="fas fa-user"></i>'}</span>
+                <span class="library-char-picker-copy"><strong>${escapeHtml(friend.nickname || friend.realName || 'Char')}</strong><small>${escapeHtml(subtitle)}</small></span>
+                <i class="fas fa-chevron-right"></i>
+            </button>`;
+        }).join('');
+    }
+
+    async function openCharPicker() {
+        if (!state.currentBook) return;
+        try {
+            await renderCharPicker();
+            openModal(dom.char_picker_modal, { focus: false });
+        } catch (error) {
+            console.error('[Library] Char picker failed:', error);
+            toast('无法读取 iMessage Char');
+        }
+    }
+
+    async function startTogether(friend) {
+        if (!state.currentBook || !friend || friend.type !== 'char') return;
+        const imessageView = $('imessage-view');
+        const openChat = window.imChat?.openChatTab || window.imApp?.openChatTab;
+        if (!imessageView || typeof openChat !== 'function') {
+            toast('iMessage 聊天组件未就绪');
+            return;
+        }
+
+        stopTogether();
+        const previousActiveFriendId = window.imData?.currentActiveFriend?.id ?? null;
+        state.together = {
+            bookId: state.currentBook.id,
+            friendId: String(friend.id),
+            previousImessageActive: imessageView.classList.contains('active'),
+            previousActiveFriendId
+        };
+        closeAllModals();
+
+        try {
+            await openChat(friend);
+            imessageView.classList.add('active', 'library-together-popup');
+            imessageView.classList.remove('library-together-collapsed');
+            imessageView.dataset.libraryTogether = 'true';
+            ensureTogetherFloat(friend).hidden = true;
+            updateTogetherControls();
+            toast(`已邀请 ${friend.nickname || 'Char'} 一起看`);
+        } catch (error) {
+            console.error('[Library] Together reading start failed:', error);
+            stopTogether();
+            toast('一起看启动失败');
+        }
+    }
+
+    function collapseTogetherPopup() {
+        if (!state.together) return;
+        const imessageView = $('imessage-view');
+        const friend = getTogetherFriend();
+        imessageView?.classList.add('library-together-collapsed');
+        const floatButton = ensureTogetherFloat(friend);
+        floatButton.hidden = false;
+    }
+
+    function restoreTogetherPopup() {
+        if (!state.together) return;
+        const friend = getTogetherFriend();
+        if (friend && window.imData) window.imData.currentActiveFriend = friend;
+        window.imChat?.updateChatsView?.();
+        $('imessage-view')?.classList.remove('library-together-collapsed');
+        const floatButton = $('library-together-float');
+        if (floatButton) floatButton.hidden = true;
+    }
+
+    function stopTogether() {
+        const session = state.together;
+        if (!session) {
+            updateTogetherControls();
+            return;
+        }
+        state.together = null;
+        const imessageView = $('imessage-view');
+        if (imessageView) {
+            imessageView.classList.remove('library-together-popup', 'library-together-collapsed');
+            delete imessageView.dataset.libraryTogether;
+        }
+        const floatButton = $('library-together-float');
+        if (floatButton) floatButton.hidden = true;
+
+        if (window.imData) {
+            window.imData.currentActiveFriend = session.previousActiveFriendId == null
+                ? null
+                : (window.imData.friends || []).find((friend) => String(friend.id) === String(session.previousActiveFriendId)) || null;
+        }
+        window.imChat?.updateChatsView?.();
+        if (imessageView && !session.previousImessageActive) imessageView.classList.remove('active');
+        updateTogetherControls();
+    }
+
+    function getTogetherReadingContext(friendOrId) {
+        const session = state.together;
+        const friendId = typeof friendOrId === 'object' ? friendOrId?.id : friendOrId;
+        const book = state.currentBook;
+        if (!session || !book || session.bookId !== book.id || String(session.friendId) !== String(friendId ?? '')) return '';
+        if (!dom.reader_view.classList.contains('active')) return '';
+        const promptXml = (value) => String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+        const visibleText = getVisibleReaderText() || '（当前页暂无可见文字）';
+        return `<together_reading_context>
+你正在与 User 一起看小说。请自然感知作品信息和当前页内容，可以回应、讨论、吐槽或表达感受，但不要机械复述这段上下文。
+<book_title>${promptXml(book.title || '未命名')}</book_title>
+<book_author>${promptXml(book.author || '未知作者')}</book_author>
+<book_synopsis>${promptXml(book.synopsis || '暂无简介')}</book_synopsis>
+<visible_page>${promptXml(visibleText)}</visible_page>
+</together_reading_context>`;
     }
 
     function renderPlaylists() {
@@ -531,14 +801,15 @@
         return playlist;
     }
 
-    function openModal(modal) {
+    function openModal(modal, options = {}) {
         closeAllModals();
         modal.hidden = false;
-        requestAnimationFrame(() => modal.querySelector('input, textarea')?.focus());
+        if (options.focus !== false) requestAnimationFrame(() => modal.querySelector('input, textarea')?.focus());
     }
 
     function closeAllModals() {
-        [dom.import_modal, dom.track_modal].forEach((modal) => { if (modal) modal.hidden = true; });
+        [dom.import_modal, dom.track_modal, dom.book_detail_modal, dom.char_picker_modal].forEach((modal) => { if (modal) modal.hidden = true; });
+        if (dom.book_edit_form) setBookDetailEditing(false);
     }
 
     async function addDirectTrack(event) {
@@ -750,6 +1021,19 @@
         }
     }
 
+    function setPlayerLyricsMode(showLyrics) {
+        state.playerShowsLyrics = !!showLyrics;
+        dom.player_stage.classList.toggle('is-lyrics', state.playerShowsLyrics);
+        dom.lyrics.hidden = !state.playerShowsLyrics;
+        dom.player_art.setAttribute('aria-label', state.playerShowsLyrics ? '显示封面' : '查看歌词');
+        if (state.playerShowsLyrics && state.lyricIndex >= 0) {
+            requestAnimationFrame(() => {
+                const active = dom.lyrics.querySelector(`[data-lyric-index="${state.lyricIndex}"]`);
+                if (active) dom.lyrics.scrollTop = Math.max(0, active.offsetTop - dom.lyrics.clientHeight / 2);
+            });
+        }
+    }
+
     function updateLyrics(currentTime) {
         if (!state.lyrics.length) return;
         let nextIndex = -1;
@@ -783,6 +1067,9 @@
         loadLyrics(track);
         try {
             await audio.play();
+            storage().incrementLibraryDailyStat({ date: localDateKey(), kind: 'play', itemId: track.id, count: 1 }).catch((error) => {
+                console.error('[Library] Play count update failed:', error);
+            });
         } catch (error) {
             console.warn('[Library] Playback failed:', error);
             toast('当前歌曲暂时无法播放');
@@ -905,21 +1192,21 @@
         const weekKeys = new Set(lastSevenDays().map((day) => day.key));
         const totals = new Map();
         state.stats.forEach((row) => {
-            if (row.kind !== 'listening' || (range === 'week' && !weekKeys.has(row.date))) return;
-            totals.set(row.itemId, (totals.get(row.itemId) || 0) + (Number(row.seconds) || 0));
+            if (row.kind !== 'play' || (range === 'week' && !weekKeys.has(row.date))) return;
+            totals.set(row.itemId, (totals.get(row.itemId) || 0) + (Number(row.count) || 0));
         });
         const ranked = [...totals.entries()]
-            .map(([trackId, seconds]) => ({ track: getTrack(trackId), seconds }))
-            .filter((item) => item.track && item.seconds > 0)
-            .sort((a, b) => b.seconds - a.seconds)
+            .map(([trackId, count]) => ({ track: getTrack(trackId), count }))
+            .filter((item) => item.track && item.count > 0)
+            .sort((a, b) => b.count - a.count || String(a.track.name || '').localeCompare(String(b.track.name || ''), 'zh-CN'))
             .slice(0, 8);
         dom.ranking_list.innerHTML = ranked.length ? ranked.map((item, index) => `
             <div class="library-ranking-row">
                 <b>${String(index + 1).padStart(2, '0')}</b>
                 <span class="library-track-art">${safeHttpUrl(item.track.coverUrl) ? `<img src="${escapeHtml(safeHttpUrl(item.track.coverUrl))}" alt="" referrerpolicy="no-referrer">` : '<i class="fas fa-music"></i>'}</span>
                 <div><strong>${escapeHtml(item.track.name)}</strong><small>${escapeHtml(item.track.artist)}</small></div>
-                <span>${formatDuration(item.seconds, true)}</span>
-            </div>`).join('') : '<div class="library-ranking-empty">听完一首歌后，这里会出现你的排行。</div>';
+                <span>${item.count}次</span>
+            </div>`).join('') : '<div class="library-ranking-empty">开始播放歌曲后，这里会出现你的排行。</div>';
         dom.view.querySelectorAll('[data-range]').forEach((button) => {
             button.classList.toggle('active', button.dataset.range === range);
         });
@@ -981,11 +1268,46 @@
             const action = event.target.closest('[data-book-action]')?.dataset.bookAction;
             if (!card || !action) return;
             const book = state.books.find((item) => item.id === card.dataset.bookId);
-            if (action === 'open') openReader(book);
-            if (action === 'rename') requestRenameBook(book);
-            if (action === 'delete') requestDeleteBook(book);
+            if (action === 'details') openBookDetail(book);
         });
+        dom.book_detail_start.addEventListener('click', () => {
+            const book = state.detailBook;
+            if (!book) return;
+            closeAllModals();
+            openReader(book);
+        });
+        dom.book_detail_edit.addEventListener('click', () => setBookDetailEditing(true));
+        dom.book_detail_delete.addEventListener('click', () => requestDeleteBook(state.detailBook));
+        dom.book_edit_cancel.addEventListener('click', () => {
+            renderBookDetail();
+            setBookDetailEditing(false);
+        });
+        dom.book_edit_form.addEventListener('submit', saveBookDetail);
         dom.reader_back.addEventListener('click', closeReader);
+        dom.reader_together.addEventListener('click', () => {
+            if (state.together) stopTogether();
+            else openCharPicker();
+        });
+        dom.char_picker_list.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-library-char-id]');
+            if (!button) return;
+            const friend = (window.imData?.friends || []).find((item) => String(item.id) === String(button.dataset.libraryCharId));
+            startTogether(friend);
+        });
+        $('imessage-view')?.addEventListener('click', (event) => {
+            if (!state.together) return;
+            if (event.target.closest('.chat-back-btn')) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                collapseTogetherPopup();
+                return;
+            }
+            if (event.target.closest('.chat-call-btn, .chat-menu-btn')) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                toast('一起看模式下暂不支持电话和聊天设置');
+            }
+        }, true);
         dom.reader_settings.addEventListener('click', () => {
             dom.reader_toc.hidden = true;
             dom.reader_panel.hidden = !dom.reader_panel.hidden;
@@ -1030,7 +1352,7 @@
         dom.import_form.addEventListener('submit', handleNetEaseImport);
         dom.track_form.addEventListener('submit', addDirectTrack);
         dom.view.querySelectorAll('[data-close-library-modal]').forEach((button) => button.addEventListener('click', closeAllModals));
-        [dom.import_modal, dom.track_modal].forEach((modal) => modal.addEventListener('click', (event) => { if (event.target === modal) closeAllModals(); }));
+        [dom.import_modal, dom.track_modal, dom.book_detail_modal, dom.char_picker_modal].forEach((modal) => modal.addEventListener('click', (event) => { if (event.target === modal) closeAllModals(); }));
         dom.playlist_list.addEventListener('click', (event) => {
             const card = event.target.closest('[data-playlist-id]');
             if (card) openPlaylist(getPlaylist(card.dataset.playlistId));
@@ -1053,6 +1375,8 @@
         dom.mini_play.addEventListener('click', togglePlayback);
         dom.mini_next.addEventListener('click', () => playQueueDirection(1));
         dom.player_close.addEventListener('click', closePlayer);
+        dom.player_art.addEventListener('click', () => setPlayerLyricsMode(true));
+        dom.lyrics.addEventListener('click', () => setPlayerLyricsMode(false));
         dom.player_play.addEventListener('click', togglePlayback);
         dom.player_prev.addEventListener('click', () => playQueueDirection(-1));
         dom.player_next.addEventListener('click', () => playQueueDirection(1));
@@ -1134,6 +1458,8 @@
             bindEvents();
             startTimers();
             updatePlayerUi();
+            setPlayerLyricsMode(false);
+            updateTogetherControls();
             state.ready = true;
         } catch (error) {
             console.error('[Library] Initialization failed:', error);
@@ -1144,7 +1470,8 @@
     window.libraryApp = {
         open: (tab) => openApp(tab),
         close: closeApp,
-        importNetEasePlaylist
+        importNetEasePlaylist,
+        getTogetherReadingContext
     };
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });

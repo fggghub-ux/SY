@@ -42,7 +42,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
     <link rel="stylesheet" href="css/loves.css">
-    <link rel="stylesheet" href="css/library.css?v=20260703-library-v4">
+    <link rel="stylesheet" href="css/library.css?v=20260703-library-v6">
     <!-- App Styles -->
     <link rel="stylesheet" href="css/settings.css">
     <link rel="stylesheet" href="css/youtube.css">
@@ -488,7 +488,10 @@
 
             <section class="library-subview library-reader" id="library-reader-view" aria-hidden="true">
                 <header class="library-subview-header">
-                    <button type="button" id="library-reader-back"><i class="fas fa-chevron-left"></i></button>
+                    <span class="library-reader-leading">
+                        <button type="button" id="library-reader-back" aria-label="返回"><i class="fas fa-chevron-left"></i></button>
+                        <button class="library-reader-together" type="button" id="library-reader-together" aria-label="一起看小说" title="一起看小说"><i class="fas fa-user-group"></i></button>
+                    </span>
                     <div><strong id="library-reader-title">书名</strong><small id="library-reader-progress-label">0%</small></div>
                     <span class="library-reader-actions">
                         <button type="button" id="library-reader-toc-button" aria-label="目录"><i class="fas fa-list-ul"></i></button>
@@ -528,7 +531,10 @@
                     <span></span>
                 </header>
                 <div class="library-player-body">
-                    <div class="library-player-art" id="library-player-art"><i class="fas fa-music"></i></div>
+                    <div class="library-player-stage" id="library-player-stage">
+                        <button class="library-player-art" id="library-player-art" type="button" aria-label="查看歌词"><i class="fas fa-music"></i></button>
+                        <div class="library-lyrics" id="library-lyrics" hidden><p class="active">播放歌曲后显示歌词</p></div>
+                    </div>
                     <div class="library-player-copy"><h2 id="library-player-title">未在播放</h2><p id="library-player-artist">Library</p></div>
                     <div class="library-player-progress-row">
                         <input type="range" id="library-player-progress" min="0" max="1000" value="0" aria-label="播放进度">
@@ -539,9 +545,44 @@
                         <button class="primary" type="button" id="library-player-play"><i class="fas fa-play"></i></button>
                         <button type="button" id="library-player-next"><i class="fas fa-forward-step"></i></button>
                     </div>
-                    <div class="library-lyrics" id="library-lyrics"><p class="active">播放歌曲后显示歌词</p></div>
                 </div>
             </section>
+
+            <div class="library-modal-backdrop" id="library-book-detail-modal" hidden>
+                <section class="library-modal-card library-book-detail-card" role="dialog" aria-modal="true" aria-labelledby="library-book-detail-title">
+                    <div class="library-modal-heading"><div><small>BOOK DETAILS</small><h2 id="library-book-detail-title">书籍详情</h2></div><button type="button" data-close-library-modal><i class="fas fa-times"></i></button></div>
+                    <div class="library-book-detail-hero">
+                        <span class="library-book-cover" id="library-book-detail-cover"><small>TXT</small><strong>未命名</strong></span>
+                        <div class="library-book-detail-copy">
+                            <h3 id="library-book-detail-name">未命名</h3>
+                            <p id="library-book-detail-author">未知作者</p>
+                            <strong id="library-book-detail-progress">0%</strong>
+                            <small>READING PROGRESS</small>
+                        </div>
+                    </div>
+                    <div class="library-book-detail-progress-bar"><i id="library-book-detail-progress-bar"></i></div>
+                    <p class="library-book-detail-synopsis" id="library-book-detail-synopsis">暂无简介</p>
+                    <div class="library-book-detail-actions" id="library-book-detail-actions">
+                        <button class="library-primary-button" type="button" id="library-book-detail-start">开始阅读</button>
+                        <button class="library-secondary-button" type="button" id="library-book-detail-edit">编辑资料</button>
+                        <button class="library-danger-button" type="button" id="library-book-detail-delete">删除书籍</button>
+                    </div>
+                    <form class="library-book-edit-form" id="library-book-edit-form" hidden>
+                        <label>书名<input id="library-book-edit-title" type="text" maxlength="100" required></label>
+                        <label>作者<input id="library-book-edit-author" type="text" maxlength="80" placeholder="未知作者"></label>
+                        <label>作品简介<textarea id="library-book-edit-synopsis" rows="5" maxlength="2000" placeholder="暂无简介"></textarea></label>
+                        <div class="library-book-edit-actions"><button class="library-secondary-button" type="button" id="library-book-edit-cancel">取消</button><button class="library-primary-button" type="submit">保存资料</button></div>
+                    </form>
+                </section>
+            </div>
+
+            <div class="library-modal-backdrop" id="library-char-picker-modal" hidden>
+                <section class="library-modal-card library-char-picker-card" role="dialog" aria-modal="true" aria-labelledby="library-char-picker-title">
+                    <div class="library-modal-heading"><div><small>READ TOGETHER</small><h2 id="library-char-picker-title">选择一起看的 Char</h2></div><button type="button" data-close-library-modal><i class="fas fa-times"></i></button></div>
+                    <div class="library-char-picker-list" id="library-char-picker-list"></div>
+                    <p class="library-char-picker-empty" id="library-char-picker-empty" hidden>iMessage 中还没有可选择的 Char。</p>
+                </section>
+            </div>
 
             <div class="library-modal-backdrop" id="library-import-modal" hidden>
                 <form class="library-modal-card" id="library-import-form">
@@ -7180,7 +7221,7 @@
 
 
     
-<script src="js/storage/app_storage.js?v=20260703-library-v4"></script>
+<script src="js/storage/app_storage.js?v=20260703-library-v5"></script>
     <script src="js/storage/imessage_storage.js"></script>
     <script src="storage.js"></script>
     <script src="js/app_state_bridge.js"></script>
@@ -7198,7 +7239,7 @@
     <script src="js/imessage/4_chat_payment.js"></script>
     <script src="js/imessage/4_chat_bubbles.js"></script>
     <script src="js/imessage/minimax_tts.js"></script>
-    <script src="js/imessage/4_chat_ai.js"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260703-library-v5"></script>
     <script src="js/imessage/4_chat_sheet.js"></script>
     <script src="js/imessage/4_chat_list.js"></script>
     <script src="js/imessage/4_chat_interface.js"></script>
@@ -7217,7 +7258,7 @@
     <!-- 引入核心 UI 管理与设置模块脚本 -->
     <script src="js/ui.js"></script>
     <script src="js/settings.js?v=20260703-library-v4"></script>
-    <script src="js/library.js?v=20260703-library-v4"></script>
+    <script src="js/library.js?v=20260703-library-v6"></script>
     <script src="js/loves.js"></script>
     <script src="js/tiktok/2_core.js"></script>
     <script src="js/tiktok/3_home.js"></script>

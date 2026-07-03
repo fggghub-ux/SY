@@ -1833,6 +1833,16 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
             });
         }
 
+        const togetherReadingContext = window.libraryApp?.getTogetherReadingContext
+            ? window.libraryApp.getTogetherReadingContext(friend)
+            : '';
+        if (togetherReadingContext) {
+            messages.push({
+                role: 'system',
+                content: String(togetherReadingContext)
+            });
+        }
+
         // Skip API call and return immediately if chatting with official account
         if (friend.type === 'official') {
             if (typingRow && typingRow.parentNode) typingRow.remove();

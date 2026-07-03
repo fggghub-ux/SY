@@ -739,12 +739,15 @@
         return cloneDeep(await getAllRecords(STORES.libraryDailyStats));
     }
 
-    async function incrementLibraryDailyStat({ date, kind, itemId, seconds }) {
+    async function incrementLibraryDailyStat({ date, kind, itemId, seconds = 0, count = 0 }) {
         const safeDate = String(date || '');
         const safeKind = String(kind || '');
         const safeItemId = String(itemId || 'all');
-        const safeSeconds = Number(seconds);
-        if (!safeDate || !safeKind || !Number.isFinite(safeSeconds) || safeSeconds <= 0) return null;
+        const rawSeconds = Number(seconds);
+        const rawCount = Number(count);
+        const safeSeconds = Number.isFinite(rawSeconds) ? Math.max(0, rawSeconds) : 0;
+        const safeCount = Number.isFinite(rawCount) ? Math.max(0, Math.floor(rawCount)) : 0;
+        if (!safeDate || !safeKind || (safeSeconds <= 0 && safeCount <= 0)) return null;
 
         const id = `${safeDate}|${safeKind}|${safeItemId}`;
         return withStore([STORES.libraryDailyStats], 'readwrite', async (stores) => {
@@ -756,6 +759,7 @@
                 kind: safeKind,
                 itemId: safeItemId,
                 seconds: Math.max(0, Number(existing?.seconds) || 0) + safeSeconds,
+                count: Math.max(0, Number(existing?.count) || 0) + safeCount,
                 updatedAt: Date.now()
             };
             store.put(record);
