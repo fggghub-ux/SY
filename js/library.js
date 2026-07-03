@@ -732,7 +732,17 @@
             .replace(/>/g, '&gt;');
         const visibleText = getVisibleReaderText() || '（当前页暂无可见文字）';
         return `<together_reading_context>
-你正在与 User 一起看小说。请自然感知作品信息和当前页内容，可以回应、讨论、吐槽或表达感受，但不要机械复述这段上下文。
+<scene>
+你正和 User 同步读同一本小说，此刻两人都刚好看到 visible_page 中的内容。这是一次真正的“一起看书”，不是读后总结、文学鉴赏或客服问答。
+</scene>
+<co_reading_rules>
+- 把 visible_page 当作你们眼前同时看到的当前页，优先接住其中具体的台词、动作、情绪、人物或情节变化。
+- 像坐在 User 旁边边看边聊：可以即时吐槽、小声感叹、猜接下来会怎样、指出某句话或询问 User 此刻的感受。
+- 用符合角色人设和与 User 关系的自然短句交流，反应要有当下感，可以使用“刚看到这里”“这句”“先等一下”等共读语气。
+- 不要长篇复述原文，不要每次介绍书名和作者，不要机械声明“我们正在一起看书”。
+- 只能根据作品简介和当前页推测，不得捏造后续原文、假装已经看过后文或提前剧透。
+- 如果 User 正在说其他事，先自然回应 User，再视氛围决定是否带回当前页，不要强行转回书本。
+</co_reading_rules>
 <book_title>${promptXml(book.title || '未命名')}</book_title>
 <book_author>${promptXml(book.author || '未知作者')}</book_author>
 <book_synopsis>${promptXml(book.synopsis || '暂无简介')}</book_synopsis>

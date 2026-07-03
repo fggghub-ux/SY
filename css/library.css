@@ -729,7 +729,7 @@
 .library-danger-button { min-height: 44px; padding: 0 15px; border-radius: 15px; background: #e9ece7; color: #49534c; font-size: 12px; font-weight: 700; }
 .library-danger-button { color: #a4433d; background: #f3e7e4; }
 
-.library-book-detail-card { overflow: hidden; }
+.library-book-detail-card { overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .library-book-detail-hero { display: grid; grid-template-columns: 106px minmax(0, 1fr); gap: 18px; align-items: center; }
 .library-book-detail-hero .library-book-cover { width: 106px; padding: 14px 11px; border-radius: 6px 15px 15px 6px; box-shadow: 0 12px 25px rgba(55,66,58,.14), inset 3px 0 rgba(255,255,255,.38); }
 .library-book-detail-hero .library-book-cover strong { font-size: 15px; -webkit-line-clamp: 4; }
@@ -780,6 +780,8 @@
 }
 #imessage-view.library-together-popup.library-together-collapsed { visibility: hidden; opacity: 0; pointer-events: none; transform: translateX(16px) scale(.86) !important; }
 #imessage-view.library-together-popup .active-chat-interface { border-radius: inherit; }
+#imessage-view.library-together-popup .chat-sticky-container { padding-top: 0; }
+#imessage-view.library-together-popup .ins-chat-messages { padding-top: var(--im-chat-message-top-space); }
 #imessage-view.library-together-popup .chat-back-btn { cursor: pointer; }
 #imessage-view.library-together-popup .chat-call-btn,
 #imessage-view.library-together-popup .chat-menu-btn { opacity: .3; cursor: not-allowed; }
