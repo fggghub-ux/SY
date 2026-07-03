@@ -698,6 +698,7 @@
 .library-player-stage { flex: 1 1 auto; min-height: 190px; max-height: min(46vh, 340px); display: grid; place-items: center; overflow: hidden; }
 .library-player-art { width: min(68vw, 300px); max-height: 100%; aspect-ratio: 1; margin: 0 auto; padding: 0; border-radius: 34px; display: grid; place-items: center; overflow: hidden; background: linear-gradient(145deg,#a9b8ae,#73847a); color: rgba(255,255,255,.85); font-size: 48px; box-shadow: 0 24px 55px rgba(43,55,48,.23); }
 .library-player-stage.is-lyrics .library-player-art { display: none; }
+.library-player-bottom { flex: 0 0 auto; width: 100%; margin-top: auto; padding-top: 18px; }
 .library-player-copy h2 { margin: 0; font-size: 22px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; letter-spacing: -.7px; }
 .library-player-copy p { margin: 5px 0 0; color: rgba(38,48,41,.62); font-size: 13px; }
 .library-player-progress-row { margin-top: 20px; }

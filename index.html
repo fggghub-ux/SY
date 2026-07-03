@@ -42,7 +42,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
     <link rel="stylesheet" href="css/loves.css">
-    <link rel="stylesheet" href="css/library.css?v=20260703-library-v7">
+    <link rel="stylesheet" href="css/library.css?v=20260703-library-v8">
     <!-- App Styles -->
     <link rel="stylesheet" href="css/settings.css">
     <link rel="stylesheet" href="css/youtube.css">
@@ -535,15 +535,17 @@
                         <button class="library-player-art" id="library-player-art" type="button" aria-label="查看歌词"><i class="fas fa-music"></i></button>
                         <div class="library-lyrics" id="library-lyrics" hidden><p class="active">播放歌曲后显示歌词</p></div>
                     </div>
-                    <div class="library-player-copy"><h2 id="library-player-title">未在播放</h2><p id="library-player-artist">Library</p></div>
-                    <div class="library-player-progress-row">
-                        <input type="range" id="library-player-progress" min="0" max="1000" value="0" aria-label="播放进度">
-                        <div><span id="library-player-current">0:00</span><span id="library-player-duration">0:00</span></div>
-                    </div>
-                    <div class="library-player-controls">
-                        <button type="button" id="library-player-prev"><i class="fas fa-backward-step"></i></button>
-                        <button class="primary" type="button" id="library-player-play"><i class="fas fa-play"></i></button>
-                        <button type="button" id="library-player-next"><i class="fas fa-forward-step"></i></button>
+                    <div class="library-player-bottom">
+                        <div class="library-player-copy"><h2 id="library-player-title">未在播放</h2><p id="library-player-artist">Library</p></div>
+                        <div class="library-player-progress-row">
+                            <input type="range" id="library-player-progress" min="0" max="1000" value="0" aria-label="播放进度">
+                            <div><span id="library-player-current">0:00</span><span id="library-player-duration">0:00</span></div>
+                        </div>
+                        <div class="library-player-controls">
+                            <button type="button" id="library-player-prev"><i class="fas fa-backward-step"></i></button>
+                            <button class="primary" type="button" id="library-player-play"><i class="fas fa-play"></i></button>
+                            <button type="button" id="library-player-next"><i class="fas fa-forward-step"></i></button>
+                        </div>
                     </div>
                 </div>
             </section>
