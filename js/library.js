@@ -1214,7 +1214,10 @@ ${xml(fullLyrics)}
         const quoted = text.match(/(?:歌单|分享)\s*[《「“"]([^》」”"\n]{1,80})[》」”"]/);
         if (quoted) return quoted[1].trim();
         const byLine = text.match(/分享歌单[:：]\s*([^\n]{1,80})/);
-        if (byLine) return byLine[1].replace(/https?:\/\/.*$/, '').trim();
+        if (byLine) {
+            const sharedName = byLine[1].replace(/https?:\/\/.*$/, '').replace(/^[+\s]+|[+\s]+$/g, '').trim();
+            if (sharedName) return sharedName;
+        }
         return `网易云歌单 ${String(playlistId).slice(-6)}`;
     }
 
@@ -1230,26 +1233,75 @@ ${xml(fullLyrics)}
         }
     }
 
+    function extractNetEaseShareUrl(input) {
+        const raw = String(input || '').trim();
+        if (!raw) return '';
+        const match = raw.match(/https?:\/\/(?:(?:y\.)?music\.163\.com\/[^\s)）\]】}>]+|163cn\.tv\/+[a-zA-Z0-9]+)/i);
+        return match ? match[0].replace(/[.,，。!！?？;；:：'"”’]+$/g, '') : '';
+    }
+
+    function extractNetEasePlaylistId(target) {
+        const raw = String(target || '').trim();
+        if (!raw) return '';
+
+        try {
+            const url = new URL(raw);
+            const queryId = url.searchParams.get('id');
+            if (/^\d+$/.test(queryId || '')) return queryId;
+
+            const hash = String(url.hash || '').replace(/^#/, '');
+            const hashQueryIndex = hash.indexOf('?');
+            if (hashQueryIndex >= 0) {
+                const hashId = new URLSearchParams(hash.slice(hashQueryIndex + 1)).get('id');
+                if (/^\d+$/.test(hashId || '')) return hashId;
+            }
+
+            const pathMatch = url.pathname.match(/\/playlist\/(\d+)/i);
+            if (pathMatch) return pathMatch[1];
+        } catch (error) {
+            // Fall through to the tolerant text patterns below.
+        }
+
+        const fallbackMatch = raw.match(/[?&#]id=(\d+)/i) || raw.match(/\/playlist\/(\d+)/i);
+        return fallbackMatch ? fallbackMatch[1] : '';
+    }
+
     async function resolveNetEasePlaylistId(input) {
         const raw = String(input || '').trim();
         if (!raw) throw new Error('请粘贴网易云歌单链接');
         if (/^\d{5,}$/.test(raw)) return raw;
-        const urlMatch = raw.match(/https?:\/\/(?:y\.)?music\.163\.com\/[^\s)）]+|https?:\/\/163cn\.tv\/[a-zA-Z0-9]+/i);
-        let target = urlMatch ? urlMatch[0] : raw;
-        if (/163cn\.tv\//i.test(target)) {
-            const result = await fetchJson(`${NETEASE_REDIRECT_API}?url=${encodeURIComponent(target)}`);
-            if (result?.code !== 200 || !result.redirectUrl) throw new Error('网易云短链接解析失败，请尝试粘贴完整歌单链接');
-            target = result.redirectUrl;
+        let target = extractNetEaseShareUrl(raw);
+        if (!target) throw new Error('没有找到网易云歌单链接，请粘贴完整分享文字、歌单链接或歌单 ID');
+
+        if (/^https?:\/\/163cn\.tv\/+/i.test(target)) {
+            let result;
+            try {
+                result = await fetchJson(`${NETEASE_REDIRECT_API}?url=${encodeURIComponent(target)}`);
+            } catch (error) {
+                if (error?.name === 'AbortError') throw error;
+                throw new Error(`网易云短链接解析失败${error?.message ? `：${error.message}` : ''}`);
+            }
+            if (result?.code !== 200 || !result.redirectUrl) {
+                throw new Error('网易云短链接解析失败，请尝试粘贴完整歌单链接');
+            }
+            target = String(result.redirectUrl).trim();
         }
-        const idMatch = target.match(/[?&]id=(\d+)/i) || target.match(/\/playlist\/(\d+)/i);
-        if (!idMatch) throw new Error('没有找到歌单 ID，请确认粘贴的是歌单链接');
-        return idMatch[1];
+
+        const playlistId = extractNetEasePlaylistId(target);
+        if (!playlistId) throw new Error('没有找到歌单 ID，请确认粘贴的是歌单链接');
+        return playlistId;
     }
 
     async function importNetEasePlaylist(input) {
         const playlistId = await resolveNetEasePlaylistId(input);
         const endpoint = `${NETEASE_METING_API}?server=netease&type=playlist&id=${encodeURIComponent(playlistId)}`;
-        const rows = await fetchJson(endpoint, 35000);
+        let rows;
+        try {
+            rows = await fetchJson(endpoint, 35000);
+        } catch (error) {
+            if (error?.name === 'AbortError') throw error;
+            throw new Error(`网易云歌单读取失败${error?.message ? `：${error.message}` : ''}`);
+        }
         if (!Array.isArray(rows) || rows.length === 0) throw new Error('歌单为空、未公开或暂时无法解析');
 
         const now = Date.now();

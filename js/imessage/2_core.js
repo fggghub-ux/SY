@@ -643,7 +643,10 @@ window.imApp.formatMessageForApiContext = function(message, friend, options = {}
         const dateText = normalizedMessage.dateText || '';
         const title = normalizedMessage.title || '见面记录';
         const summary = normalizedMessage.summary || normalizedMessage.content || '';
-        apiContent = `[见面记录]\n日期：${dateText || '未知'}\n标题：${title}\n内容：${summary}\n（该线下见面已经结束，这条记录可作为后续线上聊天上下文参考。）`;
+        return {
+            role: 'system',
+            content: `[见面记录]\n结束时间：${dateText || '未知'}\n标题：${title}\n总结：${summary}\n（该线下见面已经结束，请将这份总结作为后续线上聊天上下文。）`
+        };
     } else if (normalizedMessage.type === 'voice_call_record') {
         const duration = normalizedMessage.duration || 0;
         const callDurationText = `${Math.floor(duration / 60)}分${duration % 60}秒`;

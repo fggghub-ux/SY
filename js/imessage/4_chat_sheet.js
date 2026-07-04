@@ -1015,7 +1015,8 @@ function createAttachmentSheet(page) {
 
         const formatOfflineMeetingDate = (timestamp) => {
             const date = new Date(Number(timestamp) || Date.now());
-            return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+            const pad = (num) => String(num).padStart(2, '0');
+            return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${pad(date.getHours())}:${pad(date.getMinutes())}`;
         };
 
         const cloneOfflineMeetingMessages = (messages) => (Array.isArray(messages) ? messages : []).map((message, index) => ({
@@ -1189,7 +1190,6 @@ function createAttachmentSheet(page) {
 
         const buildOfflineMeetingRawSummary = (session, summary) => {
             return [
-                session?.dateText || formatOfflineMeetingDate(session?.endedAt),
                 `标题：${session?.title || '见面记录'}`,
                 `见面内容：${String(summary || '')}`
             ].join('\n');
@@ -3036,23 +3036,20 @@ function createAttachmentSheet(page) {
 
         const parseOfflineMeetingSummary = (rawText, endedAt) => {
             const raw = String(rawText || '').trim();
-            const lines = raw.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-            const defaultDate = formatOfflineMeetingDate(endedAt);
-            let dateText = defaultDate;
+            const generatedDatePattern = /^(?:(?:日期|时间|当前时间|见面时间|结束时间)[:：]\s*)?(?:\d{4}年\d{1,2}月\d{1,2}日|\d{4}[-/.]\d{1,2}[-/.]\d{1,2})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?\s*$/;
+            const lines = raw
+                .split(/\r?\n/)
+                .map(line => line.trim())
+                .filter(line => line && !generatedDatePattern.test(line));
+            const dateText = formatOfflineMeetingDate(endedAt);
             let title = '见面记录';
-            let summary = raw;
-
-            const dateIndex = lines.findIndex(line => /\d{4}年\d{1,2}月\d{1,2}日/.test(line));
-            if (dateIndex >= 0) {
-                const match = lines[dateIndex].match(/\d{4}年\d{1,2}月\d{1,2}日/);
-                if (match) dateText = match[0];
-            }
+            let summary = lines.join('\n\n').trim();
 
             const titleIndex = lines.findIndex(line => /^标题[:：]/.test(line));
             if (titleIndex >= 0) {
                 title = lines[titleIndex].replace(/^标题[:：]\s*/, '').trim() || title;
             } else if (lines.length > 1) {
-                const candidate = lines.find((line, index) => index !== dateIndex && !/^见面内容[:：]/.test(line));
+                const candidate = lines.find(line => !/^见面内容[:：]/.test(line));
                 if (candidate) title = candidate.replace(/^#+\s*/, '').trim() || title;
             }
 
@@ -3062,16 +3059,18 @@ function createAttachmentSheet(page) {
                 summary = [firstContentLine, ...lines.slice(contentIndex + 1)].filter(Boolean).join('\n\n');
             } else if (lines.length > 0) {
                 summary = lines
-                    .filter((_, index) => index !== dateIndex && index !== titleIndex)
+                    .filter((_, index) => index !== titleIndex)
                     .join('\n\n')
-                    .trim() || raw;
+                    .trim() || lines.join('\n\n').trim();
             }
+
+            const normalizedSummary = summary || '本次见面暂无总结。';
 
             return {
                 dateText,
                 title,
-                summary: summary || raw || '本次见面暂无总结。',
-                rawSummary: raw
+                summary: normalizedSummary,
+                rawSummary: [`标题：${title}`, `见面内容：${normalizedSummary}`].join('\n')
             };
         };
 
@@ -3102,11 +3101,11 @@ function createAttachmentSheet(page) {
                     messages: [
                         {
                             role: 'system',
-                            content: `You are ${charName}. Write a concise first-person summary of one completed face-to-face meeting. Do not roleplay a new scene. Output exactly three sections in Chinese: first line is x年x月x日, second line starts with 标题：, then 见面内容： followed by the summary.`
+                            content: `You are ${charName}. Write a concise first-person summary of one completed face-to-face meeting. Do not roleplay a new scene. Output exactly two sections in Chinese: first line starts with 标题：, then 见面内容： followed by the summary. Never output any date, time, timestamp, or time-related heading.`
                         },
                         {
                             role: 'user',
-                            content: `请以 Char 的第一视角总结以下线下见面的所有楼层。\n\n${transcript}`
+                            content: `请以 Char 的第一视角总结以下线下见面的所有楼层。只生成标题和见面内容，不要生成日期或时间。\n\n${transcript}`
                         }
                     ]
                 })
@@ -3127,6 +3126,7 @@ function createAttachmentSheet(page) {
                 if (window.showToast) window.showToast('没有可结束的见面内容');
                 return;
             }
+            const endedAt = Date.now();
 
             if (endButton) {
                 endButton.dataset.busy = 'true';
@@ -3137,7 +3137,6 @@ function createAttachmentSheet(page) {
             try {
                 if (window.showToast) window.showToast('正在生成见面总结...');
                 const rawSummary = await requestOfflineMeetingSummary(activeFriend, messages);
-                const endedAt = Date.now();
                 const parsed = parseOfflineMeetingSummary(rawSummary, endedAt);
                 const sessionId = activeFriend.offlineCurrentSessionId || createOfflineTavernId('offline-session');
                 const session = {
@@ -3156,6 +3155,7 @@ function createAttachmentSheet(page) {
                     role: 'system',
                     type: OFFLINE_MEETING_RECORD_TYPE,
                     offlineSessionId: sessionId,
+                    endedAt,
                     dateText: parsed.dateText,
                     title: parsed.title,
                     summary: parsed.summary,

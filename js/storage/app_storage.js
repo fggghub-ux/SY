@@ -689,18 +689,27 @@
             .map(sanitizeLibraryRecord)
             .filter((track) => track.id);
 
-        await withStore([STORES.libraryPlaylists, STORES.libraryTracks], 'readwrite', async (stores) => {
+        await withStore([STORES.libraryPlaylists, STORES.libraryTracks], 'readwrite', (stores) => {
+            const playlistStore = stores[STORES.libraryPlaylists];
+            const trackStore = stores[STORES.libraryTracks];
+            const writeBundle = () => {
+                playlistStore.put(playlistRecord);
+                trackRecords.forEach((track) => trackStore.put(track));
+            };
+
             if (options.replaceTracks) {
                 const keepIds = new Set(trackRecords.map((track) => track.id));
-                const existingTracks = await requestToPromise(stores[STORES.libraryTracks].getAll());
-                (Array.isArray(existingTracks) ? existingTracks : []).forEach((track) => {
-                    if (track?.playlistId === playlistRecord.id && !keepIds.has(track.id)) {
-                        stores[STORES.libraryTracks].delete(track.id);
-                    }
-                });
+                const existingKeysRequest = trackStore.index('playlistId').getAllKeys(playlistRecord.id);
+                existingKeysRequest.onsuccess = () => {
+                    (Array.isArray(existingKeysRequest.result) ? existingKeysRequest.result : []).forEach((trackId) => {
+                        if (!keepIds.has(trackId)) trackStore.delete(trackId);
+                    });
+                    writeBundle();
+                };
+                return;
             }
-            stores[STORES.libraryPlaylists].put(playlistRecord);
-            trackRecords.forEach((track) => stores[STORES.libraryTracks].put(track));
+
+            writeBundle();
         });
 
         return {
