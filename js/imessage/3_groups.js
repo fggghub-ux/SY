@@ -22,11 +22,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const groupContextEnabledToggle = document.getElementById('group-context-enabled-toggle');
     const groupContextLimitInput = document.getElementById('group-context-limit-input');
     const groupBotEnabledToggle = document.getElementById('group-bot-enabled-toggle');
-    const groupSummaryHeader = document.getElementById('group-summary-header');
-    const groupSummaryBody = document.getElementById('group-summary-body');
-    const groupSummaryEnabledToggle = document.getElementById('group-summary-enabled-toggle');
-    const groupSummaryLimitInput = document.getElementById('group-summary-limit-input');
-    const groupSummaryPromptInput = document.getElementById('group-summary-prompt-input');
     const confirmGroupContextBtn = document.getElementById('confirm-group-context-btn');
     const confirmGroupEditBtn = document.getElementById('confirm-group-edit-btn');
     const groupEditNameInput = document.getElementById('group-edit-name-input');
@@ -36,9 +31,67 @@ document.addEventListener('DOMContentLoaded', () => {
     const groupAddMemberBtn = document.getElementById('group-add-member-btn');
     const groupAddMemberSheet = document.getElementById('group-add-member-sheet');
     const groupAddMemberList = document.getElementById('group-add-member-list');
+    const groupPrivateChatDetailModal = document.getElementById('group-private-chat-detail-modal');
+    const groupPrivateChatDetailTitle = document.getElementById('group-private-chat-detail-title');
+    const groupPrivateChatDetailSubtitle = document.getElementById('group-private-chat-detail-subtitle');
+    const groupPrivateChatDetailMessages = document.getElementById('group-private-chat-detail-messages');
+    const groupPrivateChatDetailClose = document.getElementById('group-private-chat-detail-close');
 
     let tempGroupMembers = [];
     let currentViewingGroup = null;
+
+    function escapeGroupHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function formatPrivateChatDetailTime(timestamp) {
+        const time = Number(timestamp) || 0;
+        if (!time) return '';
+        const date = new Date(time);
+        return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+    }
+
+    function closeGroupPrivateChatDetail() {
+        if (groupPrivateChatDetailModal) closeView(groupPrivateChatDetailModal);
+    }
+
+    window.imApp.openGroupPrivateChatDetail = function(snapshot) {
+        if (!groupPrivateChatDetailModal || !groupPrivateChatDetailMessages || !snapshot) return false;
+        const senderName = snapshot.senderName || '群成员';
+        const recipientName = snapshot.recipientName || '好友';
+        const messages = Array.isArray(snapshot.messages) ? snapshot.messages : [];
+        if (messages.length === 0) return false;
+
+        if (groupPrivateChatDetailTitle) {
+            groupPrivateChatDetailTitle.textContent = `${senderName} 与 ${recipientName}`;
+        }
+        if (groupPrivateChatDetailSubtitle) {
+            groupPrivateChatDetailSubtitle.textContent = `本次私信记录 · ${messages.length} 条`;
+        }
+
+        groupPrivateChatDetailMessages.innerHTML = messages.map((message) => {
+            const isSender = message?.role === 'char';
+            const displayName = isSender ? senderName : recipientName;
+            return `
+                <div class="group-private-chat-detail-row${isSender ? ' is-sender' : ''}">
+                    <div class="group-private-chat-detail-name">${escapeGroupHtml(displayName)}</div>
+                    <div class="group-private-chat-detail-bubble">${escapeGroupHtml(message?.text || '')}</div>
+                    <div class="group-private-chat-detail-time">${escapeGroupHtml(formatPrivateChatDetailTime(message?.timestamp))}</div>
+                </div>
+            `;
+        }).join('');
+
+        openView(groupPrivateChatDetailModal);
+        requestAnimationFrame(() => {
+            groupPrivateChatDetailMessages.scrollTop = 0;
+        });
+        return true;
+    };
 
     function isSelectableGroupMember(friend) {
         return !!friend && (friend.type === 'char' || friend.type === 'npc');
@@ -222,7 +275,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         currentViewingGroup.memory = currentViewingGroup.memory || window.imApp.createDefaultMemory();
         currentViewingGroup.memory.context = currentViewingGroup.memory.context || {};
-        currentViewingGroup.memory.summary = currentViewingGroup.memory.summary || {};
 
         const enabled = typeof currentViewingGroup.memory.context.enabled === 'boolean'
             ? currentViewingGroup.memory.context.enabled
@@ -241,33 +293,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (groupBotEnabledToggle) {
             groupBotEnabledToggle.checked = !!currentViewingGroup.botEnabled;
-        }
-
-        const summaryEnabled = !!currentViewingGroup.memory.summary.enabled;
-        const summaryLimit = Number(currentViewingGroup.memory.summary.limit) > 0
-            ? Number(currentViewingGroup.memory.summary.limit)
-            : 100;
-        const summaryPrompt = currentViewingGroup.memory.summary.prompt || '';
-
-        if (groupSummaryEnabledToggle) {
-            groupSummaryEnabledToggle.checked = summaryEnabled;
-        }
-        if (groupSummaryLimitInput) {
-            groupSummaryLimitInput.value = summaryLimit;
-        }
-        if (groupSummaryPromptInput) {
-            groupSummaryPromptInput.value = summaryPrompt;
-        }
-        if (groupSummaryBody && groupSummaryHeader) {
-            if (summaryEnabled) {
-                groupSummaryBody.style.display = 'block';
-                groupSummaryHeader.style.borderRadius = '20px 20px 0 0';
-                groupSummaryHeader.style.borderBottom = '1px solid #e5e5ea';
-            } else {
-                groupSummaryBody.style.display = 'none';
-                groupSummaryHeader.style.borderRadius = '20px';
-                groupSummaryHeader.style.borderBottom = 'none';
-            }
         }
 
         openView(groupContextSettingsSheet);
@@ -714,20 +739,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    if (groupSummaryEnabledToggle && groupSummaryBody && groupSummaryHeader) {
-        groupSummaryEnabledToggle.addEventListener('change', (e) => {
-            if (e.target.checked) {
-                groupSummaryBody.style.display = 'block';
-                groupSummaryHeader.style.borderRadius = '20px 20px 0 0';
-                groupSummaryHeader.style.borderBottom = '1px solid #e5e5ea';
-            } else {
-                groupSummaryBody.style.display = 'none';
-                groupSummaryHeader.style.borderRadius = '20px';
-                groupSummaryHeader.style.borderBottom = 'none';
-            }
-        });
-    }
-
     if (groupBotEnabledToggle) {
         groupBotEnabledToggle.addEventListener('change', async (e) => {
             if (currentViewingGroup) {
@@ -754,6 +765,15 @@ document.addEventListener('DOMContentLoaded', () => {
         groupEditSheet.addEventListener('click', (e) => {
             if (e.target === groupEditSheet) closeView(groupEditSheet);
         });
+    }
+
+    if (groupPrivateChatDetailModal) {
+        groupPrivateChatDetailModal.addEventListener('click', (event) => {
+            if (event.target === groupPrivateChatDetailModal) closeGroupPrivateChatDetail();
+        });
+    }
+    if (groupPrivateChatDetailClose) {
+        groupPrivateChatDetailClose.addEventListener('click', closeGroupPrivateChatDetail);
     }
 
     if (groupContextSettingsSheet) {
@@ -1062,21 +1082,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 groupContextLimitInput.value = limit;
             }
 
-            const sumEnabled = !!(groupSummaryEnabledToggle && groupSummaryEnabledToggle.checked);
-            let sumLimit = groupSummaryLimitInput ? Number(groupSummaryLimitInput.value) : 100;
-            if (!Number.isFinite(sumLimit) || sumLimit <= 0) sumLimit = 100;
-            sumLimit = Math.max(1, Math.floor(sumLimit));
-            const sumPrompt = groupSummaryPromptInput ? groupSummaryPromptInput.value.trim() : '';
-
             const saved = await commitCurrentGroupChange((targetGroup) => {
                 targetGroup.memory = targetGroup.memory || window.imApp.createDefaultMemory();
                 targetGroup.memory.context = targetGroup.memory.context || {};
-                targetGroup.memory.summary = targetGroup.memory.summary || {};
                 targetGroup.memory.context.enabled = enabled;
                 targetGroup.memory.context.limit = limit;
-                targetGroup.memory.summary.enabled = sumEnabled;
-                targetGroup.memory.summary.limit = sumLimit;
-                targetGroup.memory.summary.prompt = sumPrompt;
             }, { silent: true });
 
             if (!saved) {

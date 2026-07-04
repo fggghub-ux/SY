@@ -610,6 +610,12 @@ window.imApp.formatSystemNoticeForApiContext = function(message) {
     if (noticeKind === 'offline_meeting_active') {
         return '';
     }
+    if (noticeKind === 'group_private_to_user') {
+        return '[系统事件：有群成员向 User 发送了私信。其他群成员默认不知道私信内容。]';
+    }
+    if (noticeKind === 'group_friend_private_chat') {
+        return '[系统事件：有群成员与自己的好友进行了私聊。私聊内容只属于该成员，其他群成员默认不知道。]';
+    }
 
     return noticeText ? `[系统事件：${noticeText}]` : '[系统事件]';
 };

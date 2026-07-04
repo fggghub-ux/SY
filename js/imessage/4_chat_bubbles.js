@@ -306,15 +306,20 @@ function renderSystemNoticeBubble(msg, friend, container, timestamp = Date.now()
             group_rejoined: { icon: 'fa-sign-in-alt', color: '#34c759' },
             narration: { icon: 'fa-quote-left', color: '#5856d6' },
             red_packet_claim: { icon: 'fa-envelope-open-text', color: '#ff9500' },
-            offline_meeting_active: { icon: 'fa-user-friends', color: '#34c759' }
+            offline_meeting_active: { icon: 'fa-user-friends', color: '#34c759' },
+            group_private_to_user: { icon: 'fa-envelope', color: '#007aff' },
+            group_friend_private_chat: { icon: 'fa-comments', color: '#5856d6' }
         };
         const iconMeta = iconMap[noticeKind] || { icon: 'fa-info-circle', color: '#8e8e93' };
         const textAlign = noticeKind === 'narration' ? 'left' : 'center';
+        const noticeBody = noticeKind === 'group_friend_private_chat'
+            ? `<span>${escapeHtml(noticeText)}</span><button type="button" class="group-private-chat-view-link">查看</button>`
+            : `<span>${escapeHtml(noticeText)}</span>`;
         row.innerHTML = `
             <div style="width:100%; display:flex; justify-content:center; padding:2px 0; margin:10px 0;">
                 <div class="voice-call-record-card im-card-content system-notice-card system-notice-${escapeHtml(noticeKind || 'default')}" style="max-width:80%; padding:10px 16px; border-radius:18px; background:rgba(0,0,0,0.05); color:#000; font-size:13px; line-height:1.4; text-align:${textAlign}; display:flex; align-items:flex-start; gap:8px; white-space:pre-wrap; word-break:break-word; ${noticeKind === 'narration' ? 'cursor:pointer;' : ''}">
                     <i class="fas ${iconMeta.icon}" style="color:${iconMeta.color}; line-height:1.4; flex-shrink:0;"></i>
-                    <span>${escapeHtml(noticeText)}</span>
+                    <span style="display:inline-flex; align-items:center; flex-wrap:wrap; justify-content:center;">${noticeBody}</span>
                 </div>
             </div>
         `;
@@ -326,6 +331,20 @@ function renderSystemNoticeBubble(msg, friend, container, timestamp = Date.now()
                     event.preventDefault();
                     event.stopPropagation();
                     openNarrationNoticeEditor(msg, friend, container);
+                });
+            }
+        }
+        if (noticeKind === 'group_friend_private_chat') {
+            const viewLink = row.querySelector('.group-private-chat-view-link');
+            if (viewLink) {
+                viewLink.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (window.imApp?.openGroupPrivateChatDetail) {
+                        window.imApp.openGroupPrivateChatDetail(
+                            msg.privateChatSnapshot || msg.payload?.privateChatSnapshot
+                        );
+                    }
                 });
             }
         }

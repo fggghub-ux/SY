@@ -3518,15 +3518,16 @@
                 <span id="group-call-minimized-time" style="margin-left: 5px; opacity: 0.8;">00:00</span>
             </div>
 
-<div class="bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay" id="group-edit-sheet" style="z-index: 600;">
-                <div class="wb-centered-modal-card wb-group-modal-card" style="height: 85%; display: flex; flex-direction: column;">
-                    <div class="wb-centered-modal-header" style="position: relative; flex-shrink: 0;">
-                        <div class="wb-centered-modal-title">Edit Group</div>
-                        <div class="wb-centered-modal-close" style="position: absolute; right: 16px; top: 16px; font-size: 18px; color: #8e8e93; cursor: pointer;" onclick="window.closeView(document.getElementById('group-edit-sheet'))">
+<div class="bottom-sheet-overlay detail-sheet-overlay" id="group-edit-sheet" style="z-index: 600;">
+                <div class="bottom-sheet im-group-edit-sheet">
+                    <div class="sheet-handle"></div>
+                    <div class="sheet-title" style="position: relative; flex-shrink: 0;">
+                        Edit Group
+                        <div style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); font-size: 18px; color: #8e8e93; cursor: pointer;" onclick="window.closeView(document.getElementById('group-edit-sheet'))">
                             <i class="fas fa-times"></i>
                         </div>
                     </div>
-                    <div class="detail-sheet-content" style="flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 20px;">
+                    <div class="detail-sheet-content im-group-edit-content">
                         <div class="form-group fully-rounded">
                             <div class="form-item">
                                 <label style="width: 80px; font-weight: 500;">群名称</label>
@@ -3562,22 +3563,13 @@
                     </div>
                     <div class="detail-sheet-content im-group-context-content">
                         
-                        <!-- 群公告、置顶群聊、群头衔与群bot -->
-                        <div class="settings-group fully-rounded" style="margin: 10px 16px;">
+                        <!-- 群公告、群头衔与群bot -->
+                        <div class="settings-group fully-rounded" style="margin: 10px 0;">
                             <!-- 群公告 -->
                             <div class="form-item" style="justify-content: space-between; border-bottom: 1px solid var(--separator-color); cursor: pointer;" id="group-announcement-btn">
                                 <label style="width: auto; font-size: 17px; color: #000; padding-left: 0;">群公告</label>
                                 <div style="display: flex; align-items: center; color: #8e8e93;">
                                     <i class="fas fa-chevron-right" style="font-size: 14px;"></i>
-                                </div>
-                            </div>
-                            <div class="form-item" style="justify-content: space-between; border-bottom: 1px solid var(--separator-color);">
-                                <label style="width: auto; font-size: 17px; color: #000; padding-left: 0;">置顶群聊</label>
-                                <div style="display: flex; align-items: center; gap: 10px;">
-                                    <label class="toggle-switch">
-                                        <input type="checkbox" id="group-pin-enabled-toggle">
-                                        <span class="slider"></span>
-                                    </label>
                                 </div>
                             </div>
                             <div class="form-item" style="justify-content: space-between; border-bottom: 1px solid var(--separator-color); cursor: pointer;" id="group-title-btn">
@@ -3597,9 +3589,9 @@
                             </div>
                         </div>
 
-                        <div class="settings-group fully-rounded" style="margin: 10px 16px; overflow: visible;">
+                        <div class="settings-group fully-rounded" style="margin: 10px 0; overflow: visible;">
 
-                            <div class="form-item" style="justify-content: space-between; border-bottom: 1px solid var(--separator-color);">
+                            <div class="form-item" style="justify-content: space-between; border-bottom: none;">
                                 <label style="width: auto; font-size: 17px; color: #000; padding-left: 0;">上下文</label>
                                 <div style="display: flex; align-items: center; gap: 10px;">
                                     <input type="number" id="group-context-limit-input" style="width: 56px; text-align: center; border: 1px solid #e5e5ea; border-radius: 8px; padding: 4px; font-size: 15px;" value="80" min="1">
@@ -3609,29 +3601,13 @@
                                     </label>
                                 </div>
                             </div>
-                            
-                            <!-- 群聊自动总结折叠开关 (无图标) -->
-                            <div class="form-item" style="justify-content: space-between; border-bottom: none; transition: border-radius 0.2s;" id="group-summary-header">
-                                <label style="width: auto; font-size: 17px; color: #000; padding-left: 0;">自动总结</label>
-                                <div style="display: flex; align-items: center; gap: 10px;">
-                                    <input type="number" id="group-summary-limit-input" style="width: 56px; text-align: center; border: 1px solid #e5e5ea; border-radius: 8px; padding: 4px; font-size: 15px;" value="80" min="1">
-                                    <label class="toggle-switch">
-                                        <input type="checkbox" id="group-summary-enabled-toggle">
-                                        <span class="slider"></span>
-                                    </label>
-                                </div>
-                            </div>
-                            <!-- 群聊自动总结展开的输入框 -->
-                            <div id="group-summary-body" style="display: none; padding: 0 16px 16px 16px; background: #fff; border-bottom-left-radius: 20px; border-bottom-right-radius: 20px;">
-                                <textarea id="group-summary-prompt-input" class="global-textarea" placeholder="输入自动总结提示词..."></textarea>
-                            </div>
                         </div>
 
-                        <div style="font-size: 13px; color: #8e8e93; line-height: 1.6; margin: 0 20px 20px;">
+                        <div style="font-size: 13px; color: #8e8e93; line-height: 1.6; margin: 0 4px 20px;">
                             控制群聊发送给 AI 的最近消息条数。开启后，群成员会更容易记住自己和别人刚刚说过的话。
                         </div>
 
-                        <div class="settings-group fully-rounded" style="margin: 20px 16px;">
+                        <div class="settings-group fully-rounded" style="margin: 20px 0;">
                             <div class="form-item" style="justify-content: center; cursor: pointer; border-bottom: 1px solid var(--separator-color);" id="clear-group-chat-history-btn">
                                 <span style="color: #ff3b30; font-size: 17px; text-align: center; width: 100%;">清空聊天记录</span>
                             </div>
@@ -3643,8 +3619,23 @@
                             </div>
                         </div>
 
-                        <div class="sheet-action confirm-action" id="confirm-group-context-btn" style="background-color: #007aff; color: #fff;">保存设置</div>
+                        <div class="sheet-action confirm-action" id="confirm-group-context-btn" style="background-color: #007aff; color: #fff; margin: 20px 0;">保存设置</div>
                     </div>
+                </div>
+            </div>
+
+<div class="bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay" id="group-private-chat-detail-modal" style="z-index: 900;">
+                <div class="wb-centered-modal-card group-private-chat-detail-card">
+                    <div class="group-private-chat-detail-header">
+                        <div>
+                            <div class="group-private-chat-detail-title" id="group-private-chat-detail-title">私信记录</div>
+                            <div class="group-private-chat-detail-subtitle" id="group-private-chat-detail-subtitle"></div>
+                        </div>
+                        <button type="button" class="group-private-chat-detail-close" id="group-private-chat-detail-close" aria-label="关闭私信记录">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="group-private-chat-detail-messages" id="group-private-chat-detail-messages"></div>
                 </div>
             </div>
 
