@@ -160,18 +160,39 @@ document.addEventListener('DOMContentLoaded', () => {
     // Launch logic is now handled in HTML via onclick, but we can hook into render here
     if (payAppBtn) {
         payAppBtn.addEventListener('click', () => {
+            if (appContainer) {
+                appContainer.scrollTop = 0;
+                appContainer.scrollLeft = 0;
+            }
             renderPayUI();
+        });
+    }
+
+    if (payBackBtn && payView) {
+        payBackBtn.addEventListener('click', () => {
+            payView.classList.remove('active');
+            setTimeout(() => {
+                if (!payView.classList.contains('active')) payView.style.display = '';
+            }, 220);
         });
     }
 
     // --- Filter Switching ---
     filterBtns.forEach(btn => {
         btn.addEventListener('click', () => {
-            filterBtns.forEach(b => b.classList.remove('active'));
+            filterBtns.forEach(b => {
+                b.classList.remove('active');
+                b.setAttribute('aria-pressed', 'false');
+            });
             btn.classList.add('active');
+            btn.setAttribute('aria-pressed', 'true');
             currentFilter = btn.getAttribute('data-filter');
             renderPayUI();
         });
+    });
+
+    filterBtns.forEach(btn => {
+        btn.setAttribute('aria-pressed', btn.classList.contains('active') ? 'true' : 'false');
     });
 
     // --- Render Sheet Lists ---

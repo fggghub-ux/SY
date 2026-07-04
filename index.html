@@ -32,7 +32,7 @@
     <link rel="stylesheet" href="css/home.css">
     <link rel="stylesheet" href="css/worldbook.css">
     <link rel="stylesheet" href="css/imessage.css?v=20260704-mini-player-border-v2">
-    <link rel="stylesheet" href="css/pay.css">
+    <link rel="stylesheet" href="css/pay.css?v=20260704-korean-flat-v3">
     <link rel="stylesheet" href="css/bstage.css">
     <link rel="stylesheet" href="css/tiktok.css">
     <link rel="stylesheet" href="css/shopping.css">
@@ -41,7 +41,7 @@
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
-    <link rel="stylesheet" href="css/loves.css">
+    <link rel="stylesheet" href="css/loves.css?v=20260704-korean-flat-v2">
     <link rel="stylesheet" href="css/library.css?v=20260704-together-picker-border-v1">
     <!-- App Styles -->
     <link rel="stylesheet" href="css/settings.css">
@@ -3679,59 +3679,72 @@
         <!-- ========================================== -->
         <!-- PAY APP VIEW -->
         <!-- ========================================== -->
-        <div class="app-view pay-view" id="pay-view">
+        <div class="app-view pay-view" id="pay-view" role="application" aria-label="Pay 资产">
             <!-- Header -->
             <div class="pay-header">
-                <div class="pay-header-left" id="pay-back-btn" onclick="document.getElementById('pay-view').classList.remove('active'); setTimeout(() => document.getElementById('pay-view').style.display='', 300);">
+                <button type="button" class="pay-header-left" id="pay-back-btn" aria-label="返回主屏幕">
                     <i class="fas fa-chevron-left"></i>
+                </button>
+                <div class="pay-heading">
+                    <span>PAY</span>
+                    <h1>我的资产</h1>
                 </div>
-                <div class="pay-header-right">
-                    <i class="fas fa-cog"></i>
-                </div>
+                <div class="pay-header-mark" aria-hidden="true">WALLET</div>
             </div>
 
             <!-- Main Content Area -->
             <div class="pay-content">
                 
                 <!-- 资产内容 -->
-                <div id="pay-tab-assets">
+                <div id="pay-tab-assets" class="pay-assets-shell">
                     <!-- 当前卡片 -->
                     <div class="pay-total-card" id="pay-main-card">
-                        <div class="pay-card-title" id="pay-main-card-title"><i class="fas fa-university"></i> 招商银行</div>
-                        <div class="pay-card-type" id="pay-main-card-type">储蓄卡</div>
-                        <div class="pay-card-amount" id="pay-total-amount">0.00</div>
+                        <div class="pay-card-topline">
+                            <div>
+                                <div class="pay-card-eyebrow">当前账户 · CURRENT</div>
+                                <div class="pay-card-title" id="pay-main-card-title"><i class="fas fa-university"></i> 招商银行</div>
+                                <div class="pay-card-type" id="pay-main-card-type">储蓄卡</div>
+                            </div>
+                            <div class="pay-card-logo" id="pay-main-card-logo">银联</div>
+                        </div>
+                        <div class="pay-balance-block">
+                            <span>可用余额</span>
+                            <div class="pay-card-amount"><small>¥</small><span id="pay-total-amount">0.00</span></div>
+                        </div>
                         <div class="pay-card-number" id="pay-main-card-number">**** **** **** 8888</div>
-                        <div class="pay-card-logo" id="pay-main-card-logo">银联</div>
                     </div>
 
                     <!-- 快捷功能区 -->
-                    <div class="pay-quick-actions">
-                        <div class="pay-action-btn" id="pay-action-scan">
-                            <div class="pay-action-icon" style="background-color: #007aff;"><i class="fas fa-qrcode"></i></div>
-                            <span>收付款</span>
-                        </div>
-                        <div class="pay-action-btn" id="pay-action-cards">
-                            <div class="pay-action-icon" style="background-color: #34c759;"><i class="fas fa-credit-card"></i></div>
-                            <span>卡包</span>
-                        </div>
-                        <div class="pay-action-btn" id="pay-action-family">
-                            <div class="pay-action-icon" style="background-color: #ff2d55;"><i class="fas fa-users"></i></div>
-                            <span>亲属卡</span>
-                        </div>
+                    <div class="pay-quick-actions" aria-label="快捷操作">
+                        <button type="button" class="pay-action-btn" id="pay-action-scan">
+                            <span class="pay-action-icon"><i class="fas fa-qrcode"></i></span>
+                            <span class="pay-action-copy"><strong>收付款</strong><small>PAY</small></span>
+                        </button>
+                        <button type="button" class="pay-action-btn" id="pay-action-cards">
+                            <span class="pay-action-icon"><i class="fas fa-credit-card"></i></span>
+                            <span class="pay-action-copy"><strong>卡包</strong><small>CARDS</small></span>
+                        </button>
+                        <button type="button" class="pay-action-btn" id="pay-action-family">
+                            <span class="pay-action-icon"><i class="fas fa-users"></i></span>
+                            <span class="pay-action-copy"><strong>亲属卡</strong><small>FAMILY</small></span>
+                        </button>
                     </div>
 
                     <!-- 账单明细区 -->
                     <div class="pay-section">
                         <div class="pay-section-header">
-                            <h3 class="pay-section-title">最近账单</h3>
-                            <span class="pay-section-more">设置 <i class="fas fa-cog"></i></span>
+                            <div>
+                                <span class="pay-section-kicker">RECENT</span>
+                                <h3 class="pay-section-title">最近账单</h3>
+                            </div>
+                            <span class="pay-section-more">交易明细</span>
                         </div>
                         
                         <!-- 新增：账单筛选按钮 -->
                         <div class="pay-bill-filters">
-                            <div class="pay-filter-btn active" data-filter="all">全部</div>
-                            <div class="pay-filter-btn" data-filter="income">收入</div>
-                            <div class="pay-filter-btn" data-filter="expense">支出</div>
+                            <button type="button" class="pay-filter-btn active" data-filter="all">全部</button>
+                            <button type="button" class="pay-filter-btn" data-filter="income">收入</button>
+                            <button type="button" class="pay-filter-btn" data-filter="expense">支出</button>
                         </div>
 
                         <div class="pay-bill-list" id="pay-bill-list">
@@ -3746,49 +3759,49 @@
             <div class="pay-modal-overlay" id="pay-scan-modal">
                 <div class="pay-scan-container">
                     <div class="pay-scan-header">
-                        <span>向商家付款</span>
-                        <i class="fas fa-times" id="pay-scan-close"></i>
+                        <div><small>QUICK PAY</small><span>向商家付款</span></div>
+                        <button type="button" id="pay-scan-close" aria-label="关闭收付款"><i class="fas fa-times"></i></button>
                     </div>
                     <div class="pay-scan-barcode"></div>
                     <div class="pay-scan-qrcode">
-                        <i class="fas fa-qrcode" style="font-size: 150px; color: #000;"></i>
+                        <i class="fas fa-qrcode"></i>
                     </div>
-                    <div style="text-align: center; margin-top: 20px; font-size: 14px; color: #007aff; font-weight: 500;">
+                    <div class="pay-scan-refresh">
                         <i class="fas fa-sync-alt"></i> 每分钟自动刷新
                     </div>
                 </div>
             </div>
 
             <!-- 模拟卡包弹窗 -->
-            <div class="bottom-sheet-overlay detail-sheet-overlay" id="pay-cards-sheet" style="z-index: 500;">
-                <div class="bottom-sheet" style="height: 70%; background: #ffffff;">
+            <div class="bottom-sheet-overlay detail-sheet-overlay" id="pay-cards-sheet">
+                <div class="bottom-sheet pay-sheet">
                     <div class="sheet-handle"></div>
-                    <div class="sheet-title">我的卡包</div>
-                    <div class="detail-sheet-content" style="padding: 16px;">
+                    <div class="pay-sheet-heading"><span>CARDS</span><h2>我的卡包</h2></div>
+                    <div class="detail-sheet-content pay-sheet-content">
                         <div id="pay-bank-list">
                             <!-- 银行卡列表动态渲染 -->
                         </div>
                         
-                        <div style="background: #fff; border-radius: 12px; padding: 16px; text-align: center; color: #007aff; font-weight: 500; font-size: 15px; margin-top: 20px; cursor: pointer;">
+                        <button type="button" class="pay-sheet-add">
                             <i class="fas fa-plus"></i> 添加银行卡
-                        </div>
+                        </button>
                     </div>
                 </div>
             </div>
 
             <!-- 模拟亲属卡弹窗 -->
-            <div class="bottom-sheet-overlay detail-sheet-overlay" id="pay-family-sheet" style="z-index: 500;">
-                <div class="bottom-sheet" style="height: 70%; background: #ffffff;">
+            <div class="bottom-sheet-overlay detail-sheet-overlay" id="pay-family-sheet">
+                <div class="bottom-sheet pay-sheet">
                     <div class="sheet-handle"></div>
-                    <div class="sheet-title">亲属卡</div>
-                    <div class="detail-sheet-content" style="padding: 16px;">
+                    <div class="pay-sheet-heading"><span>FAMILY</span><h2>亲属卡</h2></div>
+                    <div class="detail-sheet-content pay-sheet-content">
                         <div id="pay-family-list">
                             <!-- 亲属卡列表动态渲染 -->
                         </div>
                         
-                        <div style="background: #fff; border-radius: 12px; padding: 16px; text-align: center; color: #007aff; font-weight: 500; font-size: 15px; margin-top: 20px; cursor: pointer;">
+                        <button type="button" class="pay-sheet-add">
                             <i class="fas fa-plus"></i> 赠送亲属卡
-                        </div>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -6138,14 +6151,28 @@
             <!-- ========================================== -->
             <!-- LOVES APP VIEW -->
             <!-- ========================================== -->
-            <div class="app-view loves-view" id="loves-view">
-                <div class="loves-header" style="border-bottom: none;">
-                    <div class="loves-back-btn" id="loves-back-btn" style="font-size: 24px; font-weight: 800; color: #111; cursor: pointer; padding: 5px;">
-                        Loves
+            <div class="app-view loves-view" id="loves-view" role="application" aria-label="恋人空间">
+                <header class="loves-header">
+                    <button type="button" class="loves-back-btn" id="loves-back-btn" aria-label="返回主屏幕">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    <div class="loves-heading">
+                        <span>LOVES</span>
+                        <h1>恋人空间</h1>
                     </div>
-                </div>
+                    <div class="loves-header-mark" aria-hidden="true">SHARED LIFE</div>
+                </header>
                 <div class="loves-content">
-                    <div class="loves-board" id="loves-board">
+                    <div class="loves-intro">
+                        <span>TOGETHER</span>
+                        <h2>和重要的人，共享生活片段。</h2>
+                        <p>邀请好友建立专属空间，记录动态、日程与共同目标。</p>
+                    </div>
+                    <div class="loves-list-heading">
+                        <h3>我的关系</h3>
+                        <span>RELATIONSHIPS</span>
+                    </div>
+                    <div class="loves-board" id="loves-board" aria-live="polite">
                         <!-- Friends notes will be injected here -->
                     </div>
                 </div>
@@ -6154,132 +6181,133 @@
             <!-- ========================================== -->
             <!-- LOVERS SPACE VIEW (全屏界面) -->
             <!-- ========================================== -->
-            <div class="app-view lovers-space-view" id="lovers-space-view" style="padding-top: 0;">
+            <div class="app-view lovers-space-view" id="lovers-space-view">
                 <!-- 悬浮返回按钮，高度与 Loves 顶栏一致 -->
-                <div class="lovers-space-header" style="padding-top: var(--safe-top); height: max(44px, calc(44px + var(--safe-top))); display: flex; align-items: center; justify-content: space-between; padding-left: 16px; padding-right: 16px; position: absolute; top: 0; left: 0; width: 100%; z-index: 20; pointer-events: none;">
-                    <div id="lovers-space-back-btn" style="width: 32px; height: 32px; border-radius: 16px; background: rgba(0,0,0,0.06);   color: #666; display: flex; justify-content: center; align-items: center; cursor: pointer; pointer-events: auto;">
-                        <i class="fas fa-chevron-left" style="font-size: 16px; transform: translateX(-1px);"></i>
-                    </div>
-                    <div id="lovers-space-menu-btn" style="width: 32px; height: 32px; border-radius: 16px; background: rgba(0,0,0,0.06);   color: #666; display: flex; justify-content: center; align-items: center; cursor: pointer; pointer-events: auto;">
-                        <i class="fas fa-ellipsis-h" style="font-size: 16px;"></i>
-                    </div>
-                </div>
+                <header class="lovers-space-header">
+                    <button type="button" id="lovers-space-back-btn" class="lovers-space-icon-btn" aria-label="返回恋人空间">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    <div class="lovers-space-header-copy"><span>OUR SPACE</span><strong>共同生活</strong></div>
+                    <button type="button" id="lovers-space-menu-btn" class="lovers-space-icon-btn" aria-label="更多选项">
+                        <i class="fas fa-ellipsis-h"></i>
+                    </button>
+                </header>
 
-                <div class="lovers-space-scrollable" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; background: #fff;">
-                    
-                    <!-- 为顶部留出少量安全区，不占用完整导航栏高度 -->
-                    <div style="height: max(20px, var(--safe-top)); flex-shrink: 0;"></div>
-                    
+                <div class="lovers-space-scrollable">
                     <!-- 核心信息栏 (头像 & 纪念日) -->
-                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 20px; flex-shrink: 0; margin-top: 10px;">
+                    <section class="lovers-space-hero">
+                        <div class="lovers-space-hero-copy">
+                            <span>TOGETHER SINCE</span>
+                            <h2>我们相伴的日子</h2>
+                            <p>日常、计划与共同收藏，都在这里。</p>
+                        </div>
                         <!-- 左侧双头像重叠 -->
-                        <div style="display: flex; align-items: center;">
+                        <div class="lovers-space-avatars" aria-label="情侣头像">
                             <!-- 我的头像 -->
-                            <div style="position: relative; width: 70px; height: 70px; border-radius: 50%; border: 3px solid #fff; background: #e5e5ea; overflow: hidden; z-index: 2;  display: flex; justify-content: center; align-items: center;">
-                                <img src="" id="lovers-space-user-avatar" style="width: 100%; height: 100%; object-fit: cover; display: none;">
-                                <i class="fas fa-user" id="lovers-space-user-icon" style="font-size: 30px; color: #ccc;"></i>
+                            <div class="lovers-space-avatar is-user">
+                                <img src="" id="lovers-space-user-avatar" alt="我的头像">
+                                <i class="fas fa-user" id="lovers-space-user-icon"></i>
                             </div>
                             <!-- 好友的头像 -->
-                            <div style="position: relative; width: 70px; height: 70px; border-radius: 50%; border: 3px solid #fff; background: #e5e5ea; overflow: hidden; z-index: 1; margin-left: -20px;  display: flex; justify-content: center; align-items: center;">
-                                <img src="" id="lovers-space-friend-avatar" style="width: 100%; height: 100%; object-fit: cover; display: none;">
-                                <i class="fas fa-user" id="lovers-space-friend-icon" style="font-size: 30px; color: #ccc;"></i>
+                            <div class="lovers-space-avatar is-friend">
+                                <img src="" id="lovers-space-friend-avatar" alt="好友头像">
+                                <i class="fas fa-user" id="lovers-space-friend-icon"></i>
                             </div>
                         </div>
                         
                         <!-- 右侧圆形天数 -->
-                        <div style="padding: 10px 20px; border-radius: 20px; background: #fff0f3; display: flex; flex-direction: column; justify-content: center; align-items: center; min-width: 60px;">
-                            <span id="lovers-space-days" style="font-size: 20px; font-weight: 800; color: #ff9bb3; line-height: 1;">1</span>
-                            <span style="font-size: 11px; color: #ff9bb3; font-weight: 600; margin-top: 2px;">days</span>
+                        <div class="lovers-space-days-card">
+                            <span id="lovers-space-days">1</span>
+                            <small>DAYS TOGETHER</small>
                         </div>
-                    </div>
+                    </section>
 
                     <!-- Tabs 切换栏 -->
-                    <div class="lovers-space-tabs-container" style="position: relative; display: flex; justify-content: center; margin-top: 10px; flex-shrink: 0; background: #fff; padding-bottom: 5px;">
-                        <div class="lovers-space-tab active" data-tab="moments" style="padding: 12px 16px 10px; font-size: 15px; font-weight: 600; color: #111; cursor: pointer; transition: color 0.3s;">动态</div>
-                        <div class="lovers-space-tab" data-tab="devices" style="padding: 12px 16px 10px; font-size: 15px; font-weight: 600; color: #8e8e93; cursor: pointer; transition: color 0.3s;">设备</div>
-                        <div class="lovers-space-tab" data-tab="calendar" style="padding: 12px 16px 10px; font-size: 15px; font-weight: 600; color: #8e8e93; cursor: pointer; transition: color 0.3s;">日历</div>
-                        <div class="lovers-space-tab" data-tab="others" style="padding: 12px 16px 10px; font-size: 15px; font-weight: 600; color: #8e8e93; cursor: pointer; transition: color 0.3s;">其他</div>
-                        <div class="lovers-space-tab-indicator" id="lovers-space-tab-indicator" style="position: absolute; bottom: 0; width: 30px; height: 3px; border-radius: 3px; background: #ff9bb3; transition: left 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);"></div>
+                    <div class="lovers-space-tabs-container" role="tablist" aria-label="情侣空间导航">
+                        <button type="button" class="lovers-space-tab active" data-tab="moments" role="tab" aria-selected="true">动态</button>
+                        <button type="button" class="lovers-space-tab" data-tab="devices" role="tab" aria-selected="false">设备</button>
+                        <button type="button" class="lovers-space-tab" data-tab="calendar" role="tab" aria-selected="false">日历</button>
+                        <button type="button" class="lovers-space-tab" data-tab="others" role="tab" aria-selected="false">更多</button>
+                        <div class="lovers-space-tab-indicator" id="lovers-space-tab-indicator"></div>
                     </div>
 
                     <!-- Tab 内容区 -->
-                    <div class="lovers-space-tab-content-area" style="flex: 1; position: relative;">
+                    <div class="lovers-space-tab-content-area">
                         <!-- 动态面板 -->
-                        <div class="lovers-space-panel active" id="lovers-panel-moments" style="flex-direction: column; background: #fafafa;">
-                            <div id="lovers-moments-list" style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 20px; padding-bottom: 100px; display: none;">
+                        <div class="lovers-space-panel lovers-moments-panel active" id="lovers-panel-moments" role="tabpanel">
+                            <div id="lovers-moments-list" class="lovers-moments-list">
                                 <!-- 由 JS 注入 -->
                             </div>
-                            <div id="lovers-moments-empty" style="position: absolute; inset: 0; display: flex; justify-content: center; align-items: center; flex-direction: column; color: #8e8e93; gap: 10px; pointer-events: none;">
-                                <i class="far fa-comment-dots" style="font-size: 30px; color: #ccc;"></i>
-                                <span style="font-size: 13px;">暂无动态</span>
+                            <div id="lovers-moments-empty" class="lovers-panel-empty">
+                                <i class="far fa-comment-dots"></i>
+                                <strong>还没有动态</strong>
+                                <span>记录今天发生的小事吧</span>
                             </div>
                         </div>
                         <!-- 设备面板 -->
-                        <div class="lovers-space-panel" id="lovers-panel-devices" style="flex-direction: column; color: #111; gap: 15px; padding: 20px; align-items: stretch; justify-content: flex-start;">
-                            <div id="lovers-devices-list" style="display: flex; flex-direction: column; gap: 12px; width: 100%;">
+                        <div class="lovers-space-panel lovers-devices-panel" id="lovers-panel-devices" role="tabpanel">
+                            <div class="lovers-panel-heading"><span>DEVICES</span><h3>关联设备</h3></div>
+                            <div id="lovers-devices-list" class="lovers-feature-list">
                                 <!-- 设备由 JS 注入 -->
                             </div>
                             
                             <!-- 新增：应用共享 -->
-                            <div style="font-size: 18px; font-weight: 700; color: #111; margin-top: 10px; margin-bottom: 5px;">应用共享</div>
-                            <div style="display: flex; flex-direction: column; gap: 8px;">
-                                <div id="lovers-shared-album-btn" style="background: #f8f8f8; border-radius: 16px; padding: 15px 20px; display: flex; align-items: center; gap: 15px; cursor: pointer; ">
-                                    <i class="fas fa-images" style="font-size: 24px; color: #ff9bb3; width: 30px; text-align: center;"></i>
-                                    <div style="flex: 1;">
-                                        <div style="font-size: 16px; font-weight: 600; color: #111;">共享相册</div>
-                                        <div style="font-size: 13px; color: #8e8e93; margin-top: 2px;">记录我们的点点滴滴</div>
-                                    </div>
-                                    <i class="fas fa-chevron-right" style="color: #c7c7cc;"></i>
-                                </div>
-                                <div id="lovers-shared-savings-btn" style="background: #f8f8f8; border-radius: 16px; padding: 15px 20px; display: flex; align-items: center; gap: 15px; cursor: pointer; ">
-                                    <i class="fas fa-piggy-bank" style="font-size: 24px; color: #ff9bb3; width: 30px; text-align: center;"></i>
-                                    <div style="flex: 1;">
-                                        <div style="font-size: 16px; font-weight: 600; color: #111;">存钱罐</div>
-                                        <div style="font-size: 13px; color: #8e8e93; margin-top: 2px;">一起存钱吧</div>
-                                    </div>
-                                    <i class="fas fa-chevron-right" style="color: #c7c7cc;"></i>
-                                </div>
+                            <div class="lovers-panel-heading lovers-shared-heading"><span>SHARED</span><h3>应用共享</h3></div>
+                            <div class="lovers-feature-list">
+                                <button type="button" id="lovers-shared-album-btn" class="lovers-feature-row">
+                                    <span class="lovers-feature-icon"><i class="fas fa-images"></i></span>
+                                    <span class="lovers-feature-copy"><strong>共享相册</strong><small>记录我们的点点滴滴</small></span>
+                                    <i class="fas fa-chevron-right lovers-feature-chevron"></i>
+                                </button>
+                                <button type="button" id="lovers-shared-savings-btn" class="lovers-feature-row">
+                                    <span class="lovers-feature-icon"><i class="fas fa-piggy-bank"></i></span>
+                                    <span class="lovers-feature-copy"><strong>存钱罐</strong><small>一起完成共同目标</small></span>
+                                    <i class="fas fa-chevron-right lovers-feature-chevron"></i>
+                                </button>
                             </div>
                         </div>
                         <!-- 日历面板 -->
-                        <div class="lovers-space-panel" id="lovers-panel-calendar" style="flex-direction: column; align-items: stretch; padding: 16px; background: #fafafa;">
+                        <div class="lovers-space-panel lovers-calendar-panel" id="lovers-panel-calendar" role="tabpanel">
                             
                             <!-- 标题大小的年份与月份 (可选择) -->
-                            <div style="display: flex; align-items: baseline; margin-bottom: 15px; padding-left: 4px; position: relative;">
-                                <div id="lovers-calendar-year-month-display" style="display: flex; align-items: baseline; gap: 6px;">
-                                    <span id="lovers-calendar-year-display" style="font-size: 28px; font-weight: 800; color: #111; letter-spacing: -0.5px;">2026年</span>
-                                    <span id="lovers-calendar-month-display" style="font-size: 18px; font-weight: 600; color: #ff9bb3;">4月</span>
-                                    <i class="fas fa-chevron-down" style="font-size: 12px; color: #8e8e93; margin-left: 4px; position: relative; top: -3px;"></i>
+                            <div class="lovers-calendar-heading">
+                                <div id="lovers-calendar-year-month-display">
+                                    <span id="lovers-calendar-year-display">2026年</span>
+                                    <span id="lovers-calendar-month-display">4月</span>
+                                    <i class="fas fa-chevron-down"></i>
                                 </div>
-                                <input type="month" id="lovers-calendar-month-picker" style="position: absolute; left: 0; top: 0; width: 150px; height: 100%; opacity: 0; cursor: pointer;">
+                                <input type="month" id="lovers-calendar-month-picker" aria-label="选择月份">
                             </div>
 
                             <!-- 顶部日期选择 (滑动组件) -->
-                            <div style="display: flex; align-items: center; margin-bottom: 20px; background: #fff; border-radius: 16px; padding: 12px 0;  overflow-x: auto; scrollbar-width: none;">
-                                <div id="lovers-calendar-dates" style="display: flex; gap: 10px; padding: 0 12px; min-width: max-content;">
+                            <div class="lovers-calendar-strip">
+                                <div id="lovers-calendar-dates">
                                     <!-- 由 JS 注入日期 -->
                                 </div>
                             </div>
                             
-                            <div style="font-size: 18px; font-weight: 700; color: #111; margin-bottom: 12px; padding-left: 4px;">行程安排</div>
+                            <div class="lovers-panel-heading"><span>SCHEDULE</span><h3>行程安排</h3></div>
                             
                             <!-- 日程列表 (竖向时间线) -->
-                            <div id="lovers-calendar-list" style="display: flex; flex-direction: column; padding-bottom: 100px; position: relative;">
+                            <div id="lovers-calendar-list" class="lovers-calendar-list">
                                 <!-- 由 JS 注入行程 -->
                             </div>
                         </div>
                         <!-- 其他面板 -->
-                        <div class="lovers-space-panel" id="lovers-panel-others" style="justify-content: center; align-items: center; flex-direction: column; color: #8e8e93; gap: 10px;">
-                            <i class="fas fa-ellipsis-h" style="font-size: 30px; color: #ccc;"></i>
-                            <span style="font-size: 13px;">其他功能</span>
+                        <div class="lovers-space-panel lovers-more-panel" id="lovers-panel-others" role="tabpanel">
+                            <div class="lovers-panel-empty">
+                                <i class="fas fa-ellipsis-h"></i>
+                                <strong>更多共同功能</strong>
+                                <span>新的生活记录方式会出现在这里</span>
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- 悬浮发帖加号按钮 -->
-                <div id="lovers-space-fab" onclick="window.lovesApp && window.lovesApp.openPublishView()" style="position: absolute; bottom: 30px; right: 20px; width: 56px; height: 56px; border-radius: 50%; background: #ff9bb3; color: white; display: flex; justify-content: center; align-items: center; font-size: 24px;  z-index: 9999; cursor: pointer; pointer-events: auto; transition: transform 0.1s;">
+                <button type="button" id="lovers-space-fab" onclick="window.lovesApp && window.lovesApp.openPublishView()" aria-label="添加内容">
                     <i class="fas fa-plus"></i>
-                </div>
+                </button>
 
             </div>
 
@@ -6356,7 +6384,7 @@
                 </div>
             </div>
 
-            <div class="bottom-sheet-overlay detail-sheet-overlay" id="lovers-savings-settings-sheet" style="z-index: 1030;">
+            <div class="bottom-sheet-overlay detail-sheet-overlay" id="lovers-savings-settings-sheet">
                 <div class="bottom-sheet lovers-savings-deposit-sheet">
                     <div class="sheet-handle"></div>
                     <div class="lovers-savings-deposit-header">
@@ -6377,7 +6405,7 @@
                 </div>
             </div>
 
-            <div class="bottom-sheet-overlay detail-sheet-overlay" id="lovers-savings-deposit-sheet" style="z-index: 1030;">
+            <div class="bottom-sheet-overlay detail-sheet-overlay" id="lovers-savings-deposit-sheet">
                 <div class="bottom-sheet lovers-savings-deposit-sheet">
                     <div class="sheet-handle"></div>
                     <div class="lovers-savings-deposit-header">
@@ -6409,7 +6437,7 @@
                 </div>
             </div>
 
-            <div class="bottom-sheet-overlay detail-sheet-overlay" id="lovers-savings-withdraw-sheet" style="z-index: 1030;">
+            <div class="bottom-sheet-overlay detail-sheet-overlay" id="lovers-savings-withdraw-sheet">
                 <div class="bottom-sheet lovers-savings-deposit-sheet">
                     <div class="sheet-handle"></div>
                     <div class="lovers-savings-deposit-header">
@@ -6430,7 +6458,7 @@
                 </div>
             </div>
 
-            <div class="bottom-sheet-overlay detail-sheet-overlay lovers-savings-result-modal-overlay" id="lovers-savings-withdraw-result-modal" style="z-index: 1040;">
+            <div class="bottom-sheet-overlay detail-sheet-overlay lovers-savings-result-modal-overlay" id="lovers-savings-withdraw-result-modal">
                 <div class="lovers-savings-result-modal">
                     <button type="button" id="lovers-savings-withdraw-result-close" class="lovers-savings-result-close" aria-label="关闭">
                         <i class="fas fa-times"></i>
@@ -6449,58 +6477,50 @@
             </div>
 
             <!-- 发布动态弹窗 (底部抽屉) -->
-            <div class="bottom-sheet-overlay detail-sheet-overlay" id="lovers-publish-view" style="z-index: 1000;">
-                <div class="bottom-sheet" style="height: 85%; display: flex; flex-direction: column; background: #ffffff;">
+            <div class="bottom-sheet-overlay detail-sheet-overlay" id="lovers-publish-view">
+                <div class="bottom-sheet lovers-compose-sheet">
                     <div class="sheet-handle"></div>
-                    <div class="sheet-title" style="display: flex; justify-content: space-between; align-items: center; padding: 0 16px; margin-bottom: 10px;">
-                        <div id="lovers-publish-cancel" style="font-size: 16px; color: #111; cursor: pointer; font-weight: normal;">取消</div>
-                        <div style="font-size: 17px; font-weight: 600; color: #111;">发布动态</div>
-                        <div id="lovers-publish-btn" style="font-size: 14px; background: #ff9bb3; color: #fff; padding: 6px 14px; border-radius: 16px; font-weight: 600; cursor: pointer;">发布</div>
+                    <div class="lovers-compose-header">
+                        <button type="button" id="lovers-publish-cancel" class="lovers-compose-cancel">取消</button>
+                        <div><span>NEW MOMENT</span><strong>发布动态</strong></div>
+                        <button type="button" id="lovers-publish-btn" class="lovers-compose-primary">发布</button>
                     </div>
-                    <div class="detail-sheet-content" style="flex: 1; padding: 10px 16px; overflow-y: auto;">
-                        <textarea id="lovers-publish-text" placeholder="分享这一刻的心情..." style="width: 100%; min-height: 120px; border: none; outline: none; font-size: 16px; resize: none; margin-bottom: 20px; color: #111;"></textarea>
-                        <div id="lovers-publish-images-container" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
-                            <div id="lovers-publish-add-img-btn" style="aspect-ratio: 1/1; background: #f2f2f7; border-radius: 12px; display: flex; justify-content: center; align-items: center; color: #8e8e93; font-size: 30px; cursor: pointer;">
+                    <div class="detail-sheet-content lovers-compose-content">
+                        <label class="lovers-compose-field">
+                            <span>这一刻 · MOMENT</span>
+                            <textarea id="lovers-publish-text" placeholder="分享这一刻的心情..."></textarea>
+                        </label>
+                        <div id="lovers-publish-images-container" class="lovers-publish-images">
+                            <button type="button" id="lovers-publish-add-img-btn" class="lovers-publish-add" aria-label="添加图片">
                                 <i class="fas fa-plus"></i>
-                            </div>
+                                <small>添加图片</small>
+                            </button>
                             <!-- 预览图会插在这里 -->
                         </div>
-                        <input type="file" id="lovers-publish-file-input" accept="image/*" multiple style="display: none;">
+                        <input type="file" id="lovers-publish-file-input" accept="image/*" multiple hidden>
                     </div>
                 </div>
             </div>
 
             <!-- 添加日程弹窗 (底部抽屉) -->
-            <div class="bottom-sheet-overlay detail-sheet-overlay" id="lovers-schedule-view" style="z-index: 1010;">
-                <div class="bottom-sheet" style="height: auto; padding-bottom: 20px; display: flex; flex-direction: column; background: #ffffff;">
+            <div class="bottom-sheet-overlay detail-sheet-overlay" id="lovers-schedule-view">
+                <div class="bottom-sheet lovers-compose-sheet lovers-schedule-sheet">
                     <div class="sheet-handle"></div>
-                    <div class="sheet-title" style="display: flex; justify-content: space-between; align-items: center; padding: 0 16px; margin-bottom: 15px;">
-                        <div id="lovers-schedule-cancel" style="font-size: 16px; color: #111; cursor: pointer; font-weight: normal;" onclick="window.closeView(document.getElementById('lovers-schedule-view'))">取消</div>
-                        <div style="font-size: 17px; font-weight: 600; color: #111;">添加日程</div>
-                        <div id="lovers-schedule-btn" style="font-size: 14px; background: #ff9bb3; color: #fff; padding: 6px 14px; border-radius: 16px; font-weight: 600; cursor: pointer;">添加</div>
+                    <div class="lovers-compose-header">
+                        <button type="button" id="lovers-schedule-cancel" class="lovers-compose-cancel" onclick="window.closeView(document.getElementById('lovers-schedule-view'))">取消</button>
+                        <div><span>NEW SCHEDULE</span><strong>添加日程</strong></div>
+                        <button type="button" id="lovers-schedule-btn" class="lovers-compose-primary">添加</button>
                     </div>
-                    <div class="detail-sheet-content" style="padding: 0 16px;">
-                        <div style="background: #fff; border-radius: 12px; padding: 14px 16px; ">
-                            <input type="text" id="lovers-schedule-text" placeholder="标题 (例如: 约会、看电影)" style="width: 100%; border: none; outline: none; font-size: 16px; color: #111; background: transparent;">
-                        </div>
+                    <div class="detail-sheet-content lovers-compose-content">
+                        <label class="lovers-compose-field lovers-schedule-title-field">
+                            <span>日程标题 · TITLE</span>
+                            <input type="text" id="lovers-schedule-text" placeholder="例如：约会、看电影">
+                        </label>
                         
-                        <div style="background: #fff; border-radius: 12px; margin-top: 15px;  overflow: hidden;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #f2f2f7;">
-                                <div style="color: #111; font-size: 15px;">日期</div>
-                                <div style="display: flex; align-items: center;">
-                                    <input type="date" id="lovers-schedule-date" style="border: none; outline: none; color: #007aff; font-size: 15px; text-align: right; background: transparent; font-family: -apple-system, sans-serif;">
-                                </div>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #f2f2f7;">
-                                <div style="color: #111; font-size: 15px;">时间</div>
-                                <div style="display: flex; align-items: center;">
-                                    <input type="time" id="lovers-schedule-time" style="border: none; outline: none; color: #007aff; font-size: 15px; text-align: right; background: transparent; font-family: -apple-system, sans-serif;">
-                                </div>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px;">
-                                <div style="color: #111; font-size: 15px; width: 60px;">地点</div>
-                                <input type="text" id="lovers-schedule-location" placeholder="添加位置" style="flex: 1; border: none; outline: none; color: #8e8e93; font-size: 15px; text-align: right; background: transparent;">
-                            </div>
+                        <div class="lovers-schedule-fields">
+                            <label><span>日期</span><input type="date" id="lovers-schedule-date"></label>
+                            <label><span>时间</span><input type="time" id="lovers-schedule-time"></label>
+                            <label><span>地点</span><input type="text" id="lovers-schedule-location" placeholder="添加位置"></label>
                         </div>
                     </div>
                 </div>
@@ -7249,7 +7269,7 @@
     <script src="js/imessage/6_moments.js"></script>
 
     <!-- 引入其他应用模块 -->
-    <script src="js/pay.js"></script>
+    <script src="js/pay.js?v=20260704-korean-flat-v2"></script>
     <script src="js/bstage.js"></script>
     <!-- 引入世界书核心模块脚本 -->
     <script src="js/builtin_worldbook.js"></script>
@@ -7259,7 +7279,7 @@
     <script src="js/ui.js"></script>
     <script src="js/settings.js?v=20260703-library-v4"></script>
     <script src="js/library.js?v=20260704-netease-import-v8"></script>
-    <script src="js/loves.js"></script>
+    <script src="js/loves.js?v=20260704-korean-flat-v2"></script>
     <script src="js/tiktok/2_core.js"></script>
     <script src="js/tiktok/3_home.js"></script>
     <script src="js/tiktok/4_chat.js"></script>

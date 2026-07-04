@@ -457,33 +457,22 @@ window.lovesApp = {
             const dateStr = d.toISOString().split('T')[0];
             const displayDay = d.getDate();
             const displayWeek = isToday ? '今' : dayNames[d.getDay()];
-            
-            let bg = 'transparent';
-            let color = '#8e8e93';
-            let weight = '600';
-            let shadow = 'none';
-            
-            if (isSelected) {
-                bg = '#ff9bb3';
-                color = '#fff';
-                weight = '800';
-                shadow = '0 2px 10px rgba(255,155,179,0.3)';
-            } else if (isToday) {
-                color = '#111';
-                weight = '800';
-            }
-
+            const stateClasses = [
+                'calendar-date-item',
+                isToday ? 'is-today' : '',
+                isSelected ? 'is-selected' : ''
+            ].filter(Boolean).join(' ');
             datesHtml += `
-            <div class="calendar-date-item" data-date="${dateStr}" style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 44px; height: 56px; border-radius: 12px; cursor: pointer; background: ${bg};  transition: all 0.2s;">
-                <div style="font-size: 11px; font-weight: 600; color: ${isSelected ? '#fff' : color}; margin-bottom: 2px;">${displayWeek}</div>
-                <div style="font-size: 16px; font-weight: ${weight}; color: ${color};">${displayDay}</div>
-            </div>`;
+            <button type="button" class="${stateClasses}" data-date="${dateStr}" aria-label="${d.getMonth() + 1}月${displayDay}日" aria-pressed="${isSelected}">
+                <small>${displayWeek}</small>
+                <strong>${displayDay}</strong>
+            </button>`;
         }
         datesContainer.innerHTML = datesHtml;
 
         // 滚动到选中日期居中 (简单处理)
         setTimeout(() => {
-            const selectedEl = datesContainer.querySelector('.calendar-date-item[style*="background: rgb(255, 155, 179)"]');
+            const selectedEl = datesContainer.querySelector('.calendar-date-item.is-selected');
             if (selectedEl && datesContainer.parentElement) {
                 const scrollLeft = selectedEl.offsetLeft - datesContainer.parentElement.offsetWidth / 2 + selectedEl.offsetWidth / 2;
                 datesContainer.parentElement.scrollTo({ left: scrollLeft, behavior: 'smooth' });
@@ -508,30 +497,27 @@ window.lovesApp = {
             schedules.sort((a, b) => (a.startTime || a.time || '').localeCompare(b.startTime || b.time || ''));
         }
 
-        let listHtml = `<!-- 垂直轴线 -->
-            <div style="position: absolute; left: 54px; top: 15px; bottom: 50px; width: 2px; background: rgba(255,155,179,0.3); border-radius: 1px;"></div>`;
+        let listHtml = '';
 
         if (schedules.length === 0) {
-            listHtml += `<div style="text-align: center; color: #8e8e93; font-size: 14px; margin-top: 60px; position: relative; z-index: 3;">没有当天的行程安排</div>`;
+            listHtml = `<div class="lovers-calendar-empty">当天还没有行程安排</div>`;
         } else {
             schedules.forEach((s, idx) => {
                 const timeDisplay = s.startTime && s.endTime ? `${s.startTime}~${s.endTime}` : (s.time || '');
+                const safeTime = this.escapeHTML(timeDisplay);
+                const safeTitle = this.escapeHTML(s.name || s.title || '未命名日程');
+                const safeLocation = this.escapeHTML(s.location || '未设置地点');
                 listHtml += `
-                <div style="display: flex; align-items: flex-start; gap: 15px; margin-bottom: 20px; position: relative;" class="lovers-schedule-item" data-idx="${idx}">
-                    <div style="display: flex; flex-direction: column; align-items: flex-end; width: 45px; flex-shrink: 0; padding-top: 14px;">
-                        <div style="font-size: 14px; font-weight: 700; color: #111; word-break: break-all; text-align: right;">${timeDisplay}</div>
-                    </div>
-                    <div style="width: 12px; height: 12px; border-radius: 50%; background: #ff9bb3; border: 3px solid #fff;  position: absolute; left: 49px; top: 16px; z-index: 2;"></div>
-                    <div style="flex: 1; background: #fff; border-radius: 16px; padding: 16px;  margin-left: 10px; position: relative;">
-                        <div class="delete-schedule-btn" style="position: absolute; top: 16px; right: 16px; color: #ccc; cursor: pointer; font-size: 14px;"><i class="fas fa-times"></i></div>
-                        <div style="font-size: 16px; font-weight: 600; color: #111; margin-bottom: 6px; padding-right: 20px;">${s.name || s.title}</div>
-                        <div style="font-size: 13px; color: #8e8e93; display: flex; align-items: center; gap: 4px;">
-                            <i class="fas fa-map-marker-alt"></i> ${s.location || '未设置地点'}
-                        </div>
+                <div class="lovers-schedule-item" data-idx="${idx}">
+                    <div class="lovers-schedule-time">${safeTime}</div>
+                    <div class="lovers-schedule-card">
+                        <button type="button" class="delete-schedule-btn" aria-label="删除日程"><i class="fas fa-times"></i></button>
+                        <strong>${safeTitle}</strong>
+                        <span><i class="fas fa-map-marker-alt"></i>${safeLocation}</span>
                     </div>
                 </div>`;
             });
-            listHtml += `<div style="text-align: center; color: #8e8e93; font-size: 13px; margin-top: 20px; position: relative; z-index: 3;">没有更多日程了</div>`;
+            listHtml += `<div class="lovers-calendar-end">当天行程已全部显示</div>`;
         }
         
         listContainer.innerHTML = listHtml;
@@ -646,15 +632,16 @@ window.lovesApp = {
         
         (this.currentPublishImages || []).forEach((src, index) => {
             const wrapper = document.createElement('div');
-            wrapper.style.cssText = 'aspect-ratio: 1/1; border-radius: 12px; overflow: hidden; position: relative;';
+            wrapper.className = 'lovers-publish-image';
             
             const img = document.createElement('img');
             img.src = src;
-            img.style.cssText = 'width: 100%; height: 100%; object-fit: cover;';
+            img.alt = `动态图片 ${index + 1}`;
             
-            const delBtn = document.createElement('div');
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.setAttribute('aria-label', `删除第 ${index + 1} 张图片`);
             delBtn.innerHTML = '<i class="fas fa-times"></i>';
-            delBtn.style.cssText = 'position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; background: rgba(0,0,0,0.5); color: #fff; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 10px; cursor: pointer;';
             delBtn.onclick = () => {
                 this.currentPublishImages.splice(index, 1);
                 this.renderPublishImagePreview();
@@ -697,28 +684,30 @@ window.lovesApp = {
             const displayName = m.isChar ? (this.currentFriend.nickname || this.currentFriend.realname || 'TA') : userName;
             const safeDisplayName = this.escapeHTML(displayName);
             const safeMomentText = this.escapeHTML(m.text);
+            const safeDisplayAvatar = this.escapeHTML(displayAvatar || '');
+            const safeUserAvatar = this.escapeHTML(userAvatar || '');
 
             let imagesHtml = '';
             if (m.images && m.images.length > 0) {
-                imagesHtml = `<div style="display: grid; grid-template-columns: repeat(${Math.min(3, m.images.length)}, 1fr); gap: 6px; margin-top: 10px;">`;
-                m.images.forEach(src => {
-                    imagesHtml += `<img src="${src}" style="width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: 8px;">`;
+                const imageLayout = m.images.length === 1 ? 'is-one' : (m.images.length === 2 ? 'is-two' : 'is-many');
+                imagesHtml = `<div class="loves-moment-images ${imageLayout}">`;
+                m.images.forEach((src, imageIndex) => {
+                    imagesHtml += `<img src="${this.escapeHTML(src)}" alt="动态图片 ${imageIndex + 1}">`;
                 });
                 imagesHtml += `</div>`;
             }
             
             let commentsHtml = '';
             if (m.comments && m.comments.length > 0) {
-                commentsHtml = `<div style="background: #f4f4f5; border-radius: 12px; padding: 10px 12px; margin-top: 12px; display: flex; flex-direction: column; gap: 8px;">`;
+                commentsHtml = `<div class="loves-moment-comments">`;
                 m.comments.forEach((c, cIdx) => {
                     const cAuthor = c.isChar ? (this.currentFriend.nickname || this.currentFriend.realname || 'TA') : userName;
-                    const cColor = c.isChar ? '#576b95' : '#333';
                     const safeAuthor = this.escapeHTML(cAuthor);
                     const safeCommentText = this.escapeHTML(c.text);
                     commentsHtml += `
-                        <div style="font-size: 14px; line-height: 1.4; display: flex; justify-content: space-between; gap: 10px; align-items: flex-start;">
-                            <div style="flex: 1; cursor: pointer;" onclick="window.lovesApp.replyToComment(${idx}, ${cIdx})"><span style="color: ${cColor}; font-weight: 600;">${safeAuthor}</span>: <span style="color: #333;">${safeCommentText}</span></div>
-                            <div style="color: #ff3b30; font-size: 12px; cursor: pointer; white-space: nowrap; flex-shrink: 0;" onclick="window.lovesApp.deleteComment(${idx}, ${cIdx})">删除</div>
+                        <div class="loves-moment-comment">
+                            <div class="loves-moment-comment-copy" onclick="window.lovesApp.replyToComment(${idx}, ${cIdx})"><span class="loves-moment-comment-author">${safeAuthor}</span>：${safeCommentText}</div>
+                            <button type="button" class="loves-moment-comment-delete" onclick="window.lovesApp.deleteComment(${idx}, ${cIdx})">删除</button>
                         </div>
                     `;
                 });
@@ -726,55 +715,43 @@ window.lovesApp = {
             }
 
             html += `
-            <div style="background: #fff; border-radius: 20px; padding: 16px;  position: relative;">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
-                    <div style="display: flex; gap: 10px;">
-                        <div style="width: 40px; height: 40px; border-radius: 50%; background: #f2f2f7; overflow: hidden; display: flex; justify-content: center; align-items: center; color: #ccc;">
-                            ${displayAvatar ? `<img src="${displayAvatar}" style="width: 100%; height: 100%; object-fit: cover;">` : `<i class="fas fa-user"></i>`}
+            <article class="loves-moment-card">
+                <div class="loves-moment-head">
+                    <div class="loves-moment-author">
+                        <div class="loves-moment-avatar">
+                            ${displayAvatar ? `<img src="${safeDisplayAvatar}" alt="${safeDisplayName}">` : `<i class="fas fa-user"></i>`}
                         </div>
-                        <div>
-                            <div style="font-size: 15px; font-weight: 600; color: #111;">${safeDisplayName}</div>
-                            <div style="font-size: 12px; color: #8e8e93; margin-top: 2px;">${timeStr}</div>
+                        <div class="loves-moment-author-copy">
+                            <div class="loves-moment-name">${safeDisplayName}</div>
+                            <div class="loves-moment-time">${timeStr}</div>
                         </div>
                     </div>
-                    <div style="position: relative;">
-                        <div style="color: #8e8e93; font-size: 16px; cursor: pointer; padding: 0 5px;" onclick="window.lovesApp.toggleMomentMenu(${idx})"><i class="fas fa-ellipsis-h"></i></div>
-                        <div id="loves-moment-menu-${idx}" style="display: none; position: absolute; right: 0; top: 25px; background: #fff; border-radius: 12px;  width: 140px; z-index: 10; overflow: hidden;">
-                            <div style="padding: 12px 16px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 10px; cursor: pointer;" onclick="window.lovesApp.requestCharComment(${idx})">
-                                <i class="fas fa-comment-dots" style="color: #007aff; width: 16px; text-align: center;"></i>
-                                <span style="font-size: 14px; color: #111; font-weight: 500;">让TA评论</span>
-                            </div>
-                            <div style="padding: 12px 16px; display: flex; align-items: center; gap: 10px; cursor: pointer;" onclick="window.lovesApp.deleteMoment(${idx})">
-                                <i class="fas fa-trash-alt" style="color: #ff3b30; width: 16px; text-align: center;"></i>
-                                <span style="font-size: 14px; color: #ff3b30; font-weight: 500;">删除动态</span>
-                            </div>
+                    <div class="loves-moment-actions">
+                        <button type="button" class="loves-moment-more" aria-label="动态选项" onclick="window.lovesApp.toggleMomentMenu(${idx})"><i class="fas fa-ellipsis-h"></i></button>
+                        <div id="loves-moment-menu-${idx}" class="loves-moment-menu">
+                            <button type="button" onclick="window.lovesApp.requestCharComment(${idx})"><i class="fas fa-comment-dots"></i><span>让 TA 评论</span></button>
+                            <button type="button" class="is-danger" onclick="window.lovesApp.deleteMoment(${idx})"><i class="fas fa-trash-alt"></i><span>删除动态</span></button>
                         </div>
                     </div>
                 </div>
                 
-                ${m.text ? `<div style="font-size: 15px; color: #333; line-height: 1.5; white-space: pre-wrap; word-break: break-word;">${safeMomentText}</div>` : ''}
+                ${m.text ? `<div class="loves-moment-body">${safeMomentText}</div>` : ''}
                 ${imagesHtml}
                 
-                <div style="display: flex; gap: 20px; margin-top: 16px; padding-top: 16px; border-top: 1px solid #f2f2f7; color: #8e8e93;">
-                    <div style="display: flex; align-items: center; gap: 6px; cursor: pointer;" onclick="window.lovesApp.toggleMomentLike(${idx})">
-                        <i class="${m.isLiked ? 'fas' : 'far'} fa-heart" style="${m.isLiked ? 'color: #ff2d55;' : ''} font-size: 18px;"></i>
-                        <span style="font-size: 14px;">${m.likes || 0}</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 6px; cursor: pointer;" onclick="window.lovesApp.addMomentComment(${idx})">
-                        <i class="far fa-comment-dots" style="font-size: 18px;"></i>
-                        <span style="font-size: 14px;">${m.comments ? m.comments.length : 0}</span>
-                    </div>
+                <div class="loves-moment-toolbar">
+                    <button type="button" class="${m.isLiked ? 'is-liked' : ''}" onclick="window.lovesApp.toggleMomentLike(${idx})"><i class="${m.isLiked ? 'fas' : 'far'} fa-heart"></i><span>${m.likes || 0}</span></button>
+                    <button type="button" onclick="window.lovesApp.addMomentComment(${idx})"><i class="far fa-comment-dots"></i><span>${m.comments ? m.comments.length : 0}</span></button>
                 </div>
                 
                 ${commentsHtml}
-                <div style="display: flex; align-items: center; gap: 10px; margin-top: 12px; background: #fafafa; border-radius: 18px; padding: 8px 10px;">
-                    <div style="width: 28px; height: 28px; border-radius: 50%; background: #e5e5ea; overflow: hidden; display: flex; justify-content: center; align-items: center; color: #aaa; flex-shrink: 0;">
-                        ${userAvatar ? `<img src="${userAvatar}" alt="${safeUserName}" style="width: 100%; height: 100%; object-fit: cover;">` : `<i class="fas fa-user" style="font-size: 12px;"></i>`}
+                <div class="loves-moment-composer">
+                    <div class="loves-moment-composer-avatar">
+                        ${userAvatar ? `<img src="${safeUserAvatar}" alt="${safeUserName}">` : `<i class="fas fa-user"></i>`}
                     </div>
-                    <input type="text" class="loves-moment-comment-input" data-moment-idx="${idx}" placeholder="${m.isChar ? '评论 TA 的动态...' : '添加评论...'}" style="flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: 14px; color: #111;">
-                    <button type="button" class="loves-moment-comment-send" data-moment-idx="${idx}" style="border: none; background: #ff9bb3; color: #fff; border-radius: 14px; padding: 6px 12px; font-size: 13px; font-weight: 700; cursor: pointer; flex-shrink: 0;">发送</button>
+                    <input type="text" class="loves-moment-comment-input" data-moment-idx="${idx}" placeholder="${m.isChar ? '评论 TA 的动态...' : '添加评论...'}">
+                    <button type="button" class="loves-moment-comment-send" data-moment-idx="${idx}">发送</button>
                 </div>
-            </div>
+            </article>
             `;
         });
         
@@ -1193,8 +1170,8 @@ window.lovesApp = {
         if (hasActiveSavingsSheet) return;
 
         if (fab.dataset.savingsFabCovered === '1') {
-            fab.style.display = fab.dataset.savingsPreviousDisplay || 'flex';
-            fab.style.zIndex = fab.dataset.savingsPreviousZIndex || '9999';
+            fab.style.display = fab.dataset.savingsPreviousDisplay || '';
+            fab.style.zIndex = fab.dataset.savingsPreviousZIndex || '';
             delete fab.dataset.savingsFabCovered;
             delete fab.dataset.savingsPreviousDisplay;
             delete fab.dataset.savingsPreviousZIndex;
@@ -1899,6 +1876,11 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
         }
         
         if (this.view) {
+            const appContainer = document.getElementById('app');
+            if (appContainer) {
+                appContainer.scrollTop = 0;
+                appContainer.scrollLeft = 0;
+            }
             this.scanForAcceptance();
             window.openView(this.view);
             this.renderTopFriends();
@@ -2035,15 +2017,19 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
             container.innerHTML = `
                 <div class="loves-placeholder">
                     <i class="fas fa-heart-crack"></i>
-                    <p>暂无好友可生成便利贴</p>
+                    <p>还没有可邀请的好友</p>
                 </div>
             `;
             return;
         }
 
         validFriends.forEach((friend, idx) => {
-            const note = document.createElement('div');
+            const note = document.createElement(friend.hasLovesSpace ? 'button' : 'div');
             note.className = 'loves-note';
+            if (friend.hasLovesSpace) {
+                note.type = 'button';
+                note.setAttribute('aria-label', `进入 ${friend.nickname || friend.realname || '好友'} 的恋人空间`);
+            }
             
             // 头像区
             const avatarWrapper = document.createElement('div');
@@ -2051,6 +2037,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
             if (friend.avatarUrl) {
                 const img = document.createElement('img');
                 img.src = friend.avatarUrl;
+                img.alt = friend.nickname || friend.realname || '好友头像';
                 avatarWrapper.appendChild(img);
             } else {
                 const icon = document.createElement('i');
@@ -2074,7 +2061,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
             infoArea.appendChild(signEl);
             
             // 右侧按钮区
-            const actionBtn = document.createElement('div');
+            const actionBtn = document.createElement(friend.hasLovesSpace ? 'span' : 'button');
             actionBtn.className = 'loves-note-action';
             
             if (friend.hasLovesSpace) {
@@ -2085,7 +2072,9 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                     this.enterLovesSpace(friend);
                 };
             } else {
-                actionBtn.textContent = '发送邀请';
+                actionBtn.type = 'button';
+                actionBtn.textContent = '邀请';
+                actionBtn.setAttribute('aria-label', `邀请 ${friend.nickname || friend.realname || '好友'} 建立恋人空间`);
                 actionBtn.classList.add('loves-note-action-invite');
                 actionBtn.onclick = (e) => {
                     e.stopPropagation();
@@ -2483,32 +2472,24 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
 
             // 渲染设备列表
             const friendName = friend.nickname || friend.realname || 'TA';
+            const safeFriendName = this.escapeHTML(friendName);
             const devicesList = document.getElementById('lovers-devices-list');
             if (devicesList) {
                 devicesList.innerHTML = `
-                    <div style="background: #f8f8f8; border-radius: 16px; padding: 15px 20px; display: flex; align-items: center; gap: 15px; cursor: pointer; ">
-                        <i class="fas fa-mobile-alt" style="font-size: 26px; color: #ff9bb3; width: 30px; text-align: center;"></i>
-                        <div style="flex: 1;">
-                            <div style="font-size: 16px; font-weight: 600; color: #111;">我的手机</div>
-                            <div style="font-size: 13px; color: #8e8e93; margin-top: 2px;">在线 · 电量 85%</div>
-                        </div>
-                        <i class="fas fa-chevron-right" style="color: #c7c7cc;"></i>
+                    <div class="lovers-feature-row is-static">
+                        <span class="lovers-feature-icon"><i class="fas fa-mobile-alt"></i></span>
+                        <span class="lovers-feature-copy"><strong>我的手机</strong><small>在线 · 电量 85%</small></span>
+                        <span class="lovers-device-status is-online">ONLINE</span>
                     </div>
-                    <div id="friend-phone-device-item" style="background: #f8f8f8; border-radius: 16px; padding: 15px 20px; display: flex; align-items: center; gap: 15px; cursor: pointer; ">
-                        <i class="fas fa-mobile-alt" style="font-size: 26px; color: #ff9bb3; width: 30px; text-align: center;"></i>
-                        <div style="flex: 1;">
-                            <div style="font-size: 16px; font-weight: 600; color: #111;">${friendName} 的手机</div>
-                            <div style="font-size: 13px; color: #8e8e93; margin-top: 2px;">在线 · 电量 92%</div>
-                        </div>
-                        <i class="fas fa-chevron-right" style="color: #c7c7cc;"></i>
-                    </div>
-                    <div style="background: #f8f8f8; border-radius: 16px; padding: 15px 20px; display: flex; align-items: center; gap: 15px; cursor: pointer; ">
-                        <i class="fas fa-laptop" style="font-size: 22px; color: #c7c7cc; width: 30px; text-align: center;"></i>
-                        <div style="flex: 1;">
-                            <div style="font-size: 16px; font-weight: 600; color: #111;">${friendName} 的电脑</div>
-                            <div style="font-size: 13px; color: #8e8e93; margin-top: 2px;">离线</div>
-                        </div>
-                        <i class="fas fa-chevron-right" style="color: #c7c7cc;"></i>
+                    <button type="button" id="friend-phone-device-item" class="lovers-feature-row">
+                        <span class="lovers-feature-icon"><i class="fas fa-mobile-alt"></i></span>
+                        <span class="lovers-feature-copy"><strong>${safeFriendName} 的手机</strong><small>在线 · 电量 92%</small></span>
+                        <i class="fas fa-chevron-right lovers-feature-chevron"></i>
+                    </button>
+                    <div class="lovers-feature-row is-static is-offline">
+                        <span class="lovers-feature-icon"><i class="fas fa-laptop"></i></span>
+                        <span class="lovers-feature-copy"><strong>${safeFriendName} 的电脑</strong><small>当前离线</small></span>
+                        <span class="lovers-device-status">OFFLINE</span>
                     </div>
                 `;
                 
@@ -2551,7 +2532,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                     tab.addEventListener('click', (e) => {
                         tabs.forEach(t => {
                             t.classList.remove('active');
-                            t.style.color = '#8e8e93';
+                            t.setAttribute('aria-selected', 'false');
                         });
                         panels.forEach(p => {
                             p.classList.remove('active');
@@ -2559,7 +2540,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                         
                         const target = e.currentTarget;
                         target.classList.add('active');
-                        target.style.color = '#111';
+                        target.setAttribute('aria-selected', 'true');
                         
                         const targetLeft = target.offsetLeft;
                         const targetWidth = target.offsetWidth;
