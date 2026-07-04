@@ -797,6 +797,16 @@
     overflow: hidden;
 }
 .library-together-picker.active { display: flex; }
+.library-together-picker button {
+    margin: 0;
+    border: 0 !important;
+    outline: 0 !important;
+    font: inherit;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    -webkit-tap-highlight-color: transparent;
+}
 .library-together-picker-backdrop { position: absolute; inset: 0; background: rgba(20,24,22,.42); }
 .library-together-picker-card {
     position: relative;

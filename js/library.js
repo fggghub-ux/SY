@@ -3,6 +3,10 @@
 
     const NETEASE_REDIRECT_API = 'https://music.znnu.com/api/redirect';
     const NETEASE_METING_API = 'https://api.injahow.cn/meting/';
+    const NETEASE_RESOURCE_API = NETEASE_METING_API;
+    const NETEASE_PLAYLIST_MAX_ATTEMPTS = 3;
+    const NETEASE_PLAYLIST_RETRY_DELAYS = [400, 1200];
+    const NETEASE_PLAYLIST_REQUEST_TIMEOUT = 12000;
     const TABS = ['books', 'music', 'overview'];
     const DEFAULT_PREFERENCES = {
         activeTab: 'books',
@@ -49,6 +53,10 @@
         pendingReadingSeconds: 0,
         pendingListeningSeconds: 0,
         lastMediaTime: 0,
+        playbackAttemptId: 0,
+        playbackStartingAttemptId: 0,
+        neteasePlaybackRetryCount: 0,
+        pendingPlayStatTrackId: null,
         isSeeking: false,
         navDragging: false,
         navMouseDragging: false,
@@ -141,6 +149,49 @@
         return '';
     }
 
+    function extractNetEaseResourceId(value) {
+        const source = String(value || '').trim();
+        if (!source) return '';
+        try {
+            const url = new URL(source);
+            const queryId = url.searchParams.get('id');
+            if (/^\d+$/.test(queryId || '')) return queryId;
+        } catch (error) {
+            // Fall through to support direct music.126.net asset URLs.
+        }
+        const pathId = source.match(/\/(\d{8,})(?:\.[a-z0-9]+)?(?:[?#]|$)/i);
+        return pathId ? pathId[1] : '';
+    }
+
+    function buildNetEaseResourceUrl(type, resourceId, cacheBust = '') {
+        const id = String(resourceId || '').trim();
+        if (!id) return '';
+        const cacheParam = cacheBust ? `&_=${encodeURIComponent(cacheBust)}` : '';
+        return `${NETEASE_RESOURCE_API}?server=netease&type=${encodeURIComponent(type)}&id=${encodeURIComponent(id)}${cacheParam}`;
+    }
+
+    function normalizeNetEaseTrackResources(track) {
+        if (!track || track.source !== 'netease') return track;
+        const currentMedia = safeHttpUrl(track.mediaUrl);
+        const currentCover = safeHttpUrl(track.coverUrl);
+        const currentLyric = safeHttpUrl(track.lyricUrl);
+        const songId = String(track.neteaseId || extractNetEaseResourceId(currentMedia) || '').trim();
+        if (!songId) return track;
+        const picId = String(track.neteasePicId || extractNetEaseResourceId(currentCover) || '').trim();
+        const lyricId = String(track.neteaseLyricId || extractNetEaseResourceId(currentLyric) || songId).trim();
+        const mediaUrl = buildNetEaseResourceUrl('url', songId) || currentMedia;
+        return {
+            ...track,
+            neteaseId: songId,
+            neteasePicId: picId,
+            neteaseLyricId: lyricId,
+            mediaUrl,
+            coverUrl: currentCover || buildNetEaseResourceUrl('pic', picId),
+            lyricUrl: currentLyric || buildNetEaseResourceUrl('lrc', lyricId),
+            available: !!mediaUrl
+        };
+    }
+
     function uid(prefix) {
         if (window.crypto?.randomUUID) return `${prefix}_${window.crypto.randomUUID()}`;
         return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -221,8 +272,14 @@
             author: String(book?.author || '').trim() || '未知作者',
             synopsis: String(book?.synopsis || '').trim() || '暂无简介'
         }));
-        state.playlists = Array.isArray(playlists) ? playlists : [];
-        state.tracks = Array.isArray(tracks) ? tracks : [];
+        state.tracks = (Array.isArray(tracks) ? tracks : []).map(normalizeNetEaseTrackResources);
+        state.playlists = (Array.isArray(playlists) ? playlists : []).map((playlist) => {
+            if (playlist?.source !== 'netease') return playlist;
+            const firstCover = (playlist.trackIds || [])
+                .map((trackId) => state.tracks.find((track) => track.id === trackId)?.coverUrl || '')
+                .find(Boolean);
+            return firstCover ? { ...playlist, coverUrl: firstCover } : playlist;
+        });
         state.stats = Array.isArray(stats) ? stats : [];
         state.preferences = { ...DEFAULT_PREFERENCES, ...(preferences || {}) };
         state.activeTab = TABS.includes(state.preferences.activeTab) ? state.preferences.activeTab : 'books';
@@ -834,7 +891,7 @@
             const cover = safeImageSource(playlist.coverUrl || tracks.find((track) => track?.coverUrl)?.coverUrl);
             const playableCount = tracks.filter(isPlayableTrack).length;
             return `<button class="library-together-playlist-item" type="button" data-together-playlist-id="${escapeHtml(playlist.id)}">
-                <span class="library-together-picker-art">${cover ? `<img src="${escapeHtml(cover)}" alt="" referrerpolicy="no-referrer">` : '<i class="fas fa-music"></i>'}</span>
+                <span class="library-together-picker-art">${cover ? `<img src="${escapeHtml(cover)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : '<i class="fas fa-music"></i>'}</span>
                 <span class="library-together-picker-copy"><strong>${escapeHtml(playlist.name || '未命名歌单')}</strong><small>${tracks.length} 首歌曲 · ${playableCount} 首可播放</small></span>
                 <i class="fas fa-chevron-right"></i>
             </button>`;
@@ -863,7 +920,7 @@
             const isSelected = playable && String(track.id) === String(pickerState.selectedTrackId);
             return `<button class="library-together-track-item${isSelected ? ' selected' : ''}" type="button" data-together-track-id="${escapeHtml(track.id)}" ${playable ? '' : 'disabled'}>
                 <span class="library-together-track-index">${isSelected ? '<i class="fas fa-check"></i>' : index + 1}</span>
-                <span class="library-together-picker-art">${cover ? `<img src="${escapeHtml(cover)}" alt="" referrerpolicy="no-referrer">` : '<i class="fas fa-music"></i>'}</span>
+                <span class="library-together-picker-art">${cover ? `<img src="${escapeHtml(cover)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : '<i class="fas fa-music"></i>'}</span>
                 <span class="library-together-picker-copy"><strong>${escapeHtml(track.name || '未知歌曲')}</strong><small>${escapeHtml(track.artist || '未知歌手')}${playable ? '' : ' · 不可播放'}</small></span>
             </button>`;
         }).join('');
@@ -1105,7 +1162,7 @@ ${xml(fullLyrics)}
             const cover = safeHttpUrl(playlist.coverUrl);
             return `
                 <button class="library-playlist-card" type="button" data-playlist-id="${escapeHtml(playlist.id)}">
-                    <span class="library-playlist-cover">${cover ? `<img src="${escapeHtml(cover)}" alt="" referrerpolicy="no-referrer">` : '<i class="fas fa-music"></i>'}</span>
+                    <span class="library-playlist-cover">${cover ? `<img src="${escapeHtml(cover)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : '<i class="fas fa-music"></i>'}</span>
                     <span><strong>${escapeHtml(playlist.name || '未命名歌单')}</strong><small>${count} 首歌曲 · ${escapeHtml(playlist.source === 'netease' ? '网易云音乐' : 'Library')}</small></span>
                     <i class="fas fa-chevron-right"></i>
                 </button>`;
@@ -1125,7 +1182,7 @@ ${xml(fullLyrics)}
         setArtwork(dom.playlist_cover, playlist.coverUrl);
         dom.track_list.innerHTML = tracks.map((track, index) => `
             <button class="library-track-row${track.available === false ? ' unavailable' : ''}" type="button" data-track-id="${escapeHtml(track.id)}">
-                <span class="library-track-art">${safeHttpUrl(track.coverUrl) ? `<img src="${escapeHtml(safeHttpUrl(track.coverUrl))}" alt="" referrerpolicy="no-referrer">` : '<i class="fas fa-music"></i>'}</span>
+                <span class="library-track-art">${safeHttpUrl(track.coverUrl) ? `<img src="${escapeHtml(safeHttpUrl(track.coverUrl))}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : '<i class="fas fa-music"></i>'}</span>
                 <span><strong>${escapeHtml(track.name || '未知歌曲')}</strong><small>${escapeHtml(track.artist || '未知歌手')}</small></span>
                 <span>${track.available === false ? '不可播放' : String(index + 1).padStart(2, '0')}</span>
             </button>`).join('');
@@ -1215,7 +1272,7 @@ ${xml(fullLyrics)}
         if (quoted) return quoted[1].trim();
         const byLine = text.match(/分享歌单[:：]\s*([^\n]{1,80})/);
         if (byLine) {
-            const sharedName = byLine[1].replace(/https?:\/\/.*$/, '').replace(/^[+\s]+|[+\s]+$/g, '').trim();
+            const sharedName = byLine[1].replace(/https?:\/\/.*$/, '').trim();
             if (sharedName) return sharedName;
         }
         return `网易云歌单 ${String(playlistId).slice(-6)}`;
@@ -1226,11 +1283,19 @@ ${xml(fullLyrics)}
         const timer = setTimeout(() => controller.abort(), timeoutMs);
         try {
             const response = await fetch(url, { signal: controller.signal, mode: 'cors', credentials: 'omit' });
-            if (!response.ok) throw new Error(`请求失败 (${response.status})`);
+            if (!response.ok) {
+                const error = new Error(`请求失败 (${response.status})`);
+                error.httpStatus = response.status;
+                throw error;
+            }
             return await response.json();
         } finally {
             clearTimeout(timer);
         }
+    }
+
+    function wait(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
     function extractNetEaseShareUrl(input) {
@@ -1292,12 +1357,92 @@ ${xml(fullLyrics)}
         return playlistId;
     }
 
+    function buildNetEaseMetingEndpoint(baseUrl, playlistId, cacheBust = '') {
+        const separator = String(baseUrl).includes('?') ? '&' : '?';
+        const cacheParam = cacheBust ? `&_=${encodeURIComponent(cacheBust)}` : '';
+        return `${baseUrl}${separator}server=netease&type=playlist&id=${encodeURIComponent(playlistId)}${cacheParam}`;
+    }
+
+    function isRetryableNetEasePlaylistError(error) {
+        if (['NETEASE_EMPTY_RESPONSE', 'NETEASE_INVALID_RESPONSE'].includes(error?.code)) return true;
+        if (['AbortError', 'SyntaxError', 'TypeError'].includes(error?.name)) return true;
+        const status = Number(error?.httpStatus);
+        return status === 408 || status === 425 || status === 429 || status >= 500;
+    }
+
+    function describeNetEasePlaylistAttemptError(error) {
+        if (error?.code === 'NETEASE_EMPTY_RESPONSE') return '接口返回空数组';
+        if (error?.code === 'NETEASE_INVALID_RESPONSE') {
+            return `接口返回格式异常${error.responseDescription ? ` (${error.responseDescription})` : ''}`;
+        }
+        if (error?.name === 'AbortError') return '请求超时';
+        return error?.message || '未知错误';
+    }
+
+    function describeJsonPayload(value) {
+        if (value === null) return 'null';
+        if (Array.isArray(value)) return `array:${value.length}`;
+        if (typeof value === 'object') {
+            const keys = Object.keys(value).slice(0, 8);
+            const message = typeof value.message === 'string' ? value.message.replace(/\s+/g, ' ').slice(0, 120) : '';
+            return `object:${keys.length ? keys.join(',') : 'no-keys'}${message ? `:${message}` : ''}`;
+        }
+        return typeof value;
+    }
+
+    async function fetchNetEasePlaylistRows(playlistId) {
+        let lastError = null;
+
+        for (let attempt = 1; attempt <= NETEASE_PLAYLIST_MAX_ATTEMPTS; attempt += 1) {
+            const cacheBust = `${Date.now()}-${attempt}`;
+            const endpoint = buildNetEaseMetingEndpoint(NETEASE_METING_API, playlistId, cacheBust);
+            try {
+                const rows = await fetchJson(endpoint, NETEASE_PLAYLIST_REQUEST_TIMEOUT);
+                if (!Array.isArray(rows)) {
+                    const apiMessage = typeof rows?.message === 'string' ? rows.message.trim().slice(0, 200) : '';
+                    if (apiMessage) {
+                        const error = new Error(`网易云歌单接口提示：${apiMessage}`);
+                        error.code = 'NETEASE_API_MESSAGE';
+                        throw error;
+                    }
+                    const error = new Error('网易云歌单接口返回格式异常');
+                    error.code = 'NETEASE_INVALID_RESPONSE';
+                    error.responseDescription = describeJsonPayload(rows);
+                    throw error;
+                }
+                if (rows.length === 0) {
+                    const error = new Error('网易云歌单接口返回空数组');
+                    error.code = 'NETEASE_EMPTY_RESPONSE';
+                    throw error;
+                }
+                console.info(`[Library] NetEase playlist ${playlistId}: attempt ${attempt}/${NETEASE_PLAYLIST_MAX_ATTEMPTS}, ${rows.length} rows`);
+                return rows;
+            } catch (error) {
+                lastError = error;
+                const retryable = isRetryableNetEasePlaylistError(error);
+                console.warn(`[Library] NetEase playlist ${playlistId}: attempt ${attempt}/${NETEASE_PLAYLIST_MAX_ATTEMPTS} failed (${describeNetEasePlaylistAttemptError(error)})`);
+                if (!retryable || attempt === NETEASE_PLAYLIST_MAX_ATTEMPTS) break;
+                await wait(NETEASE_PLAYLIST_RETRY_DELAYS[attempt - 1] || 0);
+            }
+        }
+
+        if (lastError?.code === 'NETEASE_EMPTY_RESPONSE') {
+            throw new Error(`网易云歌单接口连续 ${NETEASE_PLAYLIST_MAX_ATTEMPTS} 次未返回歌曲，服务暂时异常或歌单当前不可访问`);
+        }
+        if (lastError?.code === 'NETEASE_INVALID_RESPONSE' || lastError?.name === 'SyntaxError') {
+            throw new Error(`网易云歌单接口连续 ${NETEASE_PLAYLIST_MAX_ATTEMPTS} 次返回格式异常，请稍后重试`);
+        }
+        if (lastError?.name === 'AbortError') {
+            throw new Error(`网易云歌单接口连续 ${NETEASE_PLAYLIST_MAX_ATTEMPTS} 次响应超时，请稍后重试`);
+        }
+        throw lastError || new Error('网易云歌单接口请求失败');
+    }
+
     async function importNetEasePlaylist(input) {
         const playlistId = await resolveNetEasePlaylistId(input);
-        const endpoint = `${NETEASE_METING_API}?server=netease&type=playlist&id=${encodeURIComponent(playlistId)}`;
         let rows;
         try {
-            rows = await fetchJson(endpoint, 35000);
+            rows = await fetchNetEasePlaylistRows(playlistId);
         } catch (error) {
             if (error?.name === 'AbortError') throw error;
             throw new Error(`网易云歌单读取失败${error?.message ? `：${error.message}` : ''}`);
@@ -1308,22 +1453,28 @@ ${xml(fullLyrics)}
         const playlistKey = `netease_playlist_${playlistId}`;
         const tracks = rows.map((row, index) => {
             const sourceUrl = safeHttpUrl(row?.url);
-            const songId = sourceUrl ? new URL(sourceUrl).searchParams.get('id') : '';
+            const songId = String(row?.id || extractNetEaseResourceId(sourceUrl) || '').trim();
+            const sourceCoverUrl = safeHttpUrl(row?.pic || row?.cover);
+            const sourceLyricUrl = safeHttpUrl(row?.lrc || row?.lyric);
+            const picId = extractNetEaseResourceId(sourceCoverUrl);
+            const lyricId = extractNetEaseResourceId(sourceLyricUrl) || songId;
             const trackId = songId ? `netease_track_${playlistId}_${songId}` : `netease_track_${playlistId}_${index}`;
-            return {
+            return normalizeNetEaseTrackResources({
                 id: trackId,
                 playlistId: playlistKey,
                 source: 'netease',
                 neteaseId: songId || '',
-                name: String(row?.name || `歌曲 ${index + 1}`).slice(0, 120),
-                artist: String(row?.artist || '未知歌手').slice(0, 120),
+                neteasePicId: picId || '',
+                neteaseLyricId: lyricId || '',
+                name: String(row?.name || row?.title || `歌曲 ${index + 1}`).slice(0, 120),
+                artist: String(row?.artist || row?.author || '未知歌手').slice(0, 120),
                 mediaUrl: sourceUrl,
-                coverUrl: safeHttpUrl(row?.pic),
-                lyricUrl: safeHttpUrl(row?.lrc),
+                coverUrl: sourceCoverUrl,
+                lyricUrl: sourceLyricUrl,
                 available: !!sourceUrl,
                 createdAt: now,
                 updatedAt: now
-            };
+            });
         });
         if (!tracks.some((track) => track.available)) throw new Error('歌单中没有可播放的歌曲');
 
@@ -1471,6 +1622,58 @@ ${xml(fullLyrics)}
         }
     }
 
+    function isNetEaseTrack(track) {
+        return track?.source === 'netease' && /^\d+$/.test(String(track.neteaseId || ''));
+    }
+
+    function getTrackPlaybackUrl(track, attemptId) {
+        if (isNetEaseTrack(track)) {
+            return buildNetEaseResourceUrl('url', track.neteaseId, `${Date.now()}-${attemptId}`);
+        }
+        return safeHttpUrl(track?.mediaUrl);
+    }
+
+    function finishPlaybackFailure(track, error) {
+        state.pendingPlayStatTrackId = null;
+        console.warn('[Library] Playback failed:', error);
+        toast('当前歌曲暂时无法播放');
+        updatePlayerUi();
+        emitTogetherListeningChange(true);
+    }
+
+    async function startTrackPlaybackAttempt(track) {
+        const attemptId = state.playbackAttemptId + 1;
+        state.playbackAttemptId = attemptId;
+        state.playbackStartingAttemptId = attemptId;
+        const playbackUrl = getTrackPlaybackUrl(track, attemptId);
+
+        if (!playbackUrl) {
+            finishPlaybackFailure(track, new Error('歌曲没有有效的播放地址'));
+            return false;
+        }
+
+        audio.src = playbackUrl;
+        audio.load();
+        try {
+            await audio.play();
+            return attemptId === state.playbackAttemptId && state.currentTrack?.id === track.id;
+        } catch (error) {
+            if (attemptId !== state.playbackAttemptId || state.currentTrack?.id !== track.id) return false;
+            const canRetry = isNetEaseTrack(track)
+                && state.neteasePlaybackRetryCount < 1
+                && error?.name !== 'NotAllowedError';
+            if (canRetry) {
+                state.neteasePlaybackRetryCount += 1;
+                console.warn(`[Library] NetEase playback retry ${state.neteasePlaybackRetryCount}/1 for track ${track.neteaseId}`);
+                return startTrackPlaybackAttempt(track);
+            }
+            finishPlaybackFailure(track, error);
+            return false;
+        } finally {
+            if (state.playbackStartingAttemptId === attemptId) state.playbackStartingAttemptId = 0;
+        }
+    }
+
     async function playTrack(track, queue) {
         if (!track || track.available === false || !safeHttpUrl(track.mediaUrl)) {
             toast('这首歌暂时无法播放');
@@ -1482,22 +1685,12 @@ ${xml(fullLyrics)}
         state.queueIndex = state.queue.indexOf(track.id);
         state.currentTrack = track;
         state.lastMediaTime = 0;
-        audio.src = track.mediaUrl;
-        audio.load();
+        state.neteasePlaybackRetryCount = 0;
+        state.pendingPlayStatTrackId = track.id;
         updatePlayerUi();
         emitTogetherListeningChange(true);
         loadLyrics(track);
-        try {
-            await audio.play();
-            storage().incrementLibraryDailyStat({ date: localDateKey(), kind: 'play', itemId: track.id, count: 1 }).catch((error) => {
-                console.error('[Library] Play count update failed:', error);
-            });
-        } catch (error) {
-            console.warn('[Library] Playback failed:', error);
-            toast('当前歌曲暂时无法播放');
-            updatePlayerUi();
-            emitTogetherListeningChange(true);
-        }
+        await startTrackPlaybackAttempt(track);
     }
 
     function playQueueDirection(direction) {
@@ -1827,7 +2020,17 @@ ${xml(fullLyrics)}
         }));
         bindNavigation();
 
-        audio.addEventListener('play', () => { updatePlayerUi(); emitTogetherListeningChange(true); });
+        audio.addEventListener('play', () => {
+            updatePlayerUi();
+            emitTogetherListeningChange(true);
+            if (state.currentTrack && state.pendingPlayStatTrackId === state.currentTrack.id) {
+                const trackId = state.currentTrack.id;
+                state.pendingPlayStatTrackId = null;
+                storage().incrementLibraryDailyStat({ date: localDateKey(), kind: 'play', itemId: trackId, count: 1 }).catch((error) => {
+                    console.error('[Library] Play count update failed:', error);
+                });
+            }
+        });
         audio.addEventListener('pause', () => { updatePlayerUi(); emitTogetherListeningChange(true); flushListeningStats().catch(console.error); });
         audio.addEventListener('loadedmetadata', () => { state.lastMediaTime = audio.currentTime || 0; updatePlayerUi(); emitTogetherListeningChange(true); });
         audio.addEventListener('seeking', () => { state.isSeeking = true; });
@@ -1847,6 +2050,7 @@ ${xml(fullLyrics)}
         audio.addEventListener('ended', () => { flushListeningStats().catch(console.error); playQueueDirection(1); });
         audio.addEventListener('error', () => {
             if (!state.currentTrack || !audio.src) return;
+            if (state.playbackStartingAttemptId === state.playbackAttemptId) return;
             toast('当前歌曲暂时无法播放');
             updatePlayerUi();
             emitTogetherListeningChange(true);
