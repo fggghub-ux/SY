@@ -2566,7 +2566,7 @@
     grid-template-columns: minmax(0, 1fr) 38px 38px;
     align-items: center;
     overflow: hidden;
-    border: 1px solid rgba(255,255,255,.86);
+    border: 0;
     border-radius: 20px;
     background: rgba(242,245,242,.94);
     box-shadow: 0 8px 24px rgba(41,53,45,.10);
