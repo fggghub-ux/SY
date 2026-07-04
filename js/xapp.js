@@ -119,7 +119,7 @@
             cover: Object.freeze({ maxWidth: 1600, maxHeight: 900, quality: 0.82 }),
             post: Object.freeze({ maxWidth: 1600, maxHeight: 1600, quality: 0.82 })
         });
-        const xAcceptedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+        const xAcceptedImageTypes = new Set(['image/jpeg', 'image/jpg', 'image/png']);
         const maxXTrends = 15;
         const xLandscapeAvatarImages = Object.freeze([
             'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=256&h=256&q=82',
@@ -1114,12 +1114,12 @@ X is a global app. Non-User authors may write in the language that naturally fit
                     <div class="x-char-edit-body">
                         <div class="x-edit-avatar-row">
                             <button class="x-edit-avatar-preview" id="x-char-edit-avatar-preview" type="button" aria-label="上传 Char 头像"><span>C</span></button>
-                            <input type="file" id="x-char-edit-avatar-input" accept="image/jpeg,image/png,image/webp" style="display:none;">
+                            <input type="file" id="x-char-edit-avatar-input" accept="image/jpeg,image/png" style="display:none;">
                             <div><strong>Avatar</strong><p>仅修改 X 中的资料。</p></div>
                         </div>
                         <div class="x-edit-banner-row">
                             <button class="x-edit-banner-preview" id="x-char-edit-cover-preview" type="button" aria-label="上传 Char 主页背景"><span>Cover</span></button>
-                            <input type="file" id="x-char-edit-cover-input" accept="image/jpeg,image/png,image/webp" style="display:none;">
+                            <input type="file" id="x-char-edit-cover-input" accept="image/jpeg,image/png" style="display:none;">
                             <div><strong>Background</strong><p>上传图片，或使用下方随机背景。</p></div>
                         </div>
                         <label class="x-edit-field"><span>Name</span><input id="x-char-edit-name" type="text" maxlength="32"></label>
@@ -1151,12 +1151,12 @@ X is a global app. Non-User authors may write in the language that naturally fit
                     <div class="x-char-edit-body">
                         <div class="x-edit-avatar-row">
                             <button class="x-edit-avatar-preview" id="x-edit-super-topic-avatar-preview" type="button" aria-label="上传超话头像"><span>超</span></button>
-                            <input type="file" id="x-edit-super-topic-avatar-input" accept="image/jpeg,image/png,image/webp" hidden>
+                            <input type="file" id="x-edit-super-topic-avatar-input" accept="image/jpeg,image/png" hidden>
                             <div><strong>头像</strong><p>再次点击已选超话头像可进入此页面。</p></div>
                         </div>
                         <div class="x-edit-banner-row">
                             <button class="x-edit-banner-preview" id="x-edit-super-topic-banner-preview" type="button" aria-label="上传超话封面"><span>Cover</span></button>
-                            <input type="file" id="x-edit-super-topic-banner-input" accept="image/jpeg,image/png,image/webp" hidden>
+                            <input type="file" id="x-edit-super-topic-banner-input" accept="image/jpeg,image/png" hidden>
                             <div><strong>封面</strong><p>用于超话主页顶部背景。</p></div>
                         </div>
                         <label class="x-edit-field"><span>超话名称</span><input id="x-edit-super-topic-name" type="text" maxlength="40"></label>
@@ -4782,8 +4782,14 @@ ${worldbook || 'None'}`;
         }
 
         async function compressXImageFile(file, options = xImageCompressionPresets.post) {
-            if (!file || !xAcceptedImageTypes.has(String(file.type || '').toLocaleLowerCase())) {
-                throw new Error('仅支持 JPG、PNG 或 WebP 图片');
+            const declaredMimeType = String(file?.type || '').toLowerCase();
+            const fileName = String(file?.name || '').toLowerCase();
+            const inferredMimeType = /\.png$/.test(fileName)
+                ? 'image/png'
+                : (/\.jpe?g$/.test(fileName) ? 'image/jpeg' : '');
+            const sourceMimeType = declaredMimeType || inferredMimeType;
+            if (!file || !xAcceptedImageTypes.has(sourceMimeType)) {
+                throw new Error('仅支持 JPG、JPEG 或 PNG 图片');
             }
             const rawDataUrl = await readXImageFile(file);
             const image = await loadXImage(rawDataUrl);
@@ -4802,8 +4808,13 @@ ${worldbook || 'None'}`;
             context.imageSmoothingEnabled = true;
             context.imageSmoothingQuality = 'high';
             context.drawImage(image, 0, 0, targetWidth, targetHeight);
-            const compressedDataUrl = canvas.toDataURL('image/webp', options.quality ?? 0.82);
-            if (!compressedDataUrl.startsWith('data:image/webp')) throw new Error('WebP 压缩失败');
+            const outputMimeType = sourceMimeType === 'image/png' ? 'image/png' : 'image/jpeg';
+            const compressedDataUrl = outputMimeType === 'image/png'
+                ? canvas.toDataURL(outputMimeType)
+                : canvas.toDataURL(outputMimeType, options.quality ?? 0.82);
+            if (!compressedDataUrl.startsWith(`data:${outputMimeType}`)) {
+                throw new Error(`${outputMimeType === 'image/png' ? 'PNG' : 'JPG'} 压缩失败`);
+            }
             return compressedDataUrl;
         }
 

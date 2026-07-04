@@ -62,6 +62,82 @@
     background-color: #f2f2f7 !important;
 }
 
+.im-group-settings-fullscreen {
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    padding: 0;
+    border-radius: 0;
+    background: #f2f2f7;
+    overflow: hidden;
+}
+
+.im-group-settings-header {
+    height: calc(44px + env(safe-area-inset-top, 20px));
+    padding-top: env(safe-area-inset-top, 20px);
+    box-sizing: border-box;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: #f2f2f7;
+    z-index: 2;
+}
+
+.im-group-settings-back {
+    position: absolute;
+    left: 16px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: #007aff;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+.im-group-settings-title {
+    color: #111;
+    font-size: 17px;
+    font-weight: 600;
+}
+
+.im-group-settings-content {
+    display: block;
+    min-height: 0;
+    padding: 20px;
+    padding-bottom: max(40px, env(safe-area-inset-bottom, 0px));
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.im-group-member-sheet,
+.im-group-context-sheet {
+    width: 100%;
+    max-height: 85%;
+    padding-bottom: 0;
+}
+
+.im-group-member-sheet {
+    max-height: 72%;
+}
+
+.im-group-more-sheet {
+    width: 100%;
+    max-height: 58%;
+    padding-bottom: 0;
+}
+
+.im-group-member-content,
+.im-group-more-content,
+.im-group-context-content {
+    min-height: 0;
+    padding: 8px 16px max(24px, env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
 /* 1. Header */
 .line-header {
     display: flex;

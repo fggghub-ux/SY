@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const groupContextSettingsSheet = document.getElementById('group-context-settings-sheet');
     const groupDetailsMoreBtn = document.getElementById('group-details-more-btn');
     const groupMoreSheet = document.getElementById('group-more-sheet');
+    const groupMemberManageSheet = document.getElementById('group-member-manage-sheet');
     const groupOverviewBtn = document.getElementById('group-overview-btn');
     const groupCallBtn = document.getElementById('group-call-btn');
     const groupCallInviteSheet = document.getElementById('group-call-invite-sheet');
@@ -504,7 +505,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     window.imApp.showGroupMemberManageSheet = function(group, memberId) {
-        const sheet = document.getElementById('group-member-manage-sheet');
+        const sheet = groupMemberManageSheet || document.getElementById('group-member-manage-sheet');
         if (!sheet || !group) return;
 
         let targetMember = null;
@@ -556,7 +557,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const mountSettings = groupMemory.mountSettings || {};
                 const mountLimits = groupMemory.mountLimits || {};
                 
-                newToggle.checked = !!mountSettings[memberId];
+                newToggle.checked = mountSettings[String(memberId)] !== false;
                 if (newLimitInput) {
                     newLimitInput.value = mountLimits[memberId] || 20;
                 }
@@ -705,6 +706,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.target === groupDetailsSheet) closeView(groupDetailsSheet);
         });
     }
+
+    [groupMemberManageSheet, groupMoreSheet].forEach((sheet) => {
+        if (!sheet) return;
+        sheet.addEventListener('click', (event) => {
+            if (event.target === sheet) closeView(sheet);
+        });
+    });
 
     if (groupSummaryEnabledToggle && groupSummaryBody && groupSummaryHeader) {
         groupSummaryEnabledToggle.addEventListener('change', (e) => {

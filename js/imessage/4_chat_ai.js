@@ -1580,7 +1580,7 @@ ${pendingRegenerateContext.previousReply || 'None'}` : '';
             const groupMemoryLimits = friend.memory?.mountLimits || {};
             const isMemberMemoryMounted = (memberId) => {
                 const key = String(memberId);
-                return !!(groupMemorySettings[key] || groupMemorySettings[memberId]);
+                return groupMemorySettings[key] !== false;
             };
             const getMountedMemoryLimit = (memberId) => {
                 const key = String(memberId);
@@ -1669,7 +1669,10 @@ ${allowedSpeakerNames.length > 0 ? allowedSpeakerNames.join('、') : 'None'}${af
 10. translation 只能翻译当前这一条 text；如果 text 不是中文，translation 必须填写自然中文翻译；如果 text 本身是中文，translation 必须是空字符串。
 11. quote 只有在你确实想引用用户或上一条消息时才填写，否则必须是空字符串。
 12. 【心声要求】：thought 字段必须填写该发言成员此刻的真实心理活动或未说出口的话，字数严格在10-30字之间。
-13. 【User 未回复也必须继续】：如果本轮没有 User 新发言，或触发来源是 AI继续/空输入/自动续写/角色主动说话，你仍然必须让群成员继续自然聊天；不要等待 User、不要输出空内容、不要说“用户没有输入”，可以承接上一句、回应沉默、成员互相接话或开启符合当前关系的新话题。${languageRequirement}
+13. 【User 未回复也必须继续】：如果本轮没有 User 新发言，或触发来源是 AI继续/空输入/自动续写/角色主动说话，你仍然必须让群成员继续自然聊天；不要等待 User、不要输出空内容、不要说“用户没有输入”，可以承接上一句、回应沉默、成员互相接话或开启符合当前关系的新话题。
+14. 【群聊衍生私信｜严格按需】：群成员只有在自己明确觉得某些话不适合公开说、不能让其他成员知道，或必须避开群内其他人单独告诉 User 时，才可以在本轮群聊回复之外给 User 发私信。普通寒暄、公开可说的话、对群消息的常规回应不得转成私信；私信也不得复制群内公开回复。
+15. 如果没有真实且具体的保密动机，完全不要输出私信标签。需要私信时，在 <chat_json>...</chat_json> 之外额外输出且只输出一个 <group_private_messages>...</group_private_messages> 标签，标签内必须是合法 JSON 数组，格式为：[{"speaker":"成员完整准确名字","messages":[{"text":"第一条私信","translation":"中文翻译或空字符串"},{"text":"第二条私信","translation":"中文翻译或空字符串"}]}]。
+16. 每个发私信的成员必须属于允许发言名单，每名成员必须连续发送 2-5 条私信；可以有多名成员，但每个人都必须有独立且合理的保密动机。其他成员不知道这些私信内容，后续群聊也不得默认其他成员已经知情。${languageRequirement}
 
 群聊的背景与关系记忆:
 ${commonMemorySections || 'None'}${dynamicActionNarrationRequirement}`;
@@ -1895,6 +1898,51 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                 throw new Error(`API 返回内容为空或格式不兼容: ${JSON.stringify(data).slice(0, 500)}`);
             }
 
+            let groupPrivateMessageBatches = [];
+            if (friend.type === 'group') {
+                const privateMessagesBlock = window.imChat.extractTaggedBlock(fullReply, 'group_private_messages');
+                if (privateMessagesBlock) {
+                    fullReply = window.imChat.removeTaggedBlock(fullReply, 'group_private_messages');
+                    const parsedPrivateBatches = window.imChat.parseJsonArrayFromText(privateMessagesBlock);
+                    const batchesByMemberId = new Map();
+
+                    if (Array.isArray(parsedPrivateBatches)) {
+                        parsedPrivateBatches.forEach((batch) => {
+                            if (!batch || typeof batch !== 'object') return;
+                            const member = window.imChat.normalizeGroupSpeaker(friend, batch.speaker);
+                            if (!member) {
+                                console.warn('[iMessage] Ignored group private messages from an unknown speaker:', batch.speaker);
+                                return;
+                            }
+
+                            const normalizedMessages = (Array.isArray(batch.messages) ? batch.messages : [])
+                                .map((message) => {
+                                    const text = typeof message === 'string'
+                                        ? message.trim()
+                                        : (typeof message?.text === 'string' ? message.text.trim() : '');
+                                    if (!text) return null;
+                                    const translation = typeof message === 'object' && typeof message?.translation === 'string'
+                                        ? message.translation.trim()
+                                        : '';
+                                    return { text, translation };
+                                })
+                                .filter(Boolean);
+
+                            if (normalizedMessages.length === 0) return;
+                            const memberKey = String(member.id);
+                            if (!batchesByMemberId.has(memberKey)) {
+                                batchesByMemberId.set(memberKey, { member, messages: [] });
+                            }
+                            batchesByMemberId.get(memberKey).messages.push(...normalizedMessages);
+                        });
+                    }
+
+                    groupPrivateMessageBatches = Array.from(batchesByMemberId.values())
+                        .map((batch) => ({ ...batch, messages: batch.messages.slice(0, 5) }))
+                        .filter((batch) => batch.messages.length >= 2);
+                }
+            }
+
             // 拦截并移除邀请标记，确保它不会进入后续的 JSON 解析
             let inviteAccepted = false;
             if (fullReply.includes('[ACCEPT_INVITE]')) {
@@ -2093,7 +2141,7 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                 });
             }
 
-            if (!fullReply) {
+            if (!fullReply && groupPrivateMessageBatches.length === 0) {
                 if(btnEl) btnEl.style.opacity = '1';
                 await flushFriendPersistence(friend.id, { silent: true });
                 return;
@@ -2321,7 +2369,7 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                 });
             }
 
-            if (queueItems.length === 0) {
+            if (queueItems.length === 0 && groupPrivateMessageBatches.length === 0) {
                 if(btnEl) btnEl.style.opacity = '1';
                 await flushFriendPersistence(friend.id, { silent: true });
                 return;
@@ -2348,7 +2396,7 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                 ? currentHistoryFriend.messages[currentHistoryFriend.messages.length - 1]
                 : null;
 
-            if (safeContainer && (!lastHistoryMsg || (now - (lastHistoryMsg.timestamp || 0) > 300000))) {
+            if (queueItems.length > 0 && safeContainer && (!lastHistoryMsg || (now - (lastHistoryMsg.timestamp || 0) > 300000))) {
                 window.imChat.renderTimestamp(now, safeContainer);
             }
 
@@ -2851,6 +2899,67 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                 const processed = await processNextSentence();
                 if (!processed) {
                     return;
+                }
+            }
+
+            if (friend.type === 'group' && groupPrivateMessageBatches.length > 0) {
+                let privateMessageSaveFailed = false;
+
+                for (const batch of groupPrivateMessageBatches) {
+                    if (!isConversationCurrent()) return;
+                    const targetFriend = getLiveFriendById(batch.member.id) || batch.member;
+                    if (!targetFriend || targetFriend.type === 'group' || targetFriend.type === 'official') continue;
+
+                    let appendedCount = 0;
+                    for (let index = 0; index < batch.messages.length; index += 1) {
+                        if (!isConversationCurrent()) return;
+                        const privateItem = batch.messages[index];
+                        const timestamp = Date.now() + index;
+                        const privateMsg = {
+                            id: window.imChat.createMessageId('msg'),
+                            role: 'assistant',
+                            content: privateItem.text,
+                            text: privateItem.text,
+                            timestamp,
+                            sourceGroupId: friend.id,
+                            sourceGroupName: friend.nickname || friend.realName || '',
+                            sourceApiRunId: apiRunId,
+                            privateFromGroup: true
+                        };
+                        if (privateItem.translation) {
+                            privateMsg.translation = privateItem.translation;
+                            privateMsg.showTranslation = false;
+                        }
+
+                        const appended = window.imApp.appendFriendMessage
+                            ? await window.imApp.appendFriendMessage(targetFriend.id, privateMsg, { silent: true })
+                            : false;
+                        if (!appended) {
+                            privateMessageSaveFailed = true;
+                            console.warn('[iMessage] Failed to persist a group-derived private message', {
+                                groupId: friend.id,
+                                memberId: targetFriend.id,
+                                apiRunId
+                            });
+                            continue;
+                        }
+                        appendedCount += 1;
+                    }
+
+                    const liveTargetFriend = getLiveFriendById(targetFriend.id) || targetFriend;
+                    const isTargetChatActive = window.imData.currentActiveFriend
+                        && String(window.imData.currentActiveFriend.id) === String(liveTargetFriend.id);
+                    if (appendedCount > 0 && isTargetChatActive && window.imChat.rerenderChatContainer) {
+                        const targetPage = document.getElementById(`chat-interface-${liveTargetFriend.id}`);
+                        const targetContainer = targetPage ? targetPage.querySelector('.ins-chat-messages') : null;
+                        if (targetContainer) {
+                            window.imChat.rerenderChatContainer(liveTargetFriend, targetContainer, { scroll: true });
+                        }
+                    }
+                }
+
+                if (privateMessageSaveFailed && !options.silent && window.showToast) {
+                    window.showToast('部分群成员私信保存失败');
                 }
             }
 
