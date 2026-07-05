@@ -1,0 +1,8 @@
+name = "u2-link-resolver"
+main = "src/index.mjs"
+compatibility_date = "2026-07-01"
+workers_dev = true
+
+[vars]
+# 部署前改成静态站的实际 Origin，多个用逗号分隔。
+ALLOWED_ORIGINS = "http://localhost:8000,http://127.0.0.1:8000"

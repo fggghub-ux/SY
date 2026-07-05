@@ -20,6 +20,11 @@
         ttsModel: 'speech-02-hd'
     };
 
+    const defaultLinkResolverConfig = {
+        endpoint: '',
+        timeoutMs: 12000
+    };
+
     const defaultUserState = {
         name: '',
         phone: '',
@@ -55,6 +60,31 @@
         };
     }
 
+    function normalizeLinkResolverConfig(value) {
+        const source = value && typeof value === 'object' ? value : {};
+        const timeoutMs = Number(source.timeoutMs);
+        return {
+            ...defaultLinkResolverConfig,
+            ...source,
+            endpoint: String(source.endpoint || '').trim(),
+            timeoutMs: Number.isFinite(timeoutMs)
+                ? Math.min(30000, Math.max(3000, Math.round(timeoutMs)))
+                : defaultLinkResolverConfig.timeoutMs
+        };
+    }
+
+    function safeSave(key, value) {
+        try {
+            if (window.StorageManager && typeof window.StorageManager.save === 'function') {
+                window.StorageManager.save(key, value);
+                return;
+            }
+            if (window.localStorage) window.localStorage.setItem(key, JSON.stringify(value));
+        } catch (error) {
+            console.warn(`[bootstrap_globals] Failed to save ${key}:`, error);
+        }
+    }
+
     function resolveUserStateFromAccounts() {
         const accounts = safeLoad('u2_accounts', []);
         const currentAccountId = safeLoad('u2_currentAccountId', null);
@@ -76,6 +106,9 @@
 
     window.apiConfig = normalizeApiConfig(window.apiConfig || safeLoad('u2_apiConfig', defaultApiConfig));
     window.minimaxConfig = normalizeMinimaxConfig(window.minimaxConfig || safeLoad('u2_minimaxConfig', defaultMinimaxConfig));
+    window.linkResolverConfig = normalizeLinkResolverConfig(
+        window.linkResolverConfig || safeLoad('u2_linkResolverConfig', defaultLinkResolverConfig)
+    );
     window.userState = {
         ...defaultUserState,
         ...(window.userState && typeof window.userState === 'object' ? window.userState : resolveUserStateFromAccounts())
@@ -89,6 +122,19 @@
     window.getMinimaxConfig = function getMinimaxConfig() {
         window.minimaxConfig = normalizeMinimaxConfig(window.minimaxConfig || safeLoad('u2_minimaxConfig', defaultMinimaxConfig));
         return window.minimaxConfig;
+    };
+
+    window.getLinkResolverConfig = function getLinkResolverConfig() {
+        window.linkResolverConfig = normalizeLinkResolverConfig(
+            window.linkResolverConfig || safeLoad('u2_linkResolverConfig', defaultLinkResolverConfig)
+        );
+        return { ...window.linkResolverConfig };
+    };
+
+    window.setLinkResolverConfig = function setLinkResolverConfig(value) {
+        window.linkResolverConfig = normalizeLinkResolverConfig(value);
+        safeSave('u2_linkResolverConfig', window.linkResolverConfig);
+        return { ...window.linkResolverConfig };
     };
 
     window.getUserState = function getUserState() {
@@ -140,6 +186,11 @@
 
     window.fetch = async function(...args) {
         const url = args[0];
+        const requestInit = args[1] && typeof args[1] === 'object' ? args[1] : {};
+        const requestHeaders = requestInit.headers instanceof Headers
+            ? requestInit.headers
+            : new Headers(requestInit.headers || (url instanceof Request ? url.headers : undefined));
+        const silentErrors = requestHeaders.get('X-U2-Silent-Errors') === '1';
         
         // 简单过滤，只针对可能是 API 的请求才去深入解析和弹窗
         // （如果有些纯本地资源文件不想被拦截，可以在这里加判断，比如 if(typeof url === 'string' && !url.startsWith('http')) return originalFetch(...args); ）
@@ -155,6 +206,8 @@
             // --- 出现错误（非 20x 状态码） ---
             
             // 复制一份 response 来读取 body，防止 consumed 影响后续调用
+            if (silentErrors) return response;
+
             const clonedResponse = response.clone();
             let rawBody = '';
             try {
@@ -176,13 +229,15 @@
             
         } catch (error) {
             // --- 网络断开或 CORS 等底层 Fetch 异常 ---
-            setTimeout(() => {
-                showApiErrorPopup(
-                    'Network Error', 
-                    'Failed to fetch. Please check your network connection or CORS policy.', 
-                    error.message || String(error)
-                );
-            }, 0);
+            if (!silentErrors) {
+                setTimeout(() => {
+                    showApiErrorPopup(
+                        'Network Error',
+                        'Failed to fetch. Please check your network connection or CORS policy.',
+                        error.message || String(error)
+                    );
+                }, 0);
+            }
             throw error;
         }
     };

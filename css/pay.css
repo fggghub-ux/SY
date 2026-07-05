@@ -27,7 +27,10 @@
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
-#pay-view.pay-view { transform: translateY(100%); }
+#pay-view.pay-view {
+    transform: translateY(100%);
+    padding-top: 0;
+}
 
 #pay-view.pay-view.active {
     transform: translateY(0);

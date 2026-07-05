@@ -31,8 +31,8 @@
     <link rel="stylesheet" href="css/global.css">
     <link rel="stylesheet" href="css/home.css">
     <link rel="stylesheet" href="css/worldbook.css">
-    <link rel="stylesheet" href="css/imessage.css?v=20260704-mini-player-border-v2">
-    <link rel="stylesheet" href="css/pay.css?v=20260704-korean-flat-v3">
+    <link rel="stylesheet" href="css/imessage.css?v=20260705-link-v1">
+    <link rel="stylesheet" href="css/pay.css?v=20260705-safe-area-v1">
     <link rel="stylesheet" href="css/bstage.css">
     <link rel="stylesheet" href="css/tiktok.css">
     <link rel="stylesheet" href="css/shopping.css">
@@ -41,7 +41,7 @@
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
-    <link rel="stylesheet" href="css/loves.css?v=20260704-korean-flat-v2">
+    <link rel="stylesheet" href="css/loves.css?v=20260705-savings-fab-v1">
     <link rel="stylesheet" href="css/library.css?v=20260704-together-picker-border-v1">
     <!-- App Styles -->
     <link rel="stylesheet" href="css/settings.css">
@@ -2523,6 +2523,16 @@
                         </div>
                     </div>
 
+                    <div class="form-group fully-rounded" style="margin-bottom: 20px;">
+                        <div class="form-item" style="border-bottom: none;">
+                            <label style="width: 100px; white-space: nowrap;">外链解析</label>
+                            <input type="url" id="link-resolver-endpoint-input" inputmode="url" placeholder="https://your-worker.workers.dev">
+                        </div>
+                        <div style="padding: 0 14px 12px; color: #8e8e93; font-size: 12px; line-height: 1.45;">
+                            填写 Cloudflare Worker 地址，用于读取公开网页正文；留空时仍可发送链接，但角色无法读取页面内容。
+                        </div>
+                    </div>
+
                     <!-- Fetch Models Button (Grouped) -->
                     <div class="form-group fully-rounded" style="margin-bottom: 20px;">
                         <div class="settings-item fully-rounded-item" id="fetch-models-btn" style="justify-content: flex-start;">
@@ -3229,9 +3239,9 @@
                             <span>Edit</span>
                             <i class="far fa-edit" style="font-size: 16px; color: #8e8e93;"></i>
                         </div>
-                        <div class="msg-menu-item" data-action="pin">
-                            <span>Pin</span>
-                            <i class="fas fa-thumbtack" style="font-size: 16px; color: #8e8e93;"></i>
+                        <div class="msg-menu-item" data-action="recall">
+                            <span>撤回</span>
+                            <i class="fas fa-rotate-left" style="font-size: 16px; color: #8e8e93;"></i>
                         </div>
                         <div class="msg-menu-item" data-action="forward">
                             <span>Forward</span>
@@ -3636,6 +3646,18 @@
                         </button>
                     </div>
                     <div class="group-private-chat-detail-messages" id="group-private-chat-detail-messages"></div>
+                </div>
+            </div>
+
+<div class="bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay" id="recalled-message-detail-modal" style="z-index: 910;">
+                <div class="wb-centered-modal-card recalled-message-detail-card">
+                    <div class="group-private-chat-detail-header">
+                        <div class="group-private-chat-detail-title">撤回的消息</div>
+                        <button type="button" class="group-private-chat-detail-close" id="recalled-message-detail-close" aria-label="关闭撤回消息详情">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="recalled-message-detail-content" id="recalled-message-detail-content"></div>
                 </div>
             </div>
 
@@ -7241,7 +7263,7 @@
 
 
     
-<script src="js/storage/app_storage.js?v=20260704-library-import-v1"></script>
+<script src="js/storage/app_storage.js?v=20260705-link-v1"></script>
     <script src="js/storage/imessage_storage.js"></script>
     <script src="storage.js"></script>
     <script src="js/app_state_bridge.js"></script>
@@ -7251,20 +7273,21 @@
     <script src="js/system_notifications.js"></script>
     
     <!-- 引入 iMessage 模块分段代码 -->
-    <script src="js/imessage/2_core.js?v=20260704-meeting-summary-v1"></script>
+    <script src="js/imessage/2_core.js?v=20260705-link-v1"></script>
     <script src="js/imessage/3_contacts.js"></script>
-    <script src="js/imessage/3_groups.js"></script>
+    <script src="js/imessage/3_groups.js?v=20260705-private-chat-v1"></script>
     <script src="js/imessage/4_chat_common.js"></script>
     <script src="js/imessage/4_chat_status.js"></script>
     <script src="js/imessage/4_chat_payment.js"></script>
-    <script src="js/imessage/4_chat_bubbles.js"></script>
+    <script src="js/imessage/4_chat_bubbles.js?v=20260705-link-v1"></script>
     <script src="js/imessage/minimax_tts.js"></script>
-    <script src="js/imessage/4_chat_ai.js?v=20260703-listen-together-v2"></script>
-    <script src="js/imessage/4_chat_sheet.js?v=20260704-meeting-summary-v1"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260705-link-v1"></script>
+    <script src="js/imessage/4_chat_sheet.js?v=20260705-link-v1"></script>
+    <script src="js/imessage/4_chat_link.js?v=20260705-link-v1"></script>
     <script src="js/imessage/4_chat_list.js"></script>
-    <script src="js/imessage/4_chat_interface.js?v=20260703-listen-together-v2"></script>
+    <script src="js/imessage/4_chat_interface.js?v=20260705-recall-v1"></script>
     <script src="js/imessage/4_chat_voice_call.js"></script>
-    <script src="js/imessage/4_chat_main.js"></script>
+    <script src="js/imessage/4_chat_main.js?v=20260705-recall-v1"></script>
     <script src="js/imessage/5_settings.js"></script>
     <script src="js/imessage/6_moments.js"></script>
 
@@ -7277,9 +7300,9 @@
     <script src="js/worldbook.js"></script>
     <!-- 引入核心 UI 管理与设置模块脚本 -->
     <script src="js/ui.js"></script>
-    <script src="js/settings.js?v=20260703-library-v4"></script>
+    <script src="js/settings.js?v=20260705-link-v1"></script>
     <script src="js/library.js?v=20260704-netease-import-v8"></script>
-    <script src="js/loves.js?v=20260704-korean-flat-v2"></script>
+    <script src="js/loves.js?v=20260705-savings-fab-v1"></script>
     <script src="js/tiktok/2_core.js"></script>
     <script src="js/tiktok/3_home.js"></script>
     <script src="js/tiktok/4_chat.js"></script>
@@ -7297,6 +7320,6 @@
     <script src="js/home_desktop.js"></script>
     <script src="js/home_widget_panel_enhance.js"></script>
     <!-- 引入主逻辑脚本 -->
-    <script src="script.js"></script>
+    <script src="script.js?v=20260705-modal-tone-v1"></script>
 </body>
 </html>

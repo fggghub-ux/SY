@@ -1321,14 +1321,20 @@ window.lovesApp = {
         savingsView.classList.add('active');
         const fab = document.getElementById('lovers-space-fab');
         if (fab) {
-            fab.style.display = 'flex';
-            fab.style.zIndex = '9999';
+            fab.style.removeProperty('display');
+            fab.style.removeProperty('z-index');
+            fab.classList.add('is-savings-mode');
         }
 
         const backBtn = document.getElementById('lovers-savings-back-btn');
         if (backBtn) {
             backBtn.onclick = () => {
                 savingsView.classList.remove('active');
+                if (fab) {
+                    fab.classList.remove('is-savings-mode');
+                    fab.style.removeProperty('display');
+                    fab.style.removeProperty('z-index');
+                }
             };
         }
 

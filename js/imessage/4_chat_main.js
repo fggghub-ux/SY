@@ -239,6 +239,61 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     return;
                 }
+
+                if (action === 'recall') {
+                    const row = window.imData.currentActiveRow;
+                    const activeFriend = window.imData.currentActiveFriend;
+                    if (!row || !activeFriend) {
+                        window.imChat.closeContextMenu();
+                        return;
+                    }
+
+                    const messageId = row.getAttribute('data-message-id');
+                    const timestamp = row.getAttribute('data-timestamp');
+                    const liveFriend = (window.imData.friends || []).find(friend => String(friend.id) === String(activeFriend.id)) || activeFriend;
+                    const targetMessage = (liveFriend.messages || []).find(message => {
+                        if (!message) return false;
+                        if (messageId && String(message.id) === String(messageId)) return true;
+                        return timestamp && String(message.timestamp) === String(timestamp);
+                    });
+
+                    if (!window.imApp?.isRecallableUserMessage?.(targetMessage)) {
+                        if (window.showToast) window.showToast('这条消息不能撤回');
+                        window.imChat.closeContextMenu();
+                        return;
+                    }
+
+                    const recalledNotice = window.imApp.createRecalledNoticeMessage(targetMessage, {
+                        actorRole: 'user',
+                        actorName: window.userState?.name || 'User'
+                    });
+                    const saved = window.imApp.updateFriendMessage
+                        ? await window.imApp.updateFriendMessage(liveFriend.id, {
+                            id: messageId || targetMessage.id || null,
+                            timestamp: timestamp || targetMessage.timestamp || null
+                        }, (storedMessage) => {
+                            Object.keys(storedMessage).forEach(key => delete storedMessage[key]);
+                            Object.assign(storedMessage, recalledNotice);
+                        }, { silent: true })
+                        : false;
+
+                    if (!saved) {
+                        if (window.showToast) window.showToast('撤回消息失败');
+                        window.imChat.closeContextMenu();
+                        return;
+                    }
+
+                    const updatedFriend = window.imApp.getFriendById
+                        ? (window.imApp.getFriendById(liveFriend.id) || liveFriend)
+                        : liveFriend;
+                    const container = row.closest('.ins-chat-messages');
+                    if (container && window.imChat.rerenderChatContainer) {
+                        window.imChat.rerenderChatContainer(updatedFriend, container, { scroll: true });
+                    }
+                    if (window.showToast) window.showToast('已撤回');
+                    window.imChat.closeContextMenu();
+                    return;
+                }
                 
                 if (action === 'delete') {
                     if (window.imData.currentActiveRow && window.imData.currentActiveFriend) {
@@ -427,6 +482,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                         title: '编辑消息',
                                         placeholder: '修改内容...',
                                         confirmText: '保存',
+                                        confirmTone: 'dark',
                                         onConfirm: async (newVal) => {
                                             const textarea = document.getElementById('modal-textarea');
                                             const textareaGroup = document.getElementById('modal-textarea-group');

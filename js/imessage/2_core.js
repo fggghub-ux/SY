@@ -593,6 +593,44 @@ window.imApp.getRecentContextMessages = function(friend) {
     return contextLimit > 0 ? allMessages.slice(-contextLimit) : [];
 };
 
+window.imApp.isRecallableUserMessage = function(message) {
+    if (!message || message.role !== 'user') return false;
+    const blockedTypes = new Set([
+        'system_notice',
+        'pay_transfer',
+        'group_red_packet',
+        'voice_call_record',
+        'offline_meeting_record',
+        'html'
+    ]);
+    return !blockedTypes.has(String(message.type || '').trim());
+};
+
+window.imApp.createRecalledNoticeMessage = function(originalMessage, options = {}) {
+    const original = originalMessage && typeof originalMessage === 'object' ? originalMessage : {};
+    const actorRole = options.actorRole === 'user' ? 'user' : 'assistant';
+    const actorName = String(options.actorName || '').trim();
+    const timestamp = Number(options.timestamp || original.timestamp) || Date.now();
+    const notice = {
+        id: original.id || options.id || (window.imChat?.createMessageId ? window.imChat.createMessageId('notice') : `notice_${timestamp}`),
+        role: 'system',
+        type: 'system_notice',
+        noticeKind: 'message_recalled',
+        actorRole,
+        actorName,
+        content: actorRole === 'user' ? '你撤回了一条消息' : `${actorName || '对方'}撤回了一条消息`,
+        timestamp
+    };
+
+    if (actorRole !== 'user' && typeof options.recalledContent === 'string' && options.recalledContent.trim()) {
+        notice.payload = {
+            recalledContent: options.recalledContent.trim()
+        };
+    }
+    if (options.apiRunId) notice.apiRunId = options.apiRunId;
+    return notice;
+};
+
 window.imApp.formatSystemNoticeForApiContext = function(message) {
     const normalizedMessage = message || {};
     const noticeKind = normalizedMessage.noticeKind || '';
@@ -616,8 +654,76 @@ window.imApp.formatSystemNoticeForApiContext = function(message) {
     if (noticeKind === 'group_friend_private_chat') {
         return '[系统事件：有群成员与自己的好友进行了私聊。私聊内容只属于该成员，其他群成员默认不知道。]';
     }
+    if (noticeKind === 'message_recalled') {
+        if (normalizedMessage.actorRole === 'user') {
+            return '[系统事件：User 撤回了一条消息。你只知道发生了撤回，无法读取被撤回的原文。]';
+        }
+        const actorName = String(normalizedMessage.actorName || '').trim();
+        return actorName
+            ? `[系统事件：${actorName} 撤回了一条消息。]`
+            : '[系统事件：你撤回了一条消息。]';
+    }
 
     return noticeText ? `[系统事件：${noticeText}]` : '[系统事件]';
+};
+
+window.imApp.formatLinkMessageForApiContext = function(message, options = {}) {
+    const normalizedMessage = message || {};
+    const linkData = normalizedMessage.linkData && typeof normalizedMessage.linkData === 'object'
+        ? normalizedMessage.linkData
+        : {};
+    const originalUrl = String(linkData.originalUrl || normalizedMessage.content || '').trim();
+    const platformLabel = String(linkData.platformLabel || linkData.platform || '网页').trim();
+    const title = String(linkData.title || originalUrl || '未命名链接').trim();
+    const author = String(linkData.author || '').trim();
+    const description = String(linkData.description || '').trim();
+    const publishedAt = String(linkData.publishedAt || '').trim();
+    const bodyText = String(linkData.bodyText || '').trim();
+    const status = String(linkData.resolveStatus || 'unresolved');
+    const expandContent = options.expandLinkContent !== false;
+    const maxBodyChars = Math.max(1000, Number(options.maxLinkBodyChars) || 20000);
+    const lines = [
+        '[User 分享了一个外部链接]',
+        `平台：${platformLabel}`,
+        `标题：${title}`
+    ];
+
+    if (author) lines.push(`作者：${author}`);
+    if (publishedAt) lines.push(`发布时间：${publishedAt}`);
+    lines.push(`原始链接：${originalUrl}`);
+
+    if (!bodyText) {
+        if (description) lines.push(`页面摘要：${description}`);
+        lines.push('读取状态：未能读取页面正文。你只知道上述链接和预览信息，不得声称已看过或猜测页面内容。');
+        return lines.join('\n');
+    }
+
+    if (!expandContent) {
+        lines.push(`页面摘要：${description || bodyText.slice(0, 500)}`);
+        lines.push('读取状态：这是较早的链接记录，本轮只保留摘要。');
+        return lines.join('\n');
+    }
+
+    const injectedBody = bodyText.slice(0, maxBodyChars);
+    lines.push(`页面正文：\n${injectedBody}`);
+    const wasTruncated = bodyText.length > injectedBody.length || !!linkData.truncated;
+    if (wasTruncated) {
+        lines.push('读取状态：页面内容过长或解析端已截断。不得声称看过未提供的部分。');
+    } else if (status === 'partial') {
+        lines.push('读取状态：已读取可公开获取的正文，页面仍可能包含未展开或需登录的内容。');
+    } else {
+        lines.push('读取状态：已读取公开页面正文。');
+    }
+
+    const mediaDescriptions = (Array.isArray(linkData.media) ? linkData.media : [])
+        .filter(item => item && String(item.caption || '').trim())
+        .slice(0, 3)
+        .map((item, index) => `${index + 1}. ${String(item.caption).trim()}`);
+    if (mediaDescriptions.length > 0) {
+        lines.push(`配图说明：\n${mediaDescriptions.join('\n')}`);
+    }
+
+    return lines.join('\n');
 };
 
 window.imApp.formatMessageForApiContext = function(message, friend, options = {}) {
@@ -633,7 +739,9 @@ window.imApp.formatMessageForApiContext = function(message, friend, options = {}
         };
     }
 
-    if (normalizedMessage.type === 'voice_message') {
+    if (normalizedMessage.type === 'link') {
+        apiContent = window.imApp.formatLinkMessageForApiContext(normalizedMessage, options);
+    } else if (normalizedMessage.type === 'voice_message') {
         const voiceText = normalizedMessage.transcript || normalizedMessage.text || '';
         apiContent = normalizedMessage.role === 'user'
             ? `[用户发了一条语音消息，语音内容：${voiceText}]`
@@ -746,7 +854,7 @@ window.imApp.formatMessageForApiContext = function(message, friend, options = {}
     }
 
     if (normalizedMessage.role === 'user' && normalizedMessage.replyTo) {
-        apiContent = `[用户引用了消息："${normalizedMessage.replyTo}"]\n${normalizedMessage.content}`;
+        apiContent = `[用户引用了消息："${normalizedMessage.replyTo}"]\n${apiContent}`;
     }
 
     return {
@@ -758,9 +866,16 @@ window.imApp.formatMessageForApiContext = function(message, friend, options = {}
 window.imApp.buildApiContextMessages = function(friend, options = {}) {
     const normalizedFriend = window.imApp.normalizeFriendData(friend || {});
     const recentMessages = window.imApp.getRecentContextMessages(normalizedFriend);
+    let latestLinkIndex = -1;
+    recentMessages.forEach((message, index) => {
+        if (message && message.type === 'link') latestLinkIndex = index;
+    });
 
     return recentMessages
-        .map(message => window.imApp.formatMessageForApiContext(message, normalizedFriend, options))
+        .map((message, index) => window.imApp.formatMessageForApiContext(message, normalizedFriend, {
+            ...options,
+            expandLinkContent: message && message.type === 'link' ? index === latestLinkIndex : options.expandLinkContent
+        }))
         .filter(item => item && item.role && typeof item.content === 'string' && item.content.trim());
 };
 
@@ -773,6 +888,13 @@ window.imApp.buildLinkedAccountMemoryContext = function(friend, options = {}) {
 
     const charName = normalizedFriend.nickname || normalizedFriend.realName || 'Char';
     const maxMessagesPerFriend = Math.max(1, Number(options.maxMessagesPerFriend) || 4);
+    const formatLinkedMessageTime = (timestamp) => {
+        const value = Number(timestamp) || 0;
+        if (!value) return '未知时间';
+        const date = new Date(value);
+        const pad = number => String(number).padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    };
     const lines = [
         'Linked Friend Memory / 关联好友记忆:',
         'These are private friend chats belonging to the character. They are context about the character\'s own friends, not messages from the current User.'
@@ -797,7 +919,7 @@ window.imApp.buildLinkedAccountMemoryContext = function(friend, options = {}) {
         } else {
             recentMessages.forEach(message => {
                 const speaker = message.role === 'char' ? charName : displayName;
-                lines.push(`${speaker}: ${message.text || ''}`);
+                lines.push(`[${formatLinkedMessageTime(message.timestamp)}] ${speaker}: ${message.text || ''}`);
             });
         }
     });
@@ -930,6 +1052,14 @@ window.imApp.getFriendMessagePreview = function(message) {
     if (targetMessage.type === 'voice_call_record') {
         return targetMessage.text || `[语音通话记录] ${targetMessage.statusText || ''}`.trim();
     }
+    if (targetMessage.type === 'link') {
+        const linkData = targetMessage.linkData && typeof targetMessage.linkData === 'object'
+            ? targetMessage.linkData
+            : {};
+        const label = linkData.platformLabel || '链接';
+        const title = linkData.title || targetMessage.content || '';
+        return `[${label}] ${title}`.trim();
+    }
     if (targetMessage.type === 'offline_meeting_record') {
         return '[见面记录]';
     }
@@ -940,6 +1070,11 @@ window.imApp.getFriendMessagePreview = function(message) {
         if (noticeKind === 'group_rejoined') return '你重新进入群聊';
         if (noticeKind === 'narration') return `[旁白] ${noticeText}`.trim();
         if (noticeKind === 'offline_meeting_active') return '';
+        if (noticeKind === 'message_recalled') {
+            if (targetMessage.actorRole === 'user') return '你撤回了一条消息';
+            const actorName = String(targetMessage.actorName || '').trim();
+            return `${actorName || '对方'}撤回了一条消息`;
+        }
         return noticeText;
     }
     if (targetMessage.type === 'html') {
@@ -3302,6 +3437,8 @@ document.addEventListener('DOMContentLoaded', () => {
             modalInput.value = options.defaultValue || '';
             modalInput.placeholder = options.placeholder || '';
             modalPromptConfirmBtn.textContent = options.confirmText || '确认';
+            modalPromptConfirmBtn.style.background = options.confirmTone === 'dark' ? '#111' : '#007aff';
+            modalPromptConfirmBtn.style.color = '#fff';
         } else {
             modalConfirmBtn.style.display = 'block';
             modalPromptConfirmBtn.style.display = 'none';
@@ -3311,8 +3448,9 @@ document.addEventListener('DOMContentLoaded', () => {
             modalMessage.textContent = options.message || '';
             modalConfirmBtn.textContent = options.confirmText || '确认';
             const isDeleteAction = options.isDestructive && String(options.confirmText || '').trim() === '删除';
-            modalConfirmBtn.style.color = isDeleteAction ? '#fff' : (options.isDestructive ? '#ff3b30' : '#2c2c2e');
-            modalConfirmBtn.style.background = isDeleteAction ? '#111' : '';
+            const isDarkAction = options.confirmTone === 'dark';
+            modalConfirmBtn.style.color = isDeleteAction || isDarkAction ? '#fff' : (options.isDestructive ? '#ff3b30' : '#2c2c2e');
+            modalConfirmBtn.style.background = isDeleteAction || isDarkAction ? '#111' : '';
             modalConfirmBtn.style.borderRadius = isDeleteAction ? '12px' : '';
             modalConfirmBtn.style.fontWeight = isDeleteAction ? '700' : '';
         }

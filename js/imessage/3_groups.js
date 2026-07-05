@@ -74,14 +74,15 @@ document.addEventListener('DOMContentLoaded', () => {
             groupPrivateChatDetailSubtitle.textContent = `本次私信记录 · ${messages.length} 条`;
         }
 
-        groupPrivateChatDetailMessages.innerHTML = messages.map((message) => {
+        groupPrivateChatDetailMessages.innerHTML = messages.map((message, index) => {
             const isSender = message?.role === 'char';
             const displayName = isSender ? senderName : recipientName;
+            const previousRole = index > 0 ? messages[index - 1]?.role : null;
+            const isGroupStart = index === 0 || previousRole !== message?.role;
             return `
-                <div class="group-private-chat-detail-row${isSender ? ' is-sender' : ''}">
-                    <div class="group-private-chat-detail-name">${escapeGroupHtml(displayName)}</div>
+                <div class="group-private-chat-detail-row${isSender ? ' is-sender' : ''}${isGroupStart ? ' is-group-start' : ''}">
+                    ${isGroupStart ? `<div class="group-private-chat-detail-name">${escapeGroupHtml(displayName)}</div>` : ''}
                     <div class="group-private-chat-detail-bubble">${escapeGroupHtml(message?.text || '')}</div>
-                    <div class="group-private-chat-detail-time">${escapeGroupHtml(formatPrivateChatDetailTime(message?.timestamp))}</div>
                 </div>
             `;
         }).join('');

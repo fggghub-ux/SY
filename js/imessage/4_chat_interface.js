@@ -1180,6 +1180,23 @@ function showContextMenu(row, e) {
         const mainActions = document.getElementById('msg-context-actions');
         if (moreActions) moreActions.style.display = 'none';
         if (mainActions) mainActions.style.display = 'flex';
+
+        const recallAction = msgContextMenu.querySelector('[data-action="recall"]');
+        if (recallAction) {
+            const activeFriend = window.imData.currentActiveFriend;
+            const messageId = row.getAttribute('data-message-id');
+            const messageTimestamp = row.getAttribute('data-timestamp');
+            const targetMessage = activeFriend && Array.isArray(activeFriend.messages)
+                ? activeFriend.messages.find(message => {
+                    if (!message) return false;
+                    if (messageId && String(message.id) === String(messageId)) return true;
+                    return messageTimestamp && String(message.timestamp) === String(messageTimestamp);
+                })
+                : null;
+            const canRecall = row.classList.contains('user-row')
+                && !!window.imApp?.isRecallableUserMessage?.(targetMessage);
+            recallAction.style.display = canRecall ? 'flex' : 'none';
+        }
         
         // Determine alignment based on user/ai row
         const isUserRow = row.classList.contains('user-row');

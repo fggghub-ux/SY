@@ -68,6 +68,7 @@
             StorageManager.save('u2_userState', userState);
             StorageManager.save('u2_apiConfig', apiConfig);
             StorageManager.save('u2_minimaxConfig', minimaxConfig);
+            StorageManager.save('u2_linkResolverConfig', linkResolverConfig);
             StorageManager.save('u2_apiPresets', apiPresets);
             StorageManager.save('u2_fetchedModels', fetchedModels);
             StorageManager.save('u2_assistiveBallSettings', assistiveBallSettings);
@@ -87,6 +88,7 @@
                         currentAccountId,
                         apiConfig: clonePlainData(apiConfig),
                         minimaxConfig: clonePlainData(minimaxConfig),
+                        linkResolverConfig: clonePlainData(linkResolverConfig),
                         apiPresets: clonePlainData(apiPresets),
                         fetchedModels: clonePlainData(fetchedModels),
                         assistiveBallSettings: clonePlainData(assistiveBallSettings),
@@ -121,6 +123,9 @@
         groupId: '',
         ttsModel: 'speech-02-hd'
     };
+    let linkResolverConfig = window.getLinkResolverConfig
+        ? window.getLinkResolverConfig()
+        : { endpoint: '', timeoutMs: 12000 };
     let apiPresets = [];
     let fetchedModels = [];
     let assistiveBallSettings = {
@@ -181,6 +186,7 @@
         if (window.StorageManager) {
             apiConfig = StorageManager.load('u2_apiConfig', apiConfig);
             minimaxConfig = StorageManager.load('u2_minimaxConfig', minimaxConfig);
+            linkResolverConfig = StorageManager.load('u2_linkResolverConfig', linkResolverConfig);
             apiPresets = StorageManager.load('u2_apiPresets', []);
             fetchedModels = StorageManager.load('u2_fetchedModels', []);
             assistiveBallSettings = {
@@ -231,6 +237,7 @@
         
         // Expose globally for other modules if needed
         window.apiConfig = apiConfig;
+        window.linkResolverConfig = linkResolverConfig;
         if (window.u2MinimaxTts && typeof window.u2MinimaxTts.setConfig === 'function') {
             minimaxConfig = window.u2MinimaxTts.setConfig({ ...(window.u2MinimaxTts.DEFAULT_CONFIG || {}), ...minimaxConfig });
         } else {
@@ -264,6 +271,7 @@
             apiKey: document.getElementById('api-key-input'),
             apiModel: document.getElementById('api-model-select'),
             apiTemp: document.getElementById('api-temp-input'),
+            linkResolverEndpoint: document.getElementById('link-resolver-endpoint-input'),
             bgActivityToggle: document.getElementById('bg-activity-toggle'),
             systemNotificationToggle: document.getElementById('system-notification-toggle'),
             minimaxRegion: document.getElementById('minimax-region-select'),
@@ -2540,6 +2548,12 @@
                 UI.inputs.apiKey.value = tempApiConfig.apiKey || '';
                 syncSelectValue(UI.inputs.apiModel, tempApiConfig.model || '');
                 UI.inputs.apiTemp.value = tempApiConfig.temperature ?? 0.7;
+                linkResolverConfig = window.getLinkResolverConfig
+                    ? window.getLinkResolverConfig()
+                    : linkResolverConfig;
+                if (UI.inputs.linkResolverEndpoint) {
+                    UI.inputs.linkResolverEndpoint.value = linkResolverConfig.endpoint || '';
+                }
                 syncBackgroundActivityControls();
                 syncSystemNotificationControls();
 
@@ -2606,6 +2620,19 @@
         const confirmApiBtn = document.getElementById('confirm-api-btn');
         if (confirmApiBtn) {
             confirmApiBtn.addEventListener('click', () => {
+                const resolverEndpoint = UI.inputs.linkResolverEndpoint
+                    ? UI.inputs.linkResolverEndpoint.value.trim()
+                    : '';
+                if (resolverEndpoint) {
+                    try {
+                        const parsedResolverUrl = new URL(resolverEndpoint);
+                        if (!['http:', 'https:'].includes(parsedResolverUrl.protocol)) throw new Error('invalid protocol');
+                    } catch (_) {
+                        showToast('外链解析地址无效');
+                        return;
+                    }
+                }
+
                 tempApiConfig.endpoint = UI.inputs.apiEndpoint.value;
                 tempApiConfig.apiKey = UI.inputs.apiKey.value;
                 tempApiConfig.model = UI.inputs.apiModel.value;
@@ -2622,6 +2649,10 @@
                 applySystemNotificationControls(false);
                 
                 window.apiConfig = apiConfig;
+                linkResolverConfig = window.setLinkResolverConfig
+                    ? window.setLinkResolverConfig({ ...linkResolverConfig, endpoint: resolverEndpoint })
+                    : { ...linkResolverConfig, endpoint: resolverEndpoint };
+                window.linkResolverConfig = linkResolverConfig;
                 saveGlobalData();
                 syncAssistiveBallPanel();
                 

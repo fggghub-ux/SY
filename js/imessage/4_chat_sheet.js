@@ -196,6 +196,12 @@ function createAttachmentSheet(page) {
                                 </div>
                                 <div class="attachment-more-pay-label">Pay</div>
                             </div>
+                            <div class="attachment-more-link-entry">
+                                <div class="attachment-more-link-icon">
+                                    <i class="fas fa-link"></i>
+                                </div>
+                                <div class="attachment-more-link-label">链接</div>
+                            </div>
                             <div class="attachment-more-voice-entry">
                                 <div class="attachment-more-voice-icon">
                                     <i class="fas fa-microphone-alt"></i>
@@ -236,6 +242,7 @@ function createAttachmentSheet(page) {
                         #chat-attachment-sheet ::-webkit-scrollbar { display: none; }
 
                         .attachment-more-pay-entry,
+                        .attachment-more-link-entry,
                         .attachment-more-voice-entry,
                         .attachment-more-listen-entry,
                         .attachment-more-narration-entry,
@@ -249,6 +256,7 @@ function createAttachmentSheet(page) {
                             transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.2s;
                         }
                         .attachment-more-pay-entry:active,
+                        .attachment-more-link-entry:active,
                         .attachment-more-voice-entry:active,
                         .attachment-more-listen-entry:active,
                         .attachment-more-narration-entry:active,
@@ -462,6 +470,7 @@ function createAttachmentSheet(page) {
         const tabsContainer = attachmentSheet.querySelector('.sheet-tabs-container');
         const tabItems = attachmentSheet.querySelectorAll('.sheet-tab-item');
         const payEntry = attachmentSheet.querySelector('.attachment-more-pay-entry');
+        const linkEntry = attachmentSheet.querySelector('.attachment-more-link-entry');
         const regenerateEntry = attachmentSheet.querySelector('.attachment-more-regenerate-entry');
         const voiceEntry = attachmentSheet.querySelector('.attachment-more-voice-entry');
         const listenEntry = attachmentSheet.querySelector('.attachment-more-listen-entry');
@@ -4775,6 +4784,17 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
         if (payEntry) {
             payEntry.addEventListener('click', () => {
                 openPayTransferForm();
+            });
+        }
+
+        if (linkEntry) {
+            linkEntry.addEventListener('click', () => {
+                closeSheet();
+                if (window.imChat.openLinkComposer) {
+                    window.imChat.openLinkComposer();
+                } else if (window.showToast) {
+                    window.showToast('链接功能加载失败');
+                }
             });
         }
 

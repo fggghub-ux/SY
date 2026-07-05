@@ -60,10 +60,15 @@
         
         if (confirmBtn) {
             confirmBtn.textContent = options.confirmText || '确定';
-            if (options.isDestructive) {
+            if (options.confirmTone === 'dark') {
+                confirmBtn.style.color = '#fff';
+                confirmBtn.style.background = '#111';
+            } else if (options.isDestructive) {
                 confirmBtn.style.color = '#ff3b30';
+                confirmBtn.style.background = '';
             } else {
                 confirmBtn.style.color = '#007aff';
+                confirmBtn.style.background = '';
             }
             confirmBtn.onclick = () => {
                 window.closeView(overlay);
@@ -84,6 +89,8 @@
             if (promptConfirmBtn) {
                 promptConfirmBtn.style.display = 'block';
                 promptConfirmBtn.textContent = options.confirmText || '确定';
+                promptConfirmBtn.style.background = options.confirmTone === 'dark' ? '#111' : '#007aff';
+                promptConfirmBtn.style.color = '#fff';
                 promptConfirmBtn.onclick = () => {
                     window.closeView(overlay);
                     if (options.onConfirm) options.onConfirm(modalInput ? modalInput.value : '');

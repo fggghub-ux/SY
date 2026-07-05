@@ -103,6 +103,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!message) return '';
         if (message.type === 'sticker') return `[表情] ${message.stickerCategory ? `${message.stickerCategory} / ` : ''}${message.stickerName || message.text || ''}`.trim();
         if (message.type === 'image') return `[图片] ${message.description || message.text || message.content || ''}`.trim();
+        if (message.type === 'link') {
+            const link = message.linkData || {};
+            const readable = link.bodyText || link.description || '';
+            return `[链接] ${link.platformLabel || '网页'}：${link.title || message.content || ''}${readable ? `\n${String(readable).slice(0, 1200)}` : '\n（未读取页面正文）'}`.trim();
+        }
         if (message.type === 'voice_message') return `[语音] ${message.transcript || message.text || message.content || ''}`.trim();
         if (message.type === 'pay_transfer') return `[转账] ${message.description || message.content || ''}`.trim();
         return String(message.content || message.text || message.description || '').trim();
@@ -153,7 +158,15 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
 
     function getRecentContextText(friend) {
         if (!Array.isArray(friend.messages)) return '';
-        return friend.messages.slice(-10).map(m => String(m.content || m.text || '')).join('\n');
+        return friend.messages.slice(-10).map(m => {
+            if (m && m.type === 'link') {
+                const link = m.linkData || {};
+                return [link.title || m.content || '', link.description || '', String(link.bodyText || '').slice(0, 5000)]
+                    .filter(Boolean)
+                    .join('\n');
+            }
+            return String(m && (m.content || m.text) || '');
+        }).join('\n');
     }
 
     function resolveMountedSticker(friend, categoryName, stickerName) {
@@ -678,9 +691,7 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
 
     function buildLinkedAccountPrompt(friend, currentUserState) {
         const normalizedFriend = window.imApp.normalizeFriendData(friend || {});
-        const recentText = Array.isArray(normalizedFriend.messages)
-            ? normalizedFriend.messages.slice(-10).map(m => m.content || m.text || '').join('\n')
-            : '';
+        const recentText = getRecentContextText(normalizedFriend);
         const worldBookContextText = [recentText, normalizedFriend.memory?.overview || ''].filter(Boolean).join('\n');
         const systemDepthWorldBookContext = window.imApp?.getWorldBookContextForFriendByPosition
             ? window.imApp.getWorldBookContextForFriendByPosition('system_depth', normalizedFriend, worldBookContextText)
@@ -1543,6 +1554,13 @@ ${pendingRegenerateContext.previousReply || 'None'}` : '';
                 if (m.timestamp) {
                     timeStr = formatDetailedTime(m.timestamp);
                 }
+                if (m.type === 'link') {
+                    const link = m.linkData || {};
+                    const readable = [link.title || m.content || '', link.description || '', String(link.bodyText || '').slice(0, 5000)]
+                        .filter(Boolean)
+                        .join('\n');
+                    return `${timeStr}${readable}`;
+                }
                 return `${timeStr}${m.content || m.text || ''}`;
             }).join('\n');
         }
@@ -1594,29 +1612,42 @@ ${pendingRegenerateContext.previousReply || 'None'}` : '';
                 await Promise.all(mountedMembers.map(member => window.imApp.ensureFriendMessagesLoaded(member)));
             }
 
-            const availablePrivateChatContacts = (window.imData.friends || [])
-                .filter(item => item && (item.type === 'char' || item.type === 'npc'));
             const memberFriendChatCandidates = groupMembers.map(member => {
-                const relationshipMap = new Map(
-                    (Array.isArray(member.memory?.relationships) ? member.memory.relationships : [])
-                        .map(relation => [String(relation?.npcId || ''), String(relation?.relation || '').trim()])
-                        .filter(([id]) => id)
-                );
-                const candidates = availablePrivateChatContacts
-                    .filter(contact => String(contact.id) !== String(member.id))
-                    .map(contact => ({
-                        id: String(contact.id),
-                        name: contact.nickname || contact.realName || '未命名好友',
-                        persona: String(contact.persona || contact.signature || '').trim(),
-                        relationship: relationshipMap.get(String(contact.id)) || '',
-                        inRelationshipNetwork: relationshipMap.has(String(contact.id)),
-                        inCurrentGroup: groupMembers.some(groupMember => String(groupMember.id) === String(contact.id))
-                    }))
-                    .sort((a, b) => Number(b.inRelationshipNetwork) - Number(a.inRelationshipNetwork));
+                const relationshipCandidates = (Array.isArray(member.memory?.relationships) ? member.memory.relationships : [])
+                    .map(relation => {
+                        const contact = (window.imData.friends || []).find(item => {
+                            if (!item || (item.type !== 'char' && item.type !== 'npc')) return false;
+                            return String(item.id) === String(relation?.npcId || '');
+                        });
+                        if (!contact || String(contact.id) === String(member.id)) return null;
+                        return {
+                            recipientId: String(contact.id),
+                            name: contact.nickname || contact.realName || '未命名好友',
+                            persona: String(contact.persona || contact.signature || '').trim(),
+                            relationship: String(relation?.relation || '').trim(),
+                            inCurrentGroup: groupMembers.some(groupMember => String(groupMember.id) === String(contact.id))
+                        };
+                    })
+                    .filter(Boolean);
+                const linkedCandidates = (window.imApp.normalizeLinkedAccountChats
+                    ? window.imApp.normalizeLinkedAccountChats(member.linkedAccountChats)
+                    : (Array.isArray(member.linkedAccountChats) ? member.linkedAccountChats : []))
+                    .map(chat => ({
+                        linkedChatId: String(chat.id),
+                        name: chat.remark || chat.name || chat.realName || '未命名好友',
+                        realName: chat.realName || chat.name || '',
+                        persona: String(chat.persona || '').trim(),
+                        relationship: String(chat.relationship || '').trim(),
+                        recentMessages: Array.isArray(chat.messages)
+                            ? chat.messages.slice(-4).map(message => ({ role: message.role, text: message.text }))
+                            : []
+                    }));
                 return {
                     speaker: member.nickname,
                     speakerId: String(member.id),
-                    candidates
+                    relationshipCandidates,
+                    linkedCandidates,
+                    canGeneratePrivateFriend: relationshipCandidates.length === 0
                 };
             });
 
@@ -1648,6 +1679,9 @@ ${pendingRegenerateContext.previousReply || 'None'}` : '';
                                     text = `[表情包] ${msg.stickerCategory ? `${msg.stickerCategory} / ` : ''}${msg.stickerName || msg.text || '表情包'}`;
                                 } else if (msg.type === 'image') {
                                     text = `[图片] ${msg.description || msg.text || msg.fileName || '图片'}`;
+                                } else if (msg.type === 'link') {
+                                    const link = msg.linkData || {};
+                                    text = `[链接] ${link.platformLabel || '网页'}：${link.title || msg.content || ''} ${link.description || (link.bodyText ? String(link.bodyText).slice(0, 500) : '未读取正文')}`;
                                 } else if (msg.type === 'pay_transfer') {
                                     text = `[转账相关消息] ${msg.description || ''}`;
                                 }
@@ -1686,7 +1720,7 @@ ${membersInfo}
 只允许以下这些成员发言：
 ${allowedSpeakerNames.length > 0 ? allowedSpeakerNames.join('、') : 'None'}
 
-群成员可私聊的现有好友候选（recipientId 必须从这里选择；关系网成员已优先排列）：
+群成员可私聊的好友候选（优先关系网，其次复用角色已有私有联系人；只有 canGeneratePrivateFriend 为 true 时才允许按人设生成新好友）：
 ${JSON.stringify(memberFriendChatCandidates)}${afterRoleWorldBookContext ? `\n\n角色后规则：\n${afterRoleWorldBookContext}` : ''}
 
 群聊特定规则：
@@ -1701,6 +1735,7 @@ ${JSON.stringify(memberFriendChatCandidates)}${afterRoleWorldBookContext ? `\n\n
 8a. 语音气泡格式可以为 {"type":"voice","speaker":"成员名","text":"语音内容","thought":"该成员此刻的心理活动，10-30字心声，基于当前聊天上下文","translation":"中文翻译或空字符串","quote":"被引用内容或空字符串"}。
 8b. 表情包格式可以为 {"type":"sticker","speaker":"成员名","category":"分类名","name":"表情包名","thought":"该成员此刻的心理活动，10-30字心声，基于当前聊天上下文"}；只能使用 Available Stickers 中列出的已绑定分类和名称。
 8c. 图片格式可以为 {"type":"image","speaker":"成员名","description":"图片内容文字","thought":"该成员此刻的心理活动，10-30字心声，基于当前聊天上下文"}；图片会使用系统默认图展示，description 必须具体描述这张图的内容。
+8d. 【真人撤回行为】：群成员可以像真人聊天一样偶尔手滑打错字、叫错名字、把话发给错人，或在冲动表达、暴露真心、说得太重、越过关系边界后突然反悔撤回。要模拟“先发出去再撤回”，必须先输出一条普通 text 气泡，紧接着输出同一 speaker 的 recall 对象，并且 recall.text 必须与上一条被撤回气泡的 text 完全一致。打错字后可以再补发一条自然的更正；反悔后可以沉默、装作无事发生、含糊解释或换一句更克制的话，不必每次都解释。格式示例：{"type":"text","speaker":"成员名","text":"你今晚来找她吧","thought":"突然发现自己打错了字","translation":"","quote":""},{"type":"recall","speaker":"成员名","text":"你今晚来找她吧"},{"type":"text","speaker":"成员名","text":"打错了，是来找我","thought":"有点尴尬但想装作自然","translation":"","quote":""}。撤回只能偶尔发生，必须由当下情绪和人设触发，禁止每轮固定撤回或为了展示功能而撤回。
 9. speaker 必须且只能使用以上允许发言名单中的完整准确名字。
 10. translation 只能翻译当前这一条 text；如果 text 不是中文，translation 必须填写自然中文翻译；如果 text 本身是中文，translation 必须是空字符串。
 11. quote 只有在你确实想引用用户或上一条消息时才填写，否则必须是空字符串。
@@ -1709,10 +1744,10 @@ ${JSON.stringify(memberFriendChatCandidates)}${afterRoleWorldBookContext ? `\n\n
 14. 【群聊衍生私信｜严格按需】：群成员只有在自己明确觉得某些话不适合公开说、不能让其他成员知道，或必须避开群内其他人单独告诉 User 时，才可以在本轮群聊回复之外给 User 发私信。普通寒暄、公开可说的话、对群消息的常规回应不得转成私信；私信也不得复制群内公开回复。
 15. 如果没有真实且具体的保密动机，完全不要输出私信标签。需要私信时，在 <chat_json>...</chat_json> 之外额外输出且只输出一个 <group_private_messages>...</group_private_messages> 标签，标签内必须是合法 JSON 数组，格式为：[{"speaker":"成员完整准确名字","messages":[{"text":"第一条私信","translation":"中文翻译或空字符串"},{"text":"第二条私信","translation":"中文翻译或空字符串"}]}]。
 16. 每个发私信的成员必须属于允许发言名单，每名成员必须连续发送 2-5 条私信；可以有多名成员，但每个人都必须有独立且合理的保密动机。其他成员不知道这些私信内容，后续群聊也不得默认其他成员已经知情。
-17. 【成员与自己好友的私聊｜可选】：当群内话题、人设、关系或刚发生的事情让某位群成员自然地想联系自己的关系网成员或其他现有好友时，可以额外生成好友私聊。不要为了凑格式强行生成，也不要虚构候选名单之外的人。
-18. 需要生成时，在 <chat_json>...</chat_json> 之外额外输出且只输出一个 <group_friend_private_chats>...</group_friend_private_chats> 标签。格式为：[{"speaker":"群成员完整准确名字","recipientId":"好友候选中的准确ID","rounds":[{"speakerMessages":[{"text":"成员消息"}],"friendMessages":[{"text":"好友回复"}]},{"speakerMessages":[{"text":"成员消息"}],"friendMessages":[{"text":"好友回复"}]}]}]。
+17. 【成员与自己好友的私聊｜可选】：当群内话题、人设、关系或刚发生的事情让某位群成员自然地想联系自己的好友时，可以额外生成好友私聊。优先选择 relationshipCandidates；没有合适关系网对象时可复用 linkedCandidates。只有 canGeneratePrivateFriend 为 true 且现有私有联系人也不合适时，才可按该成员人设创造一个合理的新好友。
+18. 需要生成时，在 <chat_json>...</chat_json> 之外额外输出且只输出一个 <group_friend_private_chats>...</group_friend_private_chats> 标签。已有关系网好友使用 recipientId；已有私有联系人使用 linkedChatId；生成新好友使用 generatedRecipient，三者只能选一个。格式示例：[{"speaker":"群成员完整准确名字","recipientId":"关系网候选准确ID","rounds":[...]},{"speaker":"群成员完整准确名字","linkedChatId":"已有私有联系人准确ID","rounds":[...]},{"speaker":"群成员完整准确名字","generatedRecipient":{"realName":"真实姓名","remark":"该成员给此人的备注","persona":"人物设定","relationship":"与该成员的关系"},"rounds":[...]}]。
 19. 每段好友私聊必须有 2-4 轮完整往返。每一轮先由群成员连续发送 2-5 条 speakerMessages，再由好友连续回复 2-5 条 friendMessages；消息必须承接上一轮，形成真实连续的私聊，不能是互不相关的句子。
-20. speaker 必须是当前群成员，recipientId 必须来自该 speaker 的好友候选且不能指向 speaker 自己。可以联系同群成员，但这仍是群外私聊。每段好友私聊只属于发送成员与收件好友，其他群成员默认不知道内容，后续不得串用。${languageRequirement}
+20. speaker 必须是当前群成员；recipientId 或 linkedChatId 必须来自该 speaker 对应候选。generatedRecipient 只在 canGeneratePrivateFriend 为 true 时有效，并且姓名、关系、人设必须互相一致且不能复制已有联系人。每段好友私聊只属于发送成员与收件好友，其他群成员默认不知道内容，后续不得串用。${languageRequirement}
 
 群聊的背景与关系记忆:
 ${commonMemorySections || 'None'}${dynamicActionNarrationRequirement}`;
@@ -1790,6 +1825,7 @@ Reply naturally as your character in a chat app.
 5a. 语音对象格式可以为 {"type":"voice","text":"语音内容","translation":"该条语音的中文翻译或空字符串","quote":"被引用内容或空字符串"}。
 5b. 表情包对象格式可以为 {"type":"sticker","category":"分类名","name":"表情包名"}；只能使用 Available Stickers 中列出的已绑定分类和名称。
 5c. 图片对象格式可以为 {"type":"image","description":"图片内容文字"}；图片会使用系统默认图展示，description 必须具体描述这张图的内容。
+5d. 【真人撤回行为】：你可以像真人聊天一样偶尔手滑打错字、叫错名字、把话发错，或在冲动表达、暴露真心、说得太重、越过关系边界后突然反悔撤回。要模拟“先发出去再撤回”，必须先输出一条普通 text 气泡，紧接着输出 recall 对象，并且 recall.text 必须与上一条被撤回气泡的 text 完全一致。打错字后可以自然补发正确内容；反悔后可以沉默、装作无事发生、含糊带过或换一句更克制的话，不必主动说明自己为何撤回。格式示例：{"type":"text","text":"我其实一直很想你","translation":"","quote":""},{"type":"recall","text":"我其实一直很想你"},{"type":"text","text":"没什么，你早点睡","translation":"","quote":""}。撤回只能偶尔发生，必须由当前情绪、人设和关系推动，禁止每轮固定撤回或为了展示功能而撤回。
 6. 支付对象格式必须为 {"type":"payment","paymentAction":"receive|reject|transfer|pay_for_friend","amount":88.88,"description":"原因或商品名"}。
 7. 当 paymentAction 为 receive 时，表示收下转账；为 reject 时退回转账；为 transfer 时主动转账；如果用户发来了【[代付请求]】卡片，且你愿意帮他付款，必须使用 "pay_for_friend" 并把 amount 设为代付总价，description 设为商品名称。paymentAction 也可以是 "family_card" (给亲属卡) 或 "family_card_increase" (亲属卡提额)。
 7. translation 只能翻译当前这一条 text；如果 text 不是中文，translation 必须填写自然中文翻译；如果 text 本身是中文，translation 必须是空字符串。
@@ -1995,14 +2031,85 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                             const member = window.imChat.normalizeGroupSpeaker(friend, entry.speaker);
                             if (!member) return null;
 
-                            const recipientId = String(entry.recipientId || '').trim();
-                            const recipient = (window.imData.friends || []).find(item => {
-                                if (!item || (item.type !== 'char' && item.type !== 'npc')) return false;
-                                return String(item.id) === recipientId;
-                            });
-                            if (!recipient || String(recipient.id) === String(member.id)) return null;
+                            const relationshipIds = new Set(
+                                (Array.isArray(member.memory?.relationships) ? member.memory.relationships : [])
+                                    .map(item => String(item?.npcId || '').trim())
+                                    .filter(Boolean)
+                            );
+                            const resolvedRelationshipIds = new Set(
+                                Array.from(relationshipIds).filter(id => (window.imData.friends || []).some(item => {
+                                    return item && (item.type === 'char' || item.type === 'npc') && String(item.id) === id;
+                                }))
+                            );
+                            const linkedChats = window.imApp.normalizeLinkedAccountChats
+                                ? window.imApp.normalizeLinkedAccountChats(member.linkedAccountChats)
+                                : (Array.isArray(member.linkedAccountChats) ? member.linkedAccountChats : []);
+                            let recipient = null;
+                            let recipientKey = '';
 
-                            const pairKey = `${String(member.id)}::${String(recipient.id)}`;
+                            const recipientId = String(entry.recipientId || '').trim();
+                            const linkedChatId = String(entry.linkedChatId || '').trim();
+                            if (recipientId && resolvedRelationshipIds.has(recipientId)) {
+                                const contact = (window.imData.friends || []).find(item => {
+                                    if (!item || (item.type !== 'char' && item.type !== 'npc')) return false;
+                                    return String(item.id) === recipientId;
+                                });
+                                if (contact && String(contact.id) !== String(member.id)) {
+                                    const relationship = (Array.isArray(member.memory?.relationships) ? member.memory.relationships : [])
+                                        .find(item => String(item?.npcId || '') === recipientId)?.relation || '';
+                                    recipient = {
+                                        kind: 'contact',
+                                        id: String(contact.id),
+                                        name: contact.nickname || contact.realName || '好友',
+                                        realName: contact.realName || contact.nickname || '好友',
+                                        remark: contact.nickname || contact.realName || '好友',
+                                        persona: String(contact.persona || contact.signature || '').trim(),
+                                        relationship: String(relationship || '').trim(),
+                                        avatarSeed: String(contact.id)
+                                    };
+                                    recipientKey = `contact:${recipient.id}`;
+                                }
+                            } else if (linkedChatId) {
+                                const linkedChat = linkedChats.find(chat => String(chat.id) === linkedChatId);
+                                if (linkedChat) {
+                                    recipient = {
+                                        kind: 'linked',
+                                        id: String(linkedChat.id),
+                                        linkedChatId: String(linkedChat.id),
+                                        name: linkedChat.name,
+                                        realName: linkedChat.realName || linkedChat.name,
+                                        remark: linkedChat.remark || linkedChat.name,
+                                        persona: linkedChat.persona || '',
+                                        relationship: linkedChat.relationship || '',
+                                        avatarSeed: linkedChat.avatarSeed || String(linkedChat.id),
+                                        sourceNpcId: linkedChat.sourceNpcId || ''
+                                    };
+                                    recipientKey = `linked:${linkedChat.id}`;
+                                }
+                            } else if (entry.generatedRecipient && typeof entry.generatedRecipient === 'object' && resolvedRelationshipIds.size === 0) {
+                                const generated = entry.generatedRecipient;
+                                const realName = String(generated.realName || generated.name || '').trim();
+                                const remark = String(generated.remark || generated.name || realName).trim();
+                                const normalizedName = (remark || realName).toLowerCase();
+                                const duplicate = linkedChats.some(chat => [chat.name, chat.realName, chat.remark]
+                                    .some(value => String(value || '').trim().toLowerCase() === normalizedName));
+                                if ((realName || remark) && !duplicate) {
+                                    recipient = {
+                                        kind: 'generated',
+                                        id: '',
+                                        name: remark || realName,
+                                        realName: realName || remark,
+                                        remark: remark || realName,
+                                        persona: String(generated.persona || '').trim(),
+                                        relationship: String(generated.relationship || '').trim(),
+                                        avatarSeed: String(generated.avatarSeed || remark || realName).trim()
+                                    };
+                                    recipientKey = `generated:${normalizedName}`;
+                                }
+                            }
+
+                            if (!recipient || !recipientKey) return null;
+                            const pairKey = `${String(member.id)}::${recipientKey}`;
                             if (seenPairs.has(pairKey)) return null;
 
                             const normalizeRoundMessages = (items) => (Array.isArray(items) ? items : [])
@@ -2295,6 +2402,16 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                         };
                     }
 
+                    if (itemType === 'recall') {
+                        const text = typeof item.text === 'string' ? item.text.trim() : '';
+                        if (!text) return null;
+                        return {
+                            kind: 'recall',
+                            text,
+                            speaker: typeof item.speaker === 'string' ? item.speaker.trim() : ''
+                        };
+                    }
+
                     if (itemType === 'voice') {
                         const text = typeof item.text === 'string' ? item.text.trim() : '';
                         if (!text) return null;
@@ -2495,6 +2612,72 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
             async function processNextSentence() {
                 if (!isConversationCurrent()) return false;
                 const currentItem = queueItems[qIndex] || {};
+
+                if (currentItem.kind === 'recall') {
+                    const activeFriend = getLiveFriendById(friend.id) || friend;
+                    let actorName = activeFriend.nickname || activeFriend.realName || '对方';
+                    if (activeFriend.type === 'group') {
+                        const member = window.imChat.normalizeGroupSpeaker(activeFriend, currentItem.speaker);
+                        if (!member) {
+                            qIndex++;
+                            return true;
+                        }
+                        actorName = member.nickname || member.realName || '群成员';
+                        lastGroupSpeaker = actorName;
+                    }
+
+                    const matchedMessage = (Array.isArray(activeFriend.messages) ? activeFriend.messages : [])
+                        .slice()
+                        .reverse()
+                        .find(message => {
+                            if (!message || message.role !== 'assistant' || message.type === 'system_notice') return false;
+                            if (String(message.apiRunId || '') !== String(apiRunId)) return false;
+                            if (activeFriend.type === 'group' && String(message.speaker || '').trim() !== actorName) return false;
+                            const originalText = String(
+                                message.transcript || message.description || message.text || message.content || ''
+                            ).trim();
+                            return originalText === String(currentItem.text || '').trim();
+                        }) || null;
+                    const nowMsg = matchedMessage?.timestamp || Date.now();
+                    const recallNotice = window.imApp.createRecalledNoticeMessage(matchedMessage, {
+                        actorRole: 'assistant',
+                        actorName,
+                        recalledContent: currentItem.text,
+                        timestamp: nowMsg,
+                        apiRunId
+                    });
+                    const saved = matchedMessage && window.imApp.updateFriendMessage
+                        ? await window.imApp.updateFriendMessage(activeFriend.id || friend.id, {
+                            id: matchedMessage.id || null,
+                            timestamp: matchedMessage.timestamp || null
+                        }, (storedMessage) => {
+                            Object.keys(storedMessage).forEach(key => delete storedMessage[key]);
+                            Object.assign(storedMessage, recallNotice);
+                        }, { silent: true })
+                        : (window.imApp.appendFriendMessage
+                            ? await window.imApp.appendFriendMessage(activeFriend.id || friend.id, recallNotice, { silent: true })
+                            : false);
+                    if (!saved) {
+                        if (!options.silent && window.showToast) window.showToast('撤回消息保存失败');
+                        return false;
+                    }
+
+                    const freshContainer = getSafeContainer();
+                    const isUserStillLooking = window.imData.currentActiveFriend
+                        && String(window.imData.currentActiveFriend.id) === String(activeFriend.id)
+                        && freshContainer;
+                    if (isUserStillLooking && matchedMessage && window.imChat.rerenderChatContainer) {
+                        const updatedFriend = getLiveFriendById(activeFriend.id) || activeFriend;
+                        window.imChat.rerenderChatContainer(updatedFriend, freshContainer, { scroll: true });
+                    } else if (isUserStillLooking && window.imChat.renderSystemNoticeBubble) {
+                        window.imChat.renderSystemNoticeBubble(recallNotice, activeFriend, freshContainer, nowMsg);
+                    } else if (window.showBannerNotification) {
+                        window.showBannerNotification(activeFriend, `${actorName}撤回了一条消息`);
+                    }
+
+                    qIndex++;
+                    return true;
+                }
 
                 if (currentItem.kind === 'action_narration') {
                     const activeFriend = getLiveFriendById(friend.id) || friend;
@@ -3103,18 +3286,24 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                 for (const privateChat of groupFriendPrivateChats) {
                     if (!isConversationCurrent()) return;
                     const sender = getLiveFriendById(privateChat.member.id) || privateChat.member;
-                    const recipient = getLiveFriendById(privateChat.recipient.id) || privateChat.recipient;
-                    if (!sender || !recipient || String(sender.id) === String(recipient.id)) continue;
+                    const recipient = privateChat.recipient;
+                    if (!sender || !recipient) continue;
 
                     const normalizedExistingChats = window.imApp.normalizeLinkedAccountChats
                         ? window.imApp.normalizeLinkedAccountChats(sender.linkedAccountChats)
                         : (Array.isArray(sender.linkedAccountChats) ? sender.linkedAccountChats : []);
-                    const existingThread = normalizedExistingChats.find(chat => String(chat.sourceNpcId || '') === String(recipient.id));
-                    const linkedChatId = existingThread?.id || window.imChat.createMessageId('linked-chat');
+                    const sourceNpcId = recipient.kind === 'contact'
+                        ? String(recipient.id || '')
+                        : String(recipient.sourceNpcId || '');
+                    const existingThread = recipient.kind === 'linked'
+                        ? normalizedExistingChats.find(chat => String(chat.id) === String(recipient.linkedChatId || recipient.id))
+                        : (sourceNpcId
+                            ? normalizedExistingChats.find(chat => String(chat.sourceNpcId || '') === sourceNpcId)
+                            : null);
+                    const linkedChatId = existingThread?.id || recipient.linkedChatId || window.imChat.createMessageId('linked-chat');
                     const senderName = sender.nickname || sender.realName || '群成员';
-                    const recipientName = recipient.nickname || recipient.realName || '好友';
-                    const relationship = (Array.isArray(sender.memory?.relationships) ? sender.memory.relationships : [])
-                        .find(item => String(item?.npcId || '') === String(recipient.id))?.relation || '';
+                    const recipientName = recipient.remark || recipient.name || recipient.realName || '好友';
+                    const relationship = String(recipient.relationship || '').trim();
                     const snapshotMessages = [];
 
                     privateChat.rounds.forEach((round, roundIndex) => {
@@ -3145,18 +3334,22 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                                 ? window.imApp.normalizeLinkedAccountChats(targetSender.linkedAccountChats)
                                 : (Array.isArray(targetSender.linkedAccountChats) ? targetSender.linkedAccountChats : []);
 
-                            let targetThread = targetSender.linkedAccountChats.find(chat => String(chat.sourceNpcId || '') === String(recipient.id));
+                            let targetThread = recipient.kind === 'linked'
+                                ? targetSender.linkedAccountChats.find(chat => String(chat.id) === String(linkedChatId))
+                                : (sourceNpcId
+                                    ? targetSender.linkedAccountChats.find(chat => String(chat.sourceNpcId || '') === sourceNpcId)
+                                    : null);
                             if (!targetThread) {
                                 const now = Date.now();
                                 targetThread = {
                                     id: linkedChatId,
                                     name: recipientName,
                                     realName: recipient.realName || recipientName,
-                                    remark: recipient.nickname || recipientName,
-                                    persona: String(recipient.persona || recipient.signature || '').trim(),
+                                    remark: recipient.remark || recipientName,
+                                    persona: String(recipient.persona || '').trim(),
                                     relationship,
-                                    avatarSeed: String(recipient.id),
-                                    sourceNpcId: String(recipient.id),
+                                    avatarSeed: String(recipient.avatarSeed || sourceNpcId || recipientName),
+                                    sourceNpcId,
                                     messages: [],
                                     createdAt: now,
                                     updatedAt: now,
@@ -3184,7 +3377,7 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                         console.warn('[iMessage] Failed to persist a group member friend chat', {
                             groupId: friend.id,
                             senderId: sender.id,
-                            recipientId: recipient.id,
+                            recipientId: recipient.id || recipient.linkedChatId || recipientName,
                             apiRunId
                         });
                         continue;
@@ -3202,7 +3395,7 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                                 privateChatSnapshot: {
                                     senderId: String(sender.id),
                                     senderName,
-                                    recipientId: String(recipient.id),
+                                    recipientId: sourceNpcId,
                                     recipientName,
                                     linkedChatId,
                                     messages: snapshotMessages.map(message => ({ ...message }))
@@ -3314,6 +3507,10 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                 if (!msg) return '';
                 if (msg.type === 'sticker') return `[表情] ${msg.stickerCategory ? `${msg.stickerCategory} / ` : ''}${msg.stickerName || msg.text || ''}`.trim();
                 if (msg.type === 'image') return `[图片] ${msg.description || msg.content || msg.text || ''}`.trim();
+                if (msg.type === 'link') {
+                    const link = msg.linkData || {};
+                    return `[链接] ${link.platformLabel || '网页'}：${link.title || msg.content || ''}`.trim();
+                }
                 if (msg.type === 'voice_message') return `[语音] ${msg.transcript || msg.content || msg.text || ''}`.trim();
                 if (msg.type === 'pay_transfer') return `[支付] ${msg.description || msg.content || ''}`.trim();
                 return String(msg.content || msg.text || msg.description || '').trim();

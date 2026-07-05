@@ -230,6 +230,7 @@
             u2_userState: 'userState',
             u2_apiConfig: 'apiConfig',
             u2_minimaxConfig: 'minimaxConfig',
+            u2_linkResolverConfig: 'linkResolverConfig',
             u2_apiPresets: 'apiPresets',
             u2_fetchedModels: 'fetchedModels',
             u2_assistiveBallSettings: 'assistiveBallSettings',
@@ -857,6 +858,8 @@
             role: safe.role || 'assistant',
             type: safe.type || 'text',
             noticeKind: typeof safe.noticeKind === 'string' ? safe.noticeKind : '',
+            actorRole: safe.actorRole === 'user' || safe.actorRole === 'assistant' ? safe.actorRole : '',
+            actorName: typeof safe.actorName === 'string' ? safe.actorName : '',
             content: typeof safe.content === 'string' ? safe.content : '',
             text: typeof safe.text === 'string' ? safe.text : '',
             transcript: typeof safe.transcript === 'string' ? safe.transcript : '',
@@ -899,6 +902,9 @@
             payStatus: safe.payStatus,
             claimed: !!safe.claimed,
             imageSource: safe.imageSource,
+            linkData: safe.linkData && typeof safe.linkData === 'object'
+                ? sanitizePersistentValue(cloneDeep(safe.linkData))
+                : null,
             packetId: safe.packetId,
             totalAmount: safe.totalAmount,
             claimRecords: safe.claimRecords,
@@ -909,11 +915,18 @@
     }
 
     function denormalizeMessageRecord(row) {
+        const inferredRecallActorRole = row.noticeKind === 'message_recalled'
+            ? (String(row.content || '').trim().startsWith('你撤回了') ? 'user' : 'assistant')
+            : '';
         return {
             id: row.id,
             role: row.role,
             type: row.type,
             noticeKind: row.noticeKind || '',
+            actorRole: row.actorRole === 'user' || row.actorRole === 'assistant'
+                ? row.actorRole
+                : inferredRecallActorRole,
+            actorName: row.actorName || '',
             content: row.content,
             text: row.text,
             transcript: row.transcript,
@@ -956,6 +969,9 @@
             payStatus: row.payStatus,
             claimed: !!row.claimed,
             imageSource: row.imageSource,
+            linkData: row.linkData && typeof row.linkData === 'object'
+                ? cloneDeep(row.linkData)
+                : null,
             packetId: row.packetId,
             totalAmount: row.totalAmount,
             claimRecords: row.claimRecords,
@@ -1834,6 +1850,14 @@
                         : 0.7
                 }
                 : { endpoint: '', apiKey: '', model: '', temperature: 0.7 },
+            linkResolverConfig: safe.linkResolverConfig && typeof safe.linkResolverConfig === 'object'
+                ? {
+                    endpoint: typeof safe.linkResolverConfig.endpoint === 'string' ? safe.linkResolverConfig.endpoint : '',
+                    timeoutMs: Number.isFinite(Number(safe.linkResolverConfig.timeoutMs))
+                        ? Math.min(30000, Math.max(3000, Math.round(Number(safe.linkResolverConfig.timeoutMs))))
+                        : 12000
+                }
+                : { endpoint: '', timeoutMs: 12000 },
             apiPresets: Array.isArray(safe.apiPresets) ? safe.apiPresets : [],
             fetchedModels: Array.isArray(safe.fetchedModels) ? safe.fetchedModels : [],
             assistiveBallSettings: safe.assistiveBallSettings && typeof safe.assistiveBallSettings === 'object'
@@ -1894,6 +1918,7 @@
             setSetting('userState', normalized.userState),
             setSetting('currentAccountId', normalized.currentAccountId),
             setSetting('apiConfig', normalized.apiConfig),
+            setSetting('linkResolverConfig', normalized.linkResolverConfig),
             setSetting('apiPresets', normalized.apiPresets),
             setSetting('fetchedModels', normalized.fetchedModels),
             setSetting('assistiveBallSettings', normalized.assistiveBallSettings),
@@ -1914,6 +1939,7 @@
             userState,
             currentAccountId,
             apiConfig,
+            linkResolverConfig,
             apiPresets,
             fetchedModels,
             assistiveBallSettings,
@@ -1927,6 +1953,7 @@
             getSetting('userState', null),
             getSetting('currentAccountId', null),
             getSetting('apiConfig', null),
+            getSetting('linkResolverConfig', null),
             getSetting('apiPresets', []),
             getSetting('fetchedModels', []),
             getSetting('assistiveBallSettings', { enabled: false }),
@@ -1943,6 +1970,7 @@
                 accounts: accountsRecord && Array.isArray(accountsRecord.value) ? accountsRecord.value : [],
                 currentAccountId,
                 apiConfig,
+                linkResolverConfig,
                 apiPresets,
                 fetchedModels,
                 assistiveBallSettings,
@@ -2067,6 +2095,7 @@
                     'userState': 'u2_userState',
                     'apiConfig': 'u2_apiConfig',
                     'minimaxConfig': 'u2_minimaxConfig',
+                    'linkResolverConfig': 'u2_linkResolverConfig',
                     'apiPresets': 'u2_apiPresets',
                     'fetchedModels': 'u2_fetchedModels',
                     'assistiveBallSettings': 'u2_assistiveBallSettings',
@@ -2105,6 +2134,7 @@
                     if (globalData.userState) StorageManager.save('u2_userState', globalData.userState);
                     if (globalData.apiConfig) StorageManager.save('u2_apiConfig', globalData.apiConfig);
                     if (globalData.minimaxConfig) StorageManager.save('u2_minimaxConfig', globalData.minimaxConfig);
+                    if (globalData.linkResolverConfig) StorageManager.save('u2_linkResolverConfig', globalData.linkResolverConfig);
                     if (globalData.apiPresets) StorageManager.save('u2_apiPresets', globalData.apiPresets);
                     if (globalData.fetchedModels) StorageManager.save('u2_fetchedModels', globalData.fetchedModels);
                     if (globalData.assistiveBallSettings) StorageManager.save('u2_assistiveBallSettings', globalData.assistiveBallSettings);
@@ -2115,6 +2145,7 @@
                     if (globalData.userState) localStorage.setItem('u2_userState', JSON.stringify(globalData.userState));
                     if (globalData.apiConfig) localStorage.setItem('u2_apiConfig', JSON.stringify(globalData.apiConfig));
                     if (globalData.minimaxConfig) localStorage.setItem('u2_minimaxConfig', JSON.stringify(globalData.minimaxConfig));
+                    if (globalData.linkResolverConfig) localStorage.setItem('u2_linkResolverConfig', JSON.stringify(globalData.linkResolverConfig));
                     if (globalData.apiPresets) localStorage.setItem('u2_apiPresets', JSON.stringify(globalData.apiPresets));
                     if (globalData.fetchedModels) localStorage.setItem('u2_fetchedModels', JSON.stringify(globalData.fetchedModels));
                     if (globalData.assistiveBallSettings) localStorage.setItem('u2_assistiveBallSettings', JSON.stringify(globalData.assistiveBallSettings));
@@ -2399,6 +2430,7 @@
             userState: 'u2_userState',
             apiConfig: 'u2_apiConfig',
             minimaxConfig: 'u2_minimaxConfig',
+            linkResolverConfig: 'u2_linkResolverConfig',
             apiPresets: 'u2_apiPresets',
             fetchedModels: 'u2_fetchedModels',
             assistiveBallSettings: 'u2_assistiveBallSettings',
@@ -2428,6 +2460,7 @@
             userState: 'u2_userState',
             apiConfig: 'u2_apiConfig',
             minimaxConfig: 'u2_minimaxConfig',
+            linkResolverConfig: 'u2_linkResolverConfig',
             apiPresets: 'u2_apiPresets',
             fetchedModels: 'u2_fetchedModels',
             assistiveBallSettings: 'u2_assistiveBallSettings',

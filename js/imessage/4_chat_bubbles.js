@@ -232,6 +232,7 @@ function openNarrationNoticeEditor(msg, friend, container) {
             title: '编辑旁白/动描',
             placeholder: '修改旁白/动描...',
             confirmText: '保存',
+            confirmTone: 'dark',
             defaultValue: currentText,
             onCancel: resetPromptLayout,
             onConfirm: async (newValue) => {
@@ -294,6 +295,35 @@ function openNarrationNoticeEditor(msg, friend, container) {
         }, 10);
     }
 
+function openRecalledMessageDetail(content) {
+        const modal = document.getElementById('recalled-message-detail-modal');
+        const contentEl = document.getElementById('recalled-message-detail-content');
+        const closeBtn = document.getElementById('recalled-message-detail-close');
+        if (!modal || !contentEl) return false;
+
+        contentEl.textContent = String(content || '');
+
+        const closeModal = () => {
+            if (window.closeView) window.closeView(modal);
+            else modal.classList.remove('active');
+        };
+
+        if (closeBtn && closeBtn.dataset.bound !== 'true') {
+            closeBtn.dataset.bound = 'true';
+            closeBtn.addEventListener('click', closeModal);
+        }
+        if (modal.dataset.bound !== 'true') {
+            modal.dataset.bound = 'true';
+            modal.addEventListener('click', (event) => {
+                if (event.target === modal) closeModal();
+            });
+        }
+
+        if (window.openView) window.openView(modal);
+        else modal.classList.add('active');
+        return true;
+    }
+
 function renderSystemNoticeBubble(msg, friend, container, timestamp = Date.now()) {
         const row = document.createElement('div');
         row.className = 'chat-system-row';
@@ -301,6 +331,30 @@ function renderSystemNoticeBubble(msg, friend, container, timestamp = Date.now()
         row.setAttribute('data-message-id', window.imChat.ensureMessageId(msg, 'notice'));
         const noticeKind = msg.noticeKind || '';
         const noticeText = msg.text || msg.content || '系统提示';
+        if (noticeKind === 'message_recalled') {
+            const isUserRecall = msg.actorRole === 'user';
+            const actorName = String(msg.actorName || friend?.nickname || friend?.realName || '对方').trim();
+            const label = isUserRecall ? '你撤回了一条消息' : `${actorName}撤回了一条消息`;
+            const recalledContent = !isUserRecall
+                ? String(msg.payload?.recalledContent || '').trim()
+                : '';
+            row.innerHTML = `
+                <div class="message-recalled-notice">
+                    <span>${escapeHtml(label)}</span>${recalledContent ? '<span class="message-recalled-view-link">查看</span>' : ''}
+                </div>
+            `;
+            const viewLink = row.querySelector('.message-recalled-view-link');
+            if (viewLink) {
+                viewLink.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openRecalledMessageDetail(recalledContent);
+                });
+            }
+            container.appendChild(row);
+            window.imChat.scrollToBottom(container);
+            return row;
+        }
         const iconMap = {
             group_left: { icon: 'fa-sign-out-alt', color: '#ff3b30' },
             group_rejoined: { icon: 'fa-sign-in-alt', color: '#34c759' },
@@ -313,7 +367,7 @@ function renderSystemNoticeBubble(msg, friend, container, timestamp = Date.now()
         const iconMeta = iconMap[noticeKind] || { icon: 'fa-info-circle', color: '#8e8e93' };
         const textAlign = noticeKind === 'narration' ? 'left' : 'center';
         const noticeBody = noticeKind === 'group_friend_private_chat'
-            ? `<span>${escapeHtml(noticeText)}</span><button type="button" class="group-private-chat-view-link">查看</button>`
+            ? `<span>${escapeHtml(noticeText)}</span><span class="group-private-chat-view-link">查看</span>`
             : `<span>${escapeHtml(noticeText)}</span>`;
         row.innerHTML = `
             <div style="width:100%; display:flex; justify-content:center; padding:2px 0; margin:10px 0;">
@@ -514,6 +568,10 @@ function renderMessageBubble(msg, friend, container, timestamp = Date.now()) {
         }
         if (msg.type === 'sticker') {
             window.imChat.renderStickerMessageBubble(msg, friend, container, msgTime);
+            return true;
+        }
+        if (msg.type === 'link') {
+            window.imChat.renderLinkBubble(msg, friend, container, msgTime);
             return true;
         }
         if (msg.type === 'image') {
@@ -1596,6 +1654,158 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
         window.imChat.scrollToBottom(container);
     }
 
+function renderLinkBubble(msg, friend, container, timestamp = Date.now()) {
+        const isUser = msg.role === 'user';
+        const isGroupMessage = !isUser && friend.type === 'group';
+        const safeSpeaker = isGroupMessage && window.imChat.getSafeGroupSpeaker
+            ? window.imChat.getSafeGroupSpeaker(friend, msg.speaker || msg.senderName)
+            : null;
+        const speakerName = isGroupMessage
+            ? ((safeSpeaker && safeSpeaker.nickname) || msg.speaker || msg.senderName || 'Group member')
+            : null;
+        const speakerAvatar = (safeSpeaker && safeSpeaker.avatarUrl) || msg.senderAvatarUrl || null;
+        const rows = Array.from(container.children).filter(el => !el.classList.contains('chat-timestamp') && !el.classList.contains('typing-row'));
+        const lastRow = rows.length > 0 ? rows[rows.length - 1] : null;
+        let hasPrev = false;
+        let sameSpeaker = false;
+
+        if (lastRow) {
+            if (isUser && lastRow.classList.contains('user-row')) {
+                hasPrev = true;
+                lastRow.classList.add('has-next');
+            } else if (!isUser && lastRow.classList.contains('ai-row')) {
+                const previousSpeaker = lastRow.getAttribute('data-speaker') || null;
+                if (isGroupMessage && previousSpeaker === speakerName) {
+                    hasPrev = true;
+                    sameSpeaker = true;
+                    lastRow.classList.add('has-next');
+                } else if (!isGroupMessage && !previousSpeaker) {
+                    hasPrev = true;
+                    lastRow.classList.add('has-next');
+                }
+            }
+        }
+
+        const linkData = msg.linkData && typeof msg.linkData === 'object' ? msg.linkData : {};
+        const originalUrl = (() => {
+            try {
+                const parsed = new URL(String(linkData.originalUrl || msg.content || ''));
+                return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : '';
+            } catch (_) {
+                return '';
+            }
+        })();
+        const host = (() => {
+            try { return new URL(originalUrl).hostname.replace(/^www\./, ''); } catch (_) { return ''; }
+        })();
+        const platformColors = {
+            xiaohongshu: '#ff2442',
+            douyin: '#111111',
+            bilibili: '#00aeec',
+            weibo: '#ff8200',
+            web: '#007aff'
+        };
+        const platform = String(linkData.platform || 'web');
+        const platformLabel = String(linkData.platformLabel || '网页');
+        const cardColor = platformColors[platform] || platformColors.web;
+        const title = String(linkData.title || host || originalUrl || '外部链接');
+        const summary = String(linkData.description || '').trim();
+        const author = String(linkData.author || '').trim();
+        const coverUrl = (() => {
+            try {
+                const parsed = new URL(String(linkData.coverUrl || ''));
+                return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : '';
+            } catch (_) {
+                return '';
+            }
+        })();
+        const resolveStatus = String(linkData.resolveStatus || 'unresolved');
+        const statusLabel = ['resolved', 'partial'].includes(resolveStatus)
+            ? (linkData.bodyText ? '已读取' : '仅预览')
+            : '未读取正文';
+        const coverHtml = coverUrl
+            ? `<img src="${escapeHtml(coverUrl)}" alt="">`
+            : '<i class="fas fa-link"></i>';
+
+        const cardHtml = `
+            <div class="chat-link-card" role="link" tabindex="0" style="--link-card-color:${escapeHtml(cardColor)};">
+                <div class="chat-link-card-cover">${coverHtml}</div>
+                <div class="chat-link-card-body">
+                    <div class="chat-link-card-platform">${escapeHtml(platformLabel)}</div>
+                    <div class="chat-link-card-title">${escapeHtml(title)}</div>
+                    ${(author || summary) ? `<div class="chat-link-card-summary">${escapeHtml(author ? `${author}${summary ? ` · ${summary}` : ''}` : summary)}</div>` : ''}
+                    <div class="chat-link-card-footer">
+                        <span>${escapeHtml(host || originalUrl)}</span>
+                        <strong>${escapeHtml(statusLabel)}</strong>
+                    </div>
+                </div>
+            </div>
+        `;
+        const bubbleHtml = `<div class="chat-bubble ${isUser ? 'user-bubble' : 'ai-bubble'} im-card-bubble" style="padding:0; background:transparent;">${cardHtml}</div>`;
+        let bubbleWrapperHtml = bubbleHtml;
+
+        if (isGroupMessage) {
+            const avatarInitial = String(speakerName).trim().charAt(0) || '?';
+            const avatarImg = speakerAvatar
+                ? `<img src="${escapeHtml(speakerAvatar)}" onerror="this.src='assets/moren.jpg'" style="width:28px;height:28px;border-radius:50%;object-fit:cover;">`
+                : `<div class="chat-avatar-small">${escapeHtml(avatarInitial)}</div>`;
+            bubbleWrapperHtml = `
+                <div class="group-ai-bubble-wrap">
+                    ${sameSpeaker ? '' : `<div class="group-ai-speaker-name">${escapeHtml(speakerName)}</div>`}
+                    <div class="group-ai-bubble-row">
+                        <div class="group-ai-avatar-slot">${sameSpeaker ? '<div class="group-ai-avatar-placeholder"></div>' : avatarImg}</div>
+                        ${bubbleHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        const row = document.createElement('div');
+        row.className = `chat-row ${isUser ? 'user-row' : 'ai-row'} ${hasPrev ? 'has-prev' : ''} ${isGroupMessage ? 'group-ai-row' : ''} ${isGroupMessage && sameSpeaker ? 'group-ai-row-continuous' : ''}`;
+        row.setAttribute('data-timestamp', timestamp);
+        row.setAttribute('data-message-id', window.imChat.ensureMessageId(msg, 'link'));
+        if (speakerName) row.setAttribute('data-speaker', speakerName);
+        const headerHtml = buildMessageHeaderHtml(isUser, friend, timestamp, speakerName, speakerAvatar, hasPrev);
+        row.innerHTML = `
+            <div class="chat-checkbox-wrapper" style="display:${window.imData.batchSelectMode ? 'flex' : 'none'};width:40px;justify-content:center;align-items:flex-end;padding-bottom:10px;flex-shrink:0;cursor:pointer;transition:all 0.2s;">
+                <i class="far fa-circle chat-checkbox" data-timestamp="${timestamp}" style="color:#c7c7cc;font-size:22px;"></i>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;min-width:0;">
+                ${headerHtml}
+                <div style="display:flex;justify-content:${isUser ? 'flex-end' : 'flex-start'};align-items:flex-end;width:100%;">
+                    ${bubbleWrapperHtml}
+                </div>
+            </div>
+        `;
+
+        const card = row.querySelector('.chat-link-card');
+        const openLink = (event) => {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            if (!originalUrl) return;
+            const opened = window.open(originalUrl, '_blank', 'noopener,noreferrer');
+            if (opened) opened.opener = null;
+        };
+        if (card) {
+            card.addEventListener('click', openLink);
+            card.addEventListener('keydown', event => {
+                if (event.key === 'Enter' || event.key === ' ') openLink(event);
+            });
+        }
+        const coverImage = row.querySelector('.chat-link-card-cover img');
+        if (coverImage) {
+            coverImage.addEventListener('error', () => {
+                const cover = coverImage.closest('.chat-link-card-cover');
+                if (cover) cover.innerHTML = '<i class="fas fa-link"></i>';
+            }, { once: true });
+        }
+
+        container.appendChild(row);
+        window.imChat.scrollToBottom(container);
+    }
+
     function formatOfflineMeetingRecordText(msg = {}) {
         const dateText = msg.dateText || '';
         const title = msg.title || '见面记录';
@@ -1726,6 +1936,7 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
     window.imChat.renderOfflineMeetingRecordBubble = renderOfflineMeetingRecordBubble;
     window.imChat.renderGroupRedPacketBubble = renderGroupRedPacketBubble;
     window.imChat.renderStickerMessageBubble = renderStickerMessageBubble;
+    window.imChat.openRecalledMessageDetail = openRecalledMessageDetail;
     window.imChat.renderMessageBubble = renderMessageBubble;
     window.imChat.appendMessageToContainer = appendMessageToContainer;
     window.imChat.replaceMessageInContainer = replaceMessageInContainer;
@@ -1737,6 +1948,7 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
     window.imChat.renderUserBubble = renderUserBubble;
     window.imChat.renderAiBubble = renderAiBubble;
     window.imChat.renderImageBubble = renderImageBubble;
+    window.imChat.renderLinkBubble = renderLinkBubble;
     window.imChat.renderPayTransferBubble = renderPayTransferBubble;
     window.imChat.renderVoiceMessageBubble = renderVoiceMessageBubble;
     function renderHtmlBubble(msg, friend, container, timestamp = Date.now()) {

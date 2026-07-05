@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "build": "node tools/build-obfuscate.mjs",
+    "test:link": "node --test test/link_frontend.test.mjs link-resolver-worker/test/*.test.mjs"
+  },
+  "devDependencies": {
+    "javascript-obfuscator": "^4.1.1"
+  }
+}
