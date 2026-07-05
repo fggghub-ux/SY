@@ -680,6 +680,81 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function getIdentityNames(identity = {}) {
+        return Array.from(new Set([identity.nickname, identity.realName]
+            .map(value => String(value || '').trim())
+            .filter(Boolean)));
+    }
+
+    async function migrateGroupMemberIdentityReferences(memberId, previousIdentity = {}, nextIdentity = {}) {
+        const previousNames = new Set(getIdentityNames(previousIdentity));
+        const previousAvatarUrl = String(previousIdentity.avatarUrl || '').trim();
+        const nextName = String(nextIdentity.nickname || nextIdentity.realName || '群成员').trim() || '群成员';
+        const nextAvatarUrl = nextIdentity.avatarUrl || '';
+        const groups = (window.imData.friends || []).filter(group => {
+            if (!group || group.type !== 'group' || !Array.isArray(group.members)) return false;
+            return group.members.some(memberRef => String(memberRef) === String(memberId) || previousNames.has(String(memberRef || '').trim()));
+        });
+        const changedGroupIds = [];
+
+        for (const group of groups) {
+            if (window.imApp.ensureFriendMessagesLoaded) {
+                await window.imApp.ensureFriendMessagesLoaded(group);
+            }
+            const avatarIsUnique = !!previousAvatarUrl && !(window.imChat?.getGroupMemberFriends
+                ? window.imChat.getGroupMemberFriends(group).some(member => String(member.id) !== String(memberId)
+                    && String(member.avatarUrl || '').trim() === previousAvatarUrl)
+                : false);
+            let changed = false;
+            const saved = await window.imApp.commitFriendChange(group.id, (targetGroup) => {
+                if (!targetGroup) return;
+                targetGroup.members = (targetGroup.members || []).map(memberRef => {
+                    if (String(memberRef) === String(memberId) || previousNames.has(String(memberRef || '').trim())) {
+                        if (String(memberRef) !== String(memberId)) changed = true;
+                        return memberId;
+                    }
+                    return memberRef;
+                });
+
+                (targetGroup.messages || []).forEach(message => {
+                    if (!message || message.role === 'user') return;
+                    const storedMemberId = message.speakerMemberId ?? message.senderMemberId ?? null;
+                    const storedNames = [message.speaker, message.senderName]
+                        .map(value => String(value || '').trim())
+                        .filter(Boolean);
+                    const matchesId = storedMemberId != null && String(storedMemberId) === String(memberId);
+                    const matchesLegacyName = storedMemberId == null && storedNames.some(name => previousNames.has(name));
+                    const matchesLegacyAvatar = storedMemberId == null && avatarIsUnique
+                        && String(message.senderAvatarUrl || '').trim() === previousAvatarUrl;
+                    if (!matchesId && !matchesLegacyName && !matchesLegacyAvatar) return;
+
+                    message.speakerMemberId = memberId;
+                    message.speaker = nextName;
+                    if (message.senderName || message.type === 'group_red_packet' || message.type === 'pay_transfer') {
+                        message.senderName = nextName;
+                    }
+                    if (nextAvatarUrl || message.senderAvatarUrl) {
+                        message.senderAvatarUrl = nextAvatarUrl || message.senderAvatarUrl || '';
+                    }
+                    changed = true;
+                });
+            }, { silent: true, metaOnly: false });
+
+            if (saved && changed) changedGroupIds.push(String(group.id));
+        }
+
+        changedGroupIds.forEach(groupId => {
+            const group = (window.imData.friends || []).find(item => String(item.id) === groupId);
+            const page = document.getElementById(`chat-interface-${groupId}`);
+            const container = page?.querySelector('.ins-chat-messages');
+            if (group && container && window.imChat?.rerenderChatContainer) {
+                window.imChat.rerenderChatContainer(group, container, { scroll: false });
+            }
+        });
+
+        return changedGroupIds;
+    }
+
     function setBindAccountDetailAvatar(url) {
         bindAccountDetailAvatarUrl = url || null;
 
@@ -2153,8 +2228,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (confirmBtn) {
                 const newConfirmBtn = confirmBtn.cloneNode(true);
                 confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
-                
+                 
                 newConfirmBtn.addEventListener('click', async () => {
+                    const previousIdentity = {
+                        nickname: friend.nickname || '',
+                        realName: friend.realName || '',
+                        avatarUrl: friend.avatarUrl || ''
+                    };
                     const fallbackName = friend.type === 'npc' ? 'New NPC' : 'New Friend';
                     const saved = await commitNamedFriendChange(friend, (targetFriend) => {
                         targetFriend.realName = realNameInput ? realNameInput.value : '';
@@ -2171,6 +2251,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     const latestFriend = window.imData.friends.find(item => String(item.id) === String(friend.id)) || friend;
                     window.imData.currentSettingsFriend = latestFriend;
+
+                    const identityChanged = previousIdentity.nickname !== (latestFriend.nickname || '')
+                        || previousIdentity.realName !== (latestFriend.realName || '')
+                        || previousIdentity.avatarUrl !== (latestFriend.avatarUrl || '');
+                    if (identityChanged && latestFriend.type !== 'group') {
+                        await migrateGroupMemberIdentityReferences(latestFriend.id, previousIdentity, latestFriend);
+                    }
                     
                     const page = document.getElementById(`chat-interface-${latestFriend.id}`);
                     if (page) {

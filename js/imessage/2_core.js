@@ -466,6 +466,7 @@ window.imApp.normalizeFriendData = function(friend) {
     normalized.memberProfiles = (friend.memberProfiles && typeof friend.memberProfiles === 'object') ? friend.memberProfiles : {};
     normalized.botEnabled = !!normalized.botEnabled;
     // offlineMeetEnabled is deprecated
+    normalized.offlineRegexScripts = Array.isArray(normalized.offlineRegexScripts) ? normalized.offlineRegexScripts : [];
     normalized.linkedAccountBot = window.imApp.normalizeLinkedAccountBot(normalized.linkedAccountBot);
     normalized.linkedAccountChats = window.imApp.normalizeLinkedAccountChats(normalized.linkedAccountChats);
 

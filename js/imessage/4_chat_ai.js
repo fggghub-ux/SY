@@ -2807,6 +2807,10 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                     const paymentAction = currentItem.paymentAction;
                     const paymentAmount = Number(currentItem.amount) || 0;
                     const paymentDescription = currentItem.description || '转账';
+                    const paymentSpeaker = activeFriend.type === 'group'
+                        ? window.imChat.getSafeGroupSpeaker(activeFriend, currentItem.speaker || lastGroupSpeaker)
+                        : activeFriend;
+                    const paymentSpeakerName = paymentSpeaker?.nickname || paymentSpeaker?.realName || activeFriend.nickname || activeFriend.realName || 'Char';
 
                     if (paymentAmount > 0) {
                         if (paymentAction === 'pay_for_friend') {
@@ -2848,6 +2852,9 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                                 role: 'assistant',
                                 type: 'html',
                                 content: htmlCard,
+                                speaker: activeFriend.type === 'group' ? paymentSpeakerName : '',
+                                speakerMemberId: activeFriend.type === 'group' ? (paymentSpeaker?.id || '') : '',
+                                senderAvatarUrl: activeFriend.type === 'group' ? (paymentSpeaker?.avatarUrl || '') : '',
                                 timestamp: nowMsg,
                                 apiRunId
                             };
@@ -2896,6 +2903,9 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                                     cardTitle: titleStr,
                                     payStatus: 'completed',
                                     content: `[亲属卡] ${titleStr} ¥${paymentAmount.toFixed(2)}`,
+                                    speaker: activeFriend.type === 'group' ? paymentSpeakerName : '',
+                                    speakerMemberId: activeFriend.type === 'group' ? (paymentSpeaker?.id || '') : '',
+                                    senderAvatarUrl: activeFriend.type === 'group' ? (paymentSpeaker?.avatarUrl || '') : '',
                                     timestamp: nowMsg,
                                     apiRunId
                                 };
@@ -2913,7 +2923,7 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                             }
                         } else if (paymentAction === 'transfer') {
                             const nowMsg = Date.now();
-                            const senderName = activeFriend.nickname || activeFriend.realName || 'Char';
+                            const senderName = paymentSpeakerName;
                             const receiverName = window.userState?.name || window.userState?.realName || window.userState?.nickname || 'User';
                             const paymentMsg = {
                                 id: window.imChat.createMessageId('pay'),
@@ -2928,6 +2938,9 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                                 senderName,
                                 receiverName,
                                 targetName: senderName,
+                                speaker: activeFriend.type === 'group' ? paymentSpeakerName : '',
+                                speakerMemberId: activeFriend.type === 'group' ? (paymentSpeaker?.id || '') : '',
+                                senderAvatarUrl: activeFriend.type === 'group' ? (paymentSpeaker?.avatarUrl || '') : '',
                                 cardTitle: '转账',
                                 payStatus: 'completed',
                                 content: `[角色转账] ${paymentDescription} ¥${paymentAmount.toFixed(2)}`,
@@ -3123,6 +3136,9 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                     : { id: window.imChat.createMessageId('msg'), role: 'assistant', content: text, timestamp: nowMsg, replyTo: aiReplyTo, apiRunId };
                 if (currentSpeakerName) msgObj.speaker = currentSpeakerName;
                 if (currentSpeakerAvatar) msgObj.senderAvatarUrl = currentSpeakerAvatar;
+                if (speakerFriend.type === 'group' && detectedSpeaker?.id != null) {
+                    msgObj.speakerMemberId = detectedSpeaker.id;
+                }
                 if (speakerFriend.type === 'group' && currentItem.thought) {
                     msgObj.thought = currentItem.thought;
                 }
@@ -3143,7 +3159,7 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                 } else if (isUserStillLooking && isImageReply && window.imChat.renderImageBubble) {
                     window.imChat.renderImageBubble(msgObj, renderFriend, freshContainer, nowMsg);
                 } else if (isUserStillLooking) {
-                    window.imChat.renderAiBubble(text, renderFriend, freshContainer, nowMsg, msgObj.translation, msgObj.showTranslation, msgObj.replyTo, currentSpeakerName, currentSpeakerAvatar, msgObj.id, msgObj.thought, msgObj.offlineScene, msgObj.offlineAction);
+                    window.imChat.renderAiBubble(text, renderFriend, freshContainer, nowMsg, msgObj.translation, msgObj.showTranslation, msgObj.replyTo, currentSpeakerName, currentSpeakerAvatar, msgObj.id, msgObj.thought, msgObj.offlineScene, msgObj.offlineAction, msgObj.speakerMemberId);
                 } else if (window.showBannerNotification) {
                     // Not looking at chat, show banner for this specific message bubble
                     window.showBannerNotification(renderFriend, isStickerReply ? `[表情] ${resolvedSticker.stickerName}` : (isImageReply ? `[图片] ${text}` : text));

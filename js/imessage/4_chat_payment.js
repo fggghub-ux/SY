@@ -32,24 +32,46 @@ function getGroupMemberFriends(group) {
             .filter(Boolean);
     }
 
-function normalizeGroupSpeaker(group, rawSpeakerName) {
-        if (!group || group.type !== 'group' || !rawSpeakerName) return null;
-        const safeName = String(rawSpeakerName).trim();
-        if (!safeName) return null;
-
+function normalizeGroupSpeaker(group, rawSpeakerName, speakerMemberId = null) {
+        if (!group || group.type !== 'group') return null;
         const groupMembers = window.imChat.getGroupMemberFriends(group);
         if (groupMembers.length === 0) return null;
 
-        const exactMatch = groupMembers.find(member => member.nickname === safeName);
+        if (speakerMemberId != null && String(speakerMemberId).trim()) {
+            const idMatch = groupMembers.find(member => String(member.id) === String(speakerMemberId));
+            if (idMatch) return idMatch;
+        }
+
+        const safeName = String(rawSpeakerName || '').trim();
+        if (!safeName) return null;
+
+        const exactMatch = groupMembers.find(member => member.nickname === safeName || member.realName === safeName);
         if (exactMatch) return exactMatch;
 
         const normalizedTarget = safeName.toLowerCase();
-        const fuzzyMatch = groupMembers.find(member => String(member.nickname || '').trim().toLowerCase() === normalizedTarget);
+        const fuzzyMatch = groupMembers.find(member => [member.nickname, member.realName]
+            .some(value => String(value || '').trim().toLowerCase() === normalizedTarget));
         return fuzzyMatch || null;
     }
 
-function getSafeGroupSpeaker(group, preferredSpeakerName = null) {
-        const normalized = window.imChat.normalizeGroupSpeaker(group, preferredSpeakerName);
+function getGroupMessageSpeaker(group, message = {}) {
+        if (!message || typeof message !== 'object') return null;
+        const directMatch = window.imChat.normalizeGroupSpeaker(
+            group,
+            message.speaker || message.senderName || '',
+            message.speakerMemberId || message.senderMemberId || null
+        );
+        if (directMatch) return directMatch;
+
+        const storedAvatar = String(message.senderAvatarUrl || '').trim();
+        if (!storedAvatar) return null;
+        const avatarMatches = window.imChat.getGroupMemberFriends(group)
+            .filter(member => String(member?.avatarUrl || '').trim() === storedAvatar);
+        return avatarMatches.length === 1 ? avatarMatches[0] : null;
+    }
+
+ function getSafeGroupSpeaker(group, preferredSpeakerName = null, speakerMemberId = null) {
+        const normalized = window.imChat.normalizeGroupSpeaker(group, preferredSpeakerName, speakerMemberId);
         if (normalized) return normalized;
 
         const members = window.imChat.getGroupMemberFriends(group);
@@ -1156,6 +1178,7 @@ async function claimIncomingTransfer(friend, msg, options = {}) {
 
     window.imChat.getGroupMemberFriends = getGroupMemberFriends;
     window.imChat.normalizeGroupSpeaker = normalizeGroupSpeaker;
+    window.imChat.getGroupMessageSpeaker = getGroupMessageSpeaker;
     window.imChat.getSafeGroupSpeaker = getSafeGroupSpeaker;
     window.imChat.getDisplayNameByMemberId = getDisplayNameByMemberId;
     window.imChat.getAvailableGroupRecipients = getAvailableGroupRecipients;

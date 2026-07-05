@@ -6821,3 +6821,246 @@ input:checked + .slider:before {
         padding-right: 12px;
     }
 }
+.offline-settings-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    margin: 8px 0 10px;
+    padding: 4px;
+    border-radius: 12px;
+    background: #e9e9ed;
+}
+
+.offline-settings-tabs button {
+    appearance: none;
+    border: 0;
+    border-radius: 9px;
+    padding: 9px 12px;
+    background: transparent;
+    color: #666;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.offline-settings-tabs button.active {
+    background: #fff;
+    color: #007aff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.offline-settings-panel[hidden] {
+    display: none !important;
+}
+
+.offline-settings-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-bottom: 20px;
+}
+
+.offline-regex-intro,
+.offline-regex-empty {
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: #eef6ff;
+    color: #31506f;
+    font-size: 12px;
+    line-height: 1.55;
+}
+
+.offline-regex-empty {
+    background: #f2f2f7;
+    color: #8e8e93;
+    text-align: center;
+}
+
+.offline-regex-card {
+    overflow: hidden;
+    border: 1px solid #e5e5ea;
+    border-radius: 14px;
+    background: #fff;
+}
+
+.offline-regex-card.has-error {
+    border-color: #ff9b93;
+}
+
+.offline-regex-card.is-disabled .offline-regex-summary-name,
+.offline-regex-card.is-disabled .offline-regex-editor {
+    opacity: 0.58;
+}
+
+.offline-regex-summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    cursor: pointer;
+    list-style: none;
+}
+
+.offline-regex-summary::-webkit-details-marker {
+    display: none;
+}
+
+.offline-regex-summary::after {
+    content: '\f078';
+    margin-left: 2px;
+    color: #8e8e93;
+    font-family: 'Font Awesome 5 Free';
+    font-size: 11px;
+    font-weight: 900;
+    transition: transform 0.18s ease;
+}
+
+.offline-regex-card[open] .offline-regex-summary::after {
+    transform: rotate(180deg);
+}
+
+.offline-regex-summary-name {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    color: #111;
+    font-size: 15px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.offline-regex-summary-state {
+    color: #8e8e93;
+    font-size: 12px;
+}
+
+.offline-regex-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 0 16px 16px;
+    border-top: 1px solid #f1f1f3;
+}
+
+.offline-regex-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 12px;
+}
+
+.offline-regex-enabled,
+.offline-regex-checks label {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: #333;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.offline-regex-order-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.offline-regex-order-actions button {
+    width: 32px;
+    height: 30px;
+    border: 0;
+    border-radius: 8px;
+    background: #f2f2f7;
+    color: #007aff;
+    cursor: pointer;
+}
+
+.offline-regex-order-actions button.danger {
+    color: #ff3b30;
+}
+
+.offline-regex-order-actions button:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.offline-regex-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.offline-regex-field > span,
+.offline-regex-section-label {
+    color: #666;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.offline-regex-field input,
+.offline-regex-field textarea {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid #d1d1d6;
+    border-radius: 9px;
+    padding: 9px 10px;
+    outline: none;
+    background: #fafafa;
+    color: #111;
+    font: inherit;
+    font-size: 13px;
+    resize: vertical;
+}
+
+.offline-regex-field input:focus,
+.offline-regex-field textarea:focus {
+    border-color: #007aff;
+    background: #fff;
+}
+
+.offline-regex-checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 18px;
+}
+
+.offline-regex-checks.vertical {
+    flex-direction: column;
+    gap: 9px;
+}
+
+.offline-regex-depths {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.offline-regex-error {
+    display: none;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #fff0ef;
+    color: #d70015;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.offline-regex-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    border: 1px dashed #8bbcff;
+    border-radius: 12px;
+    padding: 12px;
+    background: #eef6ff;
+    color: #007aff;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+}

@@ -1,6 +1,8 @@
 {
   "scripts": {
     "build": "node tools/build-obfuscate.mjs",
+    "test": "node --test test/*.test.mjs link-resolver-worker/test/*.test.mjs",
+    "test:imessage": "node --test test/imessage_offline_regex.test.mjs",
     "test:link": "node --test test/link_frontend.test.mjs link-resolver-worker/test/*.test.mjs"
   },
   "devDependencies": {

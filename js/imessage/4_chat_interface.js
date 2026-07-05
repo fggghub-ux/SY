@@ -832,10 +832,12 @@ async function openChatTab(friend) {
                             const row = avatarSlot.closest('.ai-row');
                             if (row) {
                                 const speakerName = row.getAttribute('data-speaker');
+                                const speakerMemberId = row.getAttribute('data-speaker-member-id');
                                 const thought = row.getAttribute('data-thought');
-                                if (speakerName) {
-                                    const members = window.imChat.getGroupMemberFriends(friend);
-                                    const speakerInfo = members.find(m => m.nickname === speakerName);
+                                if (speakerName || speakerMemberId) {
+                                    const speakerInfo = window.imChat.normalizeGroupSpeaker
+                                        ? window.imChat.normalizeGroupSpeaker(friend, speakerName, speakerMemberId)
+                                        : null;
                                     if (speakerInfo && window.imChat.showGroupMemberProfileCard) {
                                         window.imChat.showGroupMemberProfileCard(speakerInfo, page, avatarSlot, friend, thought);
                                     }

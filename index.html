@@ -31,7 +31,7 @@
     <link rel="stylesheet" href="css/global.css">
     <link rel="stylesheet" href="css/home.css">
     <link rel="stylesheet" href="css/worldbook.css">
-    <link rel="stylesheet" href="css/imessage.css?v=20260705-link-v1">
+    <link rel="stylesheet" href="css/imessage.css?v=20260705-offline-regex-v1">
     <link rel="stylesheet" href="css/pay.css?v=20260705-safe-area-v1">
     <link rel="stylesheet" href="css/bstage.css">
     <link rel="stylesheet" href="css/tiktok.css">
@@ -1583,8 +1583,19 @@
                   <div class="sheet-handle"></div>
                   <div class="sheet-title">线下设定</div>
                   <div class="detail-sheet-content" style="flex: 1; overflow-y: auto; padding: 0 16px;">
-                      <div id="offline-tavern-settings-list" style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px; padding-bottom: 20px;">
-                          <!-- Prompts injected here via JS -->
+                      <div class="offline-settings-tabs" id="offline-tavern-settings-tabs" role="tablist" aria-label="线下设定">
+                          <button type="button" class="active" data-offline-settings-tab="prompts" role="tab" aria-selected="true">提示词预设</button>
+                          <button type="button" data-offline-settings-tab="regex" role="tab" aria-selected="false">正则</button>
+                      </div>
+                      <div id="offline-tavern-prompts-panel" class="offline-settings-panel active" role="tabpanel">
+                          <div id="offline-tavern-settings-list" class="offline-settings-list">
+                              <!-- Prompts injected here via JS -->
+                          </div>
+                      </div>
+                      <div id="offline-tavern-regex-panel" class="offline-settings-panel" role="tabpanel" hidden>
+                          <div id="offline-tavern-regex-list" class="offline-settings-list">
+                              <!-- Regex rules injected here via JS -->
+                          </div>
                       </div>
                   </div>
               </div>
@@ -7273,22 +7284,23 @@
     <script src="js/system_notifications.js"></script>
     
     <!-- 引入 iMessage 模块分段代码 -->
-    <script src="js/imessage/2_core.js?v=20260705-link-v1"></script>
+    <script src="js/imessage/2_core.js?v=20260705-offline-regex-v1"></script>
     <script src="js/imessage/3_contacts.js"></script>
     <script src="js/imessage/3_groups.js?v=20260705-private-chat-v1"></script>
     <script src="js/imessage/4_chat_common.js"></script>
     <script src="js/imessage/4_chat_status.js"></script>
-    <script src="js/imessage/4_chat_payment.js"></script>
-    <script src="js/imessage/4_chat_bubbles.js?v=20260705-link-v1"></script>
+    <script src="js/imessage/4_chat_payment.js?v=20260705-offline-identity-v2"></script>
+    <script src="js/imessage/4_chat_bubbles.js?v=20260705-offline-identity-v2"></script>
     <script src="js/imessage/minimax_tts.js"></script>
-    <script src="js/imessage/4_chat_ai.js?v=20260705-link-v1"></script>
-    <script src="js/imessage/4_chat_sheet.js?v=20260705-link-v1"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260705-offline-identity-v2"></script>
+    <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
+    <script src="js/imessage/4_chat_sheet.js?v=20260705-offline-regex-v1"></script>
     <script src="js/imessage/4_chat_link.js?v=20260705-link-v1"></script>
     <script src="js/imessage/4_chat_list.js"></script>
-    <script src="js/imessage/4_chat_interface.js?v=20260705-recall-v1"></script>
+    <script src="js/imessage/4_chat_interface.js?v=20260705-offline-identity-v2"></script>
     <script src="js/imessage/4_chat_voice_call.js"></script>
     <script src="js/imessage/4_chat_main.js?v=20260705-recall-v1"></script>
-    <script src="js/imessage/5_settings.js"></script>
+    <script src="js/imessage/5_settings.js?v=20260705-offline-identity-v2"></script>
     <script src="js/imessage/6_moments.js"></script>
 
     <!-- 引入其他应用模块 -->
