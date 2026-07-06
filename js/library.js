@@ -290,11 +290,20 @@
         await storage().setSetting('libraryPreferences', state.preferences);
     }
 
+    function setLibraryViewHidden(hidden) {
+        if (!dom.view) return;
+        if (hidden && dom.view.contains(document.activeElement)) {
+            document.activeElement?.blur?.();
+        }
+        dom.view.toggleAttribute('inert', !!hidden);
+        dom.view.setAttribute('aria-hidden', hidden ? 'true' : 'false');
+    }
+
     function openApp(tab) {
         if (!state.ready) return;
         if (TABS.includes(tab)) switchTab(tab, false);
         dom.view.classList.add('active');
-        dom.view.setAttribute('aria-hidden', 'false');
+        setLibraryViewHidden(false);
         if (state.activeTab === 'overview') renderOverview();
     }
 
@@ -305,7 +314,7 @@
         state.playerReturnToChatFriendId = null;
         closeAllModals();
         dom.view.classList.remove('active');
-        dom.view.setAttribute('aria-hidden', 'true');
+        setLibraryViewHidden(true);
         savePreferences().catch(console.error);
     }
 
@@ -1731,7 +1740,7 @@ ${xml(fullLyrics)}
         if (state.playerReturnToChatFriendId) {
             state.playerReturnToChatFriendId = null;
             dom.view.classList.remove('active');
-            dom.view.setAttribute('aria-hidden', 'true');
+            setLibraryViewHidden(true);
             $('imessage-view')?.classList.add('active');
         }
     }
@@ -2085,6 +2094,7 @@ ${xml(fullLyrics)}
     async function init() {
         cacheDom();
         if (!dom.view) return;
+        setLibraryViewHidden(!dom.view.classList.contains('active'));
         try {
             await loadState();
             renderBooks();

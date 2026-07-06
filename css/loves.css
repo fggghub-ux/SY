@@ -858,7 +858,7 @@
 .lovers-space-view,
 .lovers-savings-view,
 #lovers-publish-view,
-#lovers-schedule-view,
+#lovers-diary-generator-view,
 #lovers-savings-settings-sheet,
 #lovers-savings-deposit-sheet,
 #lovers-savings-withdraw-sheet,
@@ -878,7 +878,7 @@
 .lovers-space-view button,
 .lovers-savings-view button,
 #lovers-publish-view button,
-#lovers-schedule-view button {
+#lovers-diary-generator-view button {
     border: 0;
     color: inherit;
     font: inherit;
@@ -888,12 +888,12 @@
 .lovers-space-view button:focus-visible,
 .lovers-savings-view button:focus-visible,
 #lovers-publish-view button:focus-visible,
-#lovers-schedule-view button:focus-visible,
+#lovers-diary-generator-view button:focus-visible,
 .loves-view input:focus-visible,
 .lovers-space-view input:focus-visible,
 .lovers-savings-view input:focus-visible,
 #lovers-publish-view textarea:focus-visible,
-#lovers-schedule-view input:focus-visible {
+#lovers-diary-generator-view input:focus-visible {
     outline: 2px solid var(--loves-accent);
     outline-offset: 3px;
 }
@@ -1283,7 +1283,7 @@
 .lovers-space-panel.active { display: flex; }
 .lovers-moments-panel,
 .lovers-devices-panel,
-.lovers-calendar-panel { flex-direction: column; }
+.lovers-diary-panel { flex-direction: column; }
 
 .lovers-panel-heading { margin: 6px 2px 12px; }
 .lovers-panel-heading h3 { margin: 4px 0 0; font-size: 20px; line-height: 1.2; font-weight: 780; letter-spacing: -.035em; }
@@ -1430,9 +1430,11 @@
 
 .loves-moment-comments { margin-top: 12px; padding: 10px 12px; border-radius: 15px; background: var(--loves-bg); display: flex; flex-direction: column; gap: 8px; }
 .loves-moment-comment { display: flex; align-items: flex-start; gap: 10px; font-size: 12px; line-height: 1.5; }
+.loves-moment-comment.is-char { font-size: 14px; line-height: 1.62; }
 .loves-moment-comment-copy { flex: 1; min-width: 0; cursor: pointer; }
 .loves-moment-comment-author { color: #596456; font-weight: 750; }
-.loves-moment-comment-delete { flex-shrink: 0; padding: 0; background: transparent; color: var(--loves-danger); cursor: pointer; font-size: 10px; }
+.loves-moment-comment-delete { flex-shrink: 0; padding: 0; border-radius: 0; background: transparent; color: var(--loves-danger); cursor: pointer; font-size: 12px; line-height: 1.5; text-decoration: none; white-space: nowrap; }
+.loves-moment-comment-delete:hover { text-decoration: underline; }
 
 .loves-moment-composer { margin-top: 12px; padding: 7px; border-radius: 15px; background: var(--loves-bg); display: flex; align-items: center; gap: 8px; }
 .loves-moment-composer-avatar { width: 28px; height: 28px; border-radius: 10px; background: #e3e6e0; color: #a9afa7; overflow: hidden; display: grid; place-items: center; flex-shrink: 0; }
@@ -1440,33 +1442,38 @@
 .loves-moment-comment-input { flex: 1; min-width: 0; height: 32px; border: 0; outline: 0; background: transparent; color: var(--loves-ink); font-size: 12px; }
 .loves-moment-comment-send { min-width: 58px; height: 44px; padding: 0 12px; border-radius: 12px; background: var(--loves-accent); color: #fff; cursor: pointer; font-size: 11px; font-weight: 750; }
 
-/* Calendar */
-.lovers-calendar-heading { margin: 5px 2px 12px; position: relative; }
-#lovers-calendar-year-month-display { display: flex; align-items: baseline; gap: 6px; }
-#lovers-calendar-year-display { font-size: 25px; line-height: 1.1; font-weight: 780; letter-spacing: -.04em; }
-#lovers-calendar-month-display { color: var(--loves-accent); font-size: 15px; font-weight: 750; }
-#lovers-calendar-year-month-display i { color: var(--loves-muted); font-size: 9px; }
-#lovers-calendar-month-picker { width: 160px; height: 100%; position: absolute; inset: 0 auto auto 0; opacity: 0; cursor: pointer; }
+/* Diary */
+.lovers-diary-heading { margin: 5px 2px 12px; position: relative; }
+#lovers-diary-year-month-display { display: flex; align-items: baseline; gap: 6px; }
+#lovers-diary-year-display { font-size: 25px; line-height: 1.1; font-weight: 780; letter-spacing: -.04em; }
+#lovers-diary-month-display { color: var(--loves-accent); font-size: 15px; font-weight: 750; }
+#lovers-diary-year-month-display i { color: var(--loves-muted); font-size: 9px; }
+#lovers-diary-month-picker { width: 160px; height: 100%; position: absolute; inset: 0 auto auto 0; opacity: 0; cursor: pointer; }
 
-.lovers-calendar-strip { margin-bottom: 20px; padding: 8px; border-radius: 18px; background: var(--loves-surface); overflow-x: auto; scrollbar-width: none; box-shadow: inset 0 0 0 1px var(--loves-line); }
-.lovers-calendar-strip::-webkit-scrollbar { display: none; }
-#lovers-calendar-dates { min-width: max-content; display: flex; gap: 6px; }
-.calendar-date-item { width: 44px; height: 58px; padding: 0; border: 0; border-radius: 13px; background: transparent; color: var(--loves-muted); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; cursor: pointer; transition: color 160ms ease, background 160ms ease; }
-.calendar-date-item small { font-size: 9px; font-weight: 700; }
-.calendar-date-item strong { font-size: 14px; font-weight: 750; }
-.calendar-date-item.is-today:not(.is-selected) { color: var(--loves-ink); box-shadow: inset 0 0 0 1px var(--loves-line); }
-.calendar-date-item.is-selected { background: var(--loves-accent); color: #fff; }
+.lovers-diary-strip { margin-bottom: 20px; padding: 8px; border-radius: 18px; background: var(--loves-surface); overflow-x: auto; scrollbar-width: none; box-shadow: inset 0 0 0 1px var(--loves-line); }
+.lovers-diary-strip::-webkit-scrollbar { display: none; }
+#lovers-diary-dates { min-width: max-content; display: flex; gap: 6px; }
+.diary-date-item { width: 44px; height: 58px; padding: 0; border: 0; border-radius: 13px; background: transparent; color: var(--loves-muted); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; cursor: pointer; transition: color 160ms ease, background 160ms ease; }
+.diary-date-item small { font-size: 9px; font-weight: 700; }
+.diary-date-item strong { font-size: 14px; font-weight: 750; }
+.diary-date-item.is-today:not(.is-selected) { color: var(--loves-ink); box-shadow: inset 0 0 0 1px var(--loves-line); }
+.diary-date-item.is-selected { background: var(--loves-accent); color: #fff; }
 
-.lovers-calendar-list { padding: 0 0 20px; position: relative; display: flex; flex-direction: column; gap: 8px; }
-.lovers-calendar-empty { min-height: 160px; border-radius: 20px; background: var(--loves-surface); color: var(--loves-muted); display: grid; place-items: center; font-size: 12px; box-shadow: inset 0 0 0 1px var(--loves-line); }
-.lovers-schedule-item { min-height: 82px; display: grid; grid-template-columns: 48px 1fr; align-items: stretch; gap: 10px; position: relative; }
-.lovers-schedule-time { padding-top: 14px; color: var(--loves-muted); font-size: 10px; line-height: 1.35; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
-.lovers-schedule-card { min-width: 0; padding: 14px 40px 14px 14px; border-radius: 18px; background: var(--loves-surface); position: relative; box-shadow: inset 0 0 0 1px var(--loves-line); }
-.lovers-schedule-card::before { content: ""; width: 4px; border-radius: 4px; position: absolute; left: 0; top: 14px; bottom: 14px; background: var(--loves-accent); }
-.lovers-schedule-card strong { display: block; overflow: hidden; font-size: 14px; font-weight: 750; white-space: nowrap; text-overflow: ellipsis; }
-.lovers-schedule-card span { margin-top: 7px; color: var(--loves-muted); display: flex; align-items: center; gap: 5px; font-size: 10px; }
-.delete-schedule-btn { width: 44px; height: 44px; padding: 0; position: absolute; top: 3px; right: 2px; border-radius: 12px; background: transparent; color: #b4b8b2; cursor: pointer; }
-.lovers-calendar-end { margin-top: 10px; color: var(--loves-muted); font-size: 10px; text-align: center; }
+.lovers-diary-list { padding: 0 0 20px; position: relative; display: flex; flex-direction: column; gap: 10px; }
+.lovers-diary-empty { min-height: 170px; padding: 24px; border-radius: 20px; background: var(--loves-surface); color: var(--loves-muted); display: grid; place-items: center; text-align: center; gap: 8px; font-size: 12px; box-shadow: inset 0 0 0 1px var(--loves-line); }
+.lovers-diary-empty i { color: #aeb6ab; font-size: 28px; }
+.lovers-diary-empty strong { color: var(--loves-ink); font-size: 15px; font-weight: 760; }
+.lovers-diary-item { min-height: 104px; display: grid; grid-template-columns: 48px 1fr; align-items: stretch; gap: 10px; position: relative; }
+.lovers-diary-time { padding-top: 16px; color: var(--loves-muted); font-size: 10px; line-height: 1.35; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+.lovers-diary-card { min-width: 0; padding: 14px; border-radius: 18px; background: var(--loves-surface); position: relative; box-shadow: inset 0 0 0 1px var(--loves-line); }
+.lovers-diary-card::before { content: ""; width: 4px; border-radius: 4px; position: absolute; left: 0; top: 14px; bottom: 14px; background: var(--loves-accent); }
+.lovers-diary-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.lovers-diary-card-head strong { min-width: 0; display: block; overflow: hidden; font-size: 14px; font-weight: 750; white-space: nowrap; text-overflow: ellipsis; }
+.lovers-diary-location { margin-top: 7px; color: var(--loves-muted); display: flex; align-items: center; gap: 5px; font-size: 10px; }
+.lovers-diary-card p { margin: 11px 0 0; color: #303330; font-size: 13px; line-height: 1.62; white-space: pre-wrap; word-break: break-word; }
+.lovers-diary-delete { flex-shrink: 0; padding: 0; border-radius: 0; background: transparent; color: var(--loves-danger); cursor: pointer; font-size: 12px; line-height: 1.5; text-decoration: none; white-space: nowrap; }
+.lovers-diary-delete:hover { text-decoration: underline; }
+.lovers-diary-end { margin-top: 10px; color: var(--loves-muted); font-size: 10px; text-align: center; }
 
 /* Savings */
 .lovers-savings-view { background: var(--loves-bg); color: var(--loves-ink); }
@@ -1538,7 +1545,7 @@
 .lovers-savings-result-reason-card span { color: var(--loves-muted); }
 .lovers-savings-result-ok { min-height: 46px; border-radius: 15px; background: var(--loves-accent); }
 
-/* Compose and schedule sheets */
+/* Compose and diary sheets */
 .lovers-compose-sheet {
     width: min(100%, 520px);
     height: min(85%, 720px);
@@ -1550,7 +1557,7 @@
     flex-direction: column;
 }
 
-.lovers-schedule-sheet { height: auto; }
+.lovers-diary-generator-sheet { height: auto; }
 .lovers-compose-sheet .sheet-handle { background: #c9ccc7; }
 
 .lovers-compose-header {
@@ -1568,6 +1575,7 @@
 .lovers-compose-primary { min-height: 44px; padding: 0 12px; border-radius: 13px; cursor: pointer; font-size: 12px; font-weight: 750; }
 .lovers-compose-cancel { background: transparent; color: var(--loves-muted); }
 .lovers-compose-primary { background: var(--loves-accent); color: #fff !important; }
+.lovers-compose-primary:disabled { opacity: .62; cursor: wait; }
 
 .lovers-compose-content { flex: 1; padding: 4px 16px 20px; overflow-y: auto; }
 .lovers-compose-field { padding: 15px; border-radius: 19px; background: var(--loves-surface); display: block; box-shadow: inset 0 0 0 1px var(--loves-line); }
@@ -1583,11 +1591,13 @@
 .lovers-publish-image img { width: 100%; height: 100%; object-fit: cover; }
 .lovers-publish-image button { width: 28px; height: 28px; padding: 0; border-radius: 10px; position: absolute; top: 5px; right: 5px; background: rgba(23,25,24,.72); color: #fff; cursor: pointer; font-size: 10px; }
 
-.lovers-schedule-fields { margin-top: 10px; border-radius: 19px; overflow: hidden; background: var(--loves-surface); box-shadow: inset 0 0 0 1px var(--loves-line); }
-.lovers-schedule-fields label { min-height: 54px; margin: 0 14px; display: flex; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--loves-line); }
-.lovers-schedule-fields label:last-child { border-bottom: 0; }
-.lovers-schedule-fields span { flex-shrink: 0; font-size: 13px; font-weight: 700; }
-.lovers-schedule-fields input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--loves-ink); font: inherit; font-size: 13px; text-align: right; }
+.lovers-diary-generator-summary { padding: 16px; border-radius: 19px; background: var(--loves-surface); box-shadow: inset 0 0 0 1px var(--loves-line); }
+.lovers-diary-generator-summary span { color: var(--loves-muted); font-size: 10px; font-weight: 800; letter-spacing: .12em; }
+.lovers-diary-generator-summary strong { display: block; margin-top: 7px; color: var(--loves-ink); font-size: 18px; font-weight: 780; }
+.lovers-diary-generator-summary p { margin: 8px 0 0; color: var(--loves-muted); font-size: 12px; line-height: 1.55; }
+.lovers-diary-count-field { margin-top: 12px; }
+.lovers-diary-count-field input { text-align: left; }
+.lovers-diary-generator-hint { margin: 12px 2px 0; color: var(--loves-muted); font-size: 12px; line-height: 1.55; }
 
 @media (min-width: 600px) {
     .loves-content { padding-left: 0; padding-right: 0; }
@@ -1614,11 +1624,11 @@
     .lovers-space-view *,
     .lovers-savings-view *,
     #lovers-publish-view *,
-#lovers-schedule-view * { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+#lovers-diary-generator-view * { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
 
 #lovers-publish-view { z-index: 1000; }
-#lovers-schedule-view { z-index: 1010; }
+#lovers-diary-generator-view { z-index: 1010; }
 #lovers-savings-settings-sheet,
 #lovers-savings-deposit-sheet,
 #lovers-savings-withdraw-sheet { z-index: 1030; }

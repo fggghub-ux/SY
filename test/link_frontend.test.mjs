@@ -11,29 +11,172 @@ globalThis.document = {
 
 await import('../js/imessage/4_chat_link.js');
 
-test('extracts the first URL from common Chinese share text', () => {
-    const input = '复制这条消息，打开小红书 https://xhslink.com/aBc123，查看笔记。';
-    assert.equal(window.imChat.extractFirstExternalUrl(input), 'https://xhslink.com/aBc123');
+test('normalizes fake-link domain input without fetching real pages', () => {
+    assert.equal(window.imChat.normalizeFakeLinkDomain('example.com'), 'example.com');
+    assert.equal(window.imChat.normalizeFakeLinkDomain('https://Example.com/a?b=1'), 'example.com/a?b=1');
+    const normalized = window.imChat.normalizeFakeLinkInput('example.net/news');
+    assert.equal(normalized.domain, 'example.net');
+    assert.equal(normalized.displayUrl, 'example.net/news');
+    assert.equal(normalized.canonicalUrl, 'https://example.net/news');
 });
 
-test('rejects non-http input and recognizes supported host aliases', () => {
-    assert.equal(window.imChat.extractFirstExternalUrl('javascript:alert(1)'), '');
-    assert.equal(window.imChat.detectLinkPlatform('https://www.xiaohongshu.com/explore/1').id, 'xiaohongshu');
-    assert.equal(window.imChat.detectLinkPlatform('https://v.douyin.com/abc').id, 'douyin');
-    assert.equal(window.imChat.detectLinkPlatform('https://b23.tv/abc').id, 'bilibili');
-    assert.equal(window.imChat.detectLinkPlatform('https://m.weibo.cn/status/abc').id, 'weibo');
-    assert.equal(window.imChat.detectLinkPlatform('https://example.com/a').id, 'web');
+test('rejects empty, unsafe, and unsupported fake-link inputs', () => {
+    assert.equal(window.imChat.normalizeFakeLinkDomain(''), '');
+    assert.equal(window.imChat.normalizeFakeLinkDomain('javascript:alert(1)'), '');
+    assert.equal(window.imChat.normalizeFakeLinkDomain('example.com/<script>'), '');
+    assert.equal(window.imChat.normalizeFakeLinkDomain('https://example.com/' + 'a'.repeat(220)), '');
 });
 
-test('keeps resolver configuration in the iMessage link composer instead of API settings', async () => {
-    const [html, settingsSource, linkSource] = await Promise.all([
-        fs.readFile(new URL('../index.html', import.meta.url), 'utf8'),
+test('builds a strict AI fake-webpage prompt with controlled interactions', () => {
+    const prompt = window.imChat.buildFakeLinkPrompt({
+        domain: 'xiaohongshu.com/explore/demo',
+        prompt: '生成小红书笔记页面，带评论',
+        worldBookContext: 'WB: coffee shop is important',
+        charPersonaContext: 'Char persona: likes quiet cafes',
+        userPersonaContext: 'User persona: photographer',
+        includeCharPersona: true,
+        includeUserPersona: true
+    });
+    assert.match(prompt, /webPage/);
+    assert.match(prompt, /interactions/);
+    assert.match(prompt, /toggleClass/);
+    assert.match(prompt, /picsum\.photos/);
+    assert.match(prompt, /世界书上下文/);
+    assert.match(prompt, /WB: coffee shop is important/);
+    assert.match(prompt, /Char persona: likes quiet cafes/);
+    assert.match(prompt, /User persona: photographer/);
+    assert.match(prompt, /小红书/);
+    assert.match(prompt, /禁止输出 <script>/);
+    assert.equal(prompt.includes('window.open'), false);
+});
+
+test('normalizes generated webpage packages defensively', () => {
+    const page = window.imChat.normalizeFakeLinkWebPage({
+        theme: 'xiaohongshu',
+        html: '<section onclick="bad()"><script>alert(1)</script><a href="https://evil.test">open</a><img src="https://evil.test/a.jpg"><p>ok</p><form><input></form></section>',
+        css: '@import url("https://evil.test/a.css"); .x{background:url(https://evil.test/a.png);position:fixed;behavior:url(x)}',
+        interactions: [
+            { type: 'evil', selector: '[data-fake-action="like"]' },
+            { type: 'toggleClass', selector: '<bad>' }
+        ]
+    }, { domain: 'xiaohongshu.com/demo', prompt: 'coffee' });
+
+    assert.equal(page.theme, 'xiaohongshu');
+    assert.equal(page.html.includes('<script'), false);
+    assert.equal(page.html.includes('onclick'), false);
+    assert.equal(page.html.includes('href='), false);
+    assert.equal(page.html.includes('<input'), false);
+    assert.match(page.html, /https:\/\/picsum\.photos\/seed\//);
+    assert.equal(page.css.includes('@import'), false);
+    assert.equal(page.css.includes('url('), false);
+    assert.match(page.css, /position:absolute/);
+    assert.equal(page.interactions.length, 1);
+    assert.equal(page.interactions[0].type, 'toggleClass');
+});
+
+test('random image helpers allow only the configured external image host', () => {
+    const url = window.imChat.buildRandomFakeLinkImageUrl(['example.com', 'demo'], 2);
+    assert.match(url, /^https:\/\/picsum\.photos\/seed\/u2-/);
+    assert.equal(window.imChat.isAllowedFakeLinkImageUrl(url), true);
+    assert.equal(window.imChat.isAllowedFakeLinkImageUrl('https://evil.test/a.jpg'), false);
+
+    const html = window.imChat.injectRandomFakeLinkImages('<article><img src="https://evil.test/a.jpg"><img></article>', {
+        domain: 'example.com',
+        prompt: 'demo'
+    });
+    assert.equal(html.includes('https://evil.test'), false);
+    assert.equal((html.match(/https:\/\/picsum\.photos\/seed\//g) || []).length, 2);
+});
+
+test('manual mode creates an escaped generic webpage package', () => {
+    const page = window.imChat.buildManualFakeLinkWebPage({
+        siteName: 'Example',
+        title: '<script>title</script>',
+        summary: 'Summary',
+        bodyText: 'First paragraph\nSecond <img src=x onerror=bad()> paragraph',
+        displayUrl: 'example.com/post'
+    });
+
+    assert.equal(page.theme, 'generic');
+    assert.equal(page.html.includes('<script>'), false);
+    assert.equal(page.html.includes('<img'), false);
+    assert.match(page.html, /u2-fake-generic-page/);
+    assert.ok(page.interactions.some(item => item.type === 'increment'));
+});
+
+test('removes the old resolver and real external-opening path', async () => {
+    const [packageSource, settingsSource, storageSource, linkSource, bubbleSource] = await Promise.all([
+        fs.readFile(new URL('../package.json', import.meta.url), 'utf8'),
         fs.readFile(new URL('../js/settings.js', import.meta.url), 'utf8'),
-        fs.readFile(new URL('../js/imessage/4_chat_link.js', import.meta.url), 'utf8')
+        fs.readFile(new URL('../js/storage/app_storage.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_link.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_bubbles.js', import.meta.url), 'utf8')
     ]);
-    assert.equal(html.includes('id="link-resolver-endpoint-input"'), false);
-    assert.equal(settingsSource.includes('linkResolverEndpoint:'), false);
-    assert.match(linkSource, /im-link-resolver-input/);
-    assert.match(linkSource, /setLinkResolverConfig/);
-    assert.match(linkSource, /saveGlobalData/);
+    const combined = [packageSource, settingsSource, storageSource, linkSource].join('\n');
+    assert.equal(combined.includes('link-resolver-worker'), false);
+    assert.equal(combined.includes('linkResolverConfig'), false);
+    assert.equal(combined.includes('u2_linkResolverConfig'), false);
+    assert.equal(combined.includes('/v1/resolve-link'), false);
+    assert.equal(linkSource.includes('openLinkComposer'), false);
+    assert.equal(bubbleSource.includes('window.open('), false);
+});
+
+test('uses fake_link in chat rendering, safe webpage rendering, menu sizing, and API context', async () => {
+    const [coreSource, aiSource, bubbleSource, linkSource, interfaceSource, cssSource] = await Promise.all([
+        fs.readFile(new URL('../js/imessage/2_core.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_ai.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_bubbles.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_link.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_interface.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../css/imessage.css', import.meta.url), 'utf8')
+    ]);
+    assert.match(linkSource, /type:\s*'fake_link'/);
+    assert.match(linkSource, /data-tab="ai"/);
+    assert.match(linkSource, /data-tab="manual"/);
+    assert.match(linkSource, /webPage/);
+    assert.match(linkSource, /im-fake-link-char-persona-toggle/);
+    assert.match(linkSource, /im-fake-link-user-persona-toggle/);
+    assert.match(linkSource, /resolveFakeLinkWorldBookContext/);
+    assert.match(linkSource, /picsum\.photos/);
+    assert.match(coreSource, /normalizedMessage\.type === 'fake_link'/);
+    assert.match(coreSource, /formatFakeLinkMessageForApiContext/);
+    assert.match(coreSource, /stripFakeLinkHtmlForApiContext/);
+    assert.match(aiSource, /message\.type === 'fake_link'/);
+    assert.match(bubbleSource, /msg\.type === 'fake_link'/);
+    assert.match(bubbleSource, /sanitizeFakeLinkPagePackage/);
+    assert.match(bubbleSource, /renderFakeLinkWebPage/);
+    assert.match(bubbleSource, /scopeFakeLinkCss/);
+    assert.match(bubbleSource, /bindFakeLinkInteractions/);
+    assert.match(bubbleSource, /isAllowedFakeLinkImageUrlForRender/);
+    assert.match(bubbleSource, /overlay\.style\.display\s*=\s*'flex'/);
+    assert.match(interfaceSource, /msg-context-card-clone/);
+    assert.match(interfaceSource, /safeBubbleHeight/);
+    assert.match(cssSource, /#msg-context-bubble-clone \.chat-link-card/);
+    assert.match(cssSource, /im-fake-link-context-toggle/);
+    assert.equal(coreSource.includes("type === 'link'"), false);
+    assert.equal(aiSource.includes("type === 'link'"), false);
+});
+
+test('supports guided regenerate from the iMessage More sheet', async () => {
+    const [sheetSource, aiSource] = await Promise.all([
+        fs.readFile(new URL('../js/imessage/4_chat_sheet.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_ai.js', import.meta.url), 'utf8')
+    ]);
+
+    assert.match(sheetSource, /class="regenerate-form-overlay"/);
+    assert.match(sheetSource, /class="regenerate-requirement-input"/);
+    assert.match(sheetSource, /角色ooc了，注意人设/);
+    assert.equal(sheetSource.includes('语气别太冷，多接住我的情绪'), false);
+    assert.match(sheetSource, /class="regenerate-reference-btn"[^>]*background:#8e8e93/);
+    assert.match(sheetSource, /class="regenerate-direct-btn"/);
+    assert.match(sheetSource, /请先输入参考要求/);
+    assert.match(sheetSource, /openRegenerateForm\(\)/);
+    assert.match(sheetSource, /regenerateLastAiReply\(activeFriend, regenerateEntry, \{ userRequirement \}\)/);
+    assert.doesNotMatch(sheetSource, /class="regenerate-reference-btn"[^>]*background:#007aff/);
+
+    assert.match(aiSource, /regenerateLastAiReply\(friend, triggerEl = null, options = \{\}\)/);
+    assert.match(aiSource, /normalizedOptions\.userRequirement/);
+    assert.match(aiSource, /pendingRegenerateContext\.userRequirement/);
+    assert.match(aiSource, /User 本次重回补充要求/);
+    assert.match(aiSource, /\{ previousReply, userRequirement \}/);
 });

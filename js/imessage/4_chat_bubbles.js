@@ -594,8 +594,8 @@ function renderMessageBubble(msg, friend, container, timestamp = Date.now()) {
             window.imChat.renderStickerMessageBubble(msg, friend, container, msgTime);
             return true;
         }
-        if (msg.type === 'link') {
-            window.imChat.renderLinkBubble(msg, friend, container, msgTime);
+        if (msg.type === 'fake_link') {
+            window.imChat.renderFakeLinkBubble(msg, friend, container, msgTime);
             return true;
         }
         if (msg.type === 'image') {
@@ -1699,7 +1699,368 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
         window.imChat.scrollToBottom(container);
     }
 
-function renderLinkBubble(msg, friend, container, timestamp = Date.now()) {
+    function cleanFakeLinkText(value, maxLength = 50000) {
+        return String(value == null ? '' : value).replace(/\u0000/g, '').trim().slice(0, maxLength);
+    }
+
+    function isAllowedFakeLinkImageUrlForRender(value) {
+        try {
+            const parsed = new URL(String(value || ''));
+            return parsed.protocol === 'https:' && parsed.hostname === 'picsum.photos';
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function stripFakeLinkHtmlToPlainText(value, maxLength = 12000) {
+        return cleanFakeLinkText(value, maxLength)
+            .replace(/<\s*(script|style|iframe|object|embed|svg|canvas)[\s\S]*?<\s*\/\s*\1\s*>/gi, ' ')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/&nbsp;/gi, ' ')
+            .replace(/&amp;/gi, '&')
+            .replace(/&lt;/gi, '<')
+            .replace(/&gt;/gi, '>')
+            .replace(/&quot;/gi, '"')
+            .replace(/&#039;/gi, "'")
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, maxLength);
+    }
+
+    function sanitizeFakeLinkCssText(value) {
+        return cleanFakeLinkText(value, 40000)
+            .replace(/@import[^;]+;/gi, '')
+            .replace(/url\s*\([^)]*\)/gi, 'none')
+            .replace(/expression\s*\([^)]*\)/gi, '')
+            .replace(/javascript\s*:/gi, '')
+            .replace(/behavior\s*:/gi, '')
+            .replace(/-moz-binding\s*:/gi, '')
+            .replace(/position\s*:\s*fixed\s*;?/gi, 'position:absolute;')
+            .slice(0, 40000);
+    }
+
+    function normalizeFakeLinkInteractionForRender(source = {}) {
+        if (!source || typeof source !== 'object') return null;
+        const allowedTypes = new Set(['toggleClass', 'toggleText', 'increment', 'switchPanel']);
+        const type = allowedTypes.has(source.type) ? source.type : 'toggleClass';
+        const selector = cleanFakeLinkText(source.selector || source.target || '', 160);
+        if (!selector || /[<>{}]/.test(selector)) return null;
+        return {
+            type,
+            selector,
+            targetSelector: cleanFakeLinkText(source.targetSelector || source.target || selector, 160),
+            className: cleanFakeLinkText(source.className || 'is-active', 60) || 'is-active',
+            activeText: cleanFakeLinkText(source.activeText || '', 80),
+            inactiveText: cleanFakeLinkText(source.inactiveText || '', 80),
+            countSelector: cleanFakeLinkText(source.countSelector || '', 160),
+            panelGroup: cleanFakeLinkText(source.panelGroup || '', 80)
+        };
+    }
+
+    function sanitizeFakeLinkElementTree(parent) {
+        if (!parent || !parent.childNodes) return;
+        const allowedTags = new Set([
+            'article', 'section', 'main', 'header', 'footer', 'nav', 'div', 'p', 'span',
+            'strong', 'em', 'b', 'i', 'small', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4',
+            'h5', 'h6', 'button', 'figure', 'figcaption', 'blockquote', 'hr', 'br', 'img'
+        ]);
+        const forbiddenTags = new Set([
+            'script', 'style', 'iframe', 'object', 'embed', 'svg', 'canvas', 'link', 'meta',
+            'base', 'form', 'input', 'textarea', 'select', 'option'
+        ]);
+        Array.from(parent.childNodes).forEach((node) => {
+            if (!node || node.nodeType !== 1) return;
+            const tag = String(node.tagName || '').toLowerCase();
+            if (forbiddenTags.has(tag)) {
+                node.remove();
+                return;
+            }
+            if (!allowedTags.has(tag)) {
+                const fragment = document.createDocumentFragment();
+                while (node.firstChild) fragment.appendChild(node.firstChild);
+                node.replaceWith(fragment);
+                sanitizeFakeLinkElementTree(parent);
+                return;
+            }
+            Array.from(node.attributes || []).forEach((attr) => {
+                const name = String(attr.name || '').toLowerCase();
+                const value = cleanFakeLinkText(attr.value || '', 500);
+                if (!name || name.startsWith('on') || name === 'style' || name === 'href' || name === 'srcset' || name === 'action' || name === 'formaction') {
+                    node.removeAttribute(attr.name);
+                    return;
+                }
+                if (name === 'src') {
+                    if (tag === 'img' && (/^data:image\//i.test(value) || isAllowedFakeLinkImageUrlForRender(value))) {
+                        node.setAttribute('src', value);
+                        node.setAttribute('loading', 'lazy');
+                    } else {
+                        node.removeAttribute(attr.name);
+                    }
+                    return;
+                }
+                if (name === 'type' && tag === 'button') {
+                    node.setAttribute('type', 'button');
+                    return;
+                }
+                if (name === 'class' || name === 'role' || name === 'title' || name === 'aria-label' || name.indexOf('data-') === 0) {
+                    node.setAttribute(attr.name, value);
+                    return;
+                }
+                node.removeAttribute(attr.name);
+            });
+            if (tag === 'button' && !node.getAttribute('type')) node.setAttribute('type', 'button');
+            sanitizeFakeLinkElementTree(node);
+        });
+    }
+
+    function sanitizeFakeLinkHtmlForRender(value) {
+        const html = cleanFakeLinkText(value, 80000);
+        if (!html) return '';
+        if (typeof document === 'undefined' || !document.createElement) {
+            return html
+                .replace(/<\s*(script|style|iframe|object|embed|form|input|textarea|select|option)[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
+                .replace(/<\s*\/?\s*(script|style|iframe|object|embed|form|input|textarea|select|option)[^>]*>/gi, '')
+                .replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+                .replace(/\s+(href|src|srcset|action|formaction)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+        }
+        const template = document.createElement('template');
+        template.innerHTML = html;
+        sanitizeFakeLinkElementTree(template.content);
+        return template.innerHTML;
+    }
+
+    function normalizeFakeLinkWebPageForRender(source = {}) {
+        const safeSource = source && typeof source === 'object' ? source : {};
+        const html = sanitizeFakeLinkHtmlForRender(safeSource.html || safeSource.bodyHtml || '');
+        const css = sanitizeFakeLinkCssText(safeSource.css || safeSource.style || '');
+        const rawInteractions = Array.isArray(safeSource.interactions) ? safeSource.interactions : [];
+        return {
+            theme: cleanFakeLinkText(safeSource.theme || 'generic', 40).toLowerCase() || 'generic',
+            html,
+            css,
+            interactions: rawInteractions.map(normalizeFakeLinkInteractionForRender).filter(Boolean).slice(0, 24),
+            source: cleanFakeLinkText(safeSource.source || '', 30)
+        };
+    }
+
+    function sanitizeFakeLinkPagePackage(webPage = {}) {
+        return normalizeFakeLinkWebPageForRender(webPage);
+    }
+
+    function scopeFakeLinkCss(css, scopeSelector) {
+        const safeCss = sanitizeFakeLinkCssText(css);
+        if (!safeCss) return '';
+        return safeCss.replace(/(^|})\s*([^@}{][^{]+)\{/g, (match, closeBrace, selectors) => {
+            const scopedSelectors = selectors
+                .split(',')
+                .map(selector => selector.trim())
+                .filter(Boolean)
+                .map(selector => selector.indexOf(scopeSelector) === 0 ? selector : scopeSelector + ' ' + selector)
+                .join(', ');
+            return closeBrace + ' ' + scopedSelectors + '{';
+        });
+    }
+
+    function safeQueryAll(root, selector) {
+        try {
+            return Array.from(root.querySelectorAll(selector));
+        } catch (_) {
+            return [];
+        }
+    }
+
+    function bindFakeLinkInteractions(root, interactions = []) {
+        if (!root || !Array.isArray(interactions)) return;
+        interactions.forEach((interaction) => {
+            const normalized = normalizeFakeLinkInteractionForRender(interaction);
+            if (!normalized) return;
+            safeQueryAll(root, normalized.selector).forEach((trigger) => {
+                trigger.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    const target = safeQueryAll(root, normalized.targetSelector)[0] || trigger;
+                    if (normalized.type === 'switchPanel') {
+                        const targetName = trigger.getAttribute('data-fake-target') || target.getAttribute('data-fake-panel') || '';
+                        const groupSelector = normalized.panelGroup
+                            ? '[data-fake-panel-group="' + normalized.panelGroup + '"]'
+                            : '[data-fake-panel]';
+                        safeQueryAll(root, groupSelector).forEach(panel => {
+                            const active = targetName && panel.getAttribute('data-fake-panel') === targetName;
+                            panel.hidden = !active;
+                            panel.classList.toggle('is-active', active);
+                        });
+                        return;
+                    }
+                    if (normalized.type === 'toggleText') {
+                        const isActive = target.classList.toggle(normalized.className);
+                        if (normalized.activeText || normalized.inactiveText) {
+                            target.textContent = isActive
+                                ? (normalized.activeText || target.textContent)
+                                : (normalized.inactiveText || target.textContent);
+                        }
+                        return;
+                    }
+                    if (normalized.type === 'increment') {
+                        const countNode = normalized.countSelector
+                            ? (safeQueryAll(root, normalized.countSelector)[0] || null)
+                            : target;
+                        if (countNode) {
+                            const counted = trigger.dataset.fakeIncremented === 'true';
+                            const current = Number(String(countNode.textContent || '').replace(/[^\d.-]/g, '')) || 0;
+                            countNode.textContent = String(Math.max(0, current + (counted ? -1 : 1)));
+                            trigger.dataset.fakeIncremented = counted ? 'false' : 'true';
+                        }
+                        return;
+                    }
+                    target.classList.toggle(normalized.className);
+                });
+            });
+        });
+    }
+
+    function renderFakeLinkWebPage(host, webPage = {}) {
+        if (!host) return false;
+        const pagePackage = sanitizeFakeLinkPagePackage(webPage);
+        if (!pagePackage.html) return false;
+        const pageId = 'fake-link-page-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+        const scopeSelector = '[data-fake-page-id="' + pageId + '"]';
+        host.innerHTML = '';
+        const style = document.createElement('style');
+        style.className = 'im-fake-link-web-style';
+        style.textContent = scopeFakeLinkCss(pagePackage.css, scopeSelector);
+        const root = document.createElement('div');
+        root.className = 'im-fake-link-web-root';
+        root.setAttribute('data-fake-page-id', pageId);
+        root.setAttribute('data-theme', pagePackage.theme || 'generic');
+        root.innerHTML = pagePackage.html;
+        host.appendChild(style);
+        host.appendChild(root);
+        bindFakeLinkInteractions(root, pagePackage.interactions);
+        return true;
+    }
+
+    function normalizeFakeLinkDisplayValue(value) {
+        const raw = cleanFakeLinkText(value, 220);
+        if (!raw) return '';
+        if (window.imChat?.normalizeFakeLinkDomain) {
+            const normalized = window.imChat.normalizeFakeLinkDomain(raw);
+            if (normalized) return normalized;
+        }
+        try {
+            const parsed = new URL(/^https?:\/\//i.test(raw) ? raw : 'https://' + raw);
+            const domain = parsed.hostname.toLowerCase();
+            const path = parsed.pathname && parsed.pathname !== '/' ? parsed.pathname : '';
+            return (domain + path + (parsed.search || '')).replace(/\/+$/, '');
+        } catch (_) {
+            return raw.replace(/^https?:\/\//i, '').replace(/\/+$/, '').slice(0, 180);
+        }
+    }
+
+    function normalizeFakeLinkDataForRender(msg = {}) {
+        const source = msg.fakeLinkData && typeof msg.fakeLinkData === 'object'
+            ? msg.fakeLinkData
+            : {};
+        const displayUrl = normalizeFakeLinkDisplayValue(
+            source.displayUrl || source.canonicalUrl || msg.content || ''
+        );
+        const domain = cleanFakeLinkText(source.domain || (displayUrl.split(/[/?#]/)[0] || ''), 120);
+        const siteName = cleanFakeLinkText(source.siteName || source.platformLabel || source.author || domain || '假网页', 80);
+        const title = cleanFakeLinkText(source.title || msg.title || domain || '假网页', 180);
+        const summary = cleanFakeLinkText(source.summary || source.description || '', 800);
+        const bodyText = cleanFakeLinkText(source.bodyText || source.content || '', 50000);
+        const rawWebPage = source.webPage && typeof source.webPage === 'object' ? source.webPage : null;
+        const webPage = rawWebPage ? normalizeFakeLinkWebPageForRender(rawWebPage) : null;
+        return {
+            domain,
+            displayUrl,
+            siteName,
+            title,
+            summary,
+            bodyText,
+            webPage: webPage && webPage.html ? webPage : null,
+            prompt: cleanFakeLinkText(source.prompt || '', 1000),
+            generatedBy: cleanFakeLinkText(source.generatedBy || 'manual', 40),
+            createdAt: Number(source.createdAt || msg.timestamp) || Date.now()
+        };
+    }
+
+    function ensureFakeLinkDetailOverlay() {
+        let overlay = document.getElementById('im-fake-link-detail-overlay');
+        if (overlay) return overlay;
+        overlay = document.createElement('div');
+        overlay.id = 'im-fake-link-detail-overlay';
+        overlay.className = 'bottom-sheet-overlay detail-sheet-overlay im-fake-link-detail-overlay';
+        overlay.style.display = 'none';
+        overlay.innerHTML = [
+            '<div class="bottom-sheet im-fake-link-detail-sheet">',
+            '  <div class="im-fake-link-browser-bar">',
+            '    <button type="button" class="im-fake-link-browser-close" aria-label="关闭"><i class="fas fa-chevron-left"></i></button>',
+            '    <div class="im-fake-link-address"></div>',
+            '    <span></span>',
+            '  </div>',
+            '  <article class="im-fake-link-page">',
+            '    <div class="im-fake-link-page-legacy">',
+            '      <div class="im-fake-link-page-site"></div>',
+            '      <h1 class="im-fake-link-page-title"></h1>',
+            '      <p class="im-fake-link-page-summary"></p>',
+            '      <div class="im-fake-link-page-body"></div>',
+            '    </div>',
+            '    <div class="im-fake-link-web-host" hidden></div>',
+            '  </article>',
+            '</div>'
+        ].join('');
+        const closeOverlay = () => {
+            if (window.closeView) window.closeView(overlay);
+            else overlay.style.display = 'none';
+        };
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay || event.target.closest('.im-fake-link-browser-close')) {
+                closeOverlay();
+            }
+        });
+        document.body.appendChild(overlay);
+        return overlay;
+    }
+
+    function openFakeLinkDetail(msg = {}, friend = null) {
+        const overlay = ensureFakeLinkDetailOverlay();
+        const data = normalizeFakeLinkDataForRender(msg);
+        const address = overlay.querySelector('.im-fake-link-address');
+        const site = overlay.querySelector('.im-fake-link-page-site');
+        const title = overlay.querySelector('.im-fake-link-page-title');
+        const summary = overlay.querySelector('.im-fake-link-page-summary');
+        const body = overlay.querySelector('.im-fake-link-page-body');
+        const pageEl = overlay.querySelector('.im-fake-link-page');
+        const legacy = overlay.querySelector('.im-fake-link-page-legacy');
+        const webHost = overlay.querySelector('.im-fake-link-web-host');
+        let useWebPage = false;
+        if (data.webPage && data.webPage.html && webHost) {
+            try {
+                useWebPage = renderFakeLinkWebPage(webHost, data.webPage);
+            } catch (error) {
+                console.warn('[iMessage fake link] detail render failed, falling back to text view', error);
+                useWebPage = false;
+            }
+        }
+        if (!useWebPage && webHost) webHost.innerHTML = '';
+        if (pageEl) pageEl.classList.toggle('is-webpage', useWebPage);
+        if (legacy) legacy.hidden = useWebPage;
+        if (webHost) webHost.hidden = !useWebPage;
+        if (address) address.textContent = data.displayUrl || data.domain || 'fake.local';
+        if (site) site.textContent = data.siteName || data.domain || '假网页';
+        if (title) title.textContent = data.title || data.siteName || '假网页';
+        if (summary) {
+            summary.textContent = data.summary || '';
+            summary.style.display = summary.textContent ? 'block' : 'none';
+        }
+        if (body) {
+            body.textContent = data.bodyText || data.summary || '这个假网页暂时没有正文内容。';
+        }
+        overlay.style.display = 'flex';
+        if (window.openView) window.openView(overlay);
+        else overlay.classList.add('active');
+    }
+
+ function renderFakeLinkBubble(msg, friend, container, timestamp = Date.now()) {
         const isUser = msg.role === 'user';
         const isGroupMessage = !isUser && friend.type === 'group';
         const safeSpeaker = isGroupMessage && window.imChat.getGroupMessageSpeaker
@@ -1731,46 +2092,23 @@ function renderLinkBubble(msg, friend, container, timestamp = Date.now()) {
             }
         }
 
-        const linkData = msg.linkData && typeof msg.linkData === 'object' ? msg.linkData : {};
-        const originalUrl = (() => {
-            try {
-                const parsed = new URL(String(linkData.originalUrl || msg.content || ''));
-                return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : '';
-            } catch (_) {
-                return '';
-            }
-        })();
-        const host = (() => {
-            try { return new URL(originalUrl).hostname.replace(/^www\./, ''); } catch (_) { return ''; }
-        })();
-        const platformColors = {
-            xiaohongshu: '#ff2442',
-            douyin: '#111111',
-            bilibili: '#00aeec',
-            weibo: '#ff8200',
-            web: '#007aff'
-        };
-        const platform = String(linkData.platform || 'web');
-        const platformLabel = String(linkData.platformLabel || '网页');
-        const cardColor = platformColors[platform] || platformColors.web;
-        const title = String(linkData.title || host || originalUrl || '外部链接');
-        const summary = String(linkData.description || '').trim();
-        const author = String(linkData.author || '').trim();
-        const coverUrl = (() => {
-            try {
-                const parsed = new URL(String(linkData.coverUrl || ''));
-                return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : '';
-            } catch (_) {
-                return '';
-            }
-        })();
-        const resolveStatus = String(linkData.resolveStatus || 'unresolved');
-        const statusLabel = ['resolved', 'partial'].includes(resolveStatus)
-            ? (linkData.bodyText ? '已读取' : '仅预览')
-            : '未读取正文';
+        const fakeLinkData = normalizeFakeLinkDataForRender(msg);
+        const displayUrl = fakeLinkData.displayUrl;
+        const host = fakeLinkData.domain || displayUrl;
+        const platformLabel = fakeLinkData.siteName || '假网页';
+        const pageTheme = fakeLinkData.webPage?.theme || '';
+        const cardColor = pageTheme === 'xiaohongshu' ? '#ff2442' : '#3a3a3c';
+        const title = fakeLinkData.title || platformLabel || '假网页';
+        const summary = fakeLinkData.summary || fakeLinkData.bodyText.slice(0, 120);
+        const author = '';
+        const coverUrl = '';
+        const statusLabel = '站内假网页';
         const coverHtml = coverUrl
             ? `<img src="${escapeHtml(coverUrl)}" alt="">`
             : '<i class="fas fa-link"></i>';
+        const effectiveStatusLabel = fakeLinkData.webPage
+            ? (fakeLinkData.generatedBy === 'ai' ? 'AI 仿真网页' : '站内仿真网页')
+            : statusLabel;
 
         const cardHtml = `
             <div class="chat-link-card" role="link" tabindex="0" style="--link-card-color:${escapeHtml(cardColor)};">
@@ -1780,8 +2118,8 @@ function renderLinkBubble(msg, friend, container, timestamp = Date.now()) {
                     <div class="chat-link-card-title">${escapeHtml(title)}</div>
                     ${(author || summary) ? `<div class="chat-link-card-summary">${escapeHtml(author ? `${author}${summary ? ` · ${summary}` : ''}` : summary)}</div>` : ''}
                     <div class="chat-link-card-footer">
-                        <span>${escapeHtml(host || originalUrl)}</span>
-                        <strong>${escapeHtml(statusLabel)}</strong>
+                        <span>${escapeHtml(host || displayUrl)}</span>
+                        <strong>${escapeHtml(effectiveStatusLabel)}</strong>
                     </div>
                 </div>
             </div>
@@ -1825,19 +2163,17 @@ function renderLinkBubble(msg, friend, container, timestamp = Date.now()) {
         `;
 
         const card = row.querySelector('.chat-link-card');
-        const openLink = (event) => {
+        const openFakeLink = (event) => {
             if (event) {
                 event.preventDefault();
                 event.stopPropagation();
             }
-            if (!originalUrl) return;
-            const opened = window.open(originalUrl, '_blank', 'noopener,noreferrer');
-            if (opened) opened.opener = null;
+            openFakeLinkDetail(msg, friend);
         };
         if (card) {
-            card.addEventListener('click', openLink);
+            card.addEventListener('click', openFakeLink);
             card.addEventListener('keydown', event => {
-                if (event.key === 'Enter' || event.key === ' ') openLink(event);
+                if (event.key === 'Enter' || event.key === ' ') openFakeLink(event);
             });
         }
         const coverImage = row.querySelector('.chat-link-card-cover img');
@@ -1994,7 +2330,10 @@ function renderLinkBubble(msg, friend, container, timestamp = Date.now()) {
     window.imChat.renderUserBubble = renderUserBubble;
     window.imChat.renderAiBubble = renderAiBubble;
     window.imChat.renderImageBubble = renderImageBubble;
-    window.imChat.renderLinkBubble = renderLinkBubble;
+    window.imChat.renderFakeLinkBubble = renderFakeLinkBubble;
+    window.imChat.sanitizeFakeLinkPagePackage = sanitizeFakeLinkPagePackage;
+    window.imChat.renderFakeLinkWebPage = renderFakeLinkWebPage;
+    window.imChat.stripFakeLinkHtmlToPlainText = stripFakeLinkHtmlToPlainText;
     window.imChat.renderPayTransferBubble = renderPayTransferBubble;
     window.imChat.renderVoiceMessageBubble = renderVoiceMessageBubble;
     function renderHtmlBubble(msg, friend, container, timestamp = Date.now()) {

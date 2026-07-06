@@ -68,7 +68,6 @@
             StorageManager.save('u2_userState', userState);
             StorageManager.save('u2_apiConfig', apiConfig);
             StorageManager.save('u2_minimaxConfig', minimaxConfig);
-            StorageManager.save('u2_linkResolverConfig', linkResolverConfig);
             StorageManager.save('u2_apiPresets', apiPresets);
             StorageManager.save('u2_fetchedModels', fetchedModels);
             StorageManager.save('u2_assistiveBallSettings', assistiveBallSettings);
@@ -88,7 +87,6 @@
                         currentAccountId,
                         apiConfig: clonePlainData(apiConfig),
                         minimaxConfig: clonePlainData(minimaxConfig),
-                        linkResolverConfig: clonePlainData(linkResolverConfig),
                         apiPresets: clonePlainData(apiPresets),
                         fetchedModels: clonePlainData(fetchedModels),
                         assistiveBallSettings: clonePlainData(assistiveBallSettings),
@@ -123,9 +121,6 @@
         groupId: '',
         ttsModel: 'speech-02-hd'
     };
-    let linkResolverConfig = window.getLinkResolverConfig
-        ? window.getLinkResolverConfig()
-        : { endpoint: '', timeoutMs: 12000 };
     let apiPresets = [];
     let fetchedModels = [];
     let assistiveBallSettings = {
@@ -186,7 +181,6 @@
         if (window.StorageManager) {
             apiConfig = StorageManager.load('u2_apiConfig', apiConfig);
             minimaxConfig = StorageManager.load('u2_minimaxConfig', minimaxConfig);
-            linkResolverConfig = StorageManager.load('u2_linkResolverConfig', linkResolverConfig);
             apiPresets = StorageManager.load('u2_apiPresets', []);
             fetchedModels = StorageManager.load('u2_fetchedModels', []);
             assistiveBallSettings = {
@@ -237,7 +231,6 @@
         
         // Expose globally for other modules if needed
         window.apiConfig = apiConfig;
-        window.linkResolverConfig = linkResolverConfig;
         if (window.u2MinimaxTts && typeof window.u2MinimaxTts.setConfig === 'function') {
             minimaxConfig = window.u2MinimaxTts.setConfig({ ...(window.u2MinimaxTts.DEFAULT_CONFIG || {}), ...minimaxConfig });
         } else {
@@ -964,16 +957,17 @@
         // Clear Status CSS
         if (themeStatusClearBtn) {
             themeStatusClearBtn.addEventListener('click', async () => {
-                 if (window.imData && window.imData.currentSettingsFriend) {
+                if (themeStatusCssInput) themeStatusCssInput.value = '';
+
+                if (window.imData && window.imData.currentSettingsFriend) {
                     const friend = window.imData.currentSettingsFriend;
                     if (window.imApp && window.imApp.commitScopedFriendChange) {
                         const saved = await window.imApp.commitScopedFriendChange(friend, (targetFriend) => {
                             targetFriend.statusCss = '';
                             targetFriend.statusCssEnabled = false;
                         }, { silent: true, syncSettings: true });
-                        
+
                         if (saved) {
-                            if (themeStatusCssInput) themeStatusCssInput.value = '';
                             if (window.imApp.applyFriendCss) window.imApp.applyFriendCss(window.imData.currentSettingsFriend);
                             showToast('已清空状态栏 CSS');
                         } else {
@@ -981,26 +975,197 @@
                         }
                     }
                 } else {
-                    showToast('请先选择一个朋友');
+                    showToast('已清空状态栏 CSS 输入框');
                 }
             });
         }
 
         if (themeBubbleCopyBtn) {
             themeBubbleCopyBtn.addEventListener('click', () => {
-                const bubbleTemplate = `/* 气泡默认结构参考 */
-.chat-row.user .chat-bubble {
-  background: #111 !important;
-  color: #fff !important;
-  border-radius: 16px 16px 4px 16px !important;
+                const bubbleTemplate = `/* iMessage 真实气泡源码（单聊文本气泡）
+   来源：css/imessage.css + js/imessage/4_chat_bubbles.js
+   运行时结构：.chat-row.user-row/.ai-row > .chat-bubble.user-bubble/.ai-bubble
+   提示：在主题编辑器里，:scope 代表当前聊天页根节点 */
+
+.chat-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  width: 100%;
+  transition: transform 0.2s, opacity 0.2s;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
-.chat-row.char .chat-bubble {
-  background: #e9e9ee !important;
-  color: #111 !important;
-  border-radius: 16px 16px 16px 4px !important;
+
+.chat-row:not(.has-prev) {
+  margin-top: 10px;
+}
+
+.chat-row:first-child {
+  margin-top: 0;
+}
+
+.chat-row.user-row {
+  justify-content: flex-end;
+}
+
+.chat-row.ai-row {
+  justify-content: flex-start;
+}
+
+.chat-bubble {
+  max-width: 70%;
+  padding: 10px 14px;
+  border-radius: 20px;
+  font-size: 15px;
+  line-height: 1.4;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  transition: border-radius 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.user-bubble {
+  background-color: #2c2c2e;
+  color: #fff;
+  border-radius: 20px;
+  position: relative;
+}
+
+.ai-bubble {
+  background-color: #f2f2f7;
+  color: #000;
+  border-radius: 20px;
+  position: relative;
+}
+
+/* 连续气泡圆角 */
+.user-row.has-prev .user-bubble {
+  border-top-right-radius: 4px;
+}
+
+.user-row.has-next .user-bubble {
+  border-bottom-right-radius: 4px;
+}
+
+.ai-row.has-prev .ai-bubble {
+  border-top-left-radius: 4px;
+}
+
+.ai-row.has-next .ai-bubble {
+  border-bottom-left-radius: 4px;
+}
+
+/* 头像：群聊/多人消息会用到；单聊 AI 气泡一般不显示头像 */
+.chat-avatar-small {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: #e5e5ea;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 12px;
+  color: #8e8e93;
+}
+
+.chat-avatar-small img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 时间/已读 */
+.bubble-meta {
+  display: none;
+  margin-left: 6px;
+  font-size: 10px;
+  opacity: 0.7;
+  vertical-align: bottom;
+}
+
+:scope.show-timestamps .bubble-meta {
+  display: inline-flex;
+  align-items: center;
+}
+
+.bubble-read-icon {
+  margin-left: 3px;
+  font-size: 10px;
+  letter-spacing: 0;
+}
+
+:scope.timestamp-outside .chat-bubble {
+  overflow: visible;
+}
+
+:scope.timestamp-outside .user-row .bubble-meta {
+  position: absolute;
+  left: 0;
+  bottom: 4px;
+  transform: translateX(-100%);
+  margin-left: -6px;
+  margin-top: 0;
+  color: #8e8e93;
+}
+
+:scope.timestamp-outside .ai-row .bubble-meta {
+  position: absolute;
+  right: 0;
+  bottom: 4px;
+  transform: translateX(100%);
+  margin-right: -6px;
+  margin-top: 0;
+  color: #8e8e93;
+}
+
+/* 引用与翻译：实际由 JS 内联生成，这里给玩家可覆盖的真实 class */
+.msg-reply-quote {
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  margin-bottom: 8px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-bubble .msg-reply-quote {
+  color: rgba(255,255,255,0.85);
+  background: rgba(255,255,255,0.15);
+}
+
+.ai-bubble .msg-reply-quote {
+  color: rgba(0,0,0,0.6);
+  background: rgba(0,0,0,0.05);
+}
+
+.msg-translation {
+  margin-top: 6px;
+  padding-top: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+  word-wrap: break-word;
+  white-space: normal;
+}
+
+.user-bubble .msg-translation {
+  border-top: 1px solid rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.7);
+}
+
+.ai-bubble .msg-translation {
+  border-top: 1px solid rgba(0,0,0,0.1);
+  color: #8e8e93;
 }`;
                 navigator.clipboard.writeText(bubbleTemplate).then(() => {
-                    if (window.showToast) window.showToast('已复制气泡源码结构');
+                    if (window.showToast) window.showToast('已复制真实气泡源码');
                 }).catch(err => {
                     console.error('Copy failed', err);
                     if (window.showToast) window.showToast('复制失败');
@@ -1010,71 +1175,180 @@
 
         if (themeChatCopyBtn) {
             themeChatCopyBtn.addEventListener('click', () => {
-                const chatTemplate = `/* Chat 界面默认结构参考 */
-.active-chat-interface {
-  background-color: #ffffff;
-  background-image: none;
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
+                const chatTemplate = `/* iMessage 真实单聊 Chat 源码
+   来源：css/imessage.css + js/imessage/4_chat_interface.js
+   运行时根节点：.active-chat-interface.im-chat-single
+   提示：在主题编辑器里，:scope 代表当前单聊根节点 */
+
+:scope {
+  --im-chat-bg-color: #ffffff;
+  --im-chat-bg-image: none;
+  --im-chat-bg-size: cover;
+  --im-chat-bg-position: center;
+  --im-chat-bg-repeat: no-repeat;
+  --im-chat-avatar-size: 44px;
+  --im-chat-name-size: 16px;
+  --im-chat-sign-size: 11px;
+  --im-chat-status-dot-size: 7px;
+  --im-chat-header-gap: 10px;
+  --im-chat-header-left-offset: 12px;
+  --im-chat-header-padding: 0 16px;
+  --im-chat-header-bg: #ffffff;
+  --im-chat-header-border: 1px solid #f2f2f7;
+  --im-chat-input-container-bg: #ffffff;
+  --im-chat-input-bg: #f2f2f7;
+  --im-chat-input-radius: 22px;
+  position: absolute;
+  inset: 0;
+  flex-direction: column;
+  background-color: var(--im-chat-bg-color);
+  background-image: var(--im-chat-bg-image);
+  background-size: var(--im-chat-bg-size);
+  background-position: var(--im-chat-bg-position);
+  background-repeat: var(--im-chat-bg-repeat);
+  z-index: 150;
+  min-height: 0;
+  overflow: hidden;
 }
 
-/* 顶部栏区域 */
+:scope.has-chat-bg {
+  --im-chat-header-bg: #ffffff;
+  --im-chat-header-border: 1px solid #f2f2f7;
+  --im-chat-header-backdrop: none;
+  --im-chat-input-container-bg: transparent;
+}
+
 .chat-sticky-container {
-  border-bottom: 1px solid #f2f2f7;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 20;
+  padding-top: max(10px, env(safe-area-inset-top, 0px));
+  padding-bottom: 10px;
+  pointer-events: none;
+}
+
+.chat-sticky-container.is-friend {
+  background: #ffffff;
+  border-bottom: var(--im-chat-header-border, 1px solid #f2f2f7);
   padding-bottom: 5px;
 }
+
+.chat-sticky-container :where(
+  .chat-back-btn,
+  .im-chat-back-btn,
+  .chat-call-btn,
+  .chat-menu-btn,
+  .chat-cancel-batch-btn,
+  .im-chat-header-main,
+  .im-chat-header-main *,
+  .ins-chat-avatar,
+  .ins-chat-avatar *
+) {
+  pointer-events: auto;
+}
+
 .chat-top-bar {
-  background-color: transparent;
-  backdrop-filter: none;
+  position: relative;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  padding: var(--im-chat-header-padding);
+  align-items: center;
+  color: #000;
+  font-size: 20px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.im-chat-top-bar {
+  padding-left: var(--im-chat-header-left-offset) !important;
+}
+
+.im-chat-header-left,
+.im-chat-actions,
+.im-chat-input-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
-  height: 44px;
 }
 
-/* 顶部左侧返回按钮 */
-.chat-back-btn {
-  cursor: pointer;
-  padding: 5px 5px 5px 0;
-  color: #000;
+.im-chat-header-left {
+  gap: var(--im-chat-header-gap);
+  min-width: 0;
 }
 
-/* 顶部头像 */
+.im-chat-header-main {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.im-chat-avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
 .ins-chat-avatar {
-  margin: 0;
-  width: 44px;
-  height: 44px;
+  width: var(--im-chat-avatar-size);
+  height: var(--im-chat-avatar-size);
   border-radius: 50%;
-  background-color: #e5e5ea;
+  background-color: #f2f2f7;
   display: flex;
   justify-content: center;
   align-items: center;
   color: #8e8e93;
   overflow: hidden;
+  margin: 0;
+  flex-shrink: 0;
 }
 
-/* 名字和签名区域 */
+.ins-chat-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.im-chat-title-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-left: 8px;
+  gap: 1px;
+  min-width: 0;
+}
+
 .ins-chat-name {
-  font-size: 18px;
-  line-height: 1.2;
+  font-size: var(--im-chat-name-size);
   font-weight: 600;
   color: #000;
-}
-.ins-chat-sign {
-  font-size: 13px;
-  color: #8e8e93;
+  line-height: 1.05;
 }
 
-/* 顶部右侧菜单按钮 */
-.chat-menu-btn {
+.ins-chat-sign {
+  font-size: var(--im-chat-sign-size);
+  color: #8e8e93;
+  margin-top: 0;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.im-chat-status-dot {
+  width: var(--im-chat-status-dot-size);
+  height: var(--im-chat-status-dot-size);
+  border-radius: 50%;
+  background: #34c759;
+}
+
+.chat-back-btn,
+.chat-menu-btn,
+.chat-call-btn {
   cursor: pointer;
-  padding: 5px;
   color: #000;
 }
 
-/* 聊天消息列表区域 */
 .ins-chat-messages {
   flex: 1;
   overflow-y: auto;
@@ -1084,33 +1358,44 @@
   gap: 15px;
 }
 
-/* 底部输入框区域 */
 .ins-chat-input-container {
-  background-color: #ffffff;
-  border-top: 1px solid #f2f2f7;
-  padding: 10px 16px 20px;
+  width: 100%;
+  padding: 10px 16px 8px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  background-color: var(--im-chat-input-container-bg, #ffffff);
+  border-top: none;
+  z-index: 30;
+  box-sizing: border-box;
 }
+
+.keyboard-open .ins-chat-input-container {
+  padding: 8px 12px;
+}
+
 .ins-chat-input-wrapper {
-  background-color: #f2f2f7;
-  border-radius: 22px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  background-color: var(--im-chat-input-bg);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--im-chat-input-radius);
   padding: 6px 12px;
+  gap: 10px;
 }
+
 .ins-message-input {
   flex: 1;
   border: none;
   outline: none;
   background: transparent;
   font-size: 15px;
+  padding: 8px 0;
+  min-width: 0;
   color: #111;
 }
 
-/* 左侧加号图标 */
 .ins-input-icon {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   background-color: #007aff;
   color: #fff;
@@ -1119,35 +1404,52 @@
   align-items: center;
   cursor: pointer;
   font-size: 14px;
+  flex-shrink: 0;
 }
 
-/* 右侧发送与 API 续写图标 */
 .im-chat-input-actions {
-  display: flex;
-  align-items: center;
   gap: 8px;
 }
+
 .send-btn-icon {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  display: flex;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+  border: none;
+  display: inline-flex;
   justify-content: center;
   align-items: center;
-  cursor: pointer;
-  font-size: 14px;
+  transition: background-color 0.16s ease, transform 0.16s ease, opacity 0.16s ease;
 }
+
+.send-btn-icon:active {
+  transform: scale(0.94);
+}
+
 .send-btn {
   background: transparent;
   color: #8e8e93;
   font-size: 16px;
 }
+
+.send-btn:active {
+  background: transparent;
+  color: #636366;
+}
+
 .mic-btn {
   background: #111111;
-  color: #fff;
+  color: #ffffff;
+}
+
+.mic-btn:active {
+  background: #2c2c2e;
 }`;
                 navigator.clipboard.writeText(chatTemplate).then(() => {
-                    if (window.showToast) window.showToast('已复制 Chat 源码结构');
+                    if (window.showToast) window.showToast('已复制真实单聊 Chat 源码');
                 }).catch(err => {
                     console.error('Copy failed', err);
                     if (window.showToast) window.showToast('复制失败');
@@ -1157,64 +1459,306 @@
 
         if (themeStatusCopyBtn) {
             themeStatusCopyBtn.addEventListener('click', () => {
-                const statusTemplate = `/* 状态栏资料卡（点击头像弹出）默认结构参考 */
-/* 主卡片容器 */
-.chat-profile-panel-card {
-  background: #ffffff;
-  border-radius: 24px;
+                const statusTemplate = `/* iMessage 真实状态栏/资料卡源码
+   来源：css/imessage.css + js/imessage/4_chat_status.js
+   运行时结构：.chat-profile-panel-overlay 内的 .chat-profile-panel-card / .gmp-* */
+
+.chat-profile-panel-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1100;
+  display: none;
+  align-items: flex-start;
+  justify-content: center;
+  padding: calc(88px + env(safe-area-inset-top, 0px)) 16px 24px;
+  background: rgba(0, 0, 0, 0.22);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
 }
 
-/* 顶部背景区 */
+.chat-profile-panel-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.chat-profile-panel-card {
+  width: min(100%, 320px);
+  background: #ffffff;
+  border-radius: 24px;
+  overflow: hidden;
+  transform: translateY(12px) scale(0.96);
+  opacity: 0;
+  transition: transform 0.22s ease, opacity 0.22s ease;
+}
+
+.chat-profile-panel-overlay.active .chat-profile-panel-card {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+.gmp-header,
 .chat-profile-panel-header {
   height: 88px;
   background: linear-gradient(180deg, #f2f2f7 0%, #ffffff 100%);
+  position: relative;
 }
 
-/* 头像容器 */
+.gmp-avatar-wrapper {
+  position: absolute;
+  bottom: -30px;
+  left: 16px;
+  display: flex;
+  align-items: flex-end;
+}
+
+.chat-profile-panel-header .gmp-avatar-wrapper {
+  bottom: -34px;
+  left: 18px;
+}
+
+.gmp-avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 3px solid #ffffff;
+  background-color: #e5e5ea;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 24px;
+  color: #8e8e93;
+  overflow: hidden;
+}
+
 .chat-profile-panel-header .gmp-avatar {
   width: 66px;
   height: 66px;
-  border: 3px solid #ffffff;
 }
 
-/* 在线状态绿点/文本气泡 */
+.gmp-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .gmp-status-bubble {
   background: #ffffff;
   border: 1px solid #e5e5ea;
+  border-radius: 14px;
+  padding: 4px 10px;
+  font-size: 12px;
   color: #333;
+  margin-left: -8px;
+  margin-bottom: 6px;
+  position: relative;
+  cursor: pointer;
 }
 
-/* 名字区域 */
+.gmp-status-bubble::before {
+  content: '';
+  position: absolute;
+  left: -5px;
+  bottom: 8px;
+  border-width: 5px 5px 5px 0;
+  border-style: solid;
+  border-color: transparent #ffffff transparent transparent;
+  filter: drop-shadow(-1px 0px 0px #e5e5ea);
+}
+
+.chat-profile-panel-header-status {
+  max-width: 170px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-profile-panel-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  color: #111;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.chat-profile-panel-close:active {
+  transform: scale(0.96);
+}
+
+.gmp-body,
+.chat-profile-panel-body {
+  padding: 40px 16px 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-profile-panel-body {
+  padding-top: 46px;
+  gap: 0;
+}
+
+.gmp-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
 .gmp-name {
   font-size: 18px;
   font-weight: 700;
   color: #000;
 }
 
-/* 签名区域 */
+.gmp-title {
+  background: #f2f2f7;
+  color: #8e8e93;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
 .gmp-signature {
   font-size: 13px;
   color: #8e8e93;
+  margin-bottom: 12px;
+  line-height: 1.4;
 }
 
-/* 内心想法气泡 (thought) */
-.gmp-inner-voice, .chat-profile-panel-thought {
-  background: #f2f2f7;
+.gmp-inner-voice,
+.chat-profile-panel-thought {
+  font-size: 13px;
   color: #333;
+  line-height: 1.4;
+  background: #f2f2f7;
+  padding: 10px 12px;
   border-radius: 16px;
+  margin-bottom: 16px;
+  min-height: 40px;
+  position: relative;
 }
 
-/* 底部悬浮的切换 Tab 按钮 */
+.gmp-inner-voice::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 12px;
+  border-width: 0 6px 6px 6px;
+  border-style: solid;
+  border-color: transparent transparent #f2f2f7 transparent;
+}
+
+.chat-profile-panel-thought.is-empty {
+  color: #8e8e93;
+}
+
+.chat-profile-panel-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chat-profile-panel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-profile-panel-section-label {
+  color: #8e8e93;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.chat-profile-panel-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chat-profile-panel-meta-bubble {
+  background: #f2f2f7;
+  border-radius: 14px;
+  padding: 8px 10px;
+  min-width: 0;
+}
+
+.chat-profile-panel-meta-key {
+  color: #8e8e93;
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+
+.chat-profile-panel-meta-value {
+  color: #111;
+  font-size: 13px;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.chat-profile-panel-events {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-profile-panel-empty {
+  padding: 20px 14px;
+  text-align: center;
+  color: #8e8e93;
+}
+
+.chat-profile-panel-empty-title {
+  color: #111;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.chat-profile-panel-empty-desc {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.chat-profile-panel-floating-tabs {
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
+}
+
 .chat-profile-panel-tab-btn {
+  pointer-events: auto;
+  touch-action: manipulation;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
   background: #fff;
   color: #111;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 22px;
+  cursor: pointer;
+  transition: transform 0.2s, background 0.2s;
 }
+
 .chat-profile-panel-tab-btn.active {
   background: #111;
   color: #fff;
 }`;
                 navigator.clipboard.writeText(statusTemplate).then(() => {
-                    if (window.showToast) window.showToast('已复制状态栏源码结构');
+                    if (window.showToast) window.showToast('已复制真实状态栏源码');
                 }).catch(err => {
                     console.error('Copy failed', err);
                     if (window.showToast) window.showToast('复制失败');

@@ -1166,6 +1166,9 @@ function showContextMenu(row, e) {
         
         const screenEl = document.getElementById('app') || document.body;
         const screenRect = screenEl.getBoundingClientRect();
+        const sourceBubbleRect = bubble.getBoundingClientRect();
+        const isCardBubble = bubble.classList.contains('im-card-bubble')
+            || !!bubble.querySelector('.chat-link-card, .chat-fake-link-card, .pay-transfer-card, .voice-call-record-card');
         
         // Clone bubble into context menu
         const bubbleClone = document.getElementById('msg-context-bubble-clone');
@@ -1173,7 +1176,20 @@ function showContextMenu(row, e) {
             bubbleClone.innerHTML = '';
             const clonedBubble = bubble.cloneNode(true);
             clonedBubble.style.margin = '0';
-            clonedBubble.style.maxWidth = '100%';
+            if (isCardBubble) {
+                const cloneWidth = Math.max(180, Math.min(sourceBubbleRect.width || 260, 270, screenRect.width - 48));
+                clonedBubble.classList.add('msg-context-card-clone');
+                clonedBubble.style.width = cloneWidth + 'px';
+                clonedBubble.style.maxWidth = cloneWidth + 'px';
+                clonedBubble.style.flex = '0 0 auto';
+                clonedBubble.querySelectorAll('.chat-link-card, .chat-fake-link-card').forEach(card => {
+                    card.style.width = '100%';
+                    card.style.maxWidth = '100%';
+                    card.style.boxSizing = 'border-box';
+                });
+            } else {
+                clonedBubble.style.maxWidth = '100%';
+            }
             bubbleClone.appendChild(clonedBubble);
         }
         
@@ -1223,9 +1239,14 @@ function showContextMenu(row, e) {
         // Vertical centering: place bubble roughly at its original position
         const bubbleRect = bubble.getBoundingClientRect();
         const bubbleCenterY = bubbleRect.top + bubbleRect.height / 2 - screenRect.top;
+        const clonedBubbleRect = bubbleClone?.firstElementChild?.getBoundingClientRect?.();
+        const safeBubbleHeight = Math.min(
+            clonedBubbleRect?.height || bubbleRect.height,
+            Math.max(80, screenRect.height * 0.45)
+        );
         
         // Estimate menu total height (reaction bar ~50 + bubble + actions ~200)
-        const estimatedMenuHeight = 50 + bubbleRect.height + 220;
+        const estimatedMenuHeight = 50 + safeBubbleHeight + 220;
         let topOffset = bubbleCenterY - estimatedMenuHeight / 2;
         
         // Clamp to screen bounds

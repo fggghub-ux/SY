@@ -145,6 +145,57 @@
         return value && typeof value === 'object' && !Array.isArray(value);
     }
 
+    function hasUsefulBstageState(value) {
+        if (!isPlainObject(value)) return false;
+        const meaningfulArrays = ['teams', 'bstageOrders', 'bstageFanChatHistory', 'chatPhotos'];
+        if (meaningfulArrays.some((key) => Array.isArray(value[key]) && value[key].length > 0)) return true;
+        const userTeam = value.bstageUserTeamState;
+        if (isPlainObject(userTeam)) {
+            if (Array.isArray(userTeam.members) && userTeam.members.length > 1) return true;
+            if (Array.isArray(userTeam.videos) && userTeam.videos.length > 0) return true;
+            if (Array.isArray(userTeam.shopItems) && userTeam.shopItems.length > 0) return true;
+            if (userTeam.customName || userTeam.customDesc || userTeam.customAvatar || userTeam.customBg) return true;
+        }
+        const fanChatSettings = value.bstageFanChatSettings;
+        if (isPlainObject(fanChatSettings) && (fanChatSettings.chatBg || fanChatSettings.chatCssId || fanChatSettings.bubbleCssId)) return true;
+        const presets = value.bstagePresets;
+        if (isPlainObject(presets) && Object.keys(presets).some((key) => Array.isArray(presets[key]) && presets[key].length > 0)) return true;
+        const revenue = value.bstageRevenueState;
+        if (isPlainObject(revenue) && Number(revenue.withdrawnCny) > 0) return true;
+        return false;
+    }
+
+    function getStateUpdatedAt(value) {
+        const parsed = Number(value && value.updatedAt);
+        return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    function shouldRecoverDurableBstage(localBstage, durableBstage) {
+        if (!hasUsefulBstageState(durableBstage)) return false;
+        if (!hasUsefulBstageState(localBstage)) return true;
+        const durableUpdatedAt = getStateUpdatedAt(durableBstage);
+        const localUpdatedAt = getStateUpdatedAt(localBstage);
+        return durableUpdatedAt > 0 && durableUpdatedAt > localUpdatedAt;
+    }
+
+    function mergeRecoveredAppState(localState, durableState) {
+        const merged = normalizeAppState(localState);
+        const durable = normalizeAppState(durableState);
+        if (shouldRecoverDurableBstage(merged.bstage, durable.bstage)) {
+            merged.bstage = clone(durable.bstage);
+        }
+        return normalizeAppState(merged);
+    }
+
+    function mergeDurableBaseWithRuntimeState(runtimeState, durableState) {
+        const runtime = normalizeAppState(runtimeState);
+        const durable = normalizeAppState(durableState);
+        if (hasUsefulBstageState(runtime.bstage) && !shouldRecoverDurableBstage(runtime.bstage, durable.bstage)) {
+            durable.bstage = clone(runtime.bstage);
+        }
+        return normalizeAppState(durable);
+    }
+
     function normalizeYoutubeState(raw) {
         const safe = isPlainObject(raw) ? raw : {};
         const channelState = isPlainObject(safe.channelState) ? safe.channelState : {};
@@ -246,18 +297,21 @@
 
     function saveLocalAppState() {
         try {
+            const persistedAppState = stripVolatileBlobUrls(appState);
             if (window.StorageManager && typeof window.StorageManager.save === 'function') {
-                window.StorageManager.save(APP_STATE_KEY, stripVolatileBlobUrls(appState));
-                hasLocalAppState = true;
-                return;
+                const saved = window.StorageManager.save(APP_STATE_KEY, persistedAppState);
+                if (saved) hasLocalAppState = true;
+                return !!saved;
             }
             if (window.localStorage) {
-                window.localStorage.setItem(APP_STATE_KEY, JSON.stringify(stripVolatileBlobUrls(appState)));
+                window.localStorage.setItem(APP_STATE_KEY, JSON.stringify(persistedAppState));
                 hasLocalAppState = true;
+                return true;
             }
         } catch (error) {
             console.warn('[app_state_bridge] Failed to save local app state:', error);
         }
+        return false;
     }
 
     function buildGlobalDataForSave(base = {}) {
@@ -301,12 +355,17 @@
     }
 
     function scheduleSave() {
-        saveLocalAppState();
+        const localSaved = saveLocalAppState();
         if (saveTimer) clearTimeout(saveTimer);
-        saveTimer = setTimeout(() => {
+        const runPersist = () => {
             saveTimer = null;
             persistToAppStorage();
-        }, SAVE_DEBOUNCE_MS);
+        };
+        if (!localSaved) {
+            runPersist();
+            return;
+        }
+        saveTimer = setTimeout(runPersist, SAVE_DEBOUNCE_MS);
     }
 
     window.getAllAppState = function getAllAppState() {
@@ -347,6 +406,10 @@
     };
 
     window.saveGlobalData = async function saveGlobalData() {
+        if (saveTimer) {
+            clearTimeout(saveTimer);
+            saveTimer = null;
+        }
         saveLocalAppState();
         return persistToAppStorage();
     };
@@ -357,8 +420,12 @@
                 const loaded = await window.appStorage.loadGlobalData();
                 globalDataCache = loaded && typeof loaded === 'object' ? loaded : {};
 
-                if (!hasLocalAppState && !runtimeDirty && globalDataCache.appState) {
-                    appState = normalizeAppState(globalDataCache.appState);
+                if (globalDataCache.appState) {
+                    appState = !hasLocalAppState
+                        ? (runtimeDirty
+                            ? mergeDurableBaseWithRuntimeState(appState, globalDataCache.appState)
+                            : normalizeAppState(globalDataCache.appState))
+                        : mergeRecoveredAppState(appState, globalDataCache.appState);
                     syncWindowState();
                     saveLocalAppState();
                 }
@@ -373,6 +440,17 @@
     };
 
     syncWindowState();
+
+    function flushAppStateForPageLifecycle() {
+        if (typeof window.saveGlobalData === 'function') {
+            window.saveGlobalData();
+        }
+    }
+
+    window.addEventListener('pagehide', flushAppStateForPageLifecycle);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') flushAppStateForPageLifecycle();
+    });
 
     window.globalDataReadyPromise = window.loadGlobalData();
 })();

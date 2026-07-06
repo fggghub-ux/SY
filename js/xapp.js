@@ -37,6 +37,7 @@
         let currentEditingSuperTopicId = null;
         let editSuperTopicAvatarDraft = '';
         let editSuperTopicBannerDraft = '';
+        let editSuperTopicSelectedChars = [];
 
         const editSheet = document.getElementById('x-edit-profile-sheet');
         const settingsSheet = document.getElementById('x-settings-sheet');
@@ -1148,19 +1149,38 @@ X is a global app. Non-User authors may write in the language that naturally fit
                         <strong>编辑超话</strong>
                         <button class="x-edit-sheet-save" id="x-edit-super-topic-save-btn" type="button">保存</button>
                     </div>
-                    <div class="x-char-edit-body">
-                        <div class="x-edit-avatar-row">
-                            <button class="x-edit-avatar-preview" id="x-edit-super-topic-avatar-preview" type="button" aria-label="上传超话头像"><span>超</span></button>
-                            <input type="file" id="x-edit-super-topic-avatar-input" accept="image/jpeg,image/png" hidden>
-                            <div><strong>头像</strong><p>再次点击已选超话头像可进入此页面。</p></div>
-                        </div>
-                        <div class="x-edit-banner-row">
-                            <button class="x-edit-banner-preview" id="x-edit-super-topic-banner-preview" type="button" aria-label="上传超话封面"><span>Cover</span></button>
+                    <div class="x-topic-editor-body">
+                        <div class="x-topic-editor-hero">
+                            <button class="x-topic-editor-cover x-edit-banner-preview" id="x-edit-super-topic-banner-preview" type="button" aria-label="上传超话封面"><span>Cover</span></button>
                             <input type="file" id="x-edit-super-topic-banner-input" accept="image/jpeg,image/png" hidden>
-                            <div><strong>封面</strong><p>用于超话主页顶部背景。</p></div>
+                            <button class="x-topic-editor-avatar x-edit-avatar-preview" id="x-edit-super-topic-avatar-preview" type="button" aria-label="上传超话头像"><span>超</span></button>
+                            <input type="file" id="x-edit-super-topic-avatar-input" accept="image/jpeg,image/png" hidden>
                         </div>
-                        <label class="x-edit-field"><span>超话名称</span><input id="x-edit-super-topic-name" type="text" maxlength="40"></label>
-                        <label class="x-edit-field"><span>粉丝数</span><input id="x-edit-super-topic-fans" type="text" maxlength="20"></label>
+                        <div class="x-topic-editor-card">
+                            <label class="x-edit-field"><span>超话名称</span><input id="x-edit-super-topic-name" type="text" maxlength="40"></label>
+                            <label class="x-edit-field"><span>粉丝数</span><input id="x-edit-super-topic-fans" type="text" maxlength="20"></label>
+                        </div>
+                        <section class="x-topic-editor-card x-topic-roles-section">
+                            <div class="x-topic-editor-card-title">
+                                <div>
+                                    <strong>超话角色</strong>
+                                    <span>用于生成超话动态和互动时的人物来源。</span>
+                                </div>
+                            </div>
+                            <div class="x-topic-role-actions">
+                                <button type="button" id="x-edit-topic-import-imessage-btn"><i class="far fa-comments"></i> 从 iMessage 拉取</button>
+                                <button type="button" id="x-edit-topic-manual-char-btn"><i class="fas fa-user-plus"></i> 手动添加</button>
+                            </div>
+                            <div class="x-topic-chars-list" id="x-edit-topic-chars-list"></div>
+                            <div class="x-topic-source-list" id="x-edit-topic-imessage-list-container" style="display:none;"></div>
+                            <div class="x-topic-manual-card" id="x-edit-topic-manual-container" style="display:none;">
+                                <input id="x-edit-topic-manual-name" type="text" placeholder="角色名称">
+                                <input id="x-edit-topic-manual-handle" type="text" placeholder="@账号">
+                                <textarea id="x-edit-topic-manual-bio" placeholder="简介"></textarea>
+                                <textarea id="x-edit-topic-manual-persona" placeholder="人设"></textarea>
+                                <button type="button" id="x-edit-topic-manual-save-btn">确认添加</button>
+                            </div>
+                        </section>
                         <button class="x-topic-delete-btn" id="x-edit-super-topic-delete-btn" type="button"><i class="fas fa-trash-alt"></i> 删除此超话</button>
                     </div>
                 </div>
@@ -1745,6 +1765,31 @@ X is a global app. Non-User authors may write in the language that naturally fit
             `;
         }
 
+        function buildSuperTopicFeedCardHtml(post, topicName = '') {
+            const topicLabel = normalizeComposeTopicTag(post.topicTag || topicName);
+            const textHtml = renderPostTextHtml({ ...post, topicTag: '' });
+            return `
+                ${buildAuthorAvatarButton(post, 'x-feed-avatar x-avatar x-super-feed-avatar')}
+                <div class="x-feed-body x-super-feed-body">
+                    <div class="x-feed-meta x-super-feed-meta">
+                        <div>
+                            <strong>${escapeHtml(post.name)}</strong>
+                            <span>${escapeHtml(post.handle)} · now</span>
+                        </div>
+                        ${topicLabel ? `<button type="button" class="x-super-topic-chip x-post-topic-link" data-topic-tag="${escapeHtml(topicLabel)}">${escapeHtml(topicLabel)}</button>` : ''}
+                    </div>
+                    <p class="x-super-feed-text">${textHtml}</p>
+                    ${renderPostImages(getPostImages(post))}
+                    <div class="x-feed-actions x-super-feed-actions">
+                        <span><i class="far fa-comment"></i> ${escapeHtml(post.comments || '0')}</span>
+                        <button class="x-feed-forward-btn" type="button" data-post-id="${escapeHtml(post.id)}" aria-label="转发帖子"><i class="fas fa-retweet"></i> <span>${escapeHtml(post.reposts || '0')}</span></button>
+                        <span><i class="far fa-heart"></i> ${escapeHtml(post.likes || '0')}</span>
+                        <span><i class="far fa-share-square"></i></span>
+                    </div>
+                </div>
+            `;
+        }
+
         function renderGeneratedPosts() {
             const recommendPanel = view.querySelector('.x-feed-panel[data-feed-panel="recommend"]');
             if (!recommendPanel) return;
@@ -2130,7 +2175,7 @@ ${worldbook || 'None'}
             posts.slice().reverse().forEach((post, index, arr) => {
                 const realIndex = arr.length - 1 - index;
                 const card = document.createElement('article');
-                card.className = 'x-feed-card x-generated-feed-card';
+                card.className = 'x-feed-card x-generated-feed-card x-super-feed-card';
                 if (realIndex >= 10) {
                     card.style.display = 'none';
                     card.classList.add('x-hidden-page-2');
@@ -2139,23 +2184,27 @@ ${worldbook || 'None'}
                 card.setAttribute('tabindex', '0');
                 
                 if (post.isMoment) {
-                    card.classList.add('is-moment');
+                    card.classList.add('is-moment', 'x-super-moment-card');
                     const actionText = safeText(post.actionText, '更新了动态');
                     const refHtml = post.refPost ? `
-                        <div class="x-ref-post" data-ref-id="${escapeHtml(post.refPost.id)}">
+                        <div class="x-ref-post x-super-moment-ref" data-ref-id="${escapeHtml(post.refPost.id)}">
                             <div class="x-feed-meta">
                                 <strong>${escapeHtml(post.refPost.name)}</strong>
                                 <span>${escapeHtml(post.refPost.handle)}</span>
                             </div>
                             <p>${renderPostTextHtml(post.refPost)}</p>
+                            ${renderPostImages(getPostImages(post.refPost))}
                         </div>
-                    ` : `<p>${renderPostTextHtml(post)}</p>`;
+                    ` : `<p class="x-super-feed-text">${renderPostTextHtml(post)}</p>`;
 
                     card.innerHTML = `
-                        <div class="x-feed-body" style="margin-left: 0;">
-                            <div class="x-moment-action">
+                        <div class="x-super-moment-shell">
+                            <div class="x-moment-action x-super-moment-action">
                                 ${buildAuthorAvatarButton(post, 'x-avatar x-moment-avatar')}
-                                <span>${escapeHtml(post.name)} ${escapeHtml(actionText)}</span>
+                                <div>
+                                    <strong>${escapeHtml(post.name)}</strong>
+                                    <span>${escapeHtml(actionText)}</span>
+                                </div>
                             </div>
                             ${refHtml}
                         </div>
@@ -2169,7 +2218,7 @@ ${worldbook || 'None'}
                         }
                     }
                 } else {
-                    card.innerHTML = buildFeedCardHtml(post);
+                    card.innerHTML = buildSuperTopicFeedCardHtml(post, topicName);
                     
                     if (postsPanel) postsPanel.prepend(card.cloneNode(true));
                     if (post.isFeatured && featuredPanel) {
@@ -2229,18 +2278,23 @@ ${worldbook || 'None'}
             view.querySelectorAll('.x-super-follow-item[data-topic-id]').forEach((item) => {
                 item.classList.toggle('active', String(item.dataset.topicId) === String(currentActiveTopicId));
             });
-            const coverEl = document.querySelector('.x-super-cover');
-            const avatarEl = document.querySelector('.x-super-topic-avatar');
-            const titleEl = document.querySelector('.x-super-title-row h3');
-            const statEl = document.querySelector('.x-super-title-row span');
-            const signBtn = document.querySelector('.x-super-title-row button');
+            const homeCard = view.querySelector('#x-super-tab .x-super-home-card');
+            const coverEl = homeCard?.querySelector('.x-super-cover');
+            const avatarEl = homeCard?.querySelector('.x-super-topic-avatar');
+            const titleEl = homeCard?.querySelector('.x-super-title-row h3');
+            const statEl = homeCard?.querySelector('.x-super-title-row span');
+            const signBtn = homeCard?.querySelector('.x-super-title-row button');
             
             if (coverEl) {
                 if (topic.banner) {
                     coverEl.style.backgroundImage = `url(${topic.banner})`;
+                    coverEl.style.backgroundSize = 'cover';
+                    coverEl.style.backgroundPosition = 'center';
                     coverEl.innerHTML = '';
                 } else {
                     coverEl.style.backgroundImage = '';
+                    coverEl.style.backgroundSize = '';
+                    coverEl.style.backgroundPosition = '';
                     coverEl.innerHTML = '<div class="x-super-cover-mark">#</div>';
                 }
             }
@@ -2331,12 +2385,18 @@ ${worldbook || 'None'}
             currentEditingSuperTopicId = String(topic.id || topic.name);
             editSuperTopicAvatarDraft = safeText(topic.avatar || topic.icon);
             editSuperTopicBannerDraft = safeText(topic.banner);
+            editSuperTopicSelectedChars = cloneTopicChars(topic.chars || []);
             const nameInput = document.getElementById('x-edit-super-topic-name');
             const fansInput = document.getElementById('x-edit-super-topic-fans');
             if (nameInput) nameInput.value = safeText(topic.name || topic.title, '超话');
             if (fansInput) fansInput.value = safeText(topic.fans, '0');
             renderImagePreview(document.getElementById('x-edit-super-topic-avatar-preview'), editSuperTopicAvatarDraft, '超');
             renderImagePreview(document.getElementById('x-edit-super-topic-banner-preview'), editSuperTopicBannerDraft, 'Cover');
+            renderEditTopicSelectedChars();
+            const importContainer = document.getElementById('x-edit-topic-imessage-list-container');
+            const manualContainer = document.getElementById('x-edit-topic-manual-container');
+            if (importContainer) importContainer.style.display = 'none';
+            if (manualContainer) manualContainer.style.display = 'none';
             if (typeof window.openView === 'function') window.openView(editSuperTopicSheet);
             else editSuperTopicSheet.classList.add('active');
         }
@@ -2345,6 +2405,7 @@ ${worldbook || 'None'}
             currentEditingSuperTopicId = null;
             editSuperTopicAvatarDraft = '';
             editSuperTopicBannerDraft = '';
+            editSuperTopicSelectedChars = [];
             if (typeof window.closeView === 'function') window.closeView(editSuperTopicSheet);
             else editSuperTopicSheet?.classList.remove('active');
         }
@@ -2368,6 +2429,7 @@ ${worldbook || 'None'}
                 topic.fans = fans;
                 topic.avatar = editSuperTopicAvatarDraft;
                 topic.banner = editSuperTopicBannerDraft;
+                topic.chars = cloneTopicChars(editSuperTopicSelectedChars);
                 updatedTopic = { ...topic };
                 draft.xGeneratedPosts = (draft.xGeneratedPosts || []).map((post) => {
                     const linked = String(post.superTopicId || '') === String(topicId)
@@ -2460,7 +2522,7 @@ ${worldbook || 'None'}
                 fans: fans,
                 avatar: createTopicAvatarDraft,
                 banner: createTopicBannerDraft,
-                chars: createTopicSelectedChars,
+                chars: cloneTopicChars(createTopicSelectedChars),
                 createdAt: Date.now()
             };
             
@@ -2469,7 +2531,9 @@ ${worldbook || 'None'}
                 draft.xTopics.unshift(newTopic);
             });
             
+            currentActiveTopicId = String(newTopic.id || newTopic.name);
             renderSuperFollowBar();
+            updateSuperHomeCard(newTopic);
             closeCreateTopicSheet();
             if (typeof window.showToast === 'function') window.showToast('超话创建成功');
         }
@@ -2594,6 +2658,192 @@ ${worldbook || 'None'}
                     }
                 });
             });
+        }
+
+        function getTopicEditorConfig(mode = 'create') {
+            const isEdit = mode === 'edit';
+            return {
+                mode: isEdit ? 'edit' : 'create',
+                charsList: isEdit ? document.getElementById('x-edit-topic-chars-list') : createTopicCharsList,
+                importContainer: isEdit ? document.getElementById('x-edit-topic-imessage-list-container') : createTopicImessageContainer,
+                manualContainer: isEdit ? document.getElementById('x-edit-topic-manual-container') : createTopicManualContainer,
+                manualNameId: isEdit ? 'x-edit-topic-manual-name' : 'x-topic-manual-name',
+                manualHandleId: isEdit ? 'x-edit-topic-manual-handle' : 'x-topic-manual-handle',
+                manualBioId: isEdit ? 'x-edit-topic-manual-bio' : 'x-topic-manual-bio',
+                manualPersonaId: isEdit ? 'x-edit-topic-manual-persona' : 'x-topic-manual-persona'
+            };
+        }
+
+        function getTopicEditorChars(mode = 'create') {
+            return mode === 'edit' ? editSuperTopicSelectedChars : createTopicSelectedChars;
+        }
+
+        function getTopicCharKey(char = {}) {
+            const origin = safeText(char.origin, 'manual');
+            const id = safeText(char.sourceFriendId || char.id || char.name, char.name || origin);
+            return (origin + ':' + id).toLocaleLowerCase();
+        }
+
+        function cloneTopicChars(chars = []) {
+            return (Array.isArray(chars) ? chars : [])
+                .map((char) => normalizeDmChar(char, char?.origin || 'manual'))
+                .filter((char) => safeText(char.name));
+        }
+
+        function addTopicEditorChar(mode, rawChar) {
+            const chars = getTopicEditorChars(mode);
+            const normalized = normalizeDmChar(rawChar, rawChar?.origin || 'manual');
+            const key = getTopicCharKey(normalized);
+            if (chars.some((char) => getTopicCharKey(char) === key)) {
+                if (typeof window.showToast === 'function') window.showToast('该角色已添加');
+                return false;
+            }
+            chars.push(normalized);
+            renderTopicEditorSelectedChars(mode);
+            if (typeof window.showToast === 'function') window.showToast('已添加角色');
+            return true;
+        }
+
+        function renderTopicEditorSelectedChars(mode = 'create') {
+            const config = getTopicEditorConfig(mode);
+            const listEl = config.charsList;
+            if (!listEl) return;
+            const chars = getTopicEditorChars(config.mode);
+            if (chars.length === 0) {
+                listEl.innerHTML = '<div class="x-topic-chars-empty">暂未添加任何角色</div>';
+                return;
+            }
+            listEl.innerHTML = chars.map((char, index) => {
+                const originLabel = char.origin === 'imessage' ? 'iMessage' : '手动';
+                return '<div class="x-topic-char-chip">' +
+                    '<div class="x-topic-char-avatar">' + buildAvatarHtml(char.avatar, char.name) + '</div>' +
+                    '<div class="x-topic-char-copy">' +
+                        '<strong>' + escapeHtml(char.name || 'Char') + '</strong>' +
+                        '<span>' + escapeHtml(char.handle || originLabel) + '</span>' +
+                    '</div>' +
+                    '<em>' + escapeHtml(originLabel) + '</em>' +
+                    '<button type="button" class="x-topic-remove-char" data-index="' + index + '" aria-label="移除角色"><i class="fas fa-times"></i></button>' +
+                '</div>';
+            }).join('');
+            listEl.querySelectorAll('.x-topic-remove-char').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const idx = parseInt(btn.dataset.index, 10);
+                    if (!Number.isNaN(idx)) {
+                        chars.splice(idx, 1);
+                        renderTopicEditorSelectedChars(config.mode);
+                    }
+                });
+            });
+        }
+
+        async function toggleTopicEditorImport(mode = 'create') {
+            const config = getTopicEditorConfig(mode);
+            const importContainer = config.importContainer;
+            const manualContainer = config.manualContainer;
+            if (manualContainer) manualContainer.style.display = 'none';
+            if (!importContainer) return;
+
+            if (importContainer.style.display === 'flex') {
+                importContainer.style.display = 'none';
+                return;
+            }
+
+            importContainer.style.display = 'flex';
+            importContainer.innerHTML = '<div class="x-topic-source-empty">加载 iMessage 角色中...</div>';
+            const chars = await loadImessageChars();
+            if (chars.length === 0) {
+                importContainer.innerHTML = '<div class="x-topic-source-empty">未找到可导入的角色</div>';
+                return;
+            }
+
+            const normalizedChars = chars.map((char) => normalizeDmChar(char, 'imessage'));
+            importContainer.innerHTML =
+                '<div class="x-topic-native-picker">' +
+                    '<select class="x-topic-imessage-select" aria-label="选择 iMessage 角色">' +
+                        '<option value="">选择要添加的角色</option>' +
+                        normalizedChars.map((item, index) =>
+                            '<option value="' + index + '">' + escapeHtml(item.name) + ' · ' + escapeHtml(item.handle || 'iMessage') + '</option>'
+                        ).join('') +
+                    '</select>' +
+                    '<button type="button" class="x-topic-native-add-btn">添加</button>' +
+                '</div>';
+
+            const selectEl = importContainer.querySelector('.x-topic-imessage-select');
+            importContainer.querySelector('.x-topic-native-add-btn')?.addEventListener('click', () => {
+                const selectedIndex = parseInt(selectEl?.value || '', 10);
+                if (Number.isNaN(selectedIndex) || !normalizedChars[selectedIndex]) {
+                    if (typeof window.showToast === 'function') window.showToast('请选择角色');
+                    return;
+                }
+                if (addTopicEditorChar(config.mode, normalizedChars[selectedIndex]) && selectEl) {
+                    selectEl.value = '';
+                }
+            });
+        }
+
+        function toggleTopicEditorManual(mode = 'create') {
+            const config = getTopicEditorConfig(mode);
+            if (config.importContainer) config.importContainer.style.display = 'none';
+            if (!config.manualContainer) return;
+            config.manualContainer.style.display = config.manualContainer.style.display === 'grid' ? 'none' : 'grid';
+        }
+
+        function saveTopicEditorManualChar(mode = 'create') {
+            const config = getTopicEditorConfig(mode);
+            const nameInput = document.getElementById(config.manualNameId);
+            const handleInput = document.getElementById(config.manualHandleId);
+            const bioInput = document.getElementById(config.manualBioId);
+            const personaInput = document.getElementById(config.manualPersonaId);
+            const name = safeText(nameInput?.value);
+            if (!name) {
+                if (typeof window.showToast === 'function') window.showToast('请输入角色名称');
+                return;
+            }
+            addTopicEditorChar(config.mode, {
+                id: makeLocalId('manual-char'),
+                origin: 'manual',
+                name,
+                handle: makeHandle(name, handleInput?.value),
+                bio: safeText(bioInput?.value),
+                persona: safeText(personaInput?.value),
+                avatar: ''
+            });
+            if (nameInput) nameInput.value = '';
+            if (handleInput) handleInput.value = '';
+            if (bioInput) bioInput.value = '';
+            if (personaInput) personaInput.value = '';
+        }
+
+        async function toggleTopicImportImessage() {
+            return toggleTopicEditorImport('create');
+        }
+
+        function toggleTopicManualChar() {
+            return toggleTopicEditorManual('create');
+        }
+
+        function saveTopicManualChar() {
+            return saveTopicEditorManualChar('create');
+        }
+
+        function renderCreateTopicSelectedChars() {
+            return renderTopicEditorSelectedChars('create');
+        }
+
+        function toggleEditTopicImportImessage() {
+            return toggleTopicEditorImport('edit');
+        }
+
+        function toggleEditTopicManualChar() {
+            return toggleTopicEditorManual('edit');
+        }
+
+        function saveEditTopicManualChar() {
+            return saveTopicEditorManualChar('edit');
+        }
+
+        function renderEditTopicSelectedChars() {
+            return renderTopicEditorSelectedChars('edit');
         }
 
         function getBaseThread(postId) {
@@ -4897,6 +5147,9 @@ ${worldbook || 'None'}`;
         document.getElementById('x-edit-super-topic-delete-btn')?.addEventListener('click', deleteEditedSuperTopic);
         document.getElementById('x-edit-super-topic-avatar-preview')?.addEventListener('click', () => document.getElementById('x-edit-super-topic-avatar-input')?.click());
         document.getElementById('x-edit-super-topic-banner-preview')?.addEventListener('click', () => document.getElementById('x-edit-super-topic-banner-input')?.click());
+        document.getElementById('x-edit-topic-import-imessage-btn')?.addEventListener('click', toggleEditTopicImportImessage);
+        document.getElementById('x-edit-topic-manual-char-btn')?.addEventListener('click', toggleEditTopicManualChar);
+        document.getElementById('x-edit-topic-manual-save-btn')?.addEventListener('click', saveEditTopicManualChar);
         document.getElementById('x-post-forward-close-btn')?.addEventListener('click', closePostForwardSheet);
         document.getElementById('x-dm-chat-composer')?.addEventListener('submit', (event) => {
             event.preventDefault();

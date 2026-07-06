@@ -316,12 +316,23 @@ window.imApp.normalizeLinkedAccountChats = function(chats) {
                         if (!text) return null;
                         const role = message.role === 'char' ? 'char' : 'account';
                         const timestamp = Number(message.timestamp) || Date.now() + messageIndex;
-                        return {
+                        const normalizedMessage = {
                             id: message.id || `linked-msg-${timestamp}-${messageIndex}`,
                             role,
                             text,
                             timestamp
                         };
+                        const translation = typeof message.translation === 'string' && message.translation.trim()
+                            ? message.translation.trim()
+                            : (typeof message.translationZh === 'string' && message.translationZh.trim()
+                                ? message.translationZh.trim()
+                                : (typeof message.trans === 'string' && message.trans.trim() ? message.trans.trim() : ''));
+                        if (translation) normalizedMessage.translation = translation;
+                        const round = Number(message.round);
+                        if (Number.isFinite(round) && round > 0) normalizedMessage.round = round;
+                        const orderInTurn = Number(message.orderInTurn);
+                        if (Number.isFinite(orderInTurn) && orderInTurn >= 0) normalizedMessage.orderInTurn = orderInTurn;
+                        return normalizedMessage;
                     })
                     .filter(Boolean)
                 : [];
@@ -680,63 +691,60 @@ window.imApp.formatSystemNoticeForApiContext = function(message) {
     return noticeText ? `[系统事件：${noticeText}]` : '[系统事件]';
 };
 
-window.imApp.formatLinkMessageForApiContext = function(message, options = {}) {
+window.imApp.stripFakeLinkHtmlForApiContext = function(value, maxLength = 20000) {
+    return String(value == null ? '' : value)
+        .replace(/<\s*(script|style|iframe|object|embed|svg|canvas)[\s\S]*?<\s*\/\s*\1\s*>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#039;/gi, "'")
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, Math.max(1000, Number(maxLength) || 20000));
+};
+
+window.imApp.formatFakeLinkMessageForApiContext = function(message, options = {}) {
     const normalizedMessage = message || {};
-    const linkData = normalizedMessage.linkData && typeof normalizedMessage.linkData === 'object'
-        ? normalizedMessage.linkData
+    const fakeLinkData = normalizedMessage.fakeLinkData && typeof normalizedMessage.fakeLinkData === 'object'
+        ? normalizedMessage.fakeLinkData
         : {};
-    const originalUrl = String(linkData.originalUrl || normalizedMessage.content || '').trim();
-    const platformLabel = String(linkData.platformLabel || linkData.platform || '网页').trim();
-    const title = String(linkData.title || originalUrl || '未命名链接').trim();
-    const author = String(linkData.author || '').trim();
-    const description = String(linkData.description || '').trim();
-    const publishedAt = String(linkData.publishedAt || '').trim();
-    const bodyText = String(linkData.bodyText || '').trim();
-    const status = String(linkData.resolveStatus || 'unresolved');
+    const displayUrl = String(fakeLinkData.displayUrl || fakeLinkData.canonicalUrl || normalizedMessage.content || '').trim();
+    const platformLabel = String(fakeLinkData.siteName || fakeLinkData.domain || '假网页').trim();
+    const title = String(fakeLinkData.title || displayUrl || '未命名假网页').trim();
+    const description = String(fakeLinkData.summary || '').trim();
+    const webPage = fakeLinkData.webPage && typeof fakeLinkData.webPage === 'object' ? fakeLinkData.webPage : null;
+    const pageHtmlText = webPage && webPage.html
+        ? window.imApp.stripFakeLinkHtmlForApiContext(webPage.html, options.maxLinkBodyChars || 20000)
+        : '';
+    const bodyText = String(fakeLinkData.bodyText || fakeLinkData.pageText || pageHtmlText || '').trim();
+    const webTheme = webPage ? String(webPage.theme || '').trim() : '';
     const expandContent = options.expandLinkContent !== false;
     const maxBodyChars = Math.max(1000, Number(options.maxLinkBodyChars) || 20000);
-    const lines = [
-        '[User 分享了一个外部链接]',
-        `平台：${platformLabel}`,
-        `标题：${title}`
+    const fakeLines = [
+        '[User 分享了一个站内假网页]',
+        '站点：' + platformLabel,
+        '标题：' + title,
+        '显示地址：' + displayUrl
     ];
-
-    if (author) lines.push(`作者：${author}`);
-    if (publishedAt) lines.push(`发布时间：${publishedAt}`);
-    lines.push(`原始链接：${originalUrl}`);
-
+    if (description) fakeLines.push('摘要：' + description);
     if (!bodyText) {
-        if (description) lines.push(`页面摘要：${description}`);
-        lines.push('读取状态：未能读取页面正文。你只知道上述链接和预览信息，不得声称已看过或猜测页面内容。');
-        return lines.join('\n');
+        fakeLines.push('正文状态：用户未填写正文，只能参考标题、域名和摘要。');
+        return fakeLines.join('\n');
     }
-
     if (!expandContent) {
-        lines.push(`页面摘要：${description || bodyText.slice(0, 500)}`);
-        lines.push('读取状态：这是较早的链接记录，本轮只保留摘要。');
-        return lines.join('\n');
+        fakeLines.push('页面摘要：' + (description || bodyText.slice(0, 500)));
+        fakeLines.push('正文状态：这是较早的假网页记录，本轮只保留摘要。');
+        return fakeLines.join('\n');
     }
-
-    const injectedBody = bodyText.slice(0, maxBodyChars);
-    lines.push(`页面正文：\n${injectedBody}`);
-    const wasTruncated = bodyText.length > injectedBody.length || !!linkData.truncated;
-    if (wasTruncated) {
-        lines.push('读取状态：页面内容过长或解析端已截断。不得声称看过未提供的部分。');
-    } else if (status === 'partial') {
-        lines.push('读取状态：已读取可公开获取的正文，页面仍可能包含未展开或需登录的内容。');
-    } else {
-        lines.push('读取状态：已读取公开页面正文。');
+    const fakeInjectedBody = bodyText.slice(0, maxBodyChars);
+    fakeLines.push('页面正文：\n' + fakeInjectedBody);
+    if (bodyText.length > fakeInjectedBody.length) {
+        fakeLines.push('正文状态：内容过长，已截断。');
     }
-
-    const mediaDescriptions = (Array.isArray(linkData.media) ? linkData.media : [])
-        .filter(item => item && String(item.caption || '').trim())
-        .slice(0, 3)
-        .map((item, index) => `${index + 1}. ${String(item.caption).trim()}`);
-    if (mediaDescriptions.length > 0) {
-        lines.push(`配图说明：\n${mediaDescriptions.join('\n')}`);
-    }
-
-    return lines.join('\n');
+    return fakeLines.join('\n');
 };
 
 window.imApp.formatMessageForApiContext = function(message, friend, options = {}) {
@@ -752,8 +760,8 @@ window.imApp.formatMessageForApiContext = function(message, friend, options = {}
         };
     }
 
-    if (normalizedMessage.type === 'link') {
-        apiContent = window.imApp.formatLinkMessageForApiContext(normalizedMessage, options);
+    if (normalizedMessage.type === 'fake_link') {
+        apiContent = window.imApp.formatFakeLinkMessageForApiContext(normalizedMessage, options);
     } else if (normalizedMessage.type === 'voice_message') {
         const voiceText = normalizedMessage.transcript || normalizedMessage.text || '';
         apiContent = normalizedMessage.role === 'user'
@@ -881,13 +889,13 @@ window.imApp.buildApiContextMessages = function(friend, options = {}) {
     const recentMessages = window.imApp.getRecentContextMessages(normalizedFriend);
     let latestLinkIndex = -1;
     recentMessages.forEach((message, index) => {
-        if (message && message.type === 'link') latestLinkIndex = index;
+        if (message && message.type === 'fake_link') latestLinkIndex = index;
     });
 
     return recentMessages
         .map((message, index) => window.imApp.formatMessageForApiContext(message, normalizedFriend, {
             ...options,
-            expandLinkContent: message && message.type === 'link' ? index === latestLinkIndex : options.expandLinkContent
+            expandLinkContent: message && message.type === 'fake_link' ? index === latestLinkIndex : options.expandLinkContent
         }))
         .filter(item => item && item.role && typeof item.content === 'string' && item.content.trim());
 };
@@ -1065,12 +1073,12 @@ window.imApp.getFriendMessagePreview = function(message) {
     if (targetMessage.type === 'voice_call_record') {
         return targetMessage.text || `[语音通话记录] ${targetMessage.statusText || ''}`.trim();
     }
-    if (targetMessage.type === 'link') {
-        const linkData = targetMessage.linkData && typeof targetMessage.linkData === 'object'
-            ? targetMessage.linkData
+    if (targetMessage.type === 'fake_link') {
+        const fakeLinkData = targetMessage.fakeLinkData && typeof targetMessage.fakeLinkData === 'object'
+            ? targetMessage.fakeLinkData
             : {};
-        const label = linkData.platformLabel || '链接';
-        const title = linkData.title || targetMessage.content || '';
+        const label = fakeLinkData.siteName || '假链接';
+        const title = fakeLinkData.title || targetMessage.content || '';
         return `[${label}] ${title}`.trim();
     }
     if (targetMessage.type === 'offline_meeting_record') {

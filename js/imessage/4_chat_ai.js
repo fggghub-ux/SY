@@ -103,10 +103,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!message) return '';
         if (message.type === 'sticker') return `[表情] ${message.stickerCategory ? `${message.stickerCategory} / ` : ''}${message.stickerName || message.text || ''}`.trim();
         if (message.type === 'image') return `[图片] ${message.description || message.text || message.content || ''}`.trim();
-        if (message.type === 'link') {
-            const link = message.linkData || {};
-            const readable = link.bodyText || link.description || '';
-            return `[链接] ${link.platformLabel || '网页'}：${link.title || message.content || ''}${readable ? `\n${String(readable).slice(0, 1200)}` : '\n（未读取页面正文）'}`.trim();
+        if (message.type === 'fake_link') {
+            const link = message.fakeLinkData || {};
+            const readable = link.bodyText || link.summary || '';
+            return `[假链接] ${link.siteName || '假网页'}：${link.title || message.content || ''}${readable ? `\n${String(readable).slice(0, 1200)}` : '\n（未填写正文）'}`.trim();
         }
         if (message.type === 'voice_message') return `[语音] ${message.transcript || message.text || message.content || ''}`.trim();
         if (message.type === 'pay_transfer') return `[转账] ${message.description || message.content || ''}`.trim();
@@ -159,9 +159,9 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
     function getRecentContextText(friend) {
         if (!Array.isArray(friend.messages)) return '';
         return friend.messages.slice(-10).map(m => {
-            if (m && m.type === 'link') {
-                const link = m.linkData || {};
-                return [link.title || m.content || '', link.description || '', String(link.bodyText || '').slice(0, 5000)]
+            if (m && m.type === 'fake_link') {
+                const link = m.fakeLinkData || {};
+                return [link.title || m.content || '', link.summary || '', String(link.bodyText || '').slice(0, 5000)]
                     .filter(Boolean)
                     .join('\n');
             }
@@ -605,20 +605,34 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
         if (!Array.isArray(messages)) return [];
         const normalized = messages
             .map(item => {
-                if (typeof item === 'string') return item.trim();
-                if (item && typeof item === 'object') {
-                    return String(item.text || item.content || item.message || '').trim();
+                if (typeof item === 'string') {
+                    const text = item.trim();
+                    return text ? { text, translation: '' } : null;
                 }
-                return '';
+                if (item && typeof item === 'object') {
+                    const text = String(item.text || item.content || item.message || '').trim();
+                    if (!text) return null;
+                    const translation = typeof item.translation === 'string' && item.translation.trim()
+                        ? item.translation.trim()
+                        : (typeof item.translationZh === 'string' && item.translationZh.trim()
+                            ? item.translationZh.trim()
+                            : (typeof item.trans === 'string' && item.trans.trim() ? item.trans.trim() : ''));
+                    return { text, translation };
+                }
+                return null;
             })
             .filter(Boolean)
             .slice(0, maxCount)
-            .map((text, index) => ({
-                id: createApiRunId(`linked-${role}-${index}`),
-                role,
-                text,
-                timestamp: Date.now() + index
-            }));
+            .map((message, index) => {
+                const normalizedMessage = {
+                    id: createApiRunId(`linked-${role}-${index}`),
+                    role,
+                    text: message.text,
+                    timestamp: Date.now() + index
+                };
+                if (message.translation) normalizedMessage.translation = message.translation;
+                return normalizedMessage;
+            });
 
         return normalized.length >= minCount ? normalized : [];
     }
@@ -774,6 +788,7 @@ Task:
 6. For any existing chat that receives a character reply in this same JSON result, you may also write the friend's follow-up reply to the character, 2 to 5 messages. The friend's follow-up must directly respond to the character's new reply, not start an unrelated topic. This is optional; use an empty array if no follow-up is natural.
 7. Append order for the same existing chat is always existingThreadReplies first, then friendFollowups.
 8. Stay consistent with the world book, mounted world book, character persona, relationship network, and current iMessage context.
+9. International translation rule: each message item must be an object {"text":"original message","translation":"natural Chinese translation or empty string"}. If text is not Chinese, translation must contain natural Chinese. If text is Chinese, translation must be an empty string.
 
 Output only valid JSON with this exact shape:
 {
@@ -785,19 +800,19 @@ Output only valid JSON with this exact shape:
       "persona": "short identity/personality",
       "relationship": "relationship to the character",
       "sourceNpcId": "relationship candidate sourceNpcId if used, otherwise empty string",
-      "messages": ["incoming message", "incoming message"]
+      "messages": [{"text":"incoming original message","translation":"Chinese translation or empty string"}]
     }
   ],
   "existingThreadReplies": [
     {
       "threadId": "existing linked chat id",
-      "messages": ["character reply", "character reply"]
+      "messages": [{"text":"character reply original message","translation":"Chinese translation or empty string"}]
     }
   ],
   "friendFollowups": [
     {
       "threadId": "same existing linked chat id that received a character reply",
-      "messages": ["friend follow-up", "friend follow-up"]
+      "messages": [{"text":"friend follow-up original message","translation":"Chinese translation or empty string"}]
     }
   ]
 }`;
@@ -1507,12 +1522,15 @@ ${latestMessages || 'None'}
         const familyCardRequirement = `\n\n【亲属卡互动】：当前你是否已经给过User亲属卡：${hasFamilyCardStr}。\n- 如果User在聊天中暗示或明示想要“亲属卡”，且你当前【未给过】亲属卡，你可以输出一个特定的支付对象：{"type":"payment","paymentAction":"family_card","amount":1000,"description":"亲属卡"}，这会给User发一张1000额度的亲属卡。\n- 如果你当前【已经给过】亲属卡，且User再次暗示或明示想要“亲属卡”，系统限制一人只能给一张，你不能再给一张，但你可以输出 {"type":"payment","paymentAction":"family_card_increase","amount":500,"description":"亲属卡提额"} 来给现有的亲属卡提升500额度，并在对话中提醒TA已经给过一张了只能提额。`;
 
         const pendingRegenerateContext = friend.pendingRegenerateContext || null;
+        const regenerateUserRequirement = pendingRegenerateContext && typeof pendingRegenerateContext.userRequirement === 'string' && pendingRegenerateContext.userRequirement.trim()
+            ? `\n\n【User 本次重回补充要求】：\n${pendingRegenerateContext.userRequirement.trim()}\n\n请优先参考这段要求理解 User 为什么重回、希望你换成怎样的回复方向；如果它和人设、上下文或输出格式冲突，以人设、上下文和输出格式为准，但仍尽量满足 User 的真实意图。`
+            : '';
         const regenerateRequirement = pendingRegenerateContext
             ? `\n\n【重回重新生成要求】：
 - User 触发了“重回”，这通常代表 User 对你刚刚生成的回复不满意。请先思考 User 可能不满意的原因：是否语气不对、关系距离不对、太敷衍、太热情、太重复、没有接住情绪、引用不准、偏离人设、没有回应重点或节奏不自然。
 - 下面是刚刚被重回删除的回复内容，请不要再次生成相同或高度相似的内容、句式、称呼、情绪走向和动作安排。你需要换一个更贴合当前上下文与人设的角度回应，但不要在正文里解释“这是重回”。
 【刚刚被重回的回复】：
-${pendingRegenerateContext.previousReply || 'None'}` : '';
+${pendingRegenerateContext.previousReply || 'None'}${regenerateUserRequirement}` : '';
 
 
         const profilePanelRequirement = friend.type === 'group'
@@ -1554,9 +1572,9 @@ ${pendingRegenerateContext.previousReply || 'None'}` : '';
                 if (m.timestamp) {
                     timeStr = formatDetailedTime(m.timestamp);
                 }
-                if (m.type === 'link') {
-                    const link = m.linkData || {};
-                    const readable = [link.title || m.content || '', link.description || '', String(link.bodyText || '').slice(0, 5000)]
+                if (m.type === 'fake_link') {
+                    const link = m.fakeLinkData || {};
+                    const readable = [link.title || m.content || '', link.summary || '', String(link.bodyText || '').slice(0, 5000)]
                         .filter(Boolean)
                         .join('\n');
                     return `${timeStr}${readable}`;
@@ -1679,9 +1697,9 @@ ${pendingRegenerateContext.previousReply || 'None'}` : '';
                                     text = `[表情包] ${msg.stickerCategory ? `${msg.stickerCategory} / ` : ''}${msg.stickerName || msg.text || '表情包'}`;
                                 } else if (msg.type === 'image') {
                                     text = `[图片] ${msg.description || msg.text || msg.fileName || '图片'}`;
-                                } else if (msg.type === 'link') {
-                                    const link = msg.linkData || {};
-                                    text = `[链接] ${link.platformLabel || '网页'}：${link.title || msg.content || ''} ${link.description || (link.bodyText ? String(link.bodyText).slice(0, 500) : '未读取正文')}`;
+                                } else if (msg.type === 'fake_link') {
+                                    const link = msg.fakeLinkData || {};
+                                    text = `[假链接] ${link.siteName || '假网页'}：${link.title || msg.content || ''} ${link.summary || (link.bodyText ? String(link.bodyText).slice(0, 500) : '未填写正文')}`;
                                 } else if (msg.type === 'pay_transfer') {
                                     text = `[转账相关消息] ${msg.description || ''}`;
                                 }
@@ -1745,8 +1763,8 @@ ${JSON.stringify(memberFriendChatCandidates)}${afterRoleWorldBookContext ? `\n\n
 15. 如果没有真实且具体的保密动机，完全不要输出私信标签。需要私信时，在 <chat_json>...</chat_json> 之外额外输出且只输出一个 <group_private_messages>...</group_private_messages> 标签，标签内必须是合法 JSON 数组，格式为：[{"speaker":"成员完整准确名字","messages":[{"text":"第一条私信","translation":"中文翻译或空字符串"},{"text":"第二条私信","translation":"中文翻译或空字符串"}]}]。
 16. 每个发私信的成员必须属于允许发言名单，每名成员必须连续发送 2-5 条私信；可以有多名成员，但每个人都必须有独立且合理的保密动机。其他成员不知道这些私信内容，后续群聊也不得默认其他成员已经知情。
 17. 【成员与自己好友的私聊｜可选】：当群内话题、人设、关系或刚发生的事情让某位群成员自然地想联系自己的好友时，可以额外生成好友私聊。优先选择 relationshipCandidates；没有合适关系网对象时可复用 linkedCandidates。只有 canGeneratePrivateFriend 为 true 且现有私有联系人也不合适时，才可按该成员人设创造一个合理的新好友。
-18. 需要生成时，在 <chat_json>...</chat_json> 之外额外输出且只输出一个 <group_friend_private_chats>...</group_friend_private_chats> 标签。已有关系网好友使用 recipientId；已有私有联系人使用 linkedChatId；生成新好友使用 generatedRecipient，三者只能选一个。格式示例：[{"speaker":"群成员完整准确名字","recipientId":"关系网候选准确ID","rounds":[...]},{"speaker":"群成员完整准确名字","linkedChatId":"已有私有联系人准确ID","rounds":[...]},{"speaker":"群成员完整准确名字","generatedRecipient":{"realName":"真实姓名","remark":"该成员给此人的备注","persona":"人物设定","relationship":"与该成员的关系"},"rounds":[...]}]。
-19. 每段好友私聊必须有 2-4 轮完整往返。每一轮先由群成员连续发送 2-5 条 speakerMessages，再由好友连续回复 2-5 条 friendMessages；消息必须承接上一轮，形成真实连续的私聊，不能是互不相关的句子。
+18. 需要生成时，在 <chat_json>...</chat_json> 之外额外输出且只输出一个 <group_friend_private_chats>...</group_friend_private_chats> 标签。已有关系网好友使用 recipientId；已有私有联系人使用 linkedChatId；生成新好友使用 generatedRecipient，三者只能选一个。格式示例：[{"speaker":"群成员完整准确名字","recipientId":"关系网候选准确ID","rounds":[{"speakerMessages":[{"text":"群成员发给好友的原文","translation":"非中文原文的自然中文翻译；中文则空字符串"}],"friendMessages":[{"text":"好友回复的原文","translation":"非中文原文的自然中文翻译；中文则空字符串"}]}]},{"speaker":"群成员完整准确名字","linkedChatId":"已有私有联系人准确ID","rounds":[...]},{"speaker":"群成员完整准确名字","generatedRecipient":{"realName":"真实姓名","remark":"该成员给此人的备注","persona":"人物设定","relationship":"与该成员的关系"},"rounds":[...]}]。
+19. 每段好友私聊必须有 2-4 轮完整往返。每一轮先由群成员连续发送 2-5 条 speakerMessages，再由好友连续回复 2-5 条 friendMessages；每条消息都必须是 {"text":"原文","translation":"中文翻译或空字符串"}。如果 text 不是中文，translation 必须填写自然中文翻译；如果 text 本身是中文，translation 必须是空字符串。消息必须承接上一轮，形成真实连续的私聊，不能是互不相关的句子。
 20. speaker 必须是当前群成员；recipientId 或 linkedChatId 必须来自该 speaker 对应候选。generatedRecipient 只在 canGeneratePrivateFriend 为 true 时有效，并且姓名、关系、人设必须互相一致且不能复制已有联系人。每段好友私聊只属于发送成员与收件好友，其他群成员默认不知道内容，后续不得串用。${languageRequirement}
 
 群聊的背景与关系记忆:
@@ -2117,7 +2135,13 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                                     const text = typeof item === 'string'
                                         ? item.trim()
                                         : (typeof item?.text === 'string' ? item.text.trim() : '');
-                                    return text ? { text } : null;
+                                    if (!text) return null;
+                                    const translation = typeof item === 'object' && typeof item?.translation === 'string' && item.translation.trim()
+                                        ? item.translation.trim()
+                                        : (typeof item === 'object' && typeof item?.translationZh === 'string' && item.translationZh.trim()
+                                            ? item.translationZh.trim()
+                                            : (typeof item === 'object' && typeof item?.trans === 'string' && item.trans.trim() ? item.trans.trim() : ''));
+                                    return { text, translation };
                                 })
                                 .filter(Boolean)
                                 .slice(0, 5);
@@ -3331,22 +3355,26 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
 
                     privateChat.rounds.forEach((round, roundIndex) => {
                         round.speakerMessages.forEach((message, messageIndex) => {
-                            snapshotMessages.push({
+                            const snapshotMessage = {
                                 id: window.imChat.createMessageId('linked-msg'),
                                 role: 'char',
                                 text: message.text,
                                 round: roundIndex + 1,
                                 orderInTurn: messageIndex
-                            });
+                            };
+                            if (message.translation) snapshotMessage.translation = message.translation;
+                            snapshotMessages.push(snapshotMessage);
                         });
                         round.friendMessages.forEach((message, messageIndex) => {
-                            snapshotMessages.push({
+                            const snapshotMessage = {
                                 id: window.imChat.createMessageId('linked-msg'),
                                 role: 'account',
                                 text: message.text,
                                 round: roundIndex + 1,
                                 orderInTurn: messageIndex
-                            });
+                            };
+                            if (message.translation) snapshotMessage.translation = message.translation;
+                            snapshotMessages.push(snapshotMessage);
                         });
                     });
 
@@ -3484,9 +3512,11 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
         }
     }
 
-    async function regenerateLastAiReply(friend, triggerEl = null) {
+    async function regenerateLastAiReply(friend, triggerEl = null, options = {}) {
         const friendKey = getFriendKey(friend);
         if (!friendKey) return false;
+        const normalizedOptions = options && typeof options === 'object' ? options : {};
+        const userRequirement = String(normalizedOptions.userRequirement || '').trim().slice(0, 800);
 
         if (aiReplyInFlight.has(friendKey)) {
             if (window.showToast) window.showToast('正在生成中');
@@ -3533,9 +3563,9 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                 if (!msg) return '';
                 if (msg.type === 'sticker') return `[表情] ${msg.stickerCategory ? `${msg.stickerCategory} / ` : ''}${msg.stickerName || msg.text || ''}`.trim();
                 if (msg.type === 'image') return `[图片] ${msg.description || msg.content || msg.text || ''}`.trim();
-                if (msg.type === 'link') {
-                    const link = msg.linkData || {};
-                    return `[链接] ${link.platformLabel || '网页'}：${link.title || msg.content || ''}`.trim();
+                if (msg.type === 'fake_link') {
+                    const link = msg.fakeLinkData || {};
+                    return `[假链接] ${link.siteName || '假网页'}：${link.title || msg.content || ''}`.trim();
                 }
                 if (msg.type === 'voice_message') return `[语音] ${msg.transcript || msg.content || msg.text || ''}`.trim();
                 if (msg.type === 'pay_transfer') return `[支付] ${msg.description || msg.content || ''}`.trim();
@@ -3600,7 +3630,9 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
             window.imChat.rerenderChatContainer(latestFriend, container, { scroll: true });
         }
 
-        latestFriend.pendingRegenerateContext = { previousReply };
+        latestFriend.pendingRegenerateContext = userRequirement
+            ? { previousReply, userRequirement }
+            : { previousReply };
         try {
             await handleAiReply(latestFriend, container, triggerEl);
             return true;

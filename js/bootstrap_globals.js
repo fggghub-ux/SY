@@ -20,11 +20,6 @@
         ttsModel: 'speech-02-hd'
     };
 
-    const defaultLinkResolverConfig = {
-        endpoint: '',
-        timeoutMs: 12000
-    };
-
     const defaultUserState = {
         name: '',
         phone: '',
@@ -57,19 +52,6 @@
         return {
             ...defaultMinimaxConfig,
             ...(value && typeof value === 'object' ? value : {})
-        };
-    }
-
-    function normalizeLinkResolverConfig(value) {
-        const source = value && typeof value === 'object' ? value : {};
-        const timeoutMs = Number(source.timeoutMs);
-        return {
-            ...defaultLinkResolverConfig,
-            ...source,
-            endpoint: String(source.endpoint || '').trim(),
-            timeoutMs: Number.isFinite(timeoutMs)
-                ? Math.min(30000, Math.max(3000, Math.round(timeoutMs)))
-                : defaultLinkResolverConfig.timeoutMs
         };
     }
 
@@ -106,9 +88,6 @@
 
     window.apiConfig = normalizeApiConfig(window.apiConfig || safeLoad('u2_apiConfig', defaultApiConfig));
     window.minimaxConfig = normalizeMinimaxConfig(window.minimaxConfig || safeLoad('u2_minimaxConfig', defaultMinimaxConfig));
-    window.linkResolverConfig = normalizeLinkResolverConfig(
-        window.linkResolverConfig || safeLoad('u2_linkResolverConfig', defaultLinkResolverConfig)
-    );
     window.userState = {
         ...defaultUserState,
         ...(window.userState && typeof window.userState === 'object' ? window.userState : resolveUserStateFromAccounts())
@@ -122,19 +101,6 @@
     window.getMinimaxConfig = function getMinimaxConfig() {
         window.minimaxConfig = normalizeMinimaxConfig(window.minimaxConfig || safeLoad('u2_minimaxConfig', defaultMinimaxConfig));
         return window.minimaxConfig;
-    };
-
-    window.getLinkResolverConfig = function getLinkResolverConfig() {
-        window.linkResolverConfig = normalizeLinkResolverConfig(
-            window.linkResolverConfig || safeLoad('u2_linkResolverConfig', defaultLinkResolverConfig)
-        );
-        return { ...window.linkResolverConfig };
-    };
-
-    window.setLinkResolverConfig = function setLinkResolverConfig(value) {
-        window.linkResolverConfig = normalizeLinkResolverConfig(value);
-        safeSave('u2_linkResolverConfig', window.linkResolverConfig);
-        return { ...window.linkResolverConfig };
     };
 
     window.getUserState = function getUserState() {

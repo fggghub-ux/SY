@@ -201,7 +201,7 @@ function createAttachmentSheet(page) {
                                 <div class="attachment-more-link-icon">
                                     <i class="fas fa-link"></i>
                                 </div>
-                                <div class="attachment-more-link-label">链接</div>
+                                <div class="attachment-more-link-label">假链接</div>
                             </div>
                             <div class="attachment-more-voice-entry">
                                 <div class="attachment-more-voice-icon">
@@ -462,6 +462,20 @@ function createAttachmentSheet(page) {
                     </div>
                 </div>
             </div>
+            <div class="regenerate-form-overlay" style="position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,0.18); z-index: 23; padding: 20px;">
+                <div class="regenerate-form-card" style="width: 100%; max-width: 348px; border-radius: 30px; background: rgba(255,255,255,0.98); padding: 18px 16px 16px; box-sizing: border-box;">
+                    <div style="display:flex; align-items:center; justify-content:center; gap:8px; font-size:18px; font-weight:800; color:#111; text-align:center; margin-bottom:12px;">
+                        <i class="fas fa-rotate-left" style="color:#8e8e93;"></i>
+                        <span>重回上一轮回复</span>
+                    </div>
+                    <textarea class="regenerate-requirement-input" placeholder="可以写为什么重回，或希望 TA 怎样回复。例如：角色ooc了，注意人设" style="width:100%; min-height:120px; max-height:200px; resize:none; border:none; outline:none; border-radius:20px; background:#f7f7fa; padding:13px 14px; box-sizing:border-box; font-size:15px; line-height:1.45; color:#111; font-family:inherit;"></textarea>
+                    <div style="font-size:12px; color:#8e8e93; line-height:1.45; margin:10px 2px 0;">参考：按上方要求重回生成；重回：不带要求直接重回。</div>
+                    <div class="regenerate-form-actions" style="display:flex; gap:8px; margin-top:16px;">
+                        <div class="regenerate-reference-btn" style="flex:1; height:44px; border-radius:16px; background:#8e8e93; color:#fff; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:800; cursor:pointer;">参考</div>
+                        <div class="regenerate-direct-btn" style="flex:1; height:44px; border-radius:16px; background:#111; color:#fff; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:800; cursor:pointer;">重回</div>
+                    </div>
+                </div>
+            </div>
         `;
         page.appendChild(attachmentSheet);
 
@@ -489,6 +503,10 @@ function createAttachmentSheet(page) {
         const narrationInput = attachmentSheet.querySelector('.narration-message-input');
         const narrationCancelBtn = attachmentSheet.querySelector('.narration-cancel-btn');
         const narrationSubmitBtn = attachmentSheet.querySelector('.narration-submit-btn');
+        const regenerateFormOverlay = attachmentSheet.querySelector('.regenerate-form-overlay');
+        const regenerateRequirementInput = attachmentSheet.querySelector('.regenerate-requirement-input');
+        const regenerateReferenceBtn = attachmentSheet.querySelector('.regenerate-reference-btn');
+        const regenerateDirectBtn = attachmentSheet.querySelector('.regenerate-direct-btn');
         const stickersList = attachmentSheet.querySelector('.sheet-stickers-list');
         const stickerCategoryTabs = attachmentSheet.querySelector('.sheet-sticker-category-tabs');
         const payAmountInput = attachmentSheet.querySelector('.pay-transfer-amount-input');
@@ -1383,6 +1401,40 @@ function createAttachmentSheet(page) {
             return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
         };
 
+        const getLinkedAccountMessageTranslation = (message) => {
+            if (!message || typeof message !== 'object') return '';
+            return typeof message.translation === 'string' && message.translation.trim()
+                ? message.translation.trim()
+                : (typeof message.translationZh === 'string' && message.translationZh.trim()
+                    ? message.translationZh.trim()
+                    : (typeof message.trans === 'string' && message.trans.trim() ? message.trans.trim() : ''));
+        };
+
+        const buildLinkedAccountBubbleHtml = (message) => {
+            const text = escapeSheetHtml(message?.text || '');
+            const translation = getLinkedAccountMessageTranslation(message);
+            if (!translation) {
+                return `<div class="group-private-chat-detail-bubble"><span class="group-private-chat-detail-original">${text}</span></div>`;
+            }
+            return `
+                <button type="button" class="group-private-chat-detail-bubble has-translation" aria-expanded="false" title="点击展开翻译">
+                    <span class="group-private-chat-detail-original">${text}</span>
+                    <span class="group-private-chat-detail-translation" hidden>${escapeSheetHtml(translation)}</span>
+                </button>
+            `;
+        };
+
+        const toggleLinkedAccountBubbleTranslation = (bubble) => {
+            if (!bubble) return;
+            const translation = bubble.querySelector('.group-private-chat-detail-translation');
+            if (!translation) return;
+            const willExpand = translation.hidden;
+            translation.hidden = !willExpand;
+            bubble.classList.toggle('is-expanded', willExpand);
+            bubble.setAttribute('aria-expanded', willExpand ? 'true' : 'false');
+            bubble.title = willExpand ? '点击收起翻译' : '点击展开翻译';
+        };
+
         const findLinkedAccountChat = (chatId) => {
             const activeFriend = getActiveLinkedAccountsFriend();
             const chats = Array.isArray(activeFriend?.linkedAccountChats) ? activeFriend.linkedAccountChats : [];
@@ -1401,6 +1453,13 @@ function createAttachmentSheet(page) {
                 linkedAccountModalOverlay.className = 'linked-account-modal-overlay';
                 linkedAccountModalOverlay.style.cssText = 'position:absolute; inset:0; z-index:30; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,0.22); padding:18px; box-sizing:border-box;';
                 linkedAccountModalOverlay.addEventListener('click', (event) => {
+                    const translationBubble = event.target.closest('.group-private-chat-detail-bubble.has-translation');
+                    if (translationBubble) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        toggleLinkedAccountBubbleTranslation(translationBubble);
+                        return;
+                    }
                     const deleteBtn = event.target.closest('.linked-account-delete-chat-btn');
                     if (deleteBtn) {
                         event.preventDefault();
@@ -1424,28 +1483,29 @@ function createAttachmentSheet(page) {
             if (!chat || !activeFriend) return;
             const displayName = getLinkedAccountDisplayName(chat);
             const realName = chat.realName || chat.name || displayName;
+            const charName = activeFriend.nickname || activeFriend.realName || 'TA';
             const messages = Array.isArray(chat.messages) ? [...chat.messages].sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0)) : [];
             const bubblesHtml = messages.length > 0
                 ? messages.map((message, index) => {
                     const isChar = message.role === 'char';
-                    const align = isChar ? 'flex-end' : 'flex-start';
-                    const bubbleBg = isChar ? '#111' : '#e9e9ee';
-                    const bubbleColor = isChar ? '#fff' : '#111';
-                    const radius = isChar ? '16px 16px 4px 16px' : '16px 16px 16px 4px';
+                    const currentName = isChar ? charName : displayName;
+                    const previousRole = index > 0 ? messages[index - 1]?.role : null;
+                    const isGroupStart = index === 0 || previousRole !== message?.role;
                     const currentTime = Number(message.timestamp) || 0;
                     const prevTime = index > 0 ? Number(messages[index - 1]?.timestamp) || 0 : 0;
                     const showTime = index === 0 || (currentTime && prevTime && currentTime - prevTime > 5 * 60 * 1000);
                     return `
-                        ${showTime ? `<div style="align-self:center; font-size:11px; color:#8e8e93; margin:4px 0 2px;">${escapeSheetHtml(formatLinkedAccountModalTime(currentTime))}</div>` : ''}
-                        <div style="display:flex; flex-direction:column; align-items:${align};">
-                            <div style="max-width:78%; padding:7px 10px; border-radius:${radius}; background:${bubbleBg}; color:${bubbleColor}; font-size:13px; line-height:1.32; word-break:break-word;">${escapeSheetHtml(message.text || '')}</div>
+                        ${showTime ? `<div class="group-private-chat-detail-time-chip">${escapeSheetHtml(formatLinkedAccountModalTime(currentTime))}</div>` : ''}
+                        <div class="group-private-chat-detail-row${isChar ? ' is-sender' : ''}${isGroupStart ? ' is-group-start' : ''}">
+                            ${isGroupStart ? `<div class="group-private-chat-detail-name">${escapeSheetHtml(currentName)}</div>` : ''}
+                            ${buildLinkedAccountBubbleHtml(message)}
                         </div>
                     `;
                 }).join('')
                 : '<div style="text-align:center; color:#8e8e93; font-size:13px; padding:34px 0;">暂无消息</div>';
 
             showLinkedAccountModal(`
-                <div style="width:min(100%, 360px); height:min(76vh, 560px); max-height:560px; background:#fff; border-radius:24px;  display:flex; flex-direction:column; overflow:hidden;">
+                <div class="group-private-chat-detail-card linked-account-chat-detail-card">
                     <div style="display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid #f2f2f7; flex-shrink:0;">
                         <div style="${getLinkedAccountAvatarStyle(chat, 38)}">${escapeSheetHtml(getLinkedAccountInitial(chat))}</div>
                         <div style="min-width:0; flex:1;">
@@ -1454,7 +1514,7 @@ function createAttachmentSheet(page) {
                         </div>
                         <button type="button" class="linked-account-modal-close" style="width:30px; height:30px; border:none; border-radius:50%; background:#f2f2f7; color:#636366; cursor:pointer;"><i class="fas fa-times"></i></button>
                     </div>
-                    <div style="padding:12px; display:flex; flex-direction:column; gap:7px; overflow-y:auto; background:#fff; flex:1; min-height:0; overscroll-behavior:contain;">
+                    <div class="group-private-chat-detail-messages linked-account-chat-detail-messages">
                         ${bubblesHtml}
                     </div>
                 </div>
@@ -2064,6 +2124,22 @@ function createAttachmentSheet(page) {
             if (narrationInput) narrationInput.value = '';
         };
 
+        const setRegenerateBusyState = (busy) => {
+            const controls = [regenerateEntry, regenerateReferenceBtn, regenerateDirectBtn];
+            controls.forEach((control) => {
+                if (!control) return;
+                control.dataset.busy = busy ? 'true' : 'false';
+                control.style.opacity = busy ? '0.45' : '';
+                control.style.pointerEvents = busy ? 'none' : '';
+            });
+        };
+
+        const closeRegenerateForm = () => {
+            if (!regenerateFormOverlay) return;
+            regenerateFormOverlay.style.display = 'none';
+            if (regenerateRequirementInput) regenerateRequirementInput.value = '';
+        };
+
         const renderPayMethodSelection = (requiredAmount, callback) => {
             const sheet = document.getElementById('pay-method-selection-sheet');
             const listEl = document.getElementById('pay-method-selection-list');
@@ -2181,6 +2257,26 @@ function createAttachmentSheet(page) {
             if (narrationInput) {
                 narrationInput.value = '';
                 setTimeout(() => narrationInput.focus(), 30);
+            }
+        };
+
+        const openRegenerateForm = () => {
+            if (!regenerateFormOverlay) return;
+            if (regenerateEntry?.dataset?.busy === 'true') return;
+
+            const activeFriend = window.imData.currentActiveFriend;
+            if (!activeFriend || !window.imChat.regenerateLastAiReply) {
+                if (window.showToast) window.showToast('暂无可重回的回复');
+                return;
+            }
+
+            if (content) content.style.transform = 'translateY(100%)';
+            if (overlay) overlay.style.opacity = '0';
+
+            regenerateFormOverlay.style.display = 'flex';
+            if (regenerateRequirementInput) {
+                regenerateRequirementInput.value = '';
+                setTimeout(() => regenerateRequirementInput.focus(), 30);
             }
         };
 
@@ -4712,6 +4808,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             closePayTransferForm();
             closeVoiceMessageForm();
             closeNarrationForm();
+            closeRegenerateForm();
             overlay.style.opacity = '0';
             content.style.transform = 'translateY(100%)';
             setTimeout(() => {
@@ -4786,6 +4883,36 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                 if (!appended && window.imChat.rerenderChatContainer) {
                     window.imChat.rerenderChatContainer(latestFriend, activeContainer, { scroll: true });
                 }
+            }
+        };
+
+        const submitRegenerateRequest = async (useRequirement) => {
+            if (regenerateEntry?.dataset?.busy === 'true') return;
+
+            const activeFriend = window.imData.currentActiveFriend;
+            if (!activeFriend || !window.imChat.regenerateLastAiReply) {
+                if (window.showToast) window.showToast('暂无可重回的回复');
+                return;
+            }
+
+            const userRequirement = useRequirement
+                ? String(regenerateRequirementInput ? regenerateRequirementInput.value : '').trim()
+                : '';
+
+            if (useRequirement && !userRequirement) {
+                if (window.showToast) window.showToast('请先输入参考要求');
+                if (regenerateRequirementInput) regenerateRequirementInput.focus();
+                return;
+            }
+
+            setRegenerateBusyState(true);
+            closeRegenerateForm();
+            closeSheet();
+
+            try {
+                await window.imChat.regenerateLastAiReply(activeFriend, regenerateEntry, { userRequirement });
+            } finally {
+                setRegenerateBusyState(false);
             }
         };
 
@@ -4976,10 +5103,10 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
         if (linkEntry) {
             linkEntry.addEventListener('click', () => {
                 closeSheet();
-                if (window.imChat.openLinkComposer) {
-                    window.imChat.openLinkComposer();
+                if (window.imChat.openFakeLinkComposer) {
+                    window.imChat.openFakeLinkComposer();
                 } else if (window.showToast) {
-                    window.showToast('链接功能加载失败');
+                    window.showToast('假链接功能加载失败');
                 }
             });
         }
@@ -5012,7 +5139,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
         }
 
         if (regenerateEntry) {
-            regenerateEntry.addEventListener('click', async () => {
+            regenerateEntry.addEventListener('click', () => {
                 if (regenerateEntry.dataset.busy === 'true') return;
 
                 const activeFriend = window.imData.currentActiveFriend;
@@ -5021,16 +5148,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     return;
                 }
 
-                regenerateEntry.dataset.busy = 'true';
-                regenerateEntry.style.opacity = '0.45';
-                closeSheet();
-
-                try {
-                    await window.imChat.regenerateLastAiReply(activeFriend, regenerateEntry);
-                } finally {
-                    regenerateEntry.dataset.busy = 'false';
-                    regenerateEntry.style.opacity = '';
-                }
+                openRegenerateForm();
             });
         }
 
@@ -5098,6 +5216,14 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             });
         }
 
+        if (regenerateFormOverlay) {
+            regenerateFormOverlay.addEventListener('click', (e) => {
+                if (e.target === regenerateFormOverlay) {
+                    closeSheet();
+                }
+            });
+        }
+
         if (voiceCancelBtn) {
             voiceCancelBtn.addEventListener('click', () => {
                 closeSheet();
@@ -5119,6 +5245,18 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
         if (narrationSubmitBtn) {
             narrationSubmitBtn.addEventListener('click', async () => {
                 await submitNarrationMessage();
+            });
+        }
+
+        if (regenerateReferenceBtn) {
+            regenerateReferenceBtn.addEventListener('click', async () => {
+                await submitRegenerateRequest(true);
+            });
+        }
+
+        if (regenerateDirectBtn) {
+            regenerateDirectBtn.addEventListener('click', async () => {
+                await submitRegenerateRequest(false);
             });
         }
 
@@ -5163,6 +5301,16 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                 if ((e.ctrlKey || e.metaKey) && (e.key === 'Enter' || e.keyCode === 13)) {
                     e.preventDefault();
                     submitNarrationMessage();
+                }
+            });
+        }
+
+        if (regenerateRequirementInput) {
+            regenerateRequirementInput.addEventListener('keydown', (e) => {
+                if (e.isComposing || e.keyCode === 229) return;
+                if ((e.ctrlKey || e.metaKey) && (e.key === 'Enter' || e.keyCode === 13)) {
+                    e.preventDefault();
+                    submitRegenerateRequest(true);
                 }
             });
         }

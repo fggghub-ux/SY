@@ -275,6 +275,7 @@ window.lovesApp = {
         if (!this.view) return;
         
         this.bindEvents();
+        this.bindLauncherButton();
         this.initialized = true;
         this.startRealTimeJobs();
         console.log('Loves app initialized');
@@ -303,6 +304,19 @@ window.lovesApp = {
         }
     },
 
+    bindLauncherButton: function() {
+        const launcher = document.getElementById('app-loves-btn');
+        if (!launcher || launcher.dataset.lovesLauncherBound === 'true') return;
+        launcher.dataset.lovesLauncherBound = 'true';
+        launcher.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (window.lovesApp && typeof window.lovesApp.open === 'function') {
+                window.lovesApp.open();
+            }
+        });
+    },
+
     bindSharedSavingsButton: function(friend = this.currentFriend) {
         const sharedSavingsBtn = document.getElementById('lovers-shared-savings-btn');
         if (!sharedSavingsBtn) return;
@@ -320,7 +334,7 @@ window.lovesApp = {
         };
     },
     
-    // 添加动态辅助方法
+    // 添加动态 / 日记辅助方法
     bindFabClick: function() {
         const fab = document.getElementById('lovers-space-fab');
         if (!fab) return;
@@ -344,61 +358,8 @@ window.lovesApp = {
             const activeTab = document.querySelector('.lovers-space-tab.active');
             if (activeTab) {
                 const tabName = activeTab.getAttribute('data-tab');
-                if (tabName === 'calendar') {
-                    const scheduleView = document.getElementById('lovers-schedule-view');
-                    if (scheduleView && window.openView) {
-                        document.getElementById('lovers-schedule-text').value = '';
-                        document.getElementById('lovers-schedule-location').value = '';
-                        const now = new Date();
-                        const todayStr = now.toISOString().split('T')[0];
-                        const timeStr = now.toTimeString().substring(0, 5);
-                        document.getElementById('lovers-schedule-date').value = todayStr;
-                        document.getElementById('lovers-schedule-time').value = timeStr;
-                        
-                        const addBtn = document.getElementById('lovers-schedule-btn');
-                        if (addBtn) {
-                            addBtn.onclick = () => {
-                                const title = document.getElementById('lovers-schedule-text').value.trim();
-                                const date = document.getElementById('lovers-schedule-date').value;
-                                const time = document.getElementById('lovers-schedule-time').value;
-                                const loc = document.getElementById('lovers-schedule-location').value.trim() || '未设置地点';
-                                
-                                if (!title) {
-                                    if (window.showToast) window.showToast('请输入日程标题');
-                                    return;
-                                }
-                                
-                                if (!this.currentFriend.memory) this.currentFriend.memory = {};
-                                if (!this.currentFriend.memory.schedule) this.currentFriend.memory.schedule = {};
-                                if (!this.currentFriend.memory.schedule.events) this.currentFriend.memory.schedule.events = [];
-                                
-                                const scheduleEvent = {
-                                    id: 'sch_' + Date.now(),
-                                    name: title,
-                                    title: title,
-                                    date: date,
-                                    startTime: time,
-                                    endTime: time,
-                                    time: time,
-                                    location: loc,
-                                    source: 'loves',
-                                    timestamp: Date.now()
-                                };
-                                this.currentFriend.memory.schedule.events.push(window.imDataUtils?.normalizeScheduleEvent
-                                    ? window.imDataUtils.normalizeScheduleEvent(scheduleEvent, this.currentFriend.memory.schedule.events.length)
-                                    : scheduleEvent);
-                                
-                                this.persistFriendState();
-                                if (window.showToast) window.showToast('日程已添加');
-                                if (window.closeView) window.closeView(scheduleView);
-                                
-                                this.currentCalendarDate = new Date(date);
-                                this.renderCalendar();
-                            };
-                        }
-                        
-                        window.openView(scheduleView);
-                    }
+                if (tabName === 'diary') {
+                    this.openDiaryGeneratorView();
                 } else if (tabName === 'moments') {
                     this.openPublishView();
                 } else {
@@ -410,141 +371,350 @@ window.lovesApp = {
         };
     },
 
-    currentCalendarDate: new Date(),
+    currentDiaryDate: new Date(),
 
-    renderCalendar: function() {
-        const datesContainer = document.getElementById('lovers-calendar-dates');
-        const listContainer = document.getElementById('lovers-calendar-list');
-        const monthPicker = document.getElementById('lovers-calendar-month-picker');
-        const yearDisplay = document.getElementById('lovers-calendar-year-display');
-        const monthDisplay = document.getElementById('lovers-calendar-month-display');
-        
+    formatDiaryDateLabel: function(dateKey) {
+        const date = this.parseDateKey(dateKey);
+        const todayKey = this.getLocalDateKey(new Date());
+        const weekNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+        const prefix = dateKey === todayKey ? '今天' : (date.getMonth() + 1) + '月' + date.getDate() + '日';
+        return prefix + ' · ' + weekNames[date.getDay()];
+    },
+
+    ensureDiaryData: function(friend = this.currentFriend) {
+        if (!friend) return [];
+        if (!friend.lovesData || typeof friend.lovesData !== 'object') friend.lovesData = {};
+        if (!Array.isArray(friend.lovesData.diaries)) friend.lovesData.diaries = [];
+        friend.lovesData.diaries = friend.lovesData.diaries
+            .filter(item => item && typeof item === 'object')
+            .map((item, index) => ({
+                id: item.id || 'ld_' + Date.now() + '_' + index,
+                date: String(item.date || this.getLocalDateKey(item.createdAt || Date.now())),
+                time: String(item.time || '').slice(0, 5),
+                title: String(item.title || item.name || '未命名日记').trim() || '未命名日记',
+                location: String(item.location || '未设置地点').trim() || '未设置地点',
+                diary: String(item.diary || item.content || '').trim(),
+                createdAt: Number(item.createdAt) || Number(item.timestamp) || Date.now(),
+                source: 'loves_diary'
+            }));
+        return friend.lovesData.diaries;
+    },
+
+    renderDiary: function() {
+        const datesContainer = document.getElementById('lovers-diary-dates');
+        const listContainer = document.getElementById('lovers-diary-list');
+        const monthPicker = document.getElementById('lovers-diary-month-picker');
+        const yearDisplay = document.getElementById('lovers-diary-year-display');
+        const monthDisplay = document.getElementById('lovers-diary-month-display');
         if (!datesContainer || !listContainer) return;
 
-        // 渲染顶部日期横条
         const today = new Date();
-        const baseDate = this.currentCalendarDate || today;
-        
-        // 更新标题栏年月显示
+        const baseDate = this.currentDiaryDate || today;
+        const selectedDateStr = this.getLocalDateKey(baseDate);
+
         if (yearDisplay && monthDisplay) {
             yearDisplay.textContent = baseDate.getFullYear() + '年';
             monthDisplay.textContent = (baseDate.getMonth() + 1) + '月';
         }
-        
-        // 绑定隐藏的 month picker
+
         if (monthPicker) {
-            // 设置 picker 的当前值为当前 baseDate 的年月 (YYYY-MM)
-            const mm = (baseDate.getMonth() + 1).toString().padStart(2, '0');
-            monthPicker.value = `${baseDate.getFullYear()}-${mm}`;
-            
-            // 监听用户选择，选中后跳转到该月 1 号
+            const mm = String(baseDate.getMonth() + 1).padStart(2, '0');
+            monthPicker.value = baseDate.getFullYear() + '-' + mm;
             monthPicker.onchange = (e) => {
-                const val = e.target.value; // e.g. "2026-04"
-                if (val) {
-                    const parts = val.split('-');
-                    const newDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, 1);
-                    this.currentCalendarDate = newDate;
-                    this.renderCalendar();
-                }
+                const val = e.target.value;
+                if (!val) return;
+                const parts = val.split('-').map(Number);
+                if (parts.length !== 2 || parts.some(Number.isNaN)) return;
+                this.currentDiaryDate = new Date(parts[0], parts[1] - 1, 1);
+                this.renderDiary();
             };
         }
-        
-        let datesHtml = '';
+
         const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
-        
-        // 生成包含当天在内的前后各 15 天的列表
+        let datesHtml = '';
         for (let i = -15; i <= 15; i++) {
             const d = new Date(baseDate);
             d.setDate(baseDate.getDate() + i);
-            const isToday = d.toDateString() === today.toDateString();
-            const isSelected = d.toDateString() === baseDate.toDateString();
-            const dateStr = d.toISOString().split('T')[0];
-            const displayDay = d.getDate();
-            const displayWeek = isToday ? '今' : dayNames[d.getDay()];
+            const dateStr = this.getLocalDateKey(d);
+            const isToday = dateStr === this.getLocalDateKey(today);
+            const isSelected = dateStr === selectedDateStr;
             const stateClasses = [
-                'calendar-date-item',
+                'diary-date-item',
                 isToday ? 'is-today' : '',
                 isSelected ? 'is-selected' : ''
             ].filter(Boolean).join(' ');
-            datesHtml += `
-            <button type="button" class="${stateClasses}" data-date="${dateStr}" aria-label="${d.getMonth() + 1}月${displayDay}日" aria-pressed="${isSelected}">
-                <small>${displayWeek}</small>
-                <strong>${displayDay}</strong>
-            </button>`;
+            datesHtml += [
+                '<button type="button" class="', stateClasses, '" data-date="', dateStr, '" aria-label="',
+                d.getMonth() + 1, '月', d.getDate(), '日" aria-pressed="', String(isSelected), '">',
+                '<small>', isToday ? '今' : dayNames[d.getDay()], '</small>',
+                '<strong>', d.getDate(), '</strong>',
+                '</button>'
+            ].join('');
         }
         datesContainer.innerHTML = datesHtml;
 
-        // 滚动到选中日期居中 (简单处理)
         setTimeout(() => {
-            const selectedEl = datesContainer.querySelector('.calendar-date-item.is-selected');
+            const selectedEl = datesContainer.querySelector('.diary-date-item.is-selected');
             if (selectedEl && datesContainer.parentElement) {
                 const scrollLeft = selectedEl.offsetLeft - datesContainer.parentElement.offsetWidth / 2 + selectedEl.offsetWidth / 2;
                 datesContainer.parentElement.scrollTo({ left: scrollLeft, behavior: 'smooth' });
             }
         }, 50);
 
-        // 绑定日期点击事件
-        const dateItems = datesContainer.querySelectorAll('.calendar-date-item');
-        dateItems.forEach(item => {
+        datesContainer.querySelectorAll('.diary-date-item').forEach(item => {
             item.onclick = () => {
-                this.currentCalendarDate = new Date(item.getAttribute('data-date'));
-                this.renderCalendar();
+                this.currentDiaryDate = this.parseDateKey(item.getAttribute('data-date'));
+                this.renderDiary();
             };
         });
 
-        // 渲染行程列表
-        const selectedDateStr = baseDate.toISOString().split('T')[0];
-        let schedules = [];
-        if (this.currentFriend && this.currentFriend.memory && this.currentFriend.memory.schedule && this.currentFriend.memory.schedule.events) {
-            schedules = this.currentFriend.memory.schedule.events.filter(s => s.date === selectedDateStr);
-            // 按时间排序
-            schedules.sort((a, b) => (a.startTime || a.time || '').localeCompare(b.startTime || b.time || ''));
+        const entries = this.ensureDiaryData()
+            .filter(item => item.date === selectedDateStr)
+            .sort((a, b) => String(a.time || '').localeCompare(String(b.time || '')));
+
+        if (entries.length === 0) {
+            listContainer.innerHTML = [
+                '<div class="lovers-diary-empty">',
+                '<i class="far fa-pen-to-square"></i>',
+                '<strong>', selectedDateStr === this.getLocalDateKey(today) ? '今天还没有日记' : '这天还没有日记', '</strong>',
+                '<span>点击右下角 +，让 TA 生成行程日记</span>',
+                '</div>'
+            ].join('');
+            return;
         }
 
-        let listHtml = '';
+        listContainer.innerHTML = entries.map(entry => {
+            const safeId = this.escapeHTML(entry.id);
+            const safeTime = this.escapeHTML(entry.time || '--:--');
+            const safeTitle = this.escapeHTML(entry.title || '未命名日记');
+            const safeLocation = this.escapeHTML(entry.location || '未设置地点');
+            const safeDiary = this.escapeHTML(entry.diary || '');
+            return [
+                '<article class="lovers-diary-item" data-id="', safeId, '">',
+                '<div class="lovers-diary-time">', safeTime, '</div>',
+                '<div class="lovers-diary-card">',
+                '<div class="lovers-diary-card-head">',
+                '<strong>', safeTitle, '</strong>',
+                '<button type="button" class="lovers-diary-delete">删除</button>',
+                '</div>',
+                '<span class="lovers-diary-location"><i class="fas fa-map-marker-alt"></i>', safeLocation, '</span>',
+                '<p>', safeDiary, '</p>',
+                '</div>',
+                '</article>'
+            ].join('');
+        }).join('') + '<div class="lovers-diary-end">这一天的日记已全部显示</div>';
 
-        if (schedules.length === 0) {
-            listHtml = `<div class="lovers-calendar-empty">当天还没有行程安排</div>`;
-        } else {
-            schedules.forEach((s, idx) => {
-                const timeDisplay = s.startTime && s.endTime ? `${s.startTime}~${s.endTime}` : (s.time || '');
-                const safeTime = this.escapeHTML(timeDisplay);
-                const safeTitle = this.escapeHTML(s.name || s.title || '未命名日程');
-                const safeLocation = this.escapeHTML(s.location || '未设置地点');
-                listHtml += `
-                <div class="lovers-schedule-item" data-idx="${idx}">
-                    <div class="lovers-schedule-time">${safeTime}</div>
-                    <div class="lovers-schedule-card">
-                        <button type="button" class="delete-schedule-btn" aria-label="删除日程"><i class="fas fa-times"></i></button>
-                        <strong>${safeTitle}</strong>
-                        <span><i class="fas fa-map-marker-alt"></i>${safeLocation}</span>
-                    </div>
-                </div>`;
-            });
-            listHtml += `<div class="lovers-calendar-end">当天行程已全部显示</div>`;
-        }
-        
-        listContainer.innerHTML = listHtml;
-
-        // 绑定删除日程事件
-        const delBtns = listContainer.querySelectorAll('.delete-schedule-btn');
-        delBtns.forEach((btn) => {
+        listContainer.querySelectorAll('.lovers-diary-delete').forEach(btn => {
             btn.onclick = (e) => {
                 e.stopPropagation();
-                const itemEl = e.target.closest('.lovers-schedule-item');
-                const idx = itemEl.getAttribute('data-idx');
-                const s = schedules[idx];
-                
-                if (confirm(`确定要删除日程 "${s.name || s.title}" 吗？`)) {
-                    const originalIdx = this.currentFriend.memory.schedule.events.findIndex(os => os.id === s.id);
-                    if (originalIdx !== -1) {
-                        this.currentFriend.memory.schedule.events.splice(originalIdx, 1);
-                        this.persistFriendState();
-                        this.renderCalendar();
-                    }
-                }
+                const itemEl = e.target.closest('.lovers-diary-item');
+                const entryId = itemEl?.getAttribute('data-id');
+                if (!entryId) return;
+                if (!confirm('确定要删除这条日记吗？')) return;
+                const diaries = this.ensureDiaryData();
+                this.currentFriend.lovesData.diaries = diaries.filter(item => String(item.id) !== String(entryId));
+                this.persistFriendState();
+                this.renderDiary();
             };
         });
+    },
+
+    openDiaryGeneratorView: function() {
+        if (!this.currentFriend) {
+            if (window.showToast) window.showToast('请先进入情侣空间');
+            return;
+        }
+        const generatorView = document.getElementById('lovers-diary-generator-view');
+        if (!generatorView) return;
+
+        const dateKey = this.getLocalDateKey(this.currentDiaryDate || new Date());
+        const dateLabel = document.getElementById('lovers-diary-generator-date');
+        const countInput = document.getElementById('lovers-diary-count');
+        const cancelBtn = document.getElementById('lovers-diary-generator-cancel');
+        const generateBtn = document.getElementById('lovers-diary-generate-btn');
+
+        if (dateLabel) dateLabel.textContent = this.formatDiaryDateLabel(dateKey);
+        if (countInput) countInput.value = '10';
+        if (cancelBtn) cancelBtn.onclick = () => {
+            if (window.closeView) window.closeView(generatorView);
+        };
+
+        if (generateBtn) {
+            generateBtn.onclick = async () => {
+                const count = this.getDiaryGenerationCount();
+                const originalText = generateBtn.textContent;
+                generateBtn.disabled = true;
+                generateBtn.textContent = '生成中...';
+                try {
+                    const entries = await this.requestDiaryEntries(dateKey, count);
+                    const diaries = this.ensureDiaryData();
+                    this.currentFriend.lovesData.diaries = diaries
+                        .filter(item => item.date !== dateKey)
+                        .concat(entries);
+                    await this.persistFriendState();
+                    this.currentDiaryDate = this.parseDateKey(dateKey);
+                    this.renderDiary();
+                    if (window.closeView) window.closeView(generatorView);
+                    if (window.showToast) window.showToast('已生成 ' + entries.length + ' 条日记');
+                } catch (error) {
+                    console.error('[Loves Diary] generate failed', error);
+                    const message = String(error?.message || '日记生成失败').slice(0, 80);
+                    if (window.showToast) window.showToast(message);
+                    else alert(message);
+                } finally {
+                    generateBtn.disabled = false;
+                    generateBtn.textContent = originalText || '生成';
+                }
+            };
+        }
+
+        if (window.openView) window.openView(generatorView);
+        else generatorView.classList.add('active');
+    },
+
+    getDiaryGenerationCount: function() {
+        const input = document.getElementById('lovers-diary-count');
+        const value = Math.round(Number(input?.value) || 10);
+        const count = Math.min(30, Math.max(1, value));
+        if (input) input.value = String(count);
+        return count;
+    },
+
+    getLovesApiConfig: function() {
+        return typeof window.getApiConfig === 'function' ? (window.getApiConfig() || {}) : (window.apiConfig || {});
+    },
+
+    resolveLovesChatEndpoint: function(apiConfig) {
+        let endpoint = String(apiConfig?.endpoint || '').trim();
+        if (!endpoint) return '';
+        if (!endpoint.endsWith('/chat/completions')) {
+            if (endpoint.endsWith('/')) endpoint += 'v1/chat/completions';
+            else if (endpoint.endsWith('/v1')) endpoint += '/chat/completions';
+            else endpoint += '/v1/chat/completions';
+        }
+        return endpoint;
+    },
+
+    requestDiaryEntries: async function(dateKey, count) {
+        const apiConfig = this.getLovesApiConfig();
+        const endpoint = this.resolveLovesChatEndpoint(apiConfig);
+        if (!endpoint || !apiConfig.apiKey) throw new Error('请先在设置中配置 API');
+
+        const friend = this.currentFriend || {};
+        const charName = friend.nickname || friend.realname || friend.realName || friend.name || 'TA';
+        const charPersona = friend.persona || friend.signature || friend.description || '普通角色';
+        const userName = window.userState?.name || window.imData?.profile?.name || 'User';
+        const userPersona = window.userState?.persona || window.imData?.profile?.persona || '未设置';
+        const dateLabel = this.formatDiaryDateLabel(dateKey);
+        const worldBook = typeof window.getGlobalWorldBookContextByPosition === 'function'
+            ? (window.getGlobalWorldBookContextByPosition('before') || '')
+            : '';
+
+        const promptLines = [
+            '你要为 Loves 情侣空间生成角色的独立行程日记，不要写入或引用 iMessage 日程。',
+            '',
+            '【Char】' + charName,
+            '【Char 人设】',
+            charPersona,
+            '',
+            '【User】' + userName,
+            '【User 人设】',
+            userPersona
+        ];
+        if (worldBook) {
+            promptLines.push('', '【世界书】', worldBook);
+        }
+        promptLines.push(
+            '',
+            '【日期】' + dateKey + '（' + dateLabel + '）',
+            '【生成数量】' + count + ' 条',
+            '',
+            '要求：',
+            '1. 返回严格 JSON，格式只能是 {"entries":[{"time":"HH:MM","title":"标题","location":"地点","diary":"日记正文"}]}。',
+            '2. entries 数量必须刚好等于 ' + count + '。',
+            '3. 每条代表 Char 今天一个时间点的静态行程，可包含起床、通勤、吃饭、学习/工作、发呆、休息、睡觉等日常。',
+            '4. time 必须是 24 小时 HH:MM，所有条目按一天自然顺序排列。',
+            '5. title 2-16 字，location 2-20 字。',
+            '6. diary 必须使用 Char 第一人称视角，贴合 Char 人设，不少于 30 个中文字符，像真实日记，不要写成旁白或列表。',
+            '7. 只返回 JSON，不要 Markdown，不要解释文字。'
+        );
+        const prompt = promptLines.join('\n');
+
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + apiConfig.apiKey
+            },
+            body: JSON.stringify({
+                model: apiConfig.model || 'gpt-3.5-turbo',
+                messages: [
+                    { role: 'system', content: '你是严格 JSON 生成器，只返回合法 JSON。' },
+                    { role: 'user', content: prompt }
+                ],
+                temperature: Number.isFinite(Number(apiConfig.temperature)) ? Number(apiConfig.temperature) : 0.7
+            })
+        });
+
+        if (!response.ok) {
+            let errorText = 'API 请求失败：' + response.status;
+            try {
+                const body = await response.text();
+                const parsed = JSON.parse(body);
+                errorText = parsed?.error?.message || body || errorText;
+            } catch (_) {}
+            throw new Error(errorText);
+        }
+
+        const data = await response.json();
+        const resultText = data.choices?.[0]?.message?.content || data.choices?.[0]?.text || '';
+        const parsed = this.parseDiaryJson(resultText);
+        return this.normalizeGeneratedDiaryEntries(parsed?.entries, dateKey, count);
+    },
+
+    parseDiaryJson: function(resultText) {
+        const fence = String.fromCharCode(96).repeat(3);
+        let jsonStr = String(resultText || '').replace(new RegExp(fence + 'json', 'gi'), '').replace(new RegExp(fence, 'g'), '').trim();
+        const match = jsonStr.match(/\{[\s\S]*\}/);
+        if (match) jsonStr = match[0];
+        try {
+            return JSON.parse(jsonStr);
+        } catch (error) {
+            throw new Error('AI 返回不是合法 JSON，请重试');
+        }
+    },
+
+    normalizeGeneratedDiaryEntries: function(rawEntries, dateKey, count) {
+        if (!Array.isArray(rawEntries)) throw new Error('AI 返回缺少 entries 数组');
+        if (rawEntries.length !== count) throw new Error('AI 返回数量不正确：需要 ' + count + ' 条');
+
+        const normalized = rawEntries.map((entry, index) => {
+            const rawTime = String(entry?.time || '').trim();
+            const timeMatch = rawTime.match(/^(\d{1,2}):(\d{2})$/);
+            if (!timeMatch) throw new Error('第 ' + (index + 1) + ' 条时间格式不正确');
+            const hour = Number(timeMatch[1]);
+            const minute = Number(timeMatch[2]);
+            if (hour < 0 || hour > 23 || minute < 0 || minute > 59) throw new Error('第 ' + (index + 1) + ' 条时间不合法');
+            const time = String(hour).padStart(2, '0') + ':' + String(minute).padStart(2, '0');
+            const title = String(entry?.title || '').trim();
+            const location = String(entry?.location || '').trim();
+            const diary = String(entry?.diary || entry?.content || '').trim();
+            if (!title) throw new Error('第 ' + (index + 1) + ' 条缺少标题');
+            if (!location) throw new Error('第 ' + (index + 1) + ' 条缺少地点');
+            if ([...diary.replace(/\s/g, '')].length < 30) throw new Error('第 ' + (index + 1) + ' 条日记少于 30 字');
+            return {
+                id: 'ld_' + dateKey.replace(/-/g, '') + '_' + Date.now() + '_' + index + '_' + Math.random().toString(36).slice(2, 7),
+                date: dateKey,
+                time,
+                title,
+                location,
+                diary,
+                createdAt: Date.now(),
+                source: 'loves_diary'
+            };
+        });
+
+        return normalized.sort((a, b) => a.time.localeCompare(b.time));
     },
 
     openPublishView: function() {
@@ -709,7 +879,7 @@ window.lovesApp = {
                     const safeAuthor = this.escapeHTML(cAuthor);
                     const safeCommentText = this.escapeHTML(c.text);
                     commentsHtml += `
-                        <div class="loves-moment-comment">
+                        <div class="loves-moment-comment ${c.isChar ? 'is-char' : ''}">
                             <div class="loves-moment-comment-copy" onclick="window.lovesApp.replyToComment(${idx}, ${cIdx})"><span class="loves-moment-comment-author">${safeAuthor}</span>：${safeCommentText}</div>
                             <button type="button" class="loves-moment-comment-delete" onclick="window.lovesApp.deleteComment(${idx}, ${cIdx})">删除</button>
                         </div>
@@ -1885,6 +2055,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
             this.init();
         }
         
+        if (!this.view) this.view = document.getElementById('loves-view');
         if (this.view) {
             const appContainer = document.getElementById('app');
             if (appContainer) {
@@ -1892,8 +2063,15 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                 appContainer.scrollLeft = 0;
             }
             this.scanForAcceptance();
-            window.openView(this.view);
+            if (typeof window.openView === 'function') {
+                window.openView(this.view);
+            } else {
+                this.view.classList.add('active');
+                this.view.style.display = 'flex';
+            }
             this.renderTopFriends();
+        } else {
+            console.warn('[Loves] loves-view not found');
         }
     },
     
@@ -2524,9 +2702,9 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
             this.bindFabClick();
             // 首次渲染动态
             this.renderLovesMoments();
-            // 初始化日历并渲染
-            this.currentCalendarDate = new Date();
-            this.renderCalendar();
+            // 初始化日记并渲染
+            this.currentDiaryDate = new Date();
+            this.renderDiary();
 
             // 3. Tabs 切换逻辑绑定
             const tabs = spaceView.querySelectorAll('.lovers-space-tab');
@@ -2562,6 +2740,9 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                         const panel = document.getElementById('lovers-panel-' + tabName);
                         if (panel) {
                             panel.classList.add('active');
+                        }
+                        if (tabName === 'diary') {
+                            this.renderDiary();
                         }
                     });
                 });

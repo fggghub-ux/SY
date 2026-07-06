@@ -56,6 +56,40 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
     }
 
+    function getPrivateChatMessageTranslation(message) {
+        if (!message || typeof message !== 'object') return '';
+        return typeof message.translation === 'string' && message.translation.trim()
+            ? message.translation.trim()
+            : (typeof message.translationZh === 'string' && message.translationZh.trim()
+                ? message.translationZh.trim()
+                : (typeof message.trans === 'string' && message.trans.trim() ? message.trans.trim() : ''));
+    }
+
+    function buildPrivateChatDetailBubbleHtml(message) {
+        const text = escapeGroupHtml(message?.text || '');
+        const translation = getPrivateChatMessageTranslation(message);
+        if (!translation) {
+            return `<div class="group-private-chat-detail-bubble"><span class="group-private-chat-detail-original">${text}</span></div>`;
+        }
+        return `
+            <button type="button" class="group-private-chat-detail-bubble has-translation" aria-expanded="false" title="点击展开翻译">
+                <span class="group-private-chat-detail-original">${text}</span>
+                <span class="group-private-chat-detail-translation" hidden>${escapeGroupHtml(translation)}</span>
+            </button>
+        `;
+    }
+
+    function togglePrivateChatDetailTranslation(button) {
+        if (!button) return;
+        const translation = button.querySelector('.group-private-chat-detail-translation');
+        if (!translation) return;
+        const willExpand = translation.hidden;
+        translation.hidden = !willExpand;
+        button.classList.toggle('is-expanded', willExpand);
+        button.setAttribute('aria-expanded', willExpand ? 'true' : 'false');
+        button.title = willExpand ? '点击收起翻译' : '点击展开翻译';
+    }
+
     function closeGroupPrivateChatDetail() {
         if (groupPrivateChatDetailModal) closeView(groupPrivateChatDetailModal);
     }
@@ -82,10 +116,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return `
                 <div class="group-private-chat-detail-row${isSender ? ' is-sender' : ''}${isGroupStart ? ' is-group-start' : ''}">
                     ${isGroupStart ? `<div class="group-private-chat-detail-name">${escapeGroupHtml(displayName)}</div>` : ''}
-                    <div class="group-private-chat-detail-bubble">${escapeGroupHtml(message?.text || '')}</div>
+                    ${buildPrivateChatDetailBubbleHtml(message)}
                 </div>
             `;
         }).join('');
+
+        groupPrivateChatDetailMessages.querySelectorAll('.group-private-chat-detail-bubble.has-translation').forEach((bubble) => {
+            bubble.addEventListener('click', () => togglePrivateChatDetailTranslation(bubble));
+        });
 
         openView(groupPrivateChatDetailModal);
         requestAnimationFrame(() => {

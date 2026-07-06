@@ -130,6 +130,31 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
     document.getElementById('app').appendChild(bstageFanChatView);
 
+    // Other Fans Center Modal for char chats
+    const bstageOtherFansModal = document.createElement('div');
+    bstageOtherFansModal.className = 'bstage-center-modal-overlay';
+    bstageOtherFansModal.id = 'bstage-other-fans-modal';
+    bstageOtherFansModal.innerHTML = `
+        <section class="bstage-center-modal-card" role="dialog" aria-modal="true" aria-labelledby="bstage-other-fans-title">
+            <div class="bstage-center-modal-heading">
+                <div>
+                    <small>OTHER FANS</small>
+                    <h2 id="bstage-other-fans-title">其他人的消息</h2>
+                </div>
+                <button type="button" class="bstage-center-modal-close" id="bstage-other-fans-close-btn" aria-label="关闭">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="bstage-other-fans-list" id="bstage-other-fans-list"></div>
+        </section>
+    `;
+    document.getElementById('app').appendChild(bstageOtherFansModal);
+    bstageOtherFansModal.addEventListener('click', (event) => {
+        if (event.target === bstageOtherFansModal) closeOtherFansModal();
+    });
+    const otherFansCloseBtn = bstageOtherFansModal.querySelector('#bstage-other-fans-close-btn');
+    if (otherFansCloseBtn) otherFansCloseBtn.addEventListener('click', closeOtherFansModal);
+
     // Global Settings Modal
     const globalSettingsModal = document.createElement('div');
     globalSettingsModal.className = 'bottom-sheet-overlay detail-sheet-overlay';
@@ -371,17 +396,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="bstage-profile-stats-container">
                     <div class="bstage-profile-stat-bubble" style="background-color: #2c2c2e; color: #fff; border: none;">
                         <span class="bstage-stat-label" style="color: #aaa;">POP 订阅</span>
-                        <span class="bstage-stat-value" style="color: #fff;">0</span>
+                        <span class="bstage-stat-value" id="bstage-profile-pop-sub-count" style="color: #fff;">0</span>
                     </div>
                     <div class="bstage-profile-stat-bubble" style="background-color: #2c2c2e; color: #fff; border: none;">
-                        <span class="bstage-stat-label" style="color: #aaa;">Point</span>
-                        <span class="bstage-stat-value" style="color: #fff;">0</span>
+                        <span class="bstage-stat-label" style="color: #aaa;">订阅收益</span>
+                        <span class="bstage-stat-value" id="bstage-profile-sub-revenue" style="color: #fff;">￥0.00</span>
                     </div>
                 </div>
 
                 <div class="bstage-profile-actions">
                     <div class="bstage-profile-btn" id="bstage-edit-profile-btn" style="background-color: #2c2c2e; color: #fff; border: none;">
                         <i class="fas fa-pen"></i> 编辑资料
+                    </div>
+                    <div class="bstage-profile-btn" id="bstage-withdraw-revenue-btn" style="background-color: #2c2c2e; color: #fff; border: none;">
+                        <i class="fas fa-wallet"></i> 提现到 Pay
                     </div>
                     <div class="bstage-profile-btn" id="bstage-my-orders-btn" style="background-color: #2c2c2e; color: #fff; border: none;">
                         <i class="fas fa-receipt"></i> 我的订单
@@ -443,6 +471,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const generateTypeSheet = document.createElement('div');
     generateTypeSheet.className = 'bottom-sheet-overlay detail-sheet-overlay';
     generateTypeSheet.id = 'bstage-generate-type-sheet';
+    generateTypeSheet.style.zIndex = '2200';
     generateTypeSheet.innerHTML = `
         <div class="bottom-sheet" style="height: auto; max-height: 70%; background: #1c1c1e; color: #fff;">
             <div class="sheet-handle"></div>
@@ -638,6 +667,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="bstage-setting-icon"><i class="fas fa-language"></i></div>
                         <div class="bstage-setting-label" style="flex: 1;">实时翻译</div>
                         <div class="bstage-switch" id="bstage-trans-switch">
+                            <div class="bstage-switch-knob"></div>
+                        </div>
+                    </div>
+
+                    <!-- Other Fans Messages Setting -->
+                    <div class="bstage-setting-item">
+                        <div class="bstage-setting-icon"><i class="fas fa-comments"></i></div>
+                        <div class="bstage-setting-label" style="flex: 1;">查看其他人消息</div>
+                        <div class="bstage-switch" id="bstage-other-fans-switch">
                             <div class="bstage-switch-knob"></div>
                         </div>
                     </div>
@@ -866,6 +904,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('app').appendChild(shopDetailModal);
 
     // --- State ---
+    const BSTAGE_STATE_SCHEMA_VERSION = 2;
+    const BSTAGE_POP_MONTHLY_KRW = 4500;
+    const BSTAGE_KRW_TO_CNY = 0.0052;
     let teams = []; // { id, name, avatar, bg, members: [], isSubscribed: false }
     let currentTeam = null;
     let tempMembers = []; // For creation process
@@ -885,6 +926,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let bstageUserTeamState = { id: '__bstage_user_team__', isUserTeam: true, isSubscribed: true };
     let bstageFanSubscriberCount = null;
     let bstageFanSubscriberGrowthTimer = null;
+    let bstageStateUpdatedAt = 0;
+    let bstageRevenueState = { withdrawnCny: 0, lastWithdrawAt: null };
     let pendingVideoCommentReply = null;
     let currentGenerateTypeAction = null;
     let chatPhotos = []; // List of photo URLs for the current chat/team (Simplified as global for now)
@@ -1149,6 +1192,89 @@ document.addEventListener('DOMContentLoaded', () => {
         return history.find(msg => msg && msg.id === id && (!predicate || predicate(msg))) || null;
     }
 
+    function normalizeOtherFanMessages(rawMessages, timestamp = Date.now()) {
+        if (!Array.isArray(rawMessages)) return [];
+        return rawMessages.slice(0, 14).map((item, index) => {
+            const fanName = stripGeneratedText(item && item.name, getRandomFanName(index));
+            const text = stripGeneratedText(typeof item === 'string' ? item : item && item.text);
+            const trans = stripGeneratedText(item && (item.trans || item.translationZh || item.translation));
+            if (!text) return null;
+            if (fanMessageNeedsTranslation(text) && !trans) return null;
+            const id = stripGeneratedText(item && item.id, createBstageMessageId('other_fan'));
+            return {
+                id,
+                name: fanName,
+                text,
+                trans,
+                timestamp: timestamp + index,
+                avatarEmoji: stripGeneratedText(item && item.avatarEmoji) || getStableEmojiAvatar(`bstage-other-fan-${fanName}-${id}`)
+            };
+        }).filter(Boolean);
+    }
+
+    function normalizeFanBatchMessage(msg) {
+        if (!msg || typeof msg !== 'object') return null;
+        ensureMessageId(msg, 'fan_batch');
+        msg.type = 'fan_batch';
+        msg.timestamp = msg.timestamp || Date.now();
+        msg.fanMessages = normalizeOtherFanMessages(msg.fanMessages || msg.messages || msg.otherFanMessages || [], msg.timestamp);
+        return msg;
+    }
+
+    function formatFanBatchForPrompt(msg) {
+        const batch = normalizeFanBatchMessage(msg);
+        if (!batch || batch.fanMessages.length === 0) return '';
+        const summary = batch.fanMessages
+            .slice(0, 8)
+            .map(fan => `${fan.name || '粉丝'}(${fan.id}): ${fan.text || ''}${fan.trans ? ` / 中文：${fan.trans}` : ''}`)
+            .join(' | ');
+        return `[id:${batch.id}] [其他粉丝消息批次]: ${summary}`;
+    }
+
+    function createOtherFanReplyMeta(fanMessage) {
+        if (!fanMessage) return null;
+        return {
+            id: fanMessage.id,
+            speaker: stripGeneratedText(fanMessage.name, '粉丝'),
+            text: getMessageSummary({ type: 'text', text: fanMessage.text }),
+            isUser: false,
+            isOtherFan: true
+        };
+    }
+
+    function closeOtherFansModal() {
+        if (!bstageOtherFansModal) return;
+        bstageOtherFansModal.classList.remove('active');
+    }
+
+    function openOtherFansModal(member, batch) {
+        const normalizedBatch = normalizeFanBatchMessage(batch);
+        const title = document.getElementById('bstage-other-fans-title');
+        const list = document.getElementById('bstage-other-fans-list');
+        if (!normalizedBatch || !list) return;
+        const memberName = member && member.name ? member.name : 'Char';
+        if (title) title.textContent = `其他粉丝给 ${memberName} 的消息`;
+        const messages = normalizedBatch.fanMessages || [];
+        if (messages.length === 0) {
+            list.innerHTML = '<div class="bstage-other-fans-empty">本轮没有可查看的其他粉丝消息</div>';
+        } else {
+            list.innerHTML = messages.map(fan => {
+                const transHtml = fan.trans ? `<div class="bstage-other-fan-trans">${escapeHtml(fan.trans)}</div>` : '';
+                return `
+                    <div class="bstage-other-fan-item">
+                        ${renderBstageAvatar(fan, fan.name || '粉丝', 'bstage-other-fan-avatar')}
+                        <div class="bstage-other-fan-body">
+                            <div class="bstage-other-fan-name">${escapeHtml(fan.name || '粉丝')}</div>
+                            <div class="bstage-other-fan-text">${escapeHtml(fan.text || '')}</div>
+                            ${transHtml}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        bstageOtherFansModal.classList.add('active');
+    }
+
     function openBstageImagePreview(src, desc) {
         const overlay = document.createElement('div');
         overlay.style.position = 'fixed';
@@ -1200,6 +1326,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function formatMessageForPrompt(msg, speaker) {
         if (!msg || msg.type === 'date') return '';
+        if (msg.type === 'fan_batch') return formatFanBatchForPrompt(msg);
         ensureMessageId(msg, msg.isUser ? 'user' : 'ai');
         const summary = getMessageSummary(msg);
         const replyText = formatReplyForPrompt(msg.replyTo);
@@ -1391,6 +1518,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (Array.isArray(member.chatHistory)) {
                         member.chatHistory.forEach(msg => {
                             if (!msg || msg.type === 'date') return;
+                            if (msg.type === 'fan_batch') {
+                                const beforeId = msg.id;
+                                const beforeCount = Array.isArray(msg.fanMessages) ? msg.fanMessages.length : -1;
+                                normalizeFanBatchMessage(msg);
+                                if (!beforeId || beforeCount !== msg.fanMessages.length) changed = true;
+                                return;
+                            }
                             const beforeId = msg.id;
                             ensureMessageId(msg, msg.isUser ? 'user' : 'char');
                             if (!beforeId) changed = true;
@@ -1425,13 +1559,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function saveBstageData() {
         try {
+            const nextUpdatedAt = Date.now();
+            bstageStateUpdatedAt = nextUpdatedAt;
             const nextState = {
+                schemaVersion: BSTAGE_STATE_SCHEMA_VERSION,
+                updatedAt: nextUpdatedAt,
                 teams,
                 bstageOrders,
                 bstageFanChatHistory,
                 bstageFanChatSettings,
                 bstageUserTeamState,
                 bstageFanSubscriberCount,
+                bstageRevenueState,
                 chatPhotos,
                 bstagePresets,
                 isTranslationEnabled,
@@ -1469,12 +1608,22 @@ document.addEventListener('DOMContentLoaded', () => {
             if (Number.isFinite(Number(window.__bstageGlobalState.bstageFanSubscriberCount))) {
                 bstageFanSubscriberCount = Math.max(0, parseInt(window.__bstageGlobalState.bstageFanSubscriberCount, 10) || 0);
             }
+            if (window.__bstageGlobalState.bstageRevenueState && typeof window.__bstageGlobalState.bstageRevenueState === 'object') {
+                const withdrawnCny = Number(window.__bstageGlobalState.bstageRevenueState.withdrawnCny);
+                bstageRevenueState = {
+                    withdrawnCny: Number.isFinite(withdrawnCny) ? Math.max(0, withdrawnCny) : 0,
+                    lastWithdrawAt: window.__bstageGlobalState.bstageRevenueState.lastWithdrawAt || null
+                };
+            }
             if (Array.isArray(window.__bstageGlobalState.chatPhotos)) chatPhotos = window.__bstageGlobalState.chatPhotos;
             if (window.__bstageGlobalState.bstagePresets) bstagePresets = window.__bstageGlobalState.bstagePresets;
             if (typeof window.__bstageGlobalState.isTranslationEnabled === 'boolean') isTranslationEnabled = window.__bstageGlobalState.isTranslationEnabled;
             if (typeof window.__bstageGlobalState.isContextEnabled === 'boolean') isContextEnabled = window.__bstageGlobalState.isContextEnabled;
             if (Number.isFinite(Number(window.__bstageGlobalState.contextMessageCount))) {
                 contextMessageCount = Math.max(1, parseInt(window.__bstageGlobalState.contextMessageCount, 10) || 50);
+            }
+            if (Number.isFinite(Number(window.__bstageGlobalState.updatedAt))) {
+                bstageStateUpdatedAt = Number(window.__bstageGlobalState.updatedAt) || 0;
             }
             if (normalizeLoadedBstageData()) saveBstageData();
         } catch (e) {
@@ -1503,6 +1652,22 @@ document.addEventListener('DOMContentLoaded', () => {
     let bstageSaveTimeout = null;
     let clickRAF = null;
     let keyupRAF = null;
+
+    function flushBstageDataNow() {
+        if (bstageSaveTimeout) {
+            clearTimeout(bstageSaveTimeout);
+            bstageSaveTimeout = null;
+        }
+        saveBstageData();
+        if (typeof window.saveGlobalData === 'function') {
+            window.saveGlobalData();
+        }
+    }
+
+    window.addEventListener('pagehide', flushBstageDataNow);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') flushBstageDataNow();
+    });
     
     document.body.addEventListener('click', () => {
         if (clickRAF) return;
@@ -1653,6 +1818,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const switchEl = document.getElementById('bstage-trans-switch');
             if (isTranslationEnabled) switchEl.classList.add('active');
             else switchEl.classList.remove('active');
+
+            const otherFansSwitch = document.getElementById('bstage-other-fans-switch');
+            if (otherFansSwitch) otherFansSwitch.classList.toggle('active', !!currentChatMember.otherFansEnabled);
 
             // Render Preview
             renderLockerPreview();
@@ -2098,6 +2266,14 @@ document.addEventListener('DOMContentLoaded', () => {
         window.showToast(`实时翻译已${isTranslationEnabled ? '开启' : '关闭'}`);
     });
 
+    document.getElementById('bstage-other-fans-switch').addEventListener('click', function() {
+        if (!currentChatMember) return;
+        currentChatMember.otherFansEnabled = !currentChatMember.otherFansEnabled;
+        this.classList.toggle('active', !!currentChatMember.otherFansEnabled);
+        saveBstageData();
+        window.showToast(`查看其他人消息已${currentChatMember.otherFansEnabled ? '开启' : '关闭'}`);
+    });
+
 
     // Click outside to close modals
     [searchGenerateModal, generateTypeSheet, createTeamSheet, addCharSheet, pullFriendSheet, subModal, popSubModal, userProfileModal, ordersModal, editProfileModal, editTeamSheet, chatDetailSheet, fanChatDetailSheet, lockerModal, videoDetailModal, editVideoSheet, shopDetailModal].forEach(modal => {
@@ -2222,6 +2398,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const item = document.createElement('div');
             item.className = 'bstage-locker-item';
             item.innerHTML = `<img src="${url}">`;
+            item.title = '查看图片详情';
+            item.addEventListener('click', () => {
+                openBstageImagePreview(url, '置物柜照片');
+            });
             grid.appendChild(item);
         });
 
@@ -2256,8 +2436,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // Show first 4
         chatPhotos.slice(0, 4).forEach(url => {
             const item = document.createElement('div');
-            item.style.cssText = 'width: 70px; height: 70px; border-radius: 8px; flex-shrink: 0; overflow: hidden; position: relative;';
+            item.style.cssText = 'width: 70px; height: 70px; border-radius: 8px; flex-shrink: 0; overflow: hidden; position: relative; cursor: pointer;';
             item.innerHTML = `<img src="${url}" style="width: 100%; height: 100%; object-fit: cover;">`;
+            item.title = '查看图片详情';
+            item.addEventListener('click', () => {
+                openBstageImagePreview(url, '置物柜照片');
+            });
             container.appendChild(item);
         });
         
@@ -3100,6 +3284,18 @@ ${generationIntent}
             return;
         }
 
+        if (msg.type === 'fan_batch') {
+            normalizeFanBatchMessage(msg);
+            const trigger = document.createElement('button');
+            trigger.type = 'button';
+            trigger.className = 'bstage-other-fans-trigger';
+            const count = Array.isArray(msg.fanMessages) ? msg.fanMessages.length : 0;
+            trigger.innerHTML = `<i class="fas fa-comments"></i><span>查看其他人的消息${count ? `（${count}）` : ''}</span>`;
+            trigger.addEventListener('click', () => openOtherFansModal(member, msg));
+            contentContainer.appendChild(trigger);
+            return;
+        }
+
         ensureMessageId(msg, msg.isUser ? 'user' : 'char');
 
         if (msg.isUser) {
@@ -3342,7 +3538,7 @@ ${generationIntent}
             history += '暂无聊天记录。\n';
         } else {
             promptMessages.forEach(msg => {
-                const speaker = msg.isUser ? 'User' : member.name;
+                const speaker = msg.isUser ? '当前粉丝' : member.name;
                 const line = formatMessageForPrompt(msg, speaker);
                 if (line) history += `${line}\n`;
             });
@@ -3351,11 +3547,9 @@ ${generationIntent}
             .filter(msg => msg && msg.isUser && msg.id)
             .map(msg => msg.id);
 
-        // User Persona
-        let userPersona = '';
-        if (window.userState && window.userState.persona) {
-            userPersona = `User的人设: ${window.userState.persona}\n`;
-        }
+        const mountedProfileName = window.userState && window.userState.name ? window.userState.name : '未命名人物';
+        const mountedProfilePersona = window.userState && window.userState.persona ? window.userState.persona : '';
+        const mountedProfileContext = `聊天室挂载资料 / 可讨论人物资料（注意：这不是当前发言的 User 本人）：\n名称：${mountedProfileName}\n人设/资料：${mountedProfilePersona || '未填写'}\n说明：当前粉丝可以提到、讨论或询问这个资料里的人物，但当前粉丝发来的消息在 ${member.name} 眼里只是普通粉丝消息，不能把当前粉丝当成该人物本人。\n`;
 
         // --- 提取世界书 ---
         const systemDepthWorldBookContext = window.getGlobalWorldBookContextByPosition ? window.getGlobalWorldBookContextByPosition('system_depth') : '';
@@ -3366,6 +3560,35 @@ ${generationIntent}
         const now = new Date();
         const days = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
         const realTimeContext = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${days[now.getDay()]} ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const otherFansEnabled = !!member.otherFansEnabled;
+        const otherFansPromptBlock = otherFansEnabled ? `
+
+其他粉丝消息功能已开启：
+- 你必须先生成本轮 otherFanMessages，再生成你的回复 charMessages。
+- otherFanMessages 不少于 10 条，最多 14 条，来自不同粉丝。
+- otherFanMessages 必须是这些粉丝直接发给你（${member.name}）的消息：他们在和你说话、向你提问、对你应援、催你营业、请你翻牌或向你提到某个话题。
+- 禁止写成其他粉丝在和当前粉丝/User聊天，禁止让其他粉丝对当前粉丝/User发问、打招呼或回复。
+- 其他粉丝可以向你提到聊天室挂载资料里的可讨论人物/设定，但表达方式必须是“对你说”：例如问你怎么看、你和对方什么关系、你能不能聊聊，而不是粉丝之间互相讨论。
+- 你可以回复本轮 otherFanMessages 里的某条其他粉丝消息；如需回复，请在 charMessages 对象中填写 replyToFanId，值只能来自你本次生成的 otherFanMessages.id。
+` : '';
+        const responseFormatPrompt = otherFansEnabled ? `
+必须返回严格 JSON 对象，不要 markdown，不要解释：
+{
+  "otherFanMessages": [
+    {"id": "fan_1", "name": "粉丝昵称", "text": "直接发给 ${member.name} 的原文消息", "trans": "非中文消息的中文翻译，中文消息则为空字符串"}
+  ],
+  "charMessages": [
+    {"type": "text", "text": "气泡1原文", "trans": "气泡1中文翻译", "replyToUserId": "可选的当前粉丝消息 id", "replyToFanId": "可选的其他粉丝消息 id"},
+    {"type": "image", "description": "一张帅气偶像的自拍，面带微笑，后台背景，明亮的灯光", "replyToUserId": "可选", "replyToFanId": "可选"}
+  ]
+}
+` : `
+必须返回严格 JSON 数组，不要 markdown，不要解释：
+[
+  {"type": "text", "text": "气泡1原文", "trans": "气泡1中文翻译", "replyToUserId": "可选的当前粉丝消息 id"},
+  {"type": "image", "description": "一张帅气偶像的自拍，面带微笑，后台背景，明亮的灯光", "replyToUserId": "可选"}
+]
+`;
 
 const prompt = `
 ${systemDepthWorldBookContext ? `System Depth Rules:\n${systemDepthWorldBookContext}\n\n` : ''}${beforeRoleWorldBookContext ? `Before Role Rules:\n${beforeRoleWorldBookContext}\n\n` : ''}你现在的身份是：${member.name}
@@ -3374,25 +3597,22 @@ ${systemDepthWorldBookContext ? `System Depth Rules:\n${systemDepthWorldBookCont
 你所在的团队信息是：${currentTeam && currentTeam.desc ? currentTeam.desc : '无'}${afterRoleWorldBookContext ? `\n\nAfter Role Rules:\n${afterRoleWorldBookContext}` : ''}
 当前真实时间是 ${realTimeContext}。
 
-请扮演该角色，与 User (粉丝/订阅者) 进行沉浸式对话。
-视角说明：User 在界面上看到的是与你的单聊；但从你的视角，你正在面对很多粉丝/订阅者的实时消息，User 只是其中一个可能被你看见的人。
+请扮演该角色，与当前粉丝进行沉浸式对话。
+视角说明：当前粉丝在界面上看到的是与你的单聊；但从你的视角，你正在面对很多粉丝/订阅者的实时消息，当前粉丝只是其中一个可能被你看见的人。聊天室挂载资料不是当前粉丝本人，只是一个可被讨论的人物/设定。
 
 要求：
 1. 根据char的人设进行一次日常消息的营业，根据你的人设选择输出什么语言，例如你是韩国人，输出韩语。
-2. 从你的视角看会有很多很多粉丝的消息，你不一定能看见 User 发的消息，禁止每一条都回复 User，禁止顺着 User 的话机械往下说，请按真实一对多的逻辑回复。
-3. 一句一发，将你想说的话拆分成 3 到 6 条简短的气泡回复。
-4. 如果某条 User 消息带有 replyTo，说明 User 在引用/翻牌你的某条营业消息；你可以注意到，也可以像真实营业一样不一定回应。
-5. 必须返回严格的 JSON 数组格式（不要带有 markdown 代码块标记），包含原文和中文翻译。如果原文是中文则翻译为空。
-6. 你可以回复某条 User 消息；如需回复，请在该气泡对象中填写 replyToId，值只能从这些 User 消息 id 中选择：${validUserReplyIds.length ? validUserReplyIds.join(', ') : '无'}。不回复则省略或填空。
+2. 一句一发，将你想说的话拆分成 3 到 6 条简短的气泡回复。
+3. 从你的视角看会有很多很多粉丝的消息，你不一定能看见当前粉丝发的消息，禁止每一条都回复当前粉丝，禁止顺着当前粉丝的话机械往下说，请按真实一对多的逻辑回复。
+4. 如果某条当前粉丝消息带有 replyTo，说明当前粉丝在引用/翻牌你的某条营业消息；你可以注意到，也可以像真实营业一样不一定回应。
+5. 所有 text 都要包含原文和中文翻译字段 trans；如果原文是中文则 trans 为空字符串；如果原文不是纯中文，trans 必须是自然中文翻译。
+6. 你可以回复某条当前粉丝消息；如需回复，请在消息对象中填写 replyToUserId，值只能从这些当前粉丝消息 id 中选择：${validUserReplyIds.length ? validUserReplyIds.join(', ') : '无'}。不回复则省略或填空。
 7. 你可以发送普通文本气泡，也可以发送图片，但发图片的概率很低，禁止每一条都发图片，比如有很多粉丝希望你发图片再发。
 8. 如果是图片，请使用 "type": "image" 并在 "description" 字段中写明画面的详细提示词描述（必须是中文描述）。
-格式示例：
-[
-  {"type": "text", "text": "气泡1原文", "trans": "气泡1中文翻译", "replyToId": "可选的 User 消息 id"},
-  {"type": "image", "description": "一张帅气偶像的自拍，面带微笑，后台背景，明亮的灯光", "replyToId": "可选的 User 消息 id"}
-]
+${otherFansPromptBlock}
+${responseFormatPrompt}
 
-${userPersona}
+${mountedProfileContext}
 ${history}
 `;
 
@@ -3412,7 +3632,7 @@ ${history}
                 body: JSON.stringify({
                     model: resolvedApiConfig.model || 'gpt-3.5-turbo',
                     messages: [
-                        { role: 'system', content: 'You are a roleplay character JSON generator.' },
+                        { role: 'system', content: 'You generate strict JSON objects for immersive b.stage character fan interactions.' },
                         { role: 'user', content: prompt }
                     ],
                     temperature: parseFloat(resolvedApiConfig.temperature) || 0.8
@@ -3426,14 +3646,32 @@ ${history}
             aiReply = aiReply.replace(/```json/g, '').replace(/```/g, '').trim();
             
             let parsedMsgs = [];
+            let otherFanMessages = [];
             try {
-                parsedMsgs = JSON.parse(aiReply);
-                if (!Array.isArray(parsedMsgs)) parsedMsgs = [aiReply]; // Handle single string
+                const parsedPayload = JSON.parse(aiReply);
+                if (Array.isArray(parsedPayload)) {
+                    parsedMsgs = parsedPayload;
+                } else if (parsedPayload && typeof parsedPayload === 'object') {
+                    parsedMsgs = Array.isArray(parsedPayload.charMessages)
+                        ? parsedPayload.charMessages
+                        : (Array.isArray(parsedPayload.messages) ? parsedPayload.messages : []);
+                    if (otherFansEnabled) {
+                        otherFanMessages = normalizeOtherFanMessages(
+                            parsedPayload.otherFanMessages || parsedPayload.fanMessages || parsedPayload.other_fan_messages || [],
+                            Date.now()
+                        );
+                    }
+                } else {
+                    parsedMsgs = [aiReply];
+                }
             } catch (e) {
                 // Fallback for non-JSON
                 const lines = aiReply.split('\n').filter(s => s.trim().length > 0);
                 // Fallback translation assumption
                 parsedMsgs = lines.map(l => ({ text: l, trans: '翻译失败' }));
+            }
+            if (otherFansEnabled && otherFanMessages.length < 10) {
+                throw new Error('too_few_other_fans');
             }
 
             if (contentContainer) {
@@ -3496,31 +3734,38 @@ ${history}
                 });
             }
 
-            // Add Date Bubble if needed before AI replies
-            if (parsedMsgs.length > 0) {
+            // Add Date Bubble if needed before AI replies / fan batch marker
+            if (parsedMsgs.length > 0 || otherFanMessages.length > 0) {
                 checkAndAddDateBubble(member, contentContainer, Date.now());
             }
 
             let delay = 0;
+            const otherFanMessageById = new Map(otherFanMessages.map(fan => [String(fan.id), fan]));
             parsedMsgs.forEach(msgItem => {
                 // Normalize msgItem
                 let text = '';
                 let trans = '';
                 let type = 'text';
                 let imgDesc = '';
-                let replyToId = '';
+                let replyToUserId = '';
+                let replyToFanId = '';
                 
                 if (typeof msgItem === 'string') {
-                    text = msgItem;
+                    text = stripGeneratedText(msgItem);
                 } else {
                     type = msgItem.type || 'text';
-                    text = msgItem.text || '';
-                    trans = msgItem.trans || msgItem.translation || '';
-                    imgDesc = msgItem.description || '';
-                    replyToId = stripGeneratedText(msgItem.replyToId || msgItem.reply_to_id || '');
+                    text = stripGeneratedText(msgItem.text || '');
+                    trans = stripGeneratedText(msgItem.trans || msgItem.translation || msgItem.translationZh || '');
+                    imgDesc = stripGeneratedText(msgItem.description || '');
+                    replyToUserId = stripGeneratedText(msgItem.replyToUserId || msgItem.reply_to_user_id || msgItem.replyToId || msgItem.reply_to_id || '');
+                    replyToFanId = stripGeneratedText(msgItem.replyToFanId || msgItem.reply_to_fan_id || '');
                 }
-                const replySource = findMessageById(member.chatHistory, replyToId, msg => msg && msg.isUser);
-                const replyTo = replySource ? createReplyMeta(replySource, 'User') : null;
+                if (type !== 'image' && !text) return;
+                const fanReplySource = replyToFanId ? otherFanMessageById.get(String(replyToFanId)) : null;
+                const userReplySource = findMessageById(member.chatHistory, replyToUserId, msg => msg && msg.isUser);
+                const replyTo = fanReplySource
+                    ? createOtherFanReplyMeta(fanReplySource)
+                    : (userReplySource ? createReplyMeta(userReplySource, '当前粉丝') : null);
 
                 setTimeout(() => {
                     let savedMsg = null;
@@ -3596,9 +3841,28 @@ ${history}
                 delay += 1500 + Math.random() * 1000;
             });
 
+            if (otherFanMessages.length > 0) {
+                const fanBatchMsg = {
+                    id: createBstageMessageId('fan_batch'),
+                    type: 'fan_batch',
+                    timestamp: Date.now() + delay,
+                    fanMessages: otherFanMessages
+                };
+                const batchDelay = delay + (parsedMsgs.length > 0 ? 250 : 0);
+                setTimeout(() => {
+                    if (!member.chatHistory) member.chatHistory = [];
+                    member.chatHistory.push(fanBatchMsg);
+                    saveBstageData();
+                    if (contentContainer) {
+                        appendCharChatMessage(member, fanBatchMsg, contentContainer);
+                        contentContainer.scrollTop = contentContainer.scrollHeight;
+                    }
+                }, batchDelay);
+            }
+
         } catch (error) {
             console.error(error);
-            if (!isAuto) window.showToast('生成回复失败');
+            if (!isAuto) window.showToast(error && error.message === 'too_few_other_fans' ? '其他人消息少于 10 条，请重试' : '生成回复失败');
         }
     }
 
@@ -4830,6 +5094,7 @@ ${charInfo}
             avatarDisplay.style.display = 'none';
             avatarIcon.style.display = 'block';
         }
+        updateBstageProfileStats();
         
         window.openView(userProfileModal);
     });
@@ -4909,6 +5174,30 @@ ${charInfo}
         window.openView(ordersModal);
     });
 
+    function withdrawBstageRevenueToPay() {
+        const amount = Number(getBstageAvailableRevenueCny().toFixed(2));
+        if (!Number.isFinite(amount) || amount <= 0) {
+            window.showToast('暂无可提现收益');
+            updateBstageProfileStats();
+            return;
+        }
+        if (typeof window.addPayTransaction !== 'function') {
+            window.showToast('Pay 暂不可用，请稍后重试');
+            return;
+        }
+        const success = window.addPayTransaction(amount, 'b.stage POP 订阅收益', 'income');
+        if (!success) {
+            window.showToast('提现失败，请稍后重试');
+            return;
+        }
+        bstageRevenueState.withdrawnCny = getBstageWithdrawnRevenueCny() + amount;
+        bstageRevenueState.lastWithdrawAt = Date.now();
+        saveBstageData();
+        updateBstageProfileStats();
+    }
+
+    document.getElementById('bstage-withdraw-revenue-btn').addEventListener('click', withdrawBstageRevenueToPay);
+
     ordersModal.addEventListener('click', (e) => {
         if (e.target === ordersModal) window.closeView(ordersModal);
     });
@@ -4968,15 +5257,53 @@ ${charInfo}
         return `已订阅 ${getFanSubscriberCount()} 人`;
     }
 
+    function getBstageTotalRevenueCny() {
+        return getFanSubscriberCount() * BSTAGE_POP_MONTHLY_KRW * BSTAGE_KRW_TO_CNY;
+    }
+
+    function getBstageWithdrawnRevenueCny() {
+        const value = Number(bstageRevenueState && bstageRevenueState.withdrawnCny);
+        return Number.isFinite(value) ? Math.max(0, value) : 0;
+    }
+
+    function getBstageAvailableRevenueCny() {
+        return Math.max(0, getBstageTotalRevenueCny() - getBstageWithdrawnRevenueCny());
+    }
+
+    function formatBstageCny(value) {
+        return `￥${Math.max(0, Number(value) || 0).toFixed(2)}`;
+    }
+
+    function updateBstageProfileStats() {
+        const subCountEl = document.getElementById('bstage-profile-pop-sub-count');
+        const revenueEl = document.getElementById('bstage-profile-sub-revenue');
+        const withdrawBtn = document.getElementById('bstage-withdraw-revenue-btn');
+        const count = getFanSubscriberCount();
+        const available = getBstageAvailableRevenueCny();
+        if (subCountEl) subCountEl.textContent = String(count);
+        if (revenueEl) revenueEl.textContent = formatBstageCny(available);
+        if (withdrawBtn) {
+            withdrawBtn.style.opacity = available > 0 ? '1' : '0.55';
+            withdrawBtn.setAttribute('aria-disabled', available > 0 ? 'false' : 'true');
+            withdrawBtn.title = available > 0 ? `可提现 ${formatBstageCny(available)}` : '暂无可提现收益';
+        }
+    }
+
     function getFanSubscriberGrowthDelta(burst = false) {
-        const current = getFanSubscriberCount();
-        const min = burst ? 8 : 1;
-        const rate = burst ? (0.006 + Math.random() * 0.025) : (0.001 + Math.random() * 0.006);
-        return Math.max(min, Math.floor(current * rate) + Math.floor(Math.random() * (burst ? 18 : 6)));
+        if (burst) {
+            return 1 + Math.floor(Math.random() * 5);
+        }
+        const weightedDeltas = [0, 0, 1, 1, 2];
+        return weightedDeltas[Math.floor(Math.random() * weightedDeltas.length)] || 0;
     }
 
     function growFanSubscriberCount(burst = false) {
-        bstageFanSubscriberCount = getFanSubscriberCount() + getFanSubscriberGrowthDelta(burst);
+        const delta = getFanSubscriberGrowthDelta(burst);
+        if (delta <= 0) {
+            updateFanSubscriberLabels();
+            return;
+        }
+        bstageFanSubscriberCount = getFanSubscriberCount() + delta;
         updateFanSubscriberLabels();
         saveBstageData();
     }
@@ -4989,7 +5316,7 @@ ${charInfo}
         if (bstageFanSubscriberGrowthTimer) {
             clearTimeout(bstageFanSubscriberGrowthTimer);
         }
-        const delay = 7000 + Math.floor(Math.random() * 18000);
+        const delay = 30000 + Math.floor(Math.random() * 60000);
         bstageFanSubscriberGrowthTimer = setTimeout(() => {
             growFanSubscriberCount(false);
             scheduleFanSubscriberGrowth();
@@ -5013,6 +5340,7 @@ ${charInfo}
         document.querySelectorAll('.bstage-fan-subscriber-label').forEach(el => {
             el.textContent = text;
         });
+        updateBstageProfileStats();
     }
 
     function syncFanChatTranslationState() {
@@ -5415,7 +5743,40 @@ ${history}
         setTimeout(updateHeaderAvatar, 50);
     });
 
-    // Initialize UI with loaded data
-    renderFollowingBar();
-    setTimeout(() => openTeam(getBstageUserTeam()), 50);
+    function getBstageDataSignature() {
+        const userTeam = getBstageUserTeam();
+        return JSON.stringify({
+            updatedAt: bstageStateUpdatedAt,
+            teams: teams.map(team => team && team.id),
+            teamMemberCounts: teams.map(team => Array.isArray(team && team.members) ? team.members.length : 0),
+            userTeamMembers: Array.isArray(userTeam.members) ? userTeam.members.length : 0,
+            fanHistoryCount: Array.isArray(bstageFanChatHistory) ? bstageFanChatHistory.length : 0
+        });
+    }
+
+    function renderBstageStartupView() {
+        renderFollowingBar();
+        setTimeout(() => {
+            const currentTeamId = currentTeam && currentTeam.id;
+            const nextTeam = currentTeamId && !isUserTeam(currentTeam)
+                ? (teams.find(team => String(team.id) === String(currentTeamId)) || getBstageUserTeam())
+                : getBstageUserTeam();
+            openTeam(nextTeam);
+        }, 50);
+    }
+
+    // Initialize UI with loaded data, then recover once more after IndexedDB-backed global data is ready.
+    renderBstageStartupView();
+    if (window.globalDataReadyPromise && typeof window.globalDataReadyPromise.then === 'function') {
+        const beforeGlobalDataReady = getBstageDataSignature();
+        window.globalDataReadyPromise.then(() => {
+            loadBstageData();
+            const afterGlobalDataReady = getBstageDataSignature();
+            if (afterGlobalDataReady !== beforeGlobalDataReady) {
+                renderBstageStartupView();
+            }
+        }).catch(error => {
+            console.warn('Bstage global data recovery failed:', error);
+        });
+    }
 });

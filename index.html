@@ -31,7 +31,7 @@
     <link rel="stylesheet" href="css/global.css">
     <link rel="stylesheet" href="css/home.css">
     <link rel="stylesheet" href="css/worldbook.css">
-    <link rel="stylesheet" href="css/imessage.css?v=20260706-bugfix-v1">
+    <link rel="stylesheet" href="css/imessage.css?v=20260706-private-translation-v1">
     <link rel="stylesheet" href="css/pay.css?v=20260705-safe-area-v1">
     <link rel="stylesheet" href="css/bstage.css">
     <link rel="stylesheet" href="css/tiktok.css">
@@ -41,10 +41,10 @@
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
-    <link rel="stylesheet" href="css/loves.css?v=20260705-savings-fab-v1">
+    <link rel="stylesheet" href="css/loves.css?v=20260706-diary-v1">
     <link rel="stylesheet" href="css/library.css?v=20260704-together-picker-border-v1">
     <!-- App Styles -->
-    <link rel="stylesheet" href="css/settings.css">
+    <link rel="stylesheet" href="css/settings.css?v=20260707-inactive-view-pointer-v1">
     <link rel="stylesheet" href="css/youtube.css">
     <link rel="stylesheet" href="css/netflix.css">
 </head>
@@ -261,14 +261,14 @@
                     </div>
 
                     <!-- App 3 & App 4 (Left side of Row 4) -->
-                    <div class="app-item netflix-app" id="app-netflix-btn" style="cursor: pointer;" onclick="if(window.netflixApp) window.netflixApp.open();">
-                        <div class="app-icon icon-placeholder" id="app-icon-7" style="background: #ffffff; color: #1c1c1e; border: 1px solid #e5e5ea; display: flex; justify-content: center; align-items: center; font-size: 32px; font-weight: 900; font-family: Arial, sans-serif; letter-spacing: -1px;">
+                    <div class="app-item netflix-app" id="app-netflix-btn" style="cursor: pointer;" onclick="if(window.netflixApp && typeof window.netflixApp.open === 'function') window.netflixApp.open(); else { const v = document.getElementById('netflix-view'); if(v) { v.style.display='flex'; v.classList.add('active'); } }">
+                        <div class="app-icon icon-placeholder" id="app-icon-7" style="background: #ffffff; color: #1c1c1e; border: 1px solid #e5e5ea; display: flex; justify-content: center; align-items: center; font-size: 32px; font-weight: 900; font-family: Arial, sans-serif; letter-spacing: -1px;" onclick="event.stopPropagation(); if(window.netflixApp && typeof window.netflixApp.open === 'function') window.netflixApp.open(); else { const v = document.getElementById('netflix-view'); if(v) { v.style.display='flex'; v.classList.add('active'); } }">
                             N
                         </div>
                         <span class="app-name">Netflix</span>
                     </div>
-                    <div class="app-item loves-app" id="app-loves-btn" style="cursor: pointer;" onclick="if(window.lovesApp) window.lovesApp.open();">
-                        <div class="app-icon icon-placeholder" id="app-icon-8" style="background: #ffffff; color: #1c1c1e; border: 1px solid #e5e5ea; display: flex; justify-content: center; align-items: center; font-size: 28px;">
+                    <div class="app-item loves-app" id="app-loves-btn" style="cursor: pointer;" onclick="if(window.lovesApp && typeof window.lovesApp.open === 'function') window.lovesApp.open(); else { const v = document.getElementById('loves-view'); if(v) { v.style.display='flex'; v.classList.add('active'); } }">
+                        <div class="app-icon icon-placeholder" id="app-icon-8" style="background: #ffffff; color: #1c1c1e; border: 1px solid #e5e5ea; display: flex; justify-content: center; align-items: center; font-size: 28px;" onclick="event.stopPropagation(); if(window.lovesApp && typeof window.lovesApp.open === 'function') window.lovesApp.open(); else { const v = document.getElementById('loves-view'); if(v) { v.style.display='flex'; v.classList.add('active'); } }">
                             <i class="fas fa-heart"></i>
                         </div>
                         <span class="app-name">Loves</span>
@@ -4674,59 +4674,50 @@
                             <strong>添加超话</strong>
                             <button class="x-edit-sheet-save" id="x-create-topic-save-btn" type="button">Save</button>
                         </div>
-                        <div class="x-edit-profile-body">
-                            <!-- Banner -->
-                            <div class="x-edit-banner-row">
-                                <button class="x-edit-banner-preview" id="x-create-topic-banner-preview" type="button" aria-label="Upload cover">
+                        <div class="x-topic-editor-body">
+                            <div class="x-topic-editor-hero">
+                                <button class="x-topic-editor-cover x-edit-banner-preview" id="x-create-topic-banner-preview" type="button" aria-label="Upload cover">
                                     <span>Cover</span>
                                 </button>
                                 <input type="file" id="x-create-topic-banner-input" accept="image/jpeg,image/png" style="display:none;">
-                                <div>
-                                    <strong>超话背景</strong>
-                                </div>
-                            </div>
-                            <!-- Avatar -->
-                            <div class="x-edit-avatar-row">
-                                <button class="x-edit-avatar-preview" id="x-create-topic-avatar-preview" type="button" aria-label="Upload avatar">
+                                <button class="x-topic-editor-avatar x-edit-avatar-preview" id="x-create-topic-avatar-preview" type="button" aria-label="Upload avatar">
                                     <span>超</span>
                                 </button>
                                 <input type="file" id="x-create-topic-avatar-input" accept="image/jpeg,image/png" style="display:none;">
-                                <div>
-                                    <strong>超话头像</strong>
-                                </div>
                             </div>
-                            <!-- Name -->
-                            <label class="x-edit-field">
-                                <span>超话名字</span>
-                                <input id="x-create-topic-name-input" type="text" maxlength="32" placeholder="输入超话名称">
-                            </label>
-                            <!-- Fans -->
-                            <label class="x-edit-field">
-                                <span>粉丝数</span>
-                                <input id="x-create-topic-fans-input" type="text" maxlength="32" placeholder="输入粉丝数 (如: 12.4万)">
-                            </label>
+
+                            <div class="x-topic-editor-card">
+                                <label class="x-edit-field">
+                                    <span>超话名称</span>
+                                    <input id="x-create-topic-name-input" type="text" maxlength="32" placeholder="输入超话名称">
+                                </label>
+                                <label class="x-edit-field">
+                                    <span>粉丝数</span>
+                                    <input id="x-create-topic-fans-input" type="text" maxlength="32" placeholder="输入粉丝数 (如: 12.4万)">
+                                </label>
+                            </div>
                             
-                            <!-- Chars section -->
-                            <div class="x-add-dm-section" style="margin-top: 20px;">
-                                <div class="x-add-dm-section-title" style="margin-bottom: 10px; font-weight: bold;">添加超话角色 (Char)</div>
-                                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                                    <button type="button" id="x-topic-import-imessage-btn" style="flex:1; padding: 10px; border-radius: 8px; border: 1px solid #ccc; background: #fff; cursor: pointer;">从 iMessage 拉取</button>
-                                    <button type="button" id="x-topic-manual-char-btn" style="flex:1; padding: 10px; border-radius: 8px; border: 1px solid #ccc; background: #fff; cursor: pointer;">手动添加</button>
+                            <section class="x-topic-editor-card x-topic-roles-section">
+                                <div class="x-topic-editor-card-title">
+                                    <div>
+                                        <strong>超话角色</strong>
+                                        <span>用于生成超话动态和互动时的人物来源。</span>
+                                    </div>
                                 </div>
-                                <div id="x-topic-chars-list" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px;"></div>
-                                
-                                <!-- Import List Container (hidden by default) -->
-                                <div id="x-topic-imessage-list-container" style="display: none; flex-direction: column; gap: 10px; max-height: 200px; overflow-y: auto; background: #f9f9f9; padding: 10px; border-radius: 8px;"></div>
-                                
-                                <!-- Manual Add Container (hidden by default) -->
-                                <div id="x-topic-manual-container" style="display: none; flex-direction: column; gap: 10px; background: #f9f9f9; padding: 10px; border-radius: 8px;">
-                                    <input id="x-topic-manual-name" type="text" placeholder="角色名称" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
-                                    <input id="x-topic-manual-handle" type="text" placeholder="@账号" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
-                                    <textarea id="x-topic-manual-bio" placeholder="简介" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: none;"></textarea>
-                                    <textarea id="x-topic-manual-persona" placeholder="人设" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: none;"></textarea>
-                                    <button type="button" id="x-topic-manual-save-btn" style="padding: 8px; background: #000; color: #fff; border: none; border-radius: 4px; cursor: pointer;">确认添加</button>
+                                <div class="x-topic-role-actions">
+                                    <button type="button" id="x-topic-import-imessage-btn"><i class="far fa-comments"></i> 从 iMessage 拉取</button>
+                                    <button type="button" id="x-topic-manual-char-btn"><i class="fas fa-user-plus"></i> 手动添加</button>
                                 </div>
-                            </div>
+                                <div class="x-topic-chars-list" id="x-topic-chars-list"></div>
+                                <div class="x-topic-source-list" id="x-topic-imessage-list-container" style="display:none;"></div>
+                                <div class="x-topic-manual-card" id="x-topic-manual-container" style="display:none;">
+                                    <input id="x-topic-manual-name" type="text" placeholder="角色名称">
+                                    <input id="x-topic-manual-handle" type="text" placeholder="@账号">
+                                    <textarea id="x-topic-manual-bio" placeholder="简介"></textarea>
+                                    <textarea id="x-topic-manual-persona" placeholder="人设"></textarea>
+                                    <button type="button" id="x-topic-manual-save-btn">确认添加</button>
+                                </div>
+                            </section>
                         </div>
                     </div>
                 </div>
@@ -6294,7 +6285,7 @@
                     <div class="lovers-space-tabs-container" role="tablist" aria-label="情侣空间导航">
                         <button type="button" class="lovers-space-tab active" data-tab="moments" role="tab" aria-selected="true">动态</button>
                         <button type="button" class="lovers-space-tab" data-tab="devices" role="tab" aria-selected="false">设备</button>
-                        <button type="button" class="lovers-space-tab" data-tab="calendar" role="tab" aria-selected="false">日历</button>
+                        <button type="button" class="lovers-space-tab" data-tab="diary" role="tab" aria-selected="false">日记</button>
                         <button type="button" class="lovers-space-tab" data-tab="others" role="tab" aria-selected="false">更多</button>
                         <div class="lovers-space-tab-indicator" id="lovers-space-tab-indicator"></div>
                     </div>
@@ -6334,31 +6325,27 @@
                                 </button>
                             </div>
                         </div>
-                        <!-- 日历面板 -->
-                        <div class="lovers-space-panel lovers-calendar-panel" id="lovers-panel-calendar" role="tabpanel">
-                            
-                            <!-- 标题大小的年份与月份 (可选择) -->
-                            <div class="lovers-calendar-heading">
-                                <div id="lovers-calendar-year-month-display">
-                                    <span id="lovers-calendar-year-display">2026年</span>
-                                    <span id="lovers-calendar-month-display">4月</span>
+                        <!-- 日记面板 -->
+                        <div class="lovers-space-panel lovers-diary-panel" id="lovers-panel-diary" role="tabpanel">
+                            <div class="lovers-diary-heading">
+                                <div id="lovers-diary-year-month-display">
+                                    <span id="lovers-diary-year-display">2026年</span>
+                                    <span id="lovers-diary-month-display">4月</span>
                                     <i class="fas fa-chevron-down"></i>
                                 </div>
-                                <input type="month" id="lovers-calendar-month-picker" aria-label="选择月份">
+                                <input type="month" id="lovers-diary-month-picker" aria-label="选择月份">
                             </div>
 
-                            <!-- 顶部日期选择 (滑动组件) -->
-                            <div class="lovers-calendar-strip">
-                                <div id="lovers-calendar-dates">
+                            <div class="lovers-diary-strip">
+                                <div id="lovers-diary-dates">
                                     <!-- 由 JS 注入日期 -->
                                 </div>
                             </div>
                             
-                            <div class="lovers-panel-heading"><span>SCHEDULE</span><h3>行程安排</h3></div>
+                            <div class="lovers-panel-heading"><span>DIARY</span><h3>行程日记</h3></div>
                             
-                            <!-- 日程列表 (竖向时间线) -->
-                            <div id="lovers-calendar-list" class="lovers-calendar-list">
-                                <!-- 由 JS 注入行程 -->
+                            <div id="lovers-diary-list" class="lovers-diary-list">
+                                <!-- 由 JS 注入日记 -->
                             </div>
                         </div>
                         <!-- 其他面板 -->
@@ -6570,26 +6557,26 @@
                 </div>
             </div>
 
-            <!-- 添加日程弹窗 (底部抽屉) -->
-            <div class="bottom-sheet-overlay detail-sheet-overlay" id="lovers-schedule-view">
-                <div class="bottom-sheet lovers-compose-sheet lovers-schedule-sheet">
+            <!-- 日记生成设置弹窗 (底部抽屉) -->
+            <div class="bottom-sheet-overlay detail-sheet-overlay" id="lovers-diary-generator-view">
+                <div class="bottom-sheet lovers-compose-sheet lovers-diary-generator-sheet">
                     <div class="sheet-handle"></div>
                     <div class="lovers-compose-header">
-                        <button type="button" id="lovers-schedule-cancel" class="lovers-compose-cancel" onclick="window.closeView(document.getElementById('lovers-schedule-view'))">取消</button>
-                        <div><span>NEW SCHEDULE</span><strong>添加日程</strong></div>
-                        <button type="button" id="lovers-schedule-btn" class="lovers-compose-primary">添加</button>
+                        <button type="button" id="lovers-diary-generator-cancel" class="lovers-compose-cancel">取消</button>
+                        <div><span>DIARY GENERATOR</span><strong>生成日记</strong></div>
+                        <button type="button" id="lovers-diary-generate-btn" class="lovers-compose-primary">生成</button>
                     </div>
                     <div class="detail-sheet-content lovers-compose-content">
-                        <label class="lovers-compose-field lovers-schedule-title-field">
-                            <span>日程标题 · TITLE</span>
-                            <input type="text" id="lovers-schedule-text" placeholder="例如：约会、看电影">
-                        </label>
-                        
-                        <div class="lovers-schedule-fields">
-                            <label><span>日期</span><input type="date" id="lovers-schedule-date"></label>
-                            <label><span>时间</span><input type="time" id="lovers-schedule-time"></label>
-                            <label><span>地点</span><input type="text" id="lovers-schedule-location" placeholder="添加位置"></label>
+                        <div class="lovers-diary-generator-summary">
+                            <span>生成日期</span>
+                            <strong id="lovers-diary-generator-date">今天 · 周一</strong>
+                            <p>生成会覆盖此日期现有的 Loves 日记，不会写入 iMessage 日程。</p>
                         </div>
+                        <label class="lovers-compose-field lovers-diary-count-field">
+                            <span>日记条数 · COUNT</span>
+                            <input type="number" id="lovers-diary-count" min="1" max="30" step="1" inputmode="numeric" value="10">
+                        </label>
+                        <p class="lovers-diary-generator-hint">每条日记会包含时间、标题、地点，以及不少于 30 字的 Char 第一人称日记。</p>
                     </div>
                 </div>
             </div>
@@ -7320,17 +7307,17 @@
     
     <!-- 引入 iMessage 模块分段代码 -->
     <script src="js/imessage/data_utils.js?v=20260706-bugfix-v2"></script>
-    <script src="js/imessage/2_core.js?v=20260706-bugfix-v1"></script>
+    <script src="js/imessage/2_core.js?v=20260706-private-translation-v1"></script>
     <script src="js/imessage/3_contacts.js"></script>
-    <script src="js/imessage/3_groups.js?v=20260705-private-chat-v1"></script>
+    <script src="js/imessage/3_groups.js?v=20260706-private-translation-v1"></script>
     <script src="js/imessage/4_chat_common.js"></script>
     <script src="js/imessage/4_chat_status.js"></script>
     <script src="js/imessage/4_chat_payment.js?v=20260705-offline-identity-v2"></script>
     <script src="js/imessage/4_chat_bubbles.js?v=20260705-offline-identity-v2"></script>
     <script src="js/imessage/minimax_tts.js"></script>
-    <script src="js/imessage/4_chat_ai.js?v=20260706-bugfix-v1"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260706-private-translation-v1"></script>
     <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
-    <script src="js/imessage/4_chat_sheet.js?v=20260705-offline-regex-v1"></script>
+    <script src="js/imessage/4_chat_sheet.js?v=20260706-private-translation-v1"></script>
     <script src="js/imessage/4_chat_link.js?v=20260706-bugfix-v1"></script>
     <script src="js/imessage/4_chat_list.js"></script>
     <script src="js/imessage/4_chat_interface.js?v=20260705-offline-identity-v2"></script>
@@ -7348,9 +7335,9 @@
     <script src="js/worldbook.js"></script>
     <!-- 引入核心 UI 管理与设置模块脚本 -->
     <script src="js/ui.js"></script>
-    <script src="js/settings.js?v=20260705-link-v1"></script>
-    <script src="js/library.js?v=20260704-netease-import-v8"></script>
-    <script src="js/loves.js?v=20260706-bugfix-v1"></script>
+    <script src="js/settings.js?v=20260706-imessage-theme-source-v2"></script>
+    <script src="js/library.js?v=20260707-hidden-focus-v1"></script>
+    <script src="js/loves.js?v=20260706-diary-v2"></script>
     <script src="js/tiktok/2_core.js"></script>
     <script src="js/tiktok/3_home.js"></script>
     <script src="js/tiktok/4_chat.js"></script>
@@ -7365,7 +7352,7 @@
     <script src="js/netflix.js"></script>
     <script src="js/shopping.js"></script>
     <script src="js/xapp.js?v=20260702-x-dm-reply-batch-v8"></script>
-    <script src="js/home_desktop.js"></script>
+    <script src="js/home_desktop.js?v=20260707-app-launcher-fallback-v2"></script>
     <script src="js/home_widget_panel_enhance.js"></script>
     <!-- 引入主逻辑脚本 -->
     <script src="script.js?v=20260705-modal-tone-v1"></script>
