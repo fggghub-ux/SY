@@ -31,7 +31,7 @@
     <link rel="stylesheet" href="css/global.css">
     <link rel="stylesheet" href="css/home.css">
     <link rel="stylesheet" href="css/worldbook.css">
-    <link rel="stylesheet" href="css/imessage.css?v=20260705-offline-regex-v1">
+    <link rel="stylesheet" href="css/imessage.css?v=20260706-bugfix-v1">
     <link rel="stylesheet" href="css/pay.css?v=20260705-safe-area-v1">
     <link rel="stylesheet" href="css/bstage.css">
     <link rel="stylesheet" href="css/tiktok.css">
@@ -1814,7 +1814,7 @@
                         <div id="publish-moment-cancel" style="font-size: 16px; color: #000; cursor: pointer;">取消</div>
                         <div id="publish-moment-submit" style="font-size: 15px; background-color: #f2f2f2; color: #b2b2b2; padding: 6px 12px; border-radius: 4px; font-weight: 500; cursor: pointer; transition: all 0.2s;">发表</div>
                     </div>
-                    <div style="flex: 1; padding: 15px 30px; display: flex; flex-direction: column; overflow-y: auto;">
+                    <div class="publish-moment-content" style="flex: 1; padding: 15px 30px; display: flex; flex-direction: column; overflow-y: auto;">
                         <textarea id="publish-moment-text" placeholder="这一刻的想法..." style="width: 100%; border: none; outline: none; font-size: 16px; resize: none; min-height: 100px; padding: 0; color: #333;"></textarea>
                         
                         <!-- Image Grid -->
@@ -2534,16 +2534,6 @@
                         </div>
                     </div>
 
-                    <div class="form-group fully-rounded" style="margin-bottom: 20px;">
-                        <div class="form-item" style="border-bottom: none;">
-                            <label style="width: 100px; white-space: nowrap;">外链解析</label>
-                            <input type="url" id="link-resolver-endpoint-input" inputmode="url" placeholder="https://your-worker.workers.dev">
-                        </div>
-                        <div style="padding: 0 14px 12px; color: #8e8e93; font-size: 12px; line-height: 1.45;">
-                            填写 Cloudflare Worker 地址，用于读取公开网页正文；留空时仍可发送链接，但角色无法读取页面内容。
-                        </div>
-                    </div>
-
                     <!-- Fetch Models Button (Grouped) -->
                     <div class="form-group fully-rounded" style="margin-bottom: 20px;">
                         <div class="settings-item fully-rounded-item" id="fetch-models-btn" style="justify-content: flex-start;">
@@ -2884,26 +2874,40 @@
             </div>
         </div>
 
-    <div class="bottom-sheet-overlay detail-sheet-overlay" id="stickers-view" style="z-index: 500;">
-                <div class="bottom-sheet" style="max-height: 85%; height: 80%; display: flex; flex-direction: column; background: #ffffff;">
-                    <div class="sheet-handle"></div>
-                    <!-- Stickers Header: Title centered, action buttons below -->
-                    <div style="display: flex; flex-direction: column; align-items: center; padding: 0 16px 10px; flex-shrink: 0;">
-                        <h2 style="font-size: 17px; font-weight: 600; margin: 0 0 12px 0;">Stickers</h2>
-                        <div style="display: flex; gap: 20px;">
-                            <div id="stickers-edit-btn" style="width: 50px; height: 50px; border-radius: 50%; background-color: #f2f2f7; display: flex; justify-content: center; align-items: center; font-size: 20px; color: #666; cursor: pointer;  border: 1px solid #e5e5ea;">
-                                <i class="fas fa-pen"></i>
-                            </div>
-                            <div id="stickers-add-btn" style="width: 50px; height: 50px; border-radius: 50%; background-color: #f2f2f7; display: flex; justify-content: center; align-items: center; font-size: 20px; color: #666; cursor: pointer;  border: 1px solid #e5e5ea;">
-                                <i class="fas fa-plus"></i>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="detail-sheet-content stickers-content" id="stickers-list-container" style="padding: 12px 16px; display: flex; flex-direction: column; gap: 12px;">
-                        <!-- Stickers will be injected here -->
-                    </div>
+    <div class="app-view stickers-view" id="stickers-view" style="z-index: 500;">
+        <header class="stickers-page-header">
+            <button type="button" id="stickers-back-btn" class="stickers-header-btn" aria-label="返回 iMessage"><i class="fas fa-chevron-left"></i></button>
+            <div class="stickers-page-title"><strong>Stickers</strong><span>表情包分组</span></div>
+            <button type="button" id="stickers-add-btn" class="stickers-header-btn stickers-header-add" aria-label="添加表情包"><i class="fas fa-plus"></i></button>
+        </header>
+        <main class="stickers-page-content">
+            <div class="stickers-group-grid" id="stickers-list-container"></div>
+        </main>
+    </div>
+
+    <div class="bottom-sheet-overlay detail-sheet-overlay" id="sticker-category-detail-sheet" style="z-index: 560;">
+        <div class="bottom-sheet sticker-category-detail-sheet">
+            <div class="sheet-handle"></div>
+            <div class="sticker-detail-header">
+                <div>
+                    <h2 id="sticker-detail-title">表情包</h2>
+                    <span id="sticker-detail-count">0 张</span>
+                </div>
+                <div class="sticker-detail-actions">
+                    <button type="button" id="sticker-detail-bind-btn" aria-label="绑定角色"><i class="fas fa-user-plus"></i></button>
+                    <button type="button" id="stickers-edit-btn" aria-label="批量编辑"><i class="fas fa-pen"></i></button>
+                    <button type="button" id="sticker-detail-delete-category-btn" class="danger" aria-label="删除分组"><i class="fas fa-trash"></i></button>
                 </div>
             </div>
+            <div id="sticker-detail-batch-bar" class="sticker-detail-batch-bar" hidden>
+                <span id="batch-select-info">已选择 0 项</span>
+                <button type="button" id="batch-delete-toggle"><i class="fas fa-trash"></i> 删除所选</button>
+            </div>
+            <div class="detail-sheet-content sticker-detail-content">
+                <div id="sticker-detail-grid" class="sticker-grid"></div>
+            </div>
+        </div>
+    </div>
 
 <div class="bottom-sheet-overlay detail-sheet-overlay" id="add-sticker-sheet" style="z-index: 600;">
                 <div class="bottom-sheet" style="height: auto; max-height: 85%;">
@@ -2934,6 +2938,14 @@
 
                         <!-- Option: Batch URL Upload -->
                         <div style="margin: 0 16px 20px;">
+                            <div class="sticker-manifest-upload-row">
+                                <div>
+                                    <strong>导入贴图清单</strong>
+                                    <span>支持 TXT / DOCX，每行“名称 URL”</span>
+                                </div>
+                                <button type="button" id="sticker-manifest-upload-btn"><i class="fas fa-file-arrow-up"></i> 上传</button>
+                                <input type="file" id="sticker-manifest-upload-input" accept=".txt,.text,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+                            </div>
                             <textarea id="sticker-url-input" class="global-textarea" placeholder="批量添加网络图片
 格式: 贴图名字 链接 (一行一个)
 例如:
@@ -4247,15 +4259,38 @@
                         </div>
                     </div>
                     <div class="wb-centered-modal-body memory-summary-body">
-                        <div class="memory-summary-count-card">
-                            <div class="memory-summary-label">未总结条数</div>
-                            <div class="memory-summary-count" id="chat-memory-unsummarized-count">0</div>
+                        <div class="memory-summary-count-grid">
+                            <div class="memory-summary-count-card">
+                                <div class="memory-summary-label">未总结</div>
+                                <div class="memory-summary-count" id="chat-memory-unsummarized-count">0轮 / 0条</div>
+                            </div>
+                            <div class="memory-summary-count-card">
+                                <div class="memory-summary-label">本次总结</div>
+                                <div class="memory-summary-count" id="chat-memory-summary-batch-count">0轮 / 0条</div>
+                            </div>
                         </div>
-                        <div class="memory-summary-form-row">
-                            <label for="chat-memory-summary-count-input">总结条数</label>
-                            <input type="number" id="chat-memory-summary-count-input" value="80" min="1">
+                        <div class="memory-summary-setting-card">
+                            <div class="memory-summary-toggle-row">
+                                <div>
+                                    <strong>自动总结</strong>
+                                    <span>AI 回复完成后检查轮数</span>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="chat-memory-auto-summary-toggle">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <div class="memory-summary-form-row">
+                                <label for="chat-memory-summary-round-input">总结轮数</label>
+                                <div class="memory-summary-round-control">
+                                    <input type="number" id="chat-memory-summary-round-input" value="30" min="1" max="999">
+                                    <span>轮</span>
+                                </div>
+                            </div>
+                            <div class="memory-summary-hint" id="chat-memory-summary-hint">开启后每 30 轮自动总结一次</div>
                         </div>
-                        <button type="button" id="chat-memory-summary-confirm" class="memory-summary-confirm-btn">确认</button>
+                        <input type="hidden" id="chat-memory-summary-count-input" value="0">
+                        <button type="button" id="chat-memory-summary-confirm" class="memory-summary-confirm-btn">立即总结</button>
                     </div>
                 </div>
             </div>
@@ -7274,8 +7309,8 @@
 
 
     
-<script src="js/storage/app_storage.js?v=20260705-link-v1"></script>
-    <script src="js/storage/imessage_storage.js"></script>
+<script src="js/storage/app_storage.js?v=20260706-storage-v1"></script>
+    <script src="js/storage/imessage_storage.js?v=20260706-storage-v1"></script>
     <script src="storage.js"></script>
     <script src="js/app_state_bridge.js"></script>
     <script src="js/bootstrap_globals.js"></script>
@@ -7284,7 +7319,8 @@
     <script src="js/system_notifications.js"></script>
     
     <!-- 引入 iMessage 模块分段代码 -->
-    <script src="js/imessage/2_core.js?v=20260705-offline-regex-v1"></script>
+    <script src="js/imessage/data_utils.js?v=20260706-bugfix-v2"></script>
+    <script src="js/imessage/2_core.js?v=20260706-bugfix-v1"></script>
     <script src="js/imessage/3_contacts.js"></script>
     <script src="js/imessage/3_groups.js?v=20260705-private-chat-v1"></script>
     <script src="js/imessage/4_chat_common.js"></script>
@@ -7292,15 +7328,15 @@
     <script src="js/imessage/4_chat_payment.js?v=20260705-offline-identity-v2"></script>
     <script src="js/imessage/4_chat_bubbles.js?v=20260705-offline-identity-v2"></script>
     <script src="js/imessage/minimax_tts.js"></script>
-    <script src="js/imessage/4_chat_ai.js?v=20260705-offline-identity-v2"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260706-bugfix-v1"></script>
     <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
     <script src="js/imessage/4_chat_sheet.js?v=20260705-offline-regex-v1"></script>
-    <script src="js/imessage/4_chat_link.js?v=20260705-link-v1"></script>
+    <script src="js/imessage/4_chat_link.js?v=20260706-bugfix-v1"></script>
     <script src="js/imessage/4_chat_list.js"></script>
     <script src="js/imessage/4_chat_interface.js?v=20260705-offline-identity-v2"></script>
     <script src="js/imessage/4_chat_voice_call.js"></script>
     <script src="js/imessage/4_chat_main.js?v=20260705-recall-v1"></script>
-    <script src="js/imessage/5_settings.js?v=20260705-offline-identity-v2"></script>
+    <script src="js/imessage/5_settings.js?v=20260706-bugfix-v1"></script>
     <script src="js/imessage/6_moments.js"></script>
 
     <!-- 引入其他应用模块 -->
@@ -7314,7 +7350,7 @@
     <script src="js/ui.js"></script>
     <script src="js/settings.js?v=20260705-link-v1"></script>
     <script src="js/library.js?v=20260704-netease-import-v8"></script>
-    <script src="js/loves.js?v=20260705-savings-fab-v1"></script>
+    <script src="js/loves.js?v=20260706-bugfix-v1"></script>
     <script src="js/tiktok/2_core.js"></script>
     <script src="js/tiktok/3_home.js"></script>
     <script src="js/tiktok/4_chat.js"></script>

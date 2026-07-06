@@ -2215,29 +2215,36 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                             endTime: scheduleData.endTime || scheduleData.time || '00:00',
                             time: scheduleData.time || scheduleData.startTime || '00:00',
                             location: scheduleData.description || '未设置地点',
+                            source: 'icloud',
                             timestamp: Date.now()
                         };
                         
                         if (/^\d{4}-\d{2}-\d{2}$/.test(newSchedule.date)) {
-                            if (!friend.memory) friend.memory = {};
-                            if (!friend.memory.schedule) friend.memory.schedule = {};
-                            if (!friend.memory.schedule.events) friend.memory.schedule.events = [];
-                            
-                            friend.memory.schedule.events.push(newSchedule);
-                            
-                            if (window.showBannerNotification) {
-                                window.showBannerNotification(friend, `【iCloud行程】添加了: ${scheduleData.title}`);
-                            } else if (window.showToast) {
-                                window.showToast(`【iCloud行程】${friend.nickname || friend.realName || 'TA'} 添加了: ${scheduleData.title}`);
-                            }
-                            
-                            if (window.imApp && window.imApp.commitScopedFriendChange) {
-                                window.imApp.commitScopedFriendChange(friend, () => {}, { silent: true });
-                            }
-                            
-                            if (window.lovesApp && window.lovesApp.currentFriend && String(window.lovesApp.currentFriend.id) === String(friend.id)) {
-                                if (window.lovesApp.renderCalendar) {
-                                    window.lovesApp.renderCalendar();
+                            const savedSchedule = window.imApp?.commitScopedFriendChange
+                                ? await window.imApp.commitScopedFriendChange(friend, (targetFriend) => {
+                                    targetFriend.memory = targetFriend.memory || window.imApp.createDefaultMemory();
+                                    targetFriend.memory.schedule = targetFriend.memory.schedule || window.imApp.createDefaultMemory().schedule;
+                                    if (!Array.isArray(targetFriend.memory.schedule.events)) targetFriend.memory.schedule.events = [];
+                                    const normalizedEvent = window.imDataUtils?.normalizeScheduleEvent
+                                        ? window.imDataUtils.normalizeScheduleEvent(newSchedule, targetFriend.memory.schedule.events.length)
+                                        : newSchedule;
+                                    targetFriend.memory.schedule.events.push(normalizedEvent);
+                                }, { silent: true })
+                                : false;
+
+                            if (savedSchedule) {
+                                friend = getLiveFriendById(friend.id) || friend;
+                                if (window.showBannerNotification) {
+                                    window.showBannerNotification(friend, `【iCloud行程】添加了: ${scheduleData.title}`);
+                                } else if (window.showToast) {
+                                    window.showToast(`【iCloud行程】${friend.nickname || friend.realName || 'TA'} 添加了: ${scheduleData.title}`);
+                                }
+
+                                if (window.lovesApp && window.lovesApp.currentFriend && String(window.lovesApp.currentFriend.id) === String(friend.id)) {
+                                    window.lovesApp.currentFriend = friend;
+                                    if (window.lovesApp.renderCalendar) {
+                                        window.lovesApp.renderCalendar();
+                                    }
                                 }
                             }
                         }
@@ -3448,6 +3455,9 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
             }
 
             await flushFriendPersistence(latestFriend.id || friend.id, { silent: true });
+            if (latestFriend.type !== 'group' && window.imChat?.maybeAutoSummarize) {
+                void window.imChat.maybeAutoSummarize(latestFriend.id || friend.id);
+            }
             if (btnEl) btnEl.style.opacity = '1';
 
             if (window.imApp.updateChatsView && (!window.imData.currentActiveFriend || String(window.imData.currentActiveFriend.id) !== String(latestFriend.id))) {

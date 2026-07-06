@@ -271,7 +271,6 @@
             apiKey: document.getElementById('api-key-input'),
             apiModel: document.getElementById('api-model-select'),
             apiTemp: document.getElementById('api-temp-input'),
-            linkResolverEndpoint: document.getElementById('link-resolver-endpoint-input'),
             bgActivityToggle: document.getElementById('bg-activity-toggle'),
             systemNotificationToggle: document.getElementById('system-notification-toggle'),
             minimaxRegion: document.getElementById('minimax-region-select'),
@@ -2548,12 +2547,6 @@
                 UI.inputs.apiKey.value = tempApiConfig.apiKey || '';
                 syncSelectValue(UI.inputs.apiModel, tempApiConfig.model || '');
                 UI.inputs.apiTemp.value = tempApiConfig.temperature ?? 0.7;
-                linkResolverConfig = window.getLinkResolverConfig
-                    ? window.getLinkResolverConfig()
-                    : linkResolverConfig;
-                if (UI.inputs.linkResolverEndpoint) {
-                    UI.inputs.linkResolverEndpoint.value = linkResolverConfig.endpoint || '';
-                }
                 syncBackgroundActivityControls();
                 syncSystemNotificationControls();
 
@@ -2620,19 +2613,6 @@
         const confirmApiBtn = document.getElementById('confirm-api-btn');
         if (confirmApiBtn) {
             confirmApiBtn.addEventListener('click', () => {
-                const resolverEndpoint = UI.inputs.linkResolverEndpoint
-                    ? UI.inputs.linkResolverEndpoint.value.trim()
-                    : '';
-                if (resolverEndpoint) {
-                    try {
-                        const parsedResolverUrl = new URL(resolverEndpoint);
-                        if (!['http:', 'https:'].includes(parsedResolverUrl.protocol)) throw new Error('invalid protocol');
-                    } catch (_) {
-                        showToast('外链解析地址无效');
-                        return;
-                    }
-                }
-
                 tempApiConfig.endpoint = UI.inputs.apiEndpoint.value;
                 tempApiConfig.apiKey = UI.inputs.apiKey.value;
                 tempApiConfig.model = UI.inputs.apiModel.value;
@@ -2649,10 +2629,6 @@
                 applySystemNotificationControls(false);
                 
                 window.apiConfig = apiConfig;
-                linkResolverConfig = window.setLinkResolverConfig
-                    ? window.setLinkResolverConfig({ ...linkResolverConfig, endpoint: resolverEndpoint })
-                    : { ...linkResolverConfig, endpoint: resolverEndpoint };
-                window.linkResolverConfig = linkResolverConfig;
                 saveGlobalData();
                 syncAssistiveBallPanel();
                 

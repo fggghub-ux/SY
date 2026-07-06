@@ -7,7 +7,7 @@
 1. 安装 Node.js 18 或更高版本，并登录 Cloudflare：`npx wrangler login`。
 2. 将 `wrangler.toml` 中的 `ALLOWED_ORIGINS` 改成实际网页 Origin，例如 `https://example.github.io`。本地和线上地址可用逗号分隔。
 3. 在本目录执行 `npm install` 和 `npm run deploy`。
-4. 将返回的 `https://....workers.dev` 地址填入 U2 的“设置 → API 配置 → 外链解析”。
+4. 将返回的 `https://....workers.dev` 地址填入 U2 的“iMessage → 聊天 → More → 链接 → 外链解析服务”。
 
 ## 本地验证
 

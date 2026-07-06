@@ -137,6 +137,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span></span>
                 </header>
                 <div class="im-link-composer-body">
+                    <div class="im-link-resolver-config">
+                        <div class="im-link-resolver-heading">
+                            <span>外链解析服务</span>
+                            <button type="button" class="im-link-resolver-save">保存</button>
+                        </div>
+                        <input class="im-link-resolver-input" type="url" inputmode="url" autocomplete="off" placeholder="https://your-worker.workers.dev">
+                        <div class="im-link-resolver-hint">填写 Cloudflare Worker 地址；留空时仍可发送原链接。</div>
+                    </div>
                     <textarea class="im-link-composer-input" rows="4" inputmode="url" autocomplete="off" placeholder="粘贴链接或包含链接的分享文字"></textarea>
                     <div class="im-link-detection-row">
                         <span class="im-link-platform-badge"><i class="fas fa-link"></i><span>等待链接</span></span>
@@ -161,6 +169,8 @@ document.addEventListener('DOMContentLoaded', () => {
         page.appendChild(overlay);
 
         const input = overlay.querySelector('.im-link-composer-input');
+        const resolverInput = overlay.querySelector('.im-link-resolver-input');
+        const resolverSaveButton = overlay.querySelector('.im-link-resolver-save');
         const closeButton = overlay.querySelector('.im-link-composer-close');
         const cancelButton = overlay.querySelector('.im-link-composer-cancel');
         const sendButton = overlay.querySelector('.im-link-composer-send');
@@ -356,6 +366,40 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 300);
         }
 
+        async function saveResolverConfig() {
+            const endpoint = String(resolverInput.value || '').trim().replace(/\/+$/, '');
+            if (endpoint) {
+                try {
+                    const parsed = new URL(endpoint);
+                    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('invalid protocol');
+                } catch (_) {
+                    if (window.showToast) window.showToast('外链解析地址无效');
+                    resolverInput.focus();
+                    return;
+                }
+            }
+
+            resolverSaveButton.disabled = true;
+            const previous = window.getLinkResolverConfig
+                ? window.getLinkResolverConfig()
+                : (window.linkResolverConfig || {});
+            const next = window.setLinkResolverConfig
+                ? window.setLinkResolverConfig({ ...previous, endpoint })
+                : { ...previous, endpoint };
+            window.linkResolverConfig = next;
+            try {
+                if (window.saveGlobalData) await window.saveGlobalData();
+                resolverInput.value = next.endpoint || '';
+                if (window.showToast) window.showToast(endpoint ? '外链解析服务已保存' : '已清除外链解析服务');
+                if (state.url) scheduleResolve();
+            } catch (error) {
+                console.error('[iMessage link] failed to persist resolver config', error);
+                if (window.showToast) window.showToast('外链解析服务保存失败');
+            } finally {
+                resolverSaveButton.disabled = false;
+            }
+        }
+
         function closeComposer() {
             cancelActiveWork();
             overlay.classList.remove('active');
@@ -427,6 +471,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         input.addEventListener('input', scheduleResolve);
+        resolverSaveButton.addEventListener('click', () => void saveResolverConfig());
         closeButton.addEventListener('click', closeComposer);
         cancelButton.addEventListener('click', closeComposer);
         backdrop.addEventListener('click', closeComposer);
@@ -447,6 +492,10 @@ document.addEventListener('DOMContentLoaded', () => {
             state.status = 'idle';
             state.sending = false;
             input.value = '';
+            const resolverConfig = window.getLinkResolverConfig
+                ? window.getLinkResolverConfig()
+                : (window.linkResolverConfig || {});
+            resolverInput.value = resolverConfig.endpoint || '';
             sendButton.textContent = '发送';
             setStatus('idle', '粘贴后自动识别');
             renderState();

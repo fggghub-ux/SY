@@ -372,7 +372,7 @@ window.lovesApp = {
                                 if (!this.currentFriend.memory.schedule) this.currentFriend.memory.schedule = {};
                                 if (!this.currentFriend.memory.schedule.events) this.currentFriend.memory.schedule.events = [];
                                 
-                                this.currentFriend.memory.schedule.events.push({
+                                const scheduleEvent = {
                                     id: 'sch_' + Date.now(),
                                     name: title,
                                     title: title,
@@ -381,8 +381,12 @@ window.lovesApp = {
                                     endTime: time,
                                     time: time,
                                     location: loc,
+                                    source: 'loves',
                                     timestamp: Date.now()
-                                });
+                                };
+                                this.currentFriend.memory.schedule.events.push(window.imDataUtils?.normalizeScheduleEvent
+                                    ? window.imDataUtils.normalizeScheduleEvent(scheduleEvent, this.currentFriend.memory.schedule.events.length)
+                                    : scheduleEvent);
                                 
                                 this.persistFriendState();
                                 if (window.showToast) window.showToast('日程已添加');

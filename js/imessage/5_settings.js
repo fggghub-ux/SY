@@ -2486,8 +2486,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 notes: friend.memory?.context?.notes || ''
             },
             summary: {
-                enabled: false,
+                enabled: !!friend.memory?.summary?.enabled,
                 limit: friend.memory?.summary?.limit || 80,
+                roundLimit: window.imDataUtils?.normalizeRoundLimit
+                    ? window.imDataUtils.normalizeRoundLimit(friend.memory?.summary?.roundLimit, 30)
+                    : (Number(friend.memory?.summary?.roundLimit) || 30),
                 prompt: friend.memory?.summary?.prompt || ''
             },
             autonomous: window.imApp.normalizeAutonomousActivity
@@ -2497,9 +2500,11 @@ document.addEventListener('DOMContentLoaded', () => {
             shortTermEntries: Array.isArray(friend.memory?.shortTermEntries) ? friend.memory.shortTermEntries : [],
             cherished: chatMemoryCherishedInput ? chatMemoryCherishedInput.value : (friend.memory?.cherished || ''),
             schedule: {
-                enabled: false,
+                ...(friend.memory?.schedule || {}),
+                enabled: !!friend.memory?.schedule?.enabled,
                 sleepTime: chatMemoryScheduleSleep ? chatMemoryScheduleSleep.value : (friend.memory?.schedule?.sleepTime || '23:00'),
-                wakeTime: chatMemoryScheduleWake ? chatMemoryScheduleWake.value : (friend.memory?.schedule?.wakeTime || '07:00')
+                wakeTime: chatMemoryScheduleWake ? chatMemoryScheduleWake.value : (friend.memory?.schedule?.wakeTime || '07:00'),
+                events: Array.isArray(friend.memory?.schedule?.events) ? friend.memory.schedule.events : []
             },
             relationships: Array.isArray(friend.memory?.relationships) ? friend.memory.relationships : []
         };
@@ -2585,6 +2590,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const manualSummaryConfirm = document.getElementById('chat-memory-summary-confirm');
     const manualSummaryCountInput = document.getElementById('chat-memory-summary-count-input');
     const manualSummaryUnsummarizedCount = document.getElementById('chat-memory-unsummarized-count');
+    const manualSummaryBatchCount = document.getElementById('chat-memory-summary-batch-count');
+    const autoSummaryToggle = document.getElementById('chat-memory-auto-summary-toggle');
+    const summaryRoundInput = document.getElementById('chat-memory-summary-round-input');
+    const summaryHint = document.getElementById('chat-memory-summary-hint');
     const autonomousBtn = document.getElementById('chat-memory-autonomous-btn');
     const autonomousSheet = document.getElementById('chat-memory-autonomous-sheet');
     const autonomousClose = document.getElementById('chat-memory-autonomous-close-btn');
@@ -2598,6 +2607,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const autonomousMomentMinInput = document.getElementById('chat-memory-autonomous-moment-min-input');
     const autonomousMomentMaxInput = document.getElementById('chat-memory-autonomous-moment-max-input');
     const autonomousMomentNextLabel = document.getElementById('chat-memory-autonomous-moment-next-label');
+    const summaryInFlight = new Set();
 
     function setAutonomousCardExpanded(toggleEl, expanded) {
         const card = toggleEl?.closest?.('.chat-memory-autonomous-card');
@@ -2758,6 +2768,28 @@ document.addEventListener('DOMContentLoaded', () => {
         return Math.max(0, total - Math.min(last, total));
     }
 
+    function getChatSummaryBatch(friend, roundLimit) {
+        const messages = Array.isArray(friend?.messages) ? friend.messages : [];
+        const lastCount = Math.max(0, Number(friend?.memory?.lastSummaryMessageCount) || 0);
+        if (window.imDataUtils?.getSummaryBatch) {
+            return window.imDataUtils.getSummaryBatch(messages, lastCount, roundLimit);
+        }
+        const limit = Math.max(1, Math.round(Number(roundLimit) || 30));
+        const pending = messages.slice(Math.min(lastCount, messages.length));
+        const availableRounds = pending.filter(message => message?.role === 'user').length;
+        return {
+            startIndex: Math.min(lastCount, messages.length),
+            endIndex: messages.length,
+            roundLimit: limit,
+            availableRounds,
+            unsummarizedMessageCount: pending.length,
+            selectedRounds: Math.min(limit, availableRounds),
+            selectedMessageCount: pending.length,
+            selectedMessages: pending,
+            ready: availableRounds >= limit
+        };
+    }
+
     function formatSummarySourceMessage(msg, friend) {
         const speaker = msg.role === 'assistant'
             ? (friend.nickname || friend.realname || friend.realName || 'Char')
@@ -2878,10 +2910,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function generateManualChatSummary(friend, count) {
+    async function generateChatSummary(friend, options = {}) {
         const currentApiConfig = window.getApiConfig ? window.getApiConfig() : (window.apiConfig || {});
         if (!currentApiConfig.endpoint || !currentApiConfig.apiKey) {
-            showToast('请先在设置中配置 API');
+            if (!options.silent) showToast('请先在设置中配置 API');
             return null;
         }
 
@@ -2890,11 +2922,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const messages = Array.isArray(friend.messages) ? friend.messages : [];
-        const lastCount = Math.max(0, Number(friend.memory?.lastSummaryMessageCount) || 0);
-        const unsummarized = messages.slice(Math.min(lastCount, messages.length));
-        const sourceMessages = unsummarized.slice(0, count);
+        const roundLimit = window.imDataUtils?.normalizeRoundLimit
+            ? window.imDataUtils.normalizeRoundLimit(options.roundLimit ?? friend.memory?.summary?.roundLimit, 30)
+            : Math.max(1, Math.round(Number(options.roundLimit ?? friend.memory?.summary?.roundLimit) || 30));
+        const batch = getChatSummaryBatch(friend, roundLimit);
+        if (options.requireFullBatch && !batch.ready) return null;
+        const sourceMessages = batch.selectedMessages;
         if (sourceMessages.length === 0) {
-            showToast('暂无未总结对话');
+            if (!options.silent) showToast('暂无未总结对话');
             return null;
         }
 
@@ -2905,7 +2940,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const dialogueText = sourceMessages.map(msg => formatSummarySourceMessage(msg, friend)).join('\n');
         const existingSummariesText = formatExistingSummaryEntries(friend);
 
-        const prompt = `查看已有的总结，将与本次需要总结的对话的内容相关的记忆点的记忆条目激活（记忆程度改为高）。\n\n已有短期记忆总结：\n${existingSummariesText}\n\n你是${charName}，请站在${charName}的第一人称视角，将以下${sourceMessages.length}条对话进行一次记忆总结，整合精炼成一件完整的事。\n\n当前真实总结时间：${nowString}\nUser 名称：${userName}\n\n必须只输出 JSON，不要 markdown，不要解释。JSON 字段如下：\n{\n  "activatedEntryIds": ["与本次对话相关、需要激活的已有记忆ID，没有则为空数组"],\n  "summary": {\n    "title": "10字内，事件名称",\n    "time": "真实时间，精确到总结时的年月日时",\n    "event": "20-50字，内容为一件完整的事",\n    "memoryPoints": "请输出纯文本字符串格式，必须包含情绪/声音/画面/气味/环境五个感官记忆，每个感官不超过10字，最好用一个词形容",\n    "degree": "高"\n  }\n}\n\nsummary.degree 只可输出“高”。activatedEntryIds 只能使用已有短期记忆总结中的 ID。\n\n对话：\n${dialogueText}\n\n查看已有的总结，将所有记忆程度超过真实时间1天的高改成中，超过7天的改成低，超过30天的改成遗忘。`;
+        const prompt = `查看已有的总结，将与本次需要总结的对话的内容相关的记忆点的记忆条目激活（记忆程度改为高）。\n\n已有短期记忆总结：\n${existingSummariesText}\n\n你是${charName}，请站在${charName}的第一人称视角，将以下${batch.selectedRounds}轮、共${sourceMessages.length}条对话进行一次记忆总结，整合精炼成一件完整的事。\n\n当前真实总结时间：${nowString}\nUser 名称：${userName}\n\n必须只输出 JSON，不要 markdown，不要解释。JSON 字段如下：\n{\n  "activatedEntryIds": ["与本次对话相关、需要激活的已有记忆ID，没有则为空数组"],\n  "summary": {\n    "title": "10字内，事件名称",\n    "time": "真实时间，精确到总结时的年月日时",\n    "event": "20-50字，内容为一件完整的事",\n    "memoryPoints": "请输出纯文本字符串格式，必须包含情绪/声音/画面/气味/环境五个感官记忆，每个感官不超过10字，最好用一个词形容",\n    "degree": "高"\n  }\n}\n\nsummary.degree 只可输出“高”。activatedEntryIds 只能使用已有短期记忆总结中的 ID。\n\n对话：\n${dialogueText}\n\n查看已有的总结，将所有记忆程度超过真实时间1天的高改成中，超过7天的改成低，超过30天的改成遗忘。`;
 
         const endpoint = normalizeSummaryApiEndpoint(currentApiConfig);
         const response = await fetch(endpoint, {
@@ -2931,19 +2966,130 @@ document.addEventListener('DOMContentLoaded', () => {
         summary.time = summary.time || nowString;
         summary.degree = '高';
         summary.sourceCount = sourceMessages.length;
-        summary.sourceEndMessageCount = Math.min(messages.length, lastCount + sourceMessages.length);
+        summary.sourceRoundCount = batch.selectedRounds;
+        summary.sourceStartMessageCount = batch.startIndex;
+        summary.sourceEndMessageCount = batch.endIndex;
         return summary;
+    }
+
+    function refreshSummaryModal(friend) {
+        if (!friend) return null;
+        friend.memory = window.imApp.normalizeFriendData(friend).memory;
+        const roundLimit = friend.memory.summary?.roundLimit || 30;
+        const batch = getChatSummaryBatch(friend, roundLimit);
+        if (manualSummaryUnsummarizedCount) {
+            manualSummaryUnsummarizedCount.textContent = `${batch.availableRounds}轮 / ${batch.unsummarizedMessageCount}条`;
+        }
+        if (manualSummaryBatchCount) {
+            manualSummaryBatchCount.textContent = `${batch.selectedRounds}轮 / ${batch.selectedMessageCount}条`;
+        }
+        if (manualSummaryCountInput) manualSummaryCountInput.value = String(batch.selectedMessageCount);
+        if (autoSummaryToggle) autoSummaryToggle.checked = !!friend.memory.summary?.enabled;
+        if (summaryRoundInput) summaryRoundInput.value = String(roundLimit);
+        if (summaryHint) {
+            summaryHint.textContent = autoSummaryToggle?.checked
+                ? `开启后每 ${roundLimit} 轮自动总结一次；已有记录将在下一次 AI 回复后检查`
+                : `开启后每 ${roundLimit} 轮自动总结一次`;
+        }
+        if (manualSummaryConfirm) {
+            manualSummaryConfirm.disabled = batch.selectedMessageCount === 0;
+            manualSummaryConfirm.textContent = batch.selectedMessageCount > 0
+                ? `立即总结 ${batch.selectedMessageCount} 条`
+                : '暂无可总结对话';
+        }
+        return batch;
+    }
+
+    async function persistSummarySettings(friend) {
+        if (!friend) return false;
+        const roundLimit = window.imDataUtils?.normalizeRoundLimit
+            ? window.imDataUtils.normalizeRoundLimit(summaryRoundInput?.value, 30)
+            : Math.max(1, Math.round(Number(summaryRoundInput?.value) || 30));
+        const saved = await commitNamedFriendChange(friend, (targetFriend) => {
+            targetFriend.memory = window.imApp.normalizeFriendData(targetFriend).memory;
+            targetFriend.memory.summary = {
+                ...targetFriend.memory.summary,
+                enabled: !!autoSummaryToggle?.checked,
+                roundLimit
+            };
+        }, { silent: true, immediate: true });
+        if (saved) {
+            const latestFriend = window.imData.friends.find(item => String(item.id) === String(friend.id)) || friend;
+            if (window.imData.currentSettingsFriend && String(window.imData.currentSettingsFriend.id) === String(friend.id)) {
+                window.imData.currentSettingsFriend = latestFriend;
+            }
+            refreshSummaryModal(latestFriend);
+        }
+        return saved;
+    }
+
+    async function commitGeneratedSummary(friend, summary) {
+        if (!friend || !summary) return false;
+        return commitNamedFriendChange(friend, (targetFriend) => {
+            targetFriend.memory = window.imApp.normalizeFriendData(targetFriend).memory;
+            if (!Array.isArray(targetFriend.memory.shortTermEntries)) targetFriend.memory.shortTermEntries = [];
+            const now = new Date();
+            const nowString = `${now.getFullYear()}年${String(now.getMonth() + 1).padStart(2, '0')}月${String(now.getDate()).padStart(2, '0')}日 ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            const activatedIds = new Set(Array.isArray(summary.activatedEntryIds) ? summary.activatedEntryIds.map(String) : []);
+            targetFriend.memory.shortTermEntries.forEach(entry => {
+                if (entry && activatedIds.has(String(entry.id))) {
+                    entry.degree = '高';
+                    entry.lastActivatedAt = nowString;
+                }
+            });
+            decayShortTermMemoryEntries(targetFriend.memory.shortTermEntries, now, activatedIds);
+            summary.lastActivatedAt = nowString;
+            targetFriend.memory.shortTermEntries.push(summary);
+            targetFriend.memory.lastSummaryMessageCount = Number(summary.sourceEndMessageCount)
+                || (Array.isArray(targetFriend.messages) ? targetFriend.messages.length : 0);
+        }, { silent: true, immediate: true });
+    }
+
+    async function runChatSummary(friend, options = {}) {
+        if (!friend || friend.type === 'group') return false;
+        const friendId = String(friend.id);
+        if (summaryInFlight.has(friendId)) return false;
+        if (window.imApp.ensureFriendMessagesLoaded) await window.imApp.ensureFriendMessagesLoaded(friend);
+        friend = window.imData.friends.find(item => String(item.id) === friendId) || friend;
+        friend.memory = window.imApp.normalizeFriendData(friend).memory;
+        const roundLimit = friend.memory.summary?.roundLimit || 30;
+        const batch = getChatSummaryBatch(friend, roundLimit);
+        if (options.auto && (!friend.memory.summary?.enabled || !batch.ready)) return false;
+        if (batch.selectedMessageCount === 0) return false;
+
+        summaryInFlight.add(friendId);
+        try {
+            const summary = await generateChatSummary(friend, {
+                roundLimit,
+                requireFullBatch: !!options.auto,
+                silent: !!options.auto
+            });
+            if (!summary) return false;
+            const saved = await commitGeneratedSummary(friend, summary);
+            if (!saved) throw new Error('summary persistence failed');
+            const latestFriend = window.imData.friends.find(item => String(item.id) === friendId) || friend;
+            latestFriend.memory = window.imApp.normalizeFriendData(latestFriend).memory;
+            if (window.imData.currentSettingsFriend && String(window.imData.currentSettingsFriend.id) === friendId) {
+                window.imData.currentSettingsFriend = latestFriend;
+                refreshSummaryModal(latestFriend);
+            }
+            if (window.imApp.renderMemoryView) window.imApp.renderMemoryView();
+            showToast(options.auto ? `已自动总结 ${summary.sourceRoundCount || roundLimit} 轮对话` : '总结已存入短期记忆');
+            return true;
+        } catch (error) {
+            console.error(options.auto ? 'Auto summary failed' : 'Manual summary failed', error);
+            showToast(options.auto ? '自动总结失败，将在下次回复后重试' : '总结生成失败');
+            return false;
+        } finally {
+            summaryInFlight.delete(friendId);
+        }
     }
 
     async function openManualSummaryModal(friend) {
         if (!friend || !manualSummaryModal) return;
-        if (window.imApp.ensureFriendMessagesLoaded) {
-            await window.imApp.ensureFriendMessagesLoaded(friend);
-        }
-        friend.memory = window.imApp.normalizeFriendData(friend).memory;
-        const unsummarizedCount = getChatSummaryUnsummarizedCount(friend);
-        if (manualSummaryUnsummarizedCount) manualSummaryUnsummarizedCount.textContent = String(unsummarizedCount);
-        if (manualSummaryCountInput) manualSummaryCountInput.value = String(Math.min(80, Math.max(1, unsummarizedCount || 80)));
+        if (window.imApp.ensureFriendMessagesLoaded) await window.imApp.ensureFriendMessagesLoaded(friend);
+        friend = window.imData.friends.find(item => String(item.id) === String(friend.id)) || friend;
+        refreshSummaryModal(friend);
         openView(manualSummaryModal);
     }
 
@@ -2957,6 +3103,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (manualSummaryClose && manualSummaryModal) {
         manualSummaryClose.addEventListener('click', () => closeView(manualSummaryModal));
+    }
+
+    if (autoSummaryToggle) {
+        autoSummaryToggle.addEventListener('change', () => {
+            const friend = window.imData.currentSettingsFriend;
+            if (friend) void persistSummarySettings(friend);
+        });
+    }
+
+    if (summaryRoundInput) {
+        summaryRoundInput.addEventListener('input', () => {
+            const friend = window.imData.currentSettingsFriend;
+            if (!friend) return;
+            const draftFriend = { ...friend, memory: { ...friend.memory, summary: { ...friend.memory?.summary, roundLimit: summaryRoundInput.value } } };
+            refreshSummaryModal(draftFriend);
+        });
+        summaryRoundInput.addEventListener('change', () => {
+            const friend = window.imData.currentSettingsFriend;
+            if (friend) void persistSummarySettings(friend);
+        });
     }
 
     if (autonomousBtn) {
@@ -3011,49 +3177,26 @@ document.addEventListener('DOMContentLoaded', () => {
         manualSummaryConfirm.addEventListener('click', async () => {
             const friend = window.imData.currentSettingsFriend;
             if (!friend) return;
-            const count = Math.max(1, Number(manualSummaryCountInput?.value) || 80);
             manualSummaryConfirm.disabled = true;
             manualSummaryConfirm.textContent = '生成中...';
             try {
-                const summary = await generateManualChatSummary(friend, count);
-                if (!summary) return;
-                const saved = await commitNamedFriendChange(friend, (targetFriend) => {
-                    targetFriend.memory = window.imApp.normalizeFriendData(targetFriend).memory;
-                    if (!Array.isArray(targetFriend.memory.shortTermEntries)) targetFriend.memory.shortTermEntries = [];
-                    const now = new Date();
-                    const nowString = `${now.getFullYear()}年${String(now.getMonth() + 1).padStart(2, '0')}月${String(now.getDate()).padStart(2, '0')}日 ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-                    const activatedIds = new Set(Array.isArray(summary.activatedEntryIds) ? summary.activatedEntryIds.map(String) : []);
-                    targetFriend.memory.shortTermEntries.forEach(entry => {
-                        if (entry && activatedIds.has(String(entry.id))) {
-                            entry.degree = '高';
-                            entry.lastActivatedAt = nowString;
-                        }
-                    });
-                    decayShortTermMemoryEntries(targetFriend.memory.shortTermEntries, now, activatedIds);
-                    summary.lastActivatedAt = nowString;
-                    targetFriend.memory.shortTermEntries.push(summary);
-                    targetFriend.memory.lastSummaryMessageCount = Number(summary.sourceEndMessageCount) || (Array.isArray(targetFriend.messages) ? targetFriend.messages.length : 0);
-                }, { silent: true, immediate: true });
-
-                if (saved) {
-                    const latestFriend = window.imData.friends.find(item => String(item.id) === String(friend.id)) || friend;
-                    latestFriend.memory = window.imApp.normalizeFriendData(latestFriend).memory;
-                    window.imData.currentSettingsFriend = latestFriend;
-                    if (window.imApp.renderMemoryView) window.imApp.renderMemoryView();
-                    closeView(manualSummaryModal);
-                    showToast('总结已存入短期记忆');
-                } else {
-                    showToast('总结保存失败');
-                }
-            } catch (error) {
-                console.error('Manual summary failed', error);
-                showToast('总结生成失败');
+                const saved = await runChatSummary(friend, { auto: false });
+                if (saved) closeView(manualSummaryModal);
             } finally {
                 manualSummaryConfirm.disabled = false;
-                manualSummaryConfirm.textContent = '确认';
+                const latestFriend = window.imData.friends.find(item => String(item.id) === String(friend.id)) || friend;
+                refreshSummaryModal(latestFriend);
             }
         });
     }
+
+    window.imChat = window.imChat || {};
+    window.imChat.maybeAutoSummarize = async function maybeAutoSummarize(friendOrId) {
+        const friendId = friendOrId && typeof friendOrId === 'object' ? friendOrId.id : friendOrId;
+        const friend = (window.imData.friends || []).find(item => String(item.id) === String(friendId))
+            || (friendOrId && typeof friendOrId === 'object' ? friendOrId : null);
+        return runChatSummary(friend, { auto: true });
+    };
 
     function refreshChatSettingsHeader(friend) {
         const settingsAvatarImg = document.getElementById('chat-settings-avatar-img');

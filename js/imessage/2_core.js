@@ -262,7 +262,7 @@ window.imApp.createDefaultMemory = function() {
         overview: '',
         anniversaries: '',
         context: { enabled: true, limit: 80, notes: '' },
-        summary: { enabled: false, limit: 80, prompt: '' },
+        summary: { enabled: false, limit: 80, roundLimit: 30, prompt: '' },
         autonomous: window.imApp.createDefaultAutonomousActivity(),
         longTerm: '',
         shortTermEntries: [],
@@ -271,7 +271,8 @@ window.imApp.createDefaultMemory = function() {
         cherishedEntries: [],
         relationships: [],
         socialAccounts: [],
-        schedule: { enabled: false, sleepTime: '23:00', wakeTime: '07:00' },
+        schedule: { enabled: false, sleepTime: '23:00', wakeTime: '07:00', events: [] },
+        lastSummaryMessageCount: 0,
         mountSettings: {},
         mountLimits: {}
     };
@@ -476,14 +477,18 @@ window.imApp.normalizeFriendData = function(friend) {
 
     const defaultMemory = window.imApp.createDefaultMemory();
     const memory = normalized.memory || {};
+    const normalizedSchedule = window.imDataUtils?.normalizeSchedule
+        ? window.imDataUtils.normalizeSchedule(memory.schedule)
+        : {
+            enabled: !!memory.schedule?.enabled,
+            sleepTime: memory.schedule?.sleepTime || defaultMemory.schedule.sleepTime,
+            wakeTime: memory.schedule?.wakeTime || defaultMemory.schedule.wakeTime,
+            events: Array.isArray(memory.schedule?.events) ? memory.schedule.events : []
+        };
     normalized.memory = {
         overview: memory.overview || defaultMemory.overview,
         anniversaries: memory.anniversaries || defaultMemory.anniversaries,
-        schedule: {
-            enabled: typeof memory.schedule?.enabled === 'boolean' ? memory.schedule.enabled : defaultMemory.schedule.enabled,
-            sleepTime: memory.schedule?.sleepTime || defaultMemory.schedule.sleepTime,
-            wakeTime: memory.schedule?.wakeTime || defaultMemory.schedule.wakeTime
-        },
+        schedule: normalizedSchedule,
         context: {
             enabled: typeof memory.context?.enabled === 'boolean' ? memory.context.enabled : defaultMemory.context.enabled,
             limit: Number(memory.context?.limit) > 0
@@ -494,6 +499,9 @@ window.imApp.normalizeFriendData = function(friend) {
         summary: {
             enabled: typeof memory.summary?.enabled === 'boolean' ? memory.summary.enabled : defaultMemory.summary.enabled,
             limit: Number(memory.summary?.limit) > 0 ? Number(memory.summary.limit) : defaultMemory.summary.limit,
+            roundLimit: window.imDataUtils?.normalizeRoundLimit
+                ? window.imDataUtils.normalizeRoundLimit(memory.summary?.roundLimit, defaultMemory.summary.roundLimit)
+                : (Number(memory.summary?.roundLimit) > 0 ? Math.round(Number(memory.summary.roundLimit)) : defaultMemory.summary.roundLimit),
             prompt: memory.summary?.prompt || defaultMemory.summary.prompt
         },
         autonomous: window.imApp.normalizeAutonomousActivity(memory.autonomous),
@@ -507,7 +515,11 @@ window.imApp.normalizeFriendData = function(friend) {
                 memoryPoints: entry?.memoryPoints || entry?.points || '',
                 degree: entry?.degree || '高',
                 lastActivatedAt: entry?.lastActivatedAt || entry?.activatedAt || entry?.time || entry?.createdAt || '',
-                raw: entry?.raw || ''
+                raw: entry?.raw || '',
+                sourceCount: Math.max(0, Number(entry?.sourceCount) || 0),
+                sourceRoundCount: Math.max(0, Number(entry?.sourceRoundCount) || 0),
+                sourceStartMessageCount: Math.max(0, Number(entry?.sourceStartMessageCount) || 0),
+                sourceEndMessageCount: Math.max(0, Number(entry?.sourceEndMessageCount) || 0)
             }))
             : defaultMemory.shortTermEntries,
         longTermEntries: Array.isArray(memory.longTermEntries)
@@ -1251,6 +1263,7 @@ window.imApp.createClearedConversationMemory = function(memory = {}) {
     cleared.summary = {
         enabled: normalizedMemory.summary.enabled,
         limit: normalizedMemory.summary.limit,
+        roundLimit: normalizedMemory.summary.roundLimit || 30,
         prompt: normalizedMemory.summary.prompt || ''
     };
     cleared.autonomous = window.imApp.cloneDataSnapshot(normalizedMemory.autonomous);
@@ -3590,11 +3603,28 @@ document.addEventListener('DOMContentLoaded', () => {
     const stickerLocalPreview = document.getElementById('sticker-local-preview');
     const stickerUrlInput = document.getElementById('sticker-url-input');
     const confirmAddStickerBtn = document.getElementById('confirm-add-sticker-btn');
+    const stickerManifestUploadBtn = document.getElementById('sticker-manifest-upload-btn');
+    const stickerManifestUploadInput = document.getElementById('sticker-manifest-upload-input');
+    const stickerDetailSheet = document.getElementById('sticker-category-detail-sheet');
+    const stickerDetailTitle = document.getElementById('sticker-detail-title');
+    const stickerDetailCount = document.getElementById('sticker-detail-count');
+    const stickerDetailGrid = document.getElementById('sticker-detail-grid');
+    const stickerDetailBindBtn = document.getElementById('sticker-detail-bind-btn');
+    const stickerDetailDeleteCategoryBtn = document.getElementById('sticker-detail-delete-category-btn');
+    const stickerDetailBatchBar = document.getElementById('sticker-detail-batch-bar');
+    const stickerBatchDeleteBtn = document.getElementById('batch-delete-toggle');
 
     // Temporary storage for local uploaded images
     let pendingLocalStickers = [];
 
-    // Stickers back btn removed - no back button in new design
+    let activeStickerCategoryName = '';
+
+    if (stickersBackBtn && stickersView) {
+        stickersBackBtn.addEventListener('click', () => {
+            if (window.closeView) window.closeView(stickersView);
+            else stickersView.style.display = 'none';
+        });
+    }
 
     // Open add sticker sheet
     if (stickersAddBtn) {
@@ -3709,6 +3739,54 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    async function readStickerManifestFile(file) {
+        const fileName = String(file?.name || '').toLowerCase();
+        if (fileName.endsWith('.docx')) {
+            if (!window.mammoth?.extractRawText) throw new Error('DOCX 解析组件未加载');
+            const result = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+            return String(result?.value || '');
+        }
+        return String(await file.text()).replace(/\u0000/g, '');
+    }
+
+    if (stickerManifestUploadBtn && stickerManifestUploadInput) {
+        stickerManifestUploadBtn.addEventListener('click', () => stickerManifestUploadInput.click());
+        stickerManifestUploadInput.addEventListener('change', async () => {
+            const file = stickerManifestUploadInput.files?.[0];
+            stickerManifestUploadInput.value = '';
+            if (!file) return;
+            const lowerName = String(file.name || '').toLowerCase();
+            if (!lowerName.endsWith('.txt') && !lowerName.endsWith('.text') && !lowerName.endsWith('.docx')) {
+                if (showToast) showToast('仅支持 TXT 和 DOCX 文件');
+                return;
+            }
+            try {
+                const text = await readStickerManifestFile(file);
+                const parsed = window.imDataUtils?.parseStickerManifestText
+                    ? window.imDataUtils.parseStickerManifestText(text)
+                    : { items: [], invalidLines: [] };
+                if (parsed.items.length === 0) {
+                    if (showToast) showToast('文件中没有有效的“名称 URL”记录');
+                    return;
+                }
+                const normalizedText = parsed.items.map(item => `${item.name} ${item.url}`).join('\n');
+                if (stickerUrlInput) {
+                    const existing = stickerUrlInput.value.trim();
+                    stickerUrlInput.value = existing ? `${existing}\n${normalizedText}` : normalizedText;
+                    stickerUrlInput.focus();
+                }
+                if (showToast) {
+                    showToast(parsed.invalidLines.length > 0
+                        ? `已读取 ${parsed.items.length} 条，第 ${parsed.invalidLines.join('、')} 行格式无效`
+                        : `已读取 ${parsed.items.length} 条贴图记录`);
+                }
+            } catch (error) {
+                console.error('Failed to import sticker manifest', error);
+                if (showToast) showToast(error?.message || '贴图清单读取失败');
+            }
+        });
+    }
+
     // Confirm add sticker
     if (confirmAddStickerBtn) {
         confirmAddStickerBtn.addEventListener('click', async () => {
@@ -3719,19 +3797,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Parse URL input
-            const urlStickers = [];
-            if (stickerUrlInput) {
-                const lines = stickerUrlInput.value.split('\n');
-                lines.forEach(line => {
-                    const trimmed = line.trim();
-                    if (!trimmed) return;
-                    const parts = trimmed.split(/\s+/);
-                    if (parts.length >= 2) {
-                        const name = parts[0];
-                        const url = parts.slice(1).join(' ');
-                        urlStickers.push({ name, url });
-                    }
-                });
+            const parsedManifest = window.imDataUtils?.parseStickerManifestText
+                ? window.imDataUtils.parseStickerManifestText(stickerUrlInput?.value || '')
+                : { items: [], invalidLines: [] };
+            const urlStickers = parsedManifest.items;
+            if (parsedManifest.invalidLines.length > 0) {
+                if (showToast) showToast(`第 ${parsedManifest.invalidLines.join('、')} 行格式无效，请修改后重试`);
+                return;
             }
 
             // Combine all stickers
@@ -3916,7 +3988,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Render stickers view
-    function renderStickersView(keepBatchMode) {
+    function renderLegacyStickersView(keepBatchMode) {
         if (!stickersListContainer) return;
         stickersListContainer.innerHTML = '';
         
@@ -4195,6 +4267,178 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function getActiveStickerCategory() {
+        return (window.imData.stickers || []).find(category => category?.categoryName === activeStickerCategoryName) || null;
+    }
+
+    function renderStickerDetail() {
+        if (!stickerDetailGrid) return;
+        const category = getActiveStickerCategory();
+        if (!category) {
+            if (stickerDetailSheet && window.closeView) window.closeView(stickerDetailSheet);
+            activeStickerCategoryName = '';
+            return;
+        }
+
+        const items = Array.isArray(category.items) ? category.items : [];
+        if (stickerDetailTitle) stickerDetailTitle.textContent = category.categoryName || '表情包';
+        if (stickerDetailCount) stickerDetailCount.textContent = `${items.length} 张 · 已绑定 ${getStickerBoundFriends(category.categoryName).length} 位角色`;
+        if (stickerDetailBatchBar) stickerDetailBatchBar.hidden = !batchDeleteMode;
+        const batchInfo = document.getElementById('batch-select-info');
+        if (batchInfo) batchInfo.textContent = `已选择 ${selectedStickers.size} 项`;
+        if (stickersEditBtn) stickersEditBtn.innerHTML = batchDeleteMode ? '<i class="fas fa-check"></i>' : '<i class="fas fa-pen"></i>';
+
+        stickerDetailGrid.innerHTML = '';
+        items.forEach((sticker, stickerIndex) => {
+            if (!sticker?.url) return;
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'sticker-item sticker-detail-item';
+            item.title = sticker.name || `Sticker ${stickerIndex + 1}`;
+            const image = document.createElement('img');
+            image.src = sticker.url;
+            image.alt = sticker.name || '';
+            item.appendChild(image);
+
+            if (batchDeleteMode) {
+                const selected = selectedStickers.has(String(stickerIndex));
+                item.classList.toggle('selected', selected);
+                const checkbox = document.createElement('span');
+                checkbox.className = 'sticker-select-checkbox';
+                checkbox.innerHTML = selected ? '<i class="fas fa-check"></i>' : '';
+                item.appendChild(checkbox);
+                item.addEventListener('click', () => {
+                    const key = String(stickerIndex);
+                    if (selectedStickers.has(key)) selectedStickers.delete(key);
+                    else selectedStickers.add(key);
+                    renderStickerDetail();
+                });
+            }
+            stickerDetailGrid.appendChild(item);
+        });
+
+        if (stickerDetailBindBtn) {
+            stickerDetailBindBtn.onclick = () => openStickerBindingDialog(category.categoryName);
+        }
+        if (stickerDetailDeleteCategoryBtn) {
+            stickerDetailDeleteCategoryBtn.onclick = async () => {
+                if (!confirm(`删除分类 "${category.categoryName}" ?`)) return;
+                const saved = await window.imApp.commitStickersChange(() => {
+                    window.imData.stickers = (window.imData.stickers || []).filter(item => item !== category);
+                }, { silent: true });
+                if (!saved) {
+                    if (showToast) showToast('分类删除失败');
+                    return;
+                }
+                activeStickerCategoryName = '';
+                batchDeleteMode = false;
+                selectedStickers.clear();
+                if (stickerDetailSheet && window.closeView) window.closeView(stickerDetailSheet);
+                renderStickersView();
+                if (showToast) showToast(`已删除分类 "${category.categoryName}"`);
+            };
+        }
+    }
+
+    function openStickerCategoryDetail(categoryName) {
+        activeStickerCategoryName = String(categoryName || '');
+        batchDeleteMode = false;
+        selectedStickers.clear();
+        renderStickerDetail();
+        if (stickerDetailSheet && window.openView) window.openView(stickerDetailSheet);
+    }
+
+    function renderStickersView(keepBatchMode) {
+        if (!stickersListContainer) return;
+        if (!keepBatchMode) {
+            batchDeleteMode = false;
+            selectedStickers.clear();
+        }
+        stickersListContainer.innerHTML = '';
+        const stickers = Array.isArray(window.imData.stickers) ? window.imData.stickers : [];
+        if (stickers.length === 0) {
+            stickersListContainer.innerHTML = '<div class="stickers-empty-state"><i class="far fa-face-smile"></i><strong>还没有表情包</strong><span>点击右上角添加第一个分组</span></div>';
+            return;
+        }
+
+        stickers.forEach(category => {
+            if (!category) return;
+            const items = Array.isArray(category.items) ? category.items : [];
+            const card = document.createElement('button');
+            card.type = 'button';
+            card.className = 'sticker-group-card';
+            const preview = document.createElement('span');
+            preview.className = 'sticker-group-preview';
+            items.slice(0, 4).forEach(sticker => {
+                const cell = document.createElement('span');
+                cell.className = 'sticker-group-preview-cell';
+                if (sticker?.url) {
+                    const image = document.createElement('img');
+                    image.src = sticker.url;
+                    image.alt = sticker.name || '';
+                    cell.appendChild(image);
+                }
+                preview.appendChild(cell);
+            });
+            while (preview.children.length < 4) {
+                const cell = document.createElement('span');
+                cell.className = 'sticker-group-preview-cell empty';
+                preview.appendChild(cell);
+            }
+
+            const copy = document.createElement('span');
+            copy.className = 'sticker-group-copy';
+            const title = document.createElement('strong');
+            title.textContent = category.categoryName || '未命名分组';
+            const meta = document.createElement('span');
+            meta.textContent = `${items.length} 张 · ${getStickerBoundFriends(category.categoryName).length} 位角色`;
+            copy.appendChild(title);
+            copy.appendChild(meta);
+            card.appendChild(preview);
+            card.appendChild(copy);
+            card.addEventListener('click', () => openStickerCategoryDetail(category.categoryName));
+            stickersListContainer.appendChild(card);
+        });
+
+        if (activeStickerCategoryName && getActiveStickerCategory()) renderStickerDetail();
+    }
+
+    if (stickerBatchDeleteBtn) {
+        stickerBatchDeleteBtn.addEventListener('click', async () => {
+            const category = getActiveStickerCategory();
+            if (!category || selectedStickers.size === 0) {
+                if (showToast) showToast('请先选择要删除的表情');
+                return;
+            }
+            const selectedIndexes = Array.from(selectedStickers).map(Number).sort((a, b) => b - a);
+            const saved = await window.imApp.commitStickersChange(() => {
+                selectedIndexes.forEach(index => category.items.splice(index, 1));
+                window.imData.stickers = (window.imData.stickers || []).filter(item => Array.isArray(item.items) && item.items.length > 0);
+            }, { silent: true });
+            if (!saved) {
+                if (showToast) showToast('表情删除失败');
+                return;
+            }
+            batchDeleteMode = false;
+            selectedStickers.clear();
+            if (!getActiveStickerCategory()) {
+                activeStickerCategoryName = '';
+                if (stickerDetailSheet && window.closeView) window.closeView(stickerDetailSheet);
+            }
+            renderStickersView();
+            if (showToast) showToast(`已删除 ${selectedIndexes.length} 张表情`);
+        });
+    }
+
+    if (stickerDetailSheet) {
+        stickerDetailSheet.addEventListener('click', event => {
+            if (event.target !== stickerDetailSheet) return;
+            batchDeleteMode = false;
+            selectedStickers.clear();
+            if (window.closeView) window.closeView(stickerDetailSheet);
+        });
+    }
+
     // Export render function
     window.imApp.renderStickersView = renderStickersView;
 
@@ -4366,21 +4610,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (!f.memory.schedule) f.memory.schedule = {};
                     if (!Array.isArray(f.memory.schedule.events)) f.memory.schedule.events = [];
                     
-                    const formatTime = (timeStr) => {
-                        const d = new Date(timeStr);
-                        return `${d.getFullYear()}年${String(d.getMonth() + 1).padStart(2, '0')}月${String(d.getDate()).padStart(2, '0')}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-                    };
-
-                    const formattedStartTime = formatTime(startTime);
-                    const formattedEndTime = formatTime(endTime);
-
-                    f.memory.schedule.events.push({
+                    const startDate = new Date(startTime);
+                    const endDate = new Date(endTime);
+                    const eventData = {
                         id: Date.now(),
                         name: eventName,
-                        time: `${formattedStartTime} - ${formattedEndTime}`,
+                        title: eventName,
+                        date: `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`,
+                        startTime: `${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}`,
+                        endTime: `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`,
                         rawTime: startTime,
-                        endTime: endTime
-                    });
+                        endAt: endTime,
+                        source: 'manual',
+                        timestamp: Date.now()
+                    };
+                    f.memory.schedule.events.push(window.imDataUtils?.normalizeScheduleEvent
+                        ? window.imDataUtils.normalizeScheduleEvent(eventData, f.memory.schedule.events.length)
+                        : eventData);
                     
                     f.memory.schedule.events.sort((a, b) => new Date(a.rawTime) - new Date(b.rawTime));
                 }, { silent: true });
@@ -4440,8 +4686,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div style="position: relative; z-index: 2; display: flex; align-items: flex-start;">
                         <div style="width: 10px; height: 10px; border-radius: 50%; background: #8e8e93; margin-right: 15px; margin-top: 15px;  flex-shrink: 0;"></div>
                         <div class="schedule-event-card" data-event-id="${evt.id}" style="background: #f2f2f7; border-radius: 16px; padding: 12px 16px; flex: 1; cursor: pointer; ">
-                            <div style="font-size: 15px; font-weight: 600; color: #111;">${evt.name}</div>
-                            <div style="font-size: 13px; color: #8e8e93; margin-top: 4px;">${evt.time}</div>
+                            <div style="font-size: 15px; font-weight: 600; color: #111;">${escapeMemoryHtml(evt.name || evt.title || '未命名行程')}</div>
+                            <div style="font-size: 13px; color: #8e8e93; margin-top: 4px;">${escapeMemoryHtml(evt.time || `${evt.date || ''} ${evt.startTime || ''}`.trim())}</div>
                         </div>
                     </div>
                 `;
@@ -4467,7 +4713,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (targetEvent && window.imApp.showCustomModal) {
                         window.imApp.showCustomModal({
                             title: '行程详情',
-                            message: `行程：${targetEvent.name}\n时间：${targetEvent.time}`,
+                            message: `行程：${targetEvent.name || targetEvent.title || '未命名行程'}\n时间：${targetEvent.time || `${targetEvent.date || ''} ${targetEvent.startTime || ''}`.trim()}${targetEvent.location ? `\n地点：${targetEvent.location}` : ''}`,
                             isDestructive: true,
                             confirmText: '删除行程',
                             onConfirm: async () => {
