@@ -129,6 +129,19 @@ document.addEventListener('DOMContentLoaded', () => {
         return normalized;
     }
 
+    function getFakeLinkAppContainer() {
+        return document.getElementById('app') || document.body;
+    }
+
+    function focusFakeLinkControl(element) {
+        if (!element || typeof element.focus !== 'function') return;
+        try {
+            element.focus({ preventScroll: true });
+        } catch (_) {
+            element.focus();
+        }
+    }
+
     function resolveFakeLinkWorldBookContext(friend, contextText = '') {
         const positions = ['system_depth', 'before_role', 'after_role'];
         const sections = [];
@@ -501,10 +514,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function createFakeLinkComposer(page) {
-        let overlay = page.querySelector('.im-fake-link-composer-overlay');
-        if (overlay) return overlay;
+        const host = getFakeLinkAppContainer();
+        let overlay = document.getElementById('im-fake-link-composer-overlay') || document.querySelector('.im-fake-link-composer-overlay');
+        if (overlay) {
+            if (overlay.parentNode !== host) host.appendChild(overlay);
+            overlay._imFakeLinkPage = page;
+            return overlay;
+        }
 
         overlay = document.createElement('div');
+        overlay.id = 'im-fake-link-composer-overlay';
         overlay.className = 'im-fake-link-composer-overlay';
         overlay.innerHTML = [
             '<div class="im-fake-link-composer-backdrop"></div>',
@@ -557,7 +576,8 @@ document.addEventListener('DOMContentLoaded', () => {
             '  </footer>',
             '</section>'
         ].join('');
-        page.appendChild(overlay);
+        host.appendChild(overlay);
+        overlay._imFakeLinkPage = page;
 
         const tabButtons = Array.from(overlay.querySelectorAll('.im-fake-link-tab'));
         const panels = Array.from(overlay.querySelectorAll('.im-fake-link-panel'));
@@ -713,11 +733,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 panel.hidden = !active;
             });
             renderPreview();
-            const input = getActiveDomainInput();
-            setTimeout(() => input?.focus(), 40);
         }
 
         function closeComposer() {
+            const activeElement = document.activeElement;
+            if (activeElement && overlay.contains(activeElement) && typeof activeElement.blur === 'function') {
+                activeElement.blur();
+            }
             state.sending = false;
             state.generating = false;
             overlay.classList.remove('active');
@@ -730,7 +752,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const normalized = normalizeFakeLinkInput(aiDomainInput.value);
             if (!normalized) {
                 setStatus('请先输入有效域名', 'error');
-                aiDomainInput.focus();
+                focusFakeLinkControl(aiDomainInput);
                 return;
             }
             if (state.generating) return;
@@ -789,12 +811,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const domainInput = getActiveDomainInput();
             if (!normalized) {
                 setStatus('请先输入有效域名', 'error');
-                domainInput.focus();
+                focusFakeLinkControl(domainInput);
                 return;
             }
             if (state.activeTab === 'ai' && (!data.webPage || !data.webPage.html)) {
                 setStatus('请先点击 AI 生成网页', 'error');
-                generateButton.focus();
+                focusFakeLinkControl(generateButton);
                 return;
             }
 
@@ -830,7 +852,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const container = page.querySelector('.ins-chat-messages');
+            const activePage = overlay._imFakeLinkPage || document.getElementById('chat-interface-' + friend.id) || page;
+            const container = activePage ? activePage.querySelector('.ins-chat-messages') : null;
             if (container) {
                 const appended = imChat.appendMessageToContainer
                     ? imChat.appendMessageToContainer(friend, container, msgObj, { scroll: true })
@@ -887,7 +910,6 @@ document.addEventListener('DOMContentLoaded', () => {
             overlay.style.display = 'flex';
             void overlay.offsetWidth;
             overlay.classList.add('active');
-            setTimeout(() => aiDomainInput.focus(), 80);
         };
 
         return overlay;
@@ -899,6 +921,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const page = document.getElementById('chat-interface-' + friend.id);
         if (!page) return;
         const overlay = createFakeLinkComposer(page);
+        overlay._imFakeLinkPage = page;
         overlay._openFakeLinkComposer();
     }
 

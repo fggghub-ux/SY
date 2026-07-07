@@ -3566,6 +3566,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if(settingsBtn) settingsBtn.addEventListener('click', () => { if(window.showToast) window.showToast('Settings clicked'); });
     }
 
+    function ensureStickersViewInApp() {
+        const stickersViewEl = document.getElementById('stickers-view');
+        const appEl = document.getElementById('app');
+        if (stickersViewEl && appEl && stickersViewEl.parentNode !== appEl) {
+            appEl.appendChild(stickersViewEl);
+        }
+        return stickersViewEl;
+    }
+
     const imServiceItems = document.querySelectorAll('.line-service-item');
     imServiceItems.forEach(item => {
         item.addEventListener('click', async () => {
@@ -3582,7 +3591,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 // Open stickers view
-                const stickersViewEl = document.getElementById('stickers-view');
+                const stickersViewEl = ensureStickersViewInApp();
                 if (stickersViewEl && window.openView) {
                     stickersViewEl.style.display = 'flex';
                     window.openView(stickersViewEl);
@@ -3599,7 +3608,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- Stickers Feature Logic ---
-    const stickersView = document.getElementById('stickers-view');
+    const stickersView = ensureStickersViewInApp();
     const stickersBackBtn = document.getElementById('stickers-back-btn');
     const stickersAddBtn = document.getElementById('stickers-add-btn');
     const stickersEditBtn = document.getElementById('stickers-edit-btn');

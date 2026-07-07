@@ -73,8 +73,6 @@
     let autoPageTimer = null;
     let lastWidgetSheetOpenedAt = 0;
     let desktopStateNeedsSave = false;
-    let launcherFallbacksBound = false;
-    let lastLauncherFallback = { app: '', at: 0 };
 
     document.addEventListener('DOMContentLoaded', initHomeDesktopEditor);
 
@@ -92,7 +90,6 @@
         renderDesktop();
         if (shouldSaveNormalizedState) saveDesktopState({ silent: true });
         bindChrome();
-        bindLauncherFallbacks();
 
         window.openHomeWidgetEditor = openHomeWidgetEditor;
         window.openHomeWidgetPanelFromSettings = openHomeWidgetPanelFromSettings;
@@ -446,119 +443,6 @@
         if (!node) return null;
         if (node.classList.contains('app-item')) return node;
         return node.closest?.('.app-item') || null;
-    }
-
-    function bindLauncherFallbacks() {
-        if (launcherFallbacksBound) return;
-        launcherFallbacksBound = true;
-
-        document.addEventListener('pointerup', handleLauncherFallbackEvent, true);
-        document.addEventListener('click', handleLauncherFallbackEvent, true);
-        window.debugHomeLauncherHitTargets = getHomeLauncherHitTargetReport;
-    }
-
-    function handleLauncherFallbackEvent(event) {
-        const app = resolveLauncherAppFromEvent(event);
-        if (!app) return;
-
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation?.();
-
-        const now = Date.now();
-        if (lastLauncherFallback.app === app && now - lastLauncherFallback.at < 350) return;
-        lastLauncherFallback = { app, at: now };
-
-        if (app === 'netflix') {
-            openNetflixFromLauncherFallback();
-            return;
-        }
-        openLovesFromLauncherFallback();
-    }
-
-    function resolveLauncherAppFromEvent(event) {
-        const direct = resolveLauncherAppFromNode(event.target);
-        if (direct) return direct;
-
-        if (!Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return '';
-        const stack = typeof document.elementsFromPoint === 'function'
-            ? document.elementsFromPoint(event.clientX, event.clientY)
-            : [];
-
-        for (const node of stack) {
-            const app = resolveLauncherAppFromNode(node);
-            if (app) return app;
-        }
-        return '';
-    }
-
-    function resolveLauncherAppFromNode(node) {
-        if (!node || typeof node.closest !== 'function') return '';
-        if (node.closest('.empty-slot')) return '';
-        const launcher = node.closest('#app-netflix-btn, #app-loves-btn, #app-icon-7, #app-icon-8');
-        if (!launcher) return '';
-        if (launcher.id === 'app-netflix-btn' || launcher.id === 'app-icon-7' || launcher.closest('#app-netflix-btn')) {
-            return 'netflix';
-        }
-        if (launcher.id === 'app-loves-btn' || launcher.id === 'app-icon-8' || launcher.closest('#app-loves-btn')) {
-            return 'loves';
-        }
-        return '';
-    }
-
-    function openNetflixFromLauncherFallback() {
-        if (window.netflixApp && typeof window.netflixApp.open === 'function') {
-            window.netflixApp.open();
-            return;
-        }
-        forceOpenAppView(document.getElementById('netflix-view'));
-    }
-
-    function openLovesFromLauncherFallback() {
-        if (window.lovesApp && typeof window.lovesApp.open === 'function') {
-            window.lovesApp.open();
-            return;
-        }
-        forceOpenAppView(document.getElementById('loves-view'));
-    }
-
-    function forceOpenAppView(view) {
-        if (!view) return;
-        view.classList.add('active');
-        view.style.display = 'flex';
-        view.removeAttribute('aria-hidden');
-        view.removeAttribute('inert');
-    }
-
-    function getHomeLauncherHitTargetReport() {
-        return ['app-netflix-btn', 'app-icon-7', 'app-loves-btn', 'app-icon-8'].map((id) => {
-            const node = document.getElementById(id);
-            if (!node) return { id, missing: true };
-            const rect = node.getBoundingClientRect();
-            const x = rect.left + rect.width / 2;
-            const y = rect.top + rect.height / 2;
-            const stack = typeof document.elementsFromPoint === 'function'
-                ? document.elementsFromPoint(x, y).slice(0, 8).map((el) => ({
-                    tag: el.tagName,
-                    id: el.id || '',
-                    className: String(el.className || '').slice(0, 120),
-                    ariaHidden: el.getAttribute?.('aria-hidden') || '',
-                    inert: el.hasAttribute?.('inert') || false
-                }))
-                : [];
-            return {
-                id,
-                display: getComputedStyle(node).display,
-                pointerEvents: getComputedStyle(node).pointerEvents,
-                rect: {
-                    left: Math.round(rect.left),
-                    top: Math.round(rect.top),
-                    width: Math.round(rect.width),
-                    height: Math.round(rect.height)
-                },
-                stack
-            };
-        });
     }
 
     function refreshDesktopNodeMetadata() {

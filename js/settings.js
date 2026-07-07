@@ -819,6 +819,7 @@
             const statusCssInput = document.getElementById('theme-status-css-input');
             if (statusCssInput) statusCssInput.value = window.imData?.currentSettingsFriend?.statusCss || '';
 
+            refreshThemePresetUi();
             openView(themeConfigSheet);
         }
 
@@ -1830,14 +1831,22 @@
                     if (confirm(`删除预设“${preset.name}”？`)) {
                         const newPresets = presets.filter(p => p.id !== preset.id);
                         savePresets(type, newPresets);
-                        updatePresetSelect(type, selectEl);
-                        renderThemePresetList(type, listEl, selectEl, cssInputEl);
+                        refreshThemePresetUi();
                         if (window.showToast) window.showToast('预设已删除');
                     }
                 });
 
                 listEl.appendChild(item);
             });
+        }
+
+        function refreshThemePresetUi() {
+            updatePresetSelect('bubble', chatThemeBubbleSelect);
+            updatePresetSelect('chat', chatThemeChatSelect);
+            updatePresetSelect('status', chatThemeStatusSelect);
+            renderThemePresetList('bubble', themeBubblePresetList, chatThemeBubbleSelect, themeBubbleCssInput);
+            renderThemePresetList('chat', themeChatPresetList, chatThemeChatSelect, themeChatCssInput);
+            renderThemePresetList('status', themeStatusPresetList, chatThemeStatusSelect, themeStatusCssInput);
         }
 
         function setupPresetLogic(type, saveBtn, nameInput, selectEl, listEl, cssInputEl) {
@@ -1866,8 +1875,7 @@
                         presets.push({ id: Date.now(), name, css });
                     }
                     savePresets(type, presets);
-                    updatePresetSelect(type, selectEl);
-                    if (listEl) renderThemePresetList(type, listEl, selectEl, cssInputEl);
+                    refreshThemePresetUi();
                     if (nameInput) nameInput.value = '';
                     if (window.showToast) window.showToast(`预设 "${name}" 已保存`);
                 });
@@ -1885,6 +1893,7 @@
         setupPresetLogic('bubble', themeBubbleSaveBtn, themeBubblePresetName, chatThemeBubbleSelect, themeBubblePresetList, themeBubbleCssInput);
         setupPresetLogic('chat', themeChatSaveBtn, themeChatPresetName, chatThemeChatSelect, themeChatPresetList, themeChatCssInput);
         setupPresetLogic('status', themeStatusSaveBtn, themeStatusPresetName, chatThemeStatusSelect, themeStatusPresetList, themeStatusCssInput);
+        refreshThemePresetUi();
         
         // "应用"按钮统一逻辑
         if (chatThemeApplyBtn) {

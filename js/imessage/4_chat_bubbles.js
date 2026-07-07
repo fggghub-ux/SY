@@ -1985,13 +1985,17 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
 
     function ensureFakeLinkDetailOverlay() {
         let overlay = document.getElementById('im-fake-link-detail-overlay');
-        if (overlay) return overlay;
+        const host = document.getElementById('app') || document.body;
+        if (overlay) {
+            if (overlay.parentNode !== host) host.appendChild(overlay);
+            return overlay;
+        }
         overlay = document.createElement('div');
         overlay.id = 'im-fake-link-detail-overlay';
-        overlay.className = 'bottom-sheet-overlay detail-sheet-overlay im-fake-link-detail-overlay';
+        overlay.className = 'bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay im-fake-link-detail-overlay';
         overlay.style.display = 'none';
         overlay.innerHTML = [
-            '<div class="bottom-sheet im-fake-link-detail-sheet">',
+            '<div class="bottom-sheet wb-centered-modal-card im-fake-link-detail-sheet">',
             '  <div class="im-fake-link-browser-bar">',
             '    <button type="button" class="im-fake-link-browser-close" aria-label="关闭"><i class="fas fa-chevron-left"></i></button>',
             '    <div class="im-fake-link-address"></div>',
@@ -2017,7 +2021,7 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
                 closeOverlay();
             }
         });
-        document.body.appendChild(overlay);
+        host.appendChild(overlay);
         return overlay;
     }
 
