@@ -29,6 +29,7 @@
         }
     </script>
     <link rel="stylesheet" href="css/global.css">
+    <link rel="stylesheet" href="css/login.css">
     <link rel="stylesheet" href="css/home.css">
     <link rel="stylesheet" href="css/worldbook.css">
     <link rel="stylesheet" href="css/imessage.css?v=20260706-private-translation-v1">
@@ -84,6 +85,56 @@
         // 兜底：最长 5 秒后强制移除
         setTimeout(window.removeSplashScreen, 5000);
     </script>
+    <div id="u2-login-screen" class="u2-login-screen" aria-hidden="false">
+        <div class="u2-login-shell">
+            <main class="u2-login-panel" aria-labelledby="u2-login-title">
+                <section class="u2-login-brand">
+                    <div class="u2-login-mark" aria-hidden="true">
+                        <span class="u2-login-rabbit">
+                            <span class="u2-login-rabbit-ear u2-login-rabbit-ear-left"></span>
+                            <span class="u2-login-rabbit-ear u2-login-rabbit-ear-right"></span>
+                            <span class="u2-login-rabbit-head"></span>
+                        </span>
+                    </div>
+                    <h1 class="u2-login-title" id="u2-login-title">Sign in to u2phone</h1>
+                    <p class="u2-login-subtitle">登录你的 u2 ID，继续进入专属设备。</p>
+                </section>
+
+                <form class="u2-login-form" id="u2-login-form" novalidate>
+                    <div class="u2-login-fields">
+                        <label class="u2-login-field" id="u2-login-account-field" for="u2-login-account">
+                            <span class="u2-login-label">Account / 账号</span>
+                            <span class="u2-login-input-row">
+                                <input class="u2-login-input" id="u2-login-account" name="account" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="name@example.com">
+                            </span>
+                        </label>
+                        <label class="u2-login-field" id="u2-login-password-field" for="u2-login-password">
+                            <span class="u2-login-label">Password / 密码</span>
+                            <span class="u2-login-input-row">
+                                <input class="u2-login-input" id="u2-login-password" name="password" type="password" autocomplete="current-password" placeholder="Required">
+                                <button class="u2-login-password-toggle" id="u2-login-password-toggle" type="button" aria-label="Show password" aria-pressed="false">
+                                    <i class="fas fa-eye" aria-hidden="true"></i>
+                                </button>
+                            </span>
+                        </label>
+                    </div>
+                    <div class="u2-login-error" id="u2-login-error" role="status" aria-live="polite"></div>
+                    <button class="u2-login-submit" id="u2-login-submit" type="submit">
+                        <span>Continue / 继续</span>
+                        <i class="fas fa-arrow-right" aria-hidden="true"></i>
+                    </button>
+                </form>
+            </main>
+
+            <aside class="u2-login-meta" aria-label="Private access">
+                <i class="fas fa-shield-alt" aria-hidden="true"></i>
+                <span>
+                    <strong>Private Access</strong>
+                    One device, one code / 一机一码
+                </span>
+            </aside>
+        </div>
+    </div>
     <div id="app">
         <!-- Pages Container for Swipe -->
         <div class="pages-container" id="pages-container">
@@ -2400,6 +2451,13 @@
                             </span>
                         </button>
                         <input type="file" id="import-data-file" accept=".json" style="display:none;">
+                        <button type="button" class="data-management-action u2-auth-sign-out-action" id="u2-auth-sign-out-btn">
+                            <span class="data-management-action-icon warning"><i class="fas fa-arrow-right-from-bracket"></i></span>
+                            <span class="data-management-action-copy">
+                                <strong>Sign Out / 退出登录</strong>
+                                <small>只退出启动登录，不删除本地账号和数据</small>
+                            </span>
+                        </button>
                         <button type="button" class="data-management-action danger" id="clear-data-btn">
                             <span class="data-management-action-icon danger"><i class="fas fa-trash-alt"></i></span>
                             <span class="data-management-action-copy">
@@ -2755,66 +2813,110 @@
             </div>
         </div>
 
-        <!-- iMessage Theme Config Bottom Sheet -->
-        <div class="bottom-sheet-overlay detail-sheet-overlay" id="theme-config-sheet" style="z-index: 500;">
-            <div class="bottom-sheet" style="max-height: 85%; height: 80%; display: flex; flex-direction: column; background: #ffffff;">
-                <div class="sheet-handle"></div>
-                <div class="sheet-title">主题美化</div>
-
-                <!-- Tabs -->
-                <div style="display: flex; border-bottom: 1px solid var(--separator-color); margin: 0 16px; padding-bottom: 10px; padding-top: 10px; gap: 10px;">
-                    <div class="theme-tab active" data-target="theme-tab-bubble" style="flex: 1; text-align: center; font-size: 15px; font-weight: 600; color: var(--blue-color); cursor: pointer;">气泡 CSS</div>
-                    <div class="theme-tab" data-target="theme-tab-chat" style="flex: 1; text-align: center; font-size: 15px; font-weight: 600; color: #8e8e93; cursor: pointer;">Chat CSS</div>
-                    <div class="theme-tab" data-target="theme-tab-status" style="flex: 1; text-align: center; font-size: 15px; font-weight: 600; color: #8e8e93; cursor: pointer;">状态栏 CSS</div>
+        <!-- iMessage Theme Config Fullscreen View -->
+        <div class="app-view im-theme-config-view" id="theme-config-sheet" style="z-index: 500;">
+            <header class="im-theme-header">
+                <button class="im-theme-back-btn" id="theme-config-back-btn" type="button" aria-label="返回">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <div class="im-theme-title">
+                    <strong>主题美化</strong>
+                    <span>iMessage CSS</span>
                 </div>
+                <button class="im-theme-apply-btn" id="theme-current-apply-btn" type="button">应用</button>
+            </header>
 
-                <div class="detail-sheet-content" style="padding-bottom: 30px; overflow-y: auto; flex: 1;">
-                    <!-- 气泡 CSS Tab -->
-                    <div id="theme-tab-bubble" class="theme-tab-content active" style="padding: 16px;">
-                        <textarea id="theme-bubble-css-input" class="global-textarea" style="font-family: monospace; font-size: 13px; height: 300px; width: 100%; border: 1px solid #e5e5ea; border-radius: 12px; padding: 12px; box-sizing: border-box;" placeholder="/* 示例：修改自己气泡颜色 */&#10;.user-bubble {&#10;  background: #000;&#10;  color: #fff;&#10;}"></textarea>
-                        
-                        <div style="display: flex; gap: 10px; margin-top: 16px;">
-                            <div class="sheet-action" id="theme-bubble-clear-btn" style="flex: 1; margin: 0; font-size: 15px; padding: 10px; background: #ffebee; color: #ff3b30;">清空</div>
-                            <div class="sheet-action" id="theme-bubble-copy-btn" style="flex: 1; margin: 0; font-size: 15px; padding: 10px; background: #f2f2f7; color: #111;">复制源码</div>
-                        </div>
-                        <div style="display: flex; gap: 10px; margin-top: 10px;">
-                            <input type="text" id="theme-bubble-preset-name" placeholder="输入预设名字" style="flex: 1; padding: 10px; border-radius: 12px; border: 1px solid #e5e5ea; font-size: 14px; outline: none; background: #f7f7f7;">
-                            <div class="sheet-action" id="theme-bubble-save-btn" style="flex: 1; margin: 0; font-size: 15px; padding: 10px; background: #e5e5ea; color: #000;">存为预设</div>
-                        </div>
-                        <div id="theme-bubble-preset-list" class="account-list" style="margin-top: 16px;"></div>
-                    </div>
-
-                    <!-- Chat CSS Tab -->
-                    <div id="theme-tab-chat" class="theme-tab-content" style="display: none; padding: 16px;">
-                        <textarea id="theme-chat-css-input" class="global-textarea" style="font-family: monospace; font-size: 13px; height: 300px; width: 100%; border: 1px solid #e5e5ea; border-radius: 12px; padding: 12px; box-sizing: border-box;" placeholder="/* 输入 Chat 相关界面的 CSS 代码 */"></textarea>
-                        
-                        <div style="display: flex; gap: 10px; margin-top: 16px;">
-                            <div class="sheet-action" id="theme-chat-clear-btn" style="flex: 1; margin: 0; font-size: 15px; padding: 10px; background: #ffebee; color: #ff3b30;">清空</div>
-                            <div class="sheet-action" id="theme-chat-copy-btn" style="flex: 1; margin: 0; font-size: 15px; padding: 10px; background: #f2f2f7; color: #111;">复制源码</div>
-                        </div>
-                        <div style="display: flex; gap: 10px; margin-top: 10px;">
-                            <input type="text" id="theme-chat-preset-name" placeholder="输入预设名字" style="flex: 1; padding: 10px; border-radius: 12px; border: 1px solid #e5e5ea; font-size: 14px; outline: none; background: #f7f7f7;">
-                            <div class="sheet-action" id="theme-chat-save-btn" style="flex: 1; margin: 0; font-size: 15px; padding: 10px; background: #e5e5ea; color: #000;">存为预设</div>
-                        </div>
-                        <div id="theme-chat-preset-list" class="account-list" style="margin-top: 16px;"></div>
-                    </div>
-
-                    <!-- 状态栏 CSS Tab -->
-                    <div id="theme-tab-status" class="theme-tab-content" style="display: none; padding: 16px;">
-                        <textarea id="theme-status-css-input" class="global-textarea" style="font-family: monospace; font-size: 13px; height: 300px; width: 100%; border: 1px solid #e5e5ea; border-radius: 12px; padding: 12px; box-sizing: border-box;" placeholder="/* 输入状态栏相关界面的 CSS 代码 */"></textarea>
-                        
-                        <div style="display: flex; gap: 10px; margin-top: 16px;">
-                            <div class="sheet-action" id="theme-status-clear-btn" style="flex: 1; margin: 0; font-size: 15px; padding: 10px; background: #ffebee; color: #ff3b30;">清空</div>
-                            <div class="sheet-action" id="theme-status-copy-btn" style="flex: 1; margin: 0; font-size: 15px; padding: 10px; background: #f2f2f7; color: #111;">复制源码</div>
-                        </div>
-                        <div style="display: flex; gap: 10px; margin-top: 10px;">
-                            <input type="text" id="theme-status-preset-name" placeholder="输入预设名字" style="flex: 1; padding: 10px; border-radius: 12px; border: 1px solid #e5e5ea; font-size: 14px; outline: none; background: #f7f7f7;">
-                            <div class="sheet-action" id="theme-status-save-btn" style="flex: 1; margin: 0; font-size: 15px; padding: 10px; background: #e5e5ea; color: #000;">存为预设</div>
-                        </div>
-                        <div id="theme-status-preset-list" class="account-list" style="margin-top: 16px;"></div>
-                    </div>
-                </div>
+            <div class="im-theme-tabs" role="tablist" aria-label="主题配置类型">
+                <button class="theme-tab active" data-target="theme-tab-bubble" type="button" role="tab" aria-selected="true">气泡 CSS</button>
+                <button class="theme-tab" data-target="theme-tab-chat" type="button" role="tab" aria-selected="false">Chat CSS</button>
+                <button class="theme-tab" data-target="theme-tab-status" type="button" role="tab" aria-selected="false">状态栏 CSS</button>
             </div>
+
+            <main class="im-theme-content">
+                <!-- 气泡 CSS Tab -->
+                <section id="theme-tab-bubble" class="theme-tab-content active im-theme-panel" data-theme-type="bubble">
+                    <div class="im-theme-layout">
+                        <div class="im-theme-editor-panel">
+                            <div class="im-theme-panel-heading">
+                                <strong>气泡样式</strong>
+                                <span>当前好友</span>
+                            </div>
+                            <textarea id="theme-bubble-css-input" class="global-textarea im-theme-code-input" placeholder="/* 示例：修改自己气泡颜色 */&#10;.user-bubble {&#10;  background: #000;&#10;  color: #fff;&#10;}"></textarea>
+                            <div class="im-theme-actions">
+                                <button class="sheet-action im-theme-danger-action" id="theme-bubble-clear-btn" type="button">清空</button>
+                                <button class="sheet-action im-theme-secondary-action" id="theme-bubble-copy-btn" type="button">复制源码</button>
+                            </div>
+                            <div class="im-theme-save-row">
+                                <input type="text" id="theme-bubble-preset-name" placeholder="输入预设名字">
+                                <button class="sheet-action im-theme-save-action" id="theme-bubble-save-btn" type="button">存为预设</button>
+                            </div>
+                        </div>
+                        <aside class="im-theme-preset-panel">
+                            <div class="im-theme-panel-heading">
+                                <strong>我的预设</strong>
+                                <span>点击填入编辑器</span>
+                            </div>
+                            <div id="theme-bubble-preset-list" class="account-list im-theme-preset-list"></div>
+                        </aside>
+                    </div>
+                </section>
+
+                <!-- Chat CSS Tab -->
+                <section id="theme-tab-chat" class="theme-tab-content im-theme-panel" data-theme-type="chat" hidden>
+                    <div class="im-theme-layout">
+                        <div class="im-theme-editor-panel">
+                            <div class="im-theme-panel-heading">
+                                <strong>聊天页样式</strong>
+                                <span>全局 iMessage</span>
+                            </div>
+                            <textarea id="theme-chat-css-input" class="global-textarea im-theme-code-input" placeholder="/* 输入 Chat 相关界面的 CSS 代码 */"></textarea>
+                            <div class="im-theme-actions">
+                                <button class="sheet-action im-theme-danger-action" id="theme-chat-clear-btn" type="button">清空</button>
+                                <button class="sheet-action im-theme-secondary-action" id="theme-chat-copy-btn" type="button">复制源码</button>
+                            </div>
+                            <div class="im-theme-save-row">
+                                <input type="text" id="theme-chat-preset-name" placeholder="输入预设名字">
+                                <button class="sheet-action im-theme-save-action" id="theme-chat-save-btn" type="button">存为预设</button>
+                            </div>
+                        </div>
+                        <aside class="im-theme-preset-panel">
+                            <div class="im-theme-panel-heading">
+                                <strong>我的预设</strong>
+                                <span>点击填入编辑器</span>
+                            </div>
+                            <div id="theme-chat-preset-list" class="account-list im-theme-preset-list"></div>
+                        </aside>
+                    </div>
+                </section>
+
+                <!-- 状态栏 CSS Tab -->
+                <section id="theme-tab-status" class="theme-tab-content im-theme-panel" data-theme-type="status" hidden>
+                    <div class="im-theme-layout">
+                        <div class="im-theme-editor-panel">
+                            <div class="im-theme-panel-heading">
+                                <strong>状态栏样式</strong>
+                                <span>当前好友</span>
+                            </div>
+                            <textarea id="theme-status-css-input" class="global-textarea im-theme-code-input" placeholder="/* 输入状态栏相关界面的 CSS 代码 */"></textarea>
+                            <div class="im-theme-actions">
+                                <button class="sheet-action im-theme-danger-action" id="theme-status-clear-btn" type="button">清空</button>
+                                <button class="sheet-action im-theme-secondary-action" id="theme-status-copy-btn" type="button">复制源码</button>
+                            </div>
+                            <div class="im-theme-save-row">
+                                <input type="text" id="theme-status-preset-name" placeholder="输入预设名字">
+                                <button class="sheet-action im-theme-save-action" id="theme-status-save-btn" type="button">存为预设</button>
+                            </div>
+                        </div>
+                        <aside class="im-theme-preset-panel">
+                            <div class="im-theme-panel-heading">
+                                <strong>我的预设</strong>
+                                <span>点击填入编辑器</span>
+                            </div>
+                            <div id="theme-status-preset-list" class="account-list im-theme-preset-list"></div>
+                        </aside>
+                    </div>
+                </section>
+            </main>
         </div>
 
         <!-- Font Setting Modal -->
@@ -7280,6 +7382,7 @@
     <script src="storage.js"></script>
     <script src="js/app_state_bridge.js"></script>
     <script src="js/bootstrap_globals.js"></script>
+    <script src="js/login.js"></script>
     <script src="js/mobile_input_compat.js"></script>
     <script src="js/background_activity.js"></script>
     <script src="js/system_notifications.js"></script>

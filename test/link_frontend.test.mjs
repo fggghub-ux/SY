@@ -122,17 +122,24 @@ test('removes the old resolver and real external-opening path', async () => {
 });
 
 test('uses fake_link in chat rendering, safe webpage rendering, menu sizing, and API context', async () => {
-    const [coreSource, aiSource, bubbleSource, linkSource, interfaceSource, cssSource] = await Promise.all([
+    const [coreSource, aiSource, bubbleSource, linkSource, interfaceSource, cssSource, sheetSource] = await Promise.all([
         fs.readFile(new URL('../js/imessage/2_core.js', import.meta.url), 'utf8'),
         fs.readFile(new URL('../js/imessage/4_chat_ai.js', import.meta.url), 'utf8'),
         fs.readFile(new URL('../js/imessage/4_chat_bubbles.js', import.meta.url), 'utf8'),
         fs.readFile(new URL('../js/imessage/4_chat_link.js', import.meta.url), 'utf8'),
         fs.readFile(new URL('../js/imessage/4_chat_interface.js', import.meta.url), 'utf8'),
-        fs.readFile(new URL('../css/imessage.css', import.meta.url), 'utf8')
+        fs.readFile(new URL('../css/imessage.css', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_sheet.js', import.meta.url), 'utf8')
     ]);
     assert.match(linkSource, /type:\s*'fake_link'/);
     assert.match(linkSource, /data-tab="ai"/);
     assert.match(linkSource, /data-tab="manual"/);
+    assert.match(linkSource, /aria-label="发送链接"/);
+    assert.match(linkSource, /aria-label="调用 API 生成网页"/);
+    assert.match(linkSource, /fa-search/);
+    assert.doesNotMatch(linkSource, /fa-wand-magic-sparkles/);
+    assert.match(sheetSource, /class="attachment-more-link-label">链接<\/div>/);
+    assert.doesNotMatch(sheetSource, /class="attachment-more-link-label">假链接<\/div>/);
     assert.match(linkSource, /webPage/);
     assert.match(linkSource, /im-fake-link-char-persona-toggle/);
     assert.match(linkSource, /im-fake-link-user-persona-toggle/);
@@ -180,8 +187,41 @@ test('supports guided regenerate from the iMessage More sheet', async () => {
     assert.match(aiSource, /User 本次重回补充要求/);
     assert.match(aiSource, /\{ previousReply, userRequirement \}/);
 });
+
+test('keeps offline meeting summary third-person and context bubble theme scoping', async () => {
+    const [sheetSource, interfaceSource, settingsSource, cssSource] = await Promise.all([
+        fs.readFile(new URL('../js/imessage/4_chat_sheet.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_interface.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/5_settings.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../css/imessage.css', import.meta.url), 'utf8')
+    ]);
+    const summarySource = sheetSource.slice(
+        sheetSource.indexOf('const requestOfflineMeetingSummary'),
+        sheetSource.indexOf('async function endOfflineMeeting')
+    );
+    const applyFriendCssSource = settingsSource.slice(
+        settingsSource.indexOf('function applyFriendCss'),
+        settingsSource.indexOf('function applyAllSavedCss')
+    );
+
+    assert.doesNotMatch(summarySource, /first-person summary/);
+    assert.doesNotMatch(summarySource, /Char 的第一视角/);
+    assert.match(summarySource, /third-person summary/);
+    assert.match(summarySource, /Char's perspective/);
+    assert.match(summarySource, /saw, heard, said, did, noticed/);
+    assert.match(summarySource, /只描述 Char 看到、听到、说出、做出、注意到或能合理推断/);
+
+    assert.match(interfaceSource, /setAttribute\('data-current-friend-id'/);
+    assert.match(interfaceSource, /msg-context-row-clone/);
+    assert.match(applyFriendCssSource, /data-current-friend-id="\$\{escapeCssAttributeValue\(friend\.id\)\}"/);
+    assert.match(applyFriendCssSource, /scopeThemeCss\(friend\.customCss, prefix\)[\s\S]*scopeThemeCss\(friend\.customCss, contextPrefix\)/);
+    assert.match(applyFriendCssSource, /scopeThemeCss\(friend\.statusCss, prefix\)/);
+    assert.doesNotMatch(applyFriendCssSource, /scopeThemeCss\(friend\.statusCss, contextPrefix\)/);
+    assert.match(cssSource, /#msg-context-bubble-clone \.msg-context-row-clone\s*\{/);
+});
 test('keeps iOS modal, theme preset, stickers, and private-chat safeguards', async () => {
-    const [linkSource, bubbleSource, coreSource, settingsSource, cssSource] = await Promise.all([
+    const [indexSource, linkSource, bubbleSource, coreSource, settingsSource, cssSource] = await Promise.all([
+        fs.readFile(new URL('../index.html', import.meta.url), 'utf8'),
         fs.readFile(new URL('../js/imessage/4_chat_link.js', import.meta.url), 'utf8'),
         fs.readFile(new URL('../js/imessage/4_chat_bubbles.js', import.meta.url), 'utf8'),
         fs.readFile(new URL('../js/imessage/2_core.js', import.meta.url), 'utf8'),
@@ -208,9 +248,23 @@ test('keeps iOS modal, theme preset, stickers, and private-chat safeguards', asy
     assert.match(coreSource, /appEl\.appendChild\(stickersViewEl\)/);
     assert.match(settingsSource, /function refreshThemePresetUi\(\)/);
     assert.ok((settingsSource.match(/refreshThemePresetUi\(\)/g) || []).length >= 4);
+    assert.match(indexSource, /<div class="app-view im-theme-config-view" id="theme-config-sheet"/);
+    assert.doesNotMatch(indexSource, /<div class="bottom-sheet-overlay detail-sheet-overlay" id="theme-config-sheet"/);
+    assert.match(indexSource, /id="theme-current-apply-btn"/);
+    assert.match(settingsSource, /function applyCurrentThemeCss\(\)/);
+    const servicesSource = indexSource.slice(
+        indexSource.indexOf('<div class="line-services-grid">'),
+        indexSource.indexOf('<!-- Groups Section -->')
+    );
+    assert.match(servicesSource, /<span>Stickers<\/span>/);
+    assert.match(servicesSource, /id="imessage-themes-btn"/);
+    assert.match(servicesSource, /<span>Themes<\/span>/);
+    assert.doesNotMatch(servicesSource, /im-theme-config-view|line-service-card|service-card/);
 
     assert.match(cssSource, /\.app-view\.stickers-view,/);
     assert.match(cssSource, /padding-top:\s*0\s*!important/);
+    assert.match(cssSource, /\.im-theme-config-view\s*\{/);
+    assert.match(cssSource, /\.im-theme-layout\s*\{[\s\S]*grid-template-columns/);
     assert.match(cssSource, /\.im-fake-link-composer-overlay\s*\{[\s\S]*z-index:\s*1230/);
     assert.match(cssSource, /\.im-fake-link-detail-overlay\s*\{[\s\S]*justify-content:\s*center/);
     assert.match(cssSource, /\.im-fake-link-detail-sheet\s*\{[\s\S]*border-radius:\s*24px/);

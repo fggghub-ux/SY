@@ -1192,6 +1192,7 @@ function showContextMenu(row, e) {
         const screenEl = document.getElementById('app') || document.body;
         const screenRect = screenEl.getBoundingClientRect();
         const sourceBubbleRect = bubble.getBoundingClientRect();
+        const isUserRow = row.classList.contains('user-row');
         const isCardBubble = bubble.classList.contains('im-card-bubble')
             || !!bubble.querySelector('.chat-link-card, .chat-fake-link-card, .pay-transfer-card, .voice-call-record-card');
         
@@ -1199,6 +1200,20 @@ function showContextMenu(row, e) {
         const bubbleClone = document.getElementById('msg-context-bubble-clone');
         if (bubbleClone) {
             bubbleClone.innerHTML = '';
+            const activeFriend = window.imData.currentActiveFriend;
+            if (activeFriend?.id != null) {
+                bubbleClone.setAttribute('data-current-friend-id', String(activeFriend.id));
+            } else {
+                bubbleClone.removeAttribute('data-current-friend-id');
+            }
+            const clonedRow = document.createElement('div');
+            clonedRow.className = [
+                'chat-row',
+                'msg-context-row-clone',
+                isUserRow ? 'user-row' : 'ai-row',
+                row.classList.contains('has-prev') ? 'has-prev' : '',
+                row.classList.contains('has-next') ? 'has-next' : ''
+            ].filter(Boolean).join(' ');
             const clonedBubble = bubble.cloneNode(true);
             clonedBubble.style.margin = '0';
             if (isCardBubble) {
@@ -1215,7 +1230,8 @@ function showContextMenu(row, e) {
             } else {
                 clonedBubble.style.maxWidth = '100%';
             }
-            bubbleClone.appendChild(clonedBubble);
+            clonedRow.appendChild(clonedBubble);
+            bubbleClone.appendChild(clonedRow);
         }
         
         // Reset more actions
@@ -1240,9 +1256,6 @@ function showContextMenu(row, e) {
                 && !!window.imApp?.isRecallableUserMessage?.(targetMessage);
             recallAction.style.display = canRecall ? 'flex' : 'none';
         }
-        
-        // Determine alignment based on user/ai row
-        const isUserRow = row.classList.contains('user-row');
         
         msgContextOverlay.style.display = 'flex';
         msgContextOverlay.style.opacity = '1';
@@ -1308,7 +1321,10 @@ function closeContextMenu() {
             msgContextOverlay.style.display = 'none';
             // Clean up cloned bubble
             const bubbleClone = document.getElementById('msg-context-bubble-clone');
-            if (bubbleClone) bubbleClone.innerHTML = '';
+            if (bubbleClone) {
+                bubbleClone.innerHTML = '';
+                bubbleClone.removeAttribute('data-current-friend-id');
+            }
         }, 250);
     }
 

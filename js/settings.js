@@ -473,6 +473,21 @@
                 openView(UI.overlays.accountSwitcher);
             });
         }
+
+        const authSignOutBtn = document.getElementById('u2-auth-sign-out-btn');
+        if (authSignOutBtn) {
+            authSignOutBtn.addEventListener('click', () => {
+                if (window.u2Auth && typeof window.u2Auth.logout === 'function') {
+                    closeView(dataManagementSheet);
+                    closeView(UI.views.edit);
+                    closeView(UI.views.settings);
+                    window.u2Auth.logout();
+                    if (typeof window.showToast === 'function') {
+                        window.showToast('Signed out');
+                    }
+                }
+            });
+        }
         
         // Account List Rendering
         function renderAccountList() {
@@ -786,6 +801,8 @@
         const themeConfigBtn = document.getElementById('theme-config-btn');
         const imessageThemesBtn = document.getElementById('imessage-themes-btn');
         const themeConfigSheet = document.getElementById('theme-config-sheet');
+        const themeConfigBackBtn = document.getElementById('theme-config-back-btn');
+        const themeCurrentApplyBtn = document.getElementById('theme-current-apply-btn');
         const desktopThemeConfigSheet = document.getElementById('desktop-theme-config-sheet');
 
         function applySavedTheme() {
@@ -823,6 +840,60 @@
             openView(themeConfigSheet);
         }
 
+        function getActiveThemeType() {
+            const activeTab = document.querySelector('.im-theme-tabs .theme-tab.active');
+            const targetId = activeTab?.getAttribute('data-target') || 'theme-tab-bubble';
+            if (targetId === 'theme-tab-chat') return 'chat';
+            if (targetId === 'theme-tab-status') return 'status';
+            return 'bubble';
+        }
+
+        async function applyCurrentThemeCss() {
+            const activeType = getActiveThemeType();
+
+            if (activeType === 'chat') {
+                const nextChatCss = themeChatCssInput ? themeChatCssInput.value : '';
+                themeState.imessageChatCss = nextChatCss;
+                themeState.imessageChatCssEnabled = !!nextChatCss.trim();
+                window.u2ThemeState = themeState;
+                if (window.imApp && window.imApp.applyGlobalChatCss) {
+                    window.imApp.applyGlobalChatCss(themeState);
+                }
+                saveGlobalData();
+                showToast(nextChatCss.trim() ? 'Chat CSS 已应用' : 'Chat CSS 已清空');
+                return;
+            }
+
+            if (!window.imData || !window.imData.currentSettingsFriend) {
+                showToast('请先选择一个朋友');
+                return;
+            }
+
+            const friend = window.imData.currentSettingsFriend;
+            const isBubble = activeType === 'bubble';
+            const cssInput = isBubble ? themeBubbleCssInput : themeStatusCssInput;
+            const nextCss = cssInput ? cssInput.value : '';
+
+            if (window.imApp && window.imApp.commitScopedFriendChange) {
+                const saved = await window.imApp.commitScopedFriendChange(friend, (targetFriend) => {
+                    if (isBubble) {
+                        targetFriend.customCss = nextCss;
+                        targetFriend.customCssEnabled = !!nextCss.trim();
+                    } else {
+                        targetFriend.statusCss = nextCss;
+                        targetFriend.statusCssEnabled = !!nextCss.trim();
+                    }
+                }, { silent: true, syncSettings: true });
+
+                if (saved) {
+                    if (window.imApp.applyFriendCss) window.imApp.applyFriendCss(window.imData.currentSettingsFriend);
+                    showToast(isBubble ? '气泡 CSS 已应用' : '状态栏 CSS 已应用');
+                } else {
+                    showToast(isBubble ? '应用气泡 CSS 失败' : '应用状态栏 CSS 失败');
+                }
+            }
+        }
+
         if (themeConfigBtn && desktopThemeConfigSheet) {
             themeConfigBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -837,6 +908,18 @@
             });
         }
 
+        if (themeConfigBackBtn && themeConfigSheet) {
+            themeConfigBackBtn.addEventListener('click', () => {
+                closeView(themeConfigSheet);
+            });
+        }
+
+        if (themeCurrentApplyBtn) {
+            themeCurrentApplyBtn.addEventListener('click', () => {
+                applyCurrentThemeCss();
+            });
+        }
+
         // Theme Tabs Logic
         const themeTabs = document.querySelectorAll('.theme-tab');
         const themeTabContents = document.querySelectorAll('.theme-tab-content');
@@ -846,17 +929,16 @@
                 const targetId = tab.getAttribute('data-target');
                 themeTabs.forEach(t => {
                     t.classList.remove('active');
-                    t.style.color = '#8e8e93';
+                    t.setAttribute('aria-selected', 'false');
                 });
                 tab.classList.add('active');
-                tab.style.color = 'var(--blue-color)';
+                tab.setAttribute('aria-selected', 'true');
                 
                 themeTabContents.forEach(content => {
-                    if (content.id === targetId) {
-                        content.style.display = 'block';
-                    } else {
-                        content.style.display = 'none';
-                    }
+                    const isActive = content.id === targetId;
+                    content.classList.toggle('active', isActive);
+                    content.hidden = !isActive;
+                    content.style.display = isActive ? '' : 'none';
                 });
             });
         });

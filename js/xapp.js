@@ -191,7 +191,7 @@
         let touchStartX = 0;
         let touchStartY = 0;
         let isTouching = false;
-        let currentProfile = resolveProfile();
+        let currentProfile = { ...defaultProfile };
         let avatarDraft = currentProfile.avatar || '';
         let bannerDraft = currentProfile.banner || '';
         let tempPostCounter = 0;
@@ -231,6 +231,12 @@
         let currentActionPostId = null;
         let currentComposeSuperId = null;
         let composeImageDraft = '';
+        let xChromeInitialized = false;
+        let xEventsInitialized = false;
+        const xHomeFeedInitialLimit = 20;
+        const xHomeFeedPageSize = 20;
+        let xHomeFeedRenderLimit = xHomeFeedInitialLimit;
+        let xHomeFeedTotalPosts = 0;
 
         function safeText(value, fallback = '') {
             const text = String(value == null ? '' : value).trim();
@@ -822,9 +828,9 @@ X is a global app. Non-User authors may write in the language that naturally fit
             header.dataset.xCentered = 'true';
         }
 
-        function renderTrends() {
+        function renderTrends(state = getXState()) {
             if (!trendList) return;
-            const trends = normalizeTrendList(getXState().xTrends || []).slice(0, maxXTrends);
+            const trends = normalizeTrendList(state.xTrends || []).slice(0, maxXTrends);
             if (trends.length === 0) {
                 trendList.innerHTML = '<div class="x-empty-state">暂无热搜，点击右上角搜索生成。</div>';
                 return;
@@ -845,6 +851,8 @@ X is a global app. Non-User authors may write in the language that naturally fit
         }
 
         function ensureXChrome() {
+            if (xChromeInitialized) return;
+            xChromeInitialized = true;
             const superHeader = document.querySelector('#x-super-tab .x-section-header');
             setupSectionHeader(superHeader, 'Create topic');
             const superCreateBtn = superHeader?.querySelector('.x-header-button[aria-label="Create topic"]');
@@ -906,7 +914,6 @@ X is a global app. Non-User authors may write in the language that naturally fit
             if (dmList) dmList.id = 'x-dm-list';
             clearDefaultHomeFeedContent();
             renderHomeEmptyStates();
-            renderTrends();
         }
 
         function setupPostDetailControls() {
@@ -1372,8 +1379,8 @@ X is a global app. Non-User authors may write in the language that naturally fit
             );
         }
 
-        function resolveProfile() {
-            const xState = getXState();
+        function resolveProfile(state = getXState()) {
+            const xState = state || defaultXState;
             const fallback = getCurrentAccountProfile();
             const source = hasEditedXProfile(xState.xData) ? xState.xData : fallback;
             const name = safeText(source.name, fallback.name || defaultProfile.name);
@@ -1395,6 +1402,15 @@ X is a global app. Non-User authors may write in the language that naturally fit
             if (!node) return;
             const name = safeText(profile.name, 'User');
             node.innerHTML = buildAvatarHtml(profile.avatar, `me:${profile.handle || name}`);
+        }
+
+        function syncCurrentProfile(state = getXState()) {
+            currentProfile = resolveProfile(state);
+            setAvatarNode(document.getElementById('x-compose-author-avatar'), currentProfile);
+            postData.profile.avatar = normalizePersonAvatar(currentProfile.avatar, `me:${currentProfile.handle || currentProfile.name}`);
+            postData.profile.name = currentProfile.name;
+            postData.profile.handle = `${currentProfile.handle} 路 pinned`;
+            return currentProfile;
         }
 
         function buildUnifiedProfileContentHtml({ identity, posts = [], stats = [], actionsHtml = '', isSelf = false }) {
@@ -1432,31 +1448,26 @@ X is a global app. Non-User authors may write in the language that naturally fit
             `;
         }
 
-        function renderProfile() {
-            currentProfile = resolveProfile();
+        function renderProfile(state = getXState()) {
+            const profile = syncCurrentProfile(state);
             const coverEl = document.getElementById('x-profile-cover');
             const profileScroll = document.getElementById('x-profile-scroll');
-            setAvatarNode(document.getElementById('x-compose-author-avatar'), currentProfile);
             if (coverEl) {
-                coverEl.style.backgroundImage = currentProfile.banner
-                    ? `linear-gradient(180deg, rgba(0,0,0,0.08), rgba(0,0,0,0.34)), url("${currentProfile.banner}")`
+                coverEl.style.backgroundImage = profile.banner
+                    ? `linear-gradient(180deg, rgba(0,0,0,0.08), rgba(0,0,0,0.34)), url("${profile.banner}")`
                     : '';
             }
-
-            postData.profile.avatar = normalizePersonAvatar(currentProfile.avatar, `me:${currentProfile.handle || currentProfile.name}`);
-            postData.profile.name = currentProfile.name;
-            postData.profile.handle = `${currentProfile.handle} · pinned`;
 
             if (profileScroll) {
                 const identity = {
                     id: 'me',
                     kind: 'me',
-                    name: currentProfile.name,
-                    handle: currentProfile.handle,
-                    avatar: currentProfile.avatar,
-                    bio: currentProfile.bio
+                    name: profile.name,
+                    handle: profile.handle,
+                    avatar: profile.avatar,
+                    bio: profile.bio
                 };
-                const posts = getIdentityProfilePosts(identity);
+                const posts = getIdentityProfilePosts(identity, state);
                 profileScroll.innerHTML = buildUnifiedProfileContentHtml({
                     identity,
                     posts,
@@ -1513,7 +1524,7 @@ X is a global app. Non-User authors may write in the language that naturally fit
                 updatedAt: new Date().toISOString()
             };
             const previous = getXState();
-            saveXState({
+            const nextState = saveXState({
                 ...previous,
                 xData: {
                     ...previous.xData,
@@ -1522,13 +1533,13 @@ X is a global app. Non-User authors may write in the language that naturally fit
             });
 
             currentProfile = nextProfile;
-            renderProfile();
+            renderProfile(nextState);
             closeEditProfile();
         }
 
-        function renderWorldBookSummary() {
+        function renderWorldBookSummary(state = getXState()) {
             const countEl = document.getElementById('x-worldbook-count');
-            const selected = getXState().boundWorldBookIds || [];
+            const selected = state.boundWorldBookIds || [];
             if (countEl) countEl.textContent = `${selected.length} selected`;
         }
 
@@ -1790,19 +1801,22 @@ X is a global app. Non-User authors may write in the language that naturally fit
             `;
         }
 
-        function renderGeneratedPosts() {
+        function renderGeneratedPosts(state = getXState(), options = {}) {
             const recommendPanel = view.querySelector('.x-feed-panel[data-feed-panel="recommend"]');
             if (!recommendPanel) return;
+            if (options.resetLimit) xHomeFeedRenderLimit = xHomeFeedInitialLimit;
             clearDefaultHomeFeedContent();
             clearHomeEmptyState(recommendPanel);
             recommendPanel.querySelectorAll('.x-generated-feed-card').forEach((card) => card.remove());
-            const posts = (getXState().xGeneratedPosts || [])
+            const rawFeedPosts = (state.xGeneratedPosts || []).filter((post) => !post?.isMoment);
+            xHomeFeedTotalPosts = rawFeedPosts.length;
+            const posts = rawFeedPosts
+                .slice(0, xHomeFeedRenderLimit)
                 .map((post, index) => normalizeGeneratedPost(post, index))
                 .filter(Boolean)
                 .map((post) => ensureCommentDepth(post));
             registerGeneratedPosts(posts);
             posts.slice().reverse().forEach((post) => {
-                if (post.isMoment) return;
                 clearHomeEmptyState(recommendPanel);
                 const card = document.createElement('article');
                 card.className = 'x-feed-card x-generated-feed-card';
@@ -1811,9 +1825,15 @@ X is a global app. Non-User authors may write in the language that naturally fit
                 card.innerHTML = buildFeedCardHtml(post);
                 bindPostCard(card);
                 recommendPanel.prepend(card);
-                updatePostCountNodes(post.id, getPostThread(post.id));
+                updatePostCountNodes(post.id, getPostThread(post.id, state));
             });
             renderHomeEmptyStates();
+        }
+
+        function loadMoreHomeFeedPosts() {
+            if (xHomeFeedRenderLimit >= xHomeFeedTotalPosts) return;
+            xHomeFeedRenderLimit = Math.min(xHomeFeedRenderLimit + xHomeFeedPageSize, xHomeFeedTotalPosts);
+            renderGeneratedPosts(getXState());
         }
 
         function renderTopicFeed(topic) {
@@ -1935,11 +1955,11 @@ ${worldbook || 'None'}`;
             return normalized;
         }
 
-        function renderSuperFollowBar() {
+        function renderSuperFollowBar(state = getXState()) {
             const listEl = document.getElementById('x-super-follow-list');
             const countEl = document.getElementById('x-super-follow-count');
             if (!listEl) return;
-            const topics = (getXState().xTopics || []).filter(Boolean);
+            const topics = (state.xTopics || []).filter(Boolean);
             const homeCard = view.querySelector('.x-super-home-card');
             const contentTabs = document.getElementById('x-super-profile-tabs');
             const feedPanels = Array.from(view.querySelectorAll('.x-super-feed[data-super-panel]'));
@@ -1984,7 +2004,7 @@ ${worldbook || 'None'}`;
             });
             
             const activeTopic = topics.find((topic) => String(topic.id || topic.name) === String(currentActiveTopicId)) || topics[0];
-            updateSuperHomeCard(activeTopic);
+            updateSuperHomeCard(activeTopic, state);
         }
         
         let currentActiveTopicId = null;
@@ -2113,7 +2133,7 @@ ${worldbook || 'None'}
             }
         }
 
-        function renderSuperTopicFeed(topic) {
+        function renderSuperTopicFeed(topic, state = getXState()) {
             if (!topic) return;
             const topicName = topic.name || topic.title || '';
             const featuredPanel = view.querySelector('.x-super-feed[data-super-panel="featured"]');
@@ -2121,7 +2141,7 @@ ${worldbook || 'None'}
             const photosPanel = view.querySelector('.x-super-feed[data-super-panel="photos"]');
             const momentsPanel = view.querySelector('.x-super-feed[data-super-panel="moments"]');
             
-            const posts = (getXState().xGeneratedPosts || [])
+            const posts = (state.xGeneratedPosts || [])
                 .filter((post) => {
                     const topicId = String(topic.id || topic.name);
                     if (post.superTopicId) return String(post.superTopicId) === topicId;
@@ -2229,7 +2249,7 @@ ${worldbook || 'None'}
                 // Bind all cloned cards
                 const addedCards = view.querySelectorAll(`.x-feed-card[data-post-id="${post.id}"]`);
                 addedCards.forEach(c => bindPostCard(c));
-                updatePostCountNodes(post.id, getPostThread(post.id));
+                updatePostCountNodes(post.id, getPostThread(post.id, state));
             });
 
             // Handle photos panel as a grid
@@ -2273,7 +2293,7 @@ ${worldbook || 'None'}
             }
         }
 
-        function updateSuperHomeCard(topic) {
+        function updateSuperHomeCard(topic, state = getXState()) {
             currentActiveTopicId = topic.id || topic.name;
             view.querySelectorAll('.x-super-follow-item[data-topic-id]').forEach((item) => {
                 item.classList.toggle('active', String(item.dataset.topicId) === String(currentActiveTopicId));
@@ -2332,7 +2352,7 @@ ${worldbook || 'None'}
                     signBtn.style.cursor = 'pointer';
                 }
             }
-            renderSuperTopicFeed(topic);
+            renderSuperTopicFeed(topic, state);
         }
 
         function openSuperTopicById(topicId) {
@@ -2869,9 +2889,9 @@ ${worldbook || 'None'}
             };
         }
 
-        function getPostThread(postId) {
+        function getPostThread(postId, state = getXState()) {
             const base = getBaseThread(postId);
-            const saved = getXState().xPostThreads?.[postId];
+            const saved = state.xPostThreads?.[postId];
             if (!saved || typeof saved !== 'object') return base;
             const useSavedMetrics = Number(saved.frontendMetricVersion) === 1;
             return {
@@ -3377,10 +3397,10 @@ User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-leve
             if (typeof window.showToast === 'function') window.showToast('已添加到 X 私信');
         }
 
-        function renderDirectMessages() {
+        function renderDirectMessages(state = getXState()) {
             if (!dmList) dmList = document.getElementById('x-dm-list') || document.querySelector('#x-messages-tab .x-message-list');
             if (!dmList) return;
-            const messages = (getXState().xDirectMessages || [])
+            const messages = (state.xDirectMessages || [])
                 .map((item) => normalizeDmChar(item, item?.origin || 'manual'))
                 .sort((a, b) => {
                     const aLast = a.messages[a.messages.length - 1]?.createdAt || a.addedAt || 0;
@@ -3574,8 +3594,7 @@ User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-leve
             `;
         }
 
-        function getIdentityProfilePosts(identity) {
-            const state = getXState();
+        function getIdentityProfilePosts(identity, state = getXState()) {
             const posts = [];
             if (identity.kind === 'char') {
                 const item = getDirectMessageById(identity.id);
@@ -4863,10 +4882,35 @@ ${worldbook || 'None'}`;
             indicator.style.width = `${itemRect.width}px`;
         }
 
-        function switchTab(index) {
+        function renderVisibleXTab(index = currentIndex, state = getXState(), options = {}) {
+            syncCurrentProfile(state);
+            const target = navItems[index]?.getAttribute('data-target');
+            if (target === 'x-home-tab') {
+                renderGeneratedPosts(state, { resetLimit: !!options.resetHomeFeed });
+                return;
+            }
+            if (target === 'x-super-tab') {
+                renderSuperFollowBar(state);
+                return;
+            }
+            if (target === 'x-discover-tab') {
+                renderTrends(state);
+                return;
+            }
+            if (target === 'x-messages-tab') {
+                renderDirectMessages(state);
+                return;
+            }
+            if (target === 'x-me-tab') {
+                renderProfile(state);
+            }
+        }
+
+        function switchTab(index, options = {}) {
             if (index < 0 || index >= navItems.length) return;
             currentIndex = index;
             view.scrollTop = 0;
+            const state = options.state || getXState();
 
             navItems.forEach((item, itemIndex) => {
                 item.classList.toggle('active', itemIndex === index);
@@ -4878,9 +4922,7 @@ ${worldbook || 'None'}`;
             });
 
             updateIndicator(navItems[index]);
-            if (navItems[index]?.getAttribute('data-target') === 'x-super-tab') renderSuperFollowBar();
-            if (navItems[index]?.getAttribute('data-target') === 'x-discover-tab') renderTrends();
-            if (navItems[index]?.getAttribute('data-target') === 'x-messages-tab') renderDirectMessages();
+            renderVisibleXTab(index, state, options);
             closePostDetail();
         }
 
@@ -4980,16 +5022,12 @@ ${worldbook || 'None'}`;
             if (event) event.stopPropagation();
             if (window.isJiggleMode) return;
             view.scrollTop = 0;
-            saveXState(getXState());
-            ensureXChrome();
-            renderProfile();
-            renderWorldBookSummary();
-            renderSuperFollowBar();
-            renderGeneratedPosts();
-            renderTrends();
-            renderDirectMessages();
             view.classList.add('active');
-            requestAnimationFrame(() => switchTab(currentIndex));
+            ensureXEventBindings();
+            xHomeFeedRenderLimit = xHomeFeedInitialLimit;
+            const state = getXState();
+            syncCurrentProfile(state);
+            requestAnimationFrame(() => switchTab(currentIndex, { state, resetHomeFeed: true }));
         }
 
         function closeXApp() {
@@ -5088,10 +5126,14 @@ ${worldbook || 'None'}`;
             });
         }
 
-        ensureXChrome();
-
         appButton.addEventListener('click', openXApp);
-        closeButtons.forEach((button) => button.addEventListener('click', closeXApp));
+
+        function ensureXEventBindings() {
+            if (xEventsInitialized) return;
+            xEventsInitialized = true;
+            ensureXChrome();
+
+            closeButtons.forEach((button) => button.addEventListener('click', closeXApp));
         navItems.forEach((item, index) => item.addEventListener('click', () => switchTab(index)));
 
         view.querySelectorAll('.x-feed-card[data-post-id]').forEach(bindPostCard);
@@ -5529,6 +5571,9 @@ ${worldbook || 'None'}`;
         view.querySelectorAll('.x-scroll-area, .x-detail-scroll').forEach(area => {
             area.addEventListener('scroll', () => {
                 if (area.scrollTop + area.clientHeight >= area.scrollHeight - 160) {
+                    if (area.closest('#x-home-tab')) {
+                        loadMoreHomeFeedPosts();
+                    }
                     const hiddens = area.querySelectorAll('.x-hidden-page-2');
                     if (hiddens.length > 0) {
                         hiddens.forEach(el => {
@@ -5540,12 +5585,6 @@ ${worldbook || 'None'}`;
             }, { passive: true });
         });
 
-        renderProfile();
-        renderWorldBookSummary();
-        renderSuperFollowBar();
-        renderGeneratedPosts();
-        renderTrends();
-        renderDirectMessages();
-        requestAnimationFrame(() => switchTab(0));
+        }
     });
 })();

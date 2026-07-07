@@ -319,7 +319,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function buildManualFakeLinkWebPage({ siteName, title, summary, bodyText, displayUrl, theme = 'generic' } = {}) {
-        const safeSite = cleanText(siteName, 80) || 'Fake Web';
+        const safeSite = cleanText(siteName, 80) || 'Web';
         const safeTitle = cleanText(title, 180) || safeSite;
         const safeSummary = cleanText(summary, 800) || cleanText(bodyText, 160);
         const safeDisplayUrl = cleanText(displayUrl, 180);
@@ -334,7 +334,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .slice(0, 3);
         const tagHtml = tags.length
             ? tags.map(tag => '<span>#' + escapeHtml(tag) + '</span>').join('')
-            : '<span>#站内网页</span><span>#假链接预览</span>';
+            : '<span>#站内网页</span><span>#链接预览</span>';
         const html = [
             '<article class="u2-fake-generic-page">',
             '  <header class="u2-fake-generic-hero">',
@@ -527,10 +527,10 @@ document.addEventListener('DOMContentLoaded', () => {
         overlay.className = 'im-fake-link-composer-overlay';
         overlay.innerHTML = [
             '<div class="im-fake-link-composer-backdrop"></div>',
-            '<section class="im-fake-link-composer-card" role="dialog" aria-modal="true" aria-label="发送假链接">',
+            '<section class="im-fake-link-composer-card" role="dialog" aria-modal="true" aria-label="发送链接">',
             '  <header class="im-fake-link-composer-header">',
             '    <button type="button" class="im-fake-link-composer-close" aria-label="关闭"><i class="fas fa-times"></i></button>',
-            '    <strong>发送假链接</strong>',
+            '    <strong>发送链接</strong>',
             '    <span></span>',
             '  </header>',
             '  <div class="im-fake-link-composer-tabs" role="tablist">',
@@ -545,7 +545,7 @@ document.addEventListener('DOMContentLoaded', () => {
             '        <label class="im-fake-link-context-toggle"><input class="im-fake-link-char-persona-toggle" type="checkbox"><span>挂载 char 人设</span></label>',
             '        <label class="im-fake-link-context-toggle"><input class="im-fake-link-user-persona-toggle" type="checkbox"><span>挂载 user 人设</span></label>',
             '      </div>',
-            '      <div class="im-fake-link-generation-row"><button type="button" class="im-fake-link-generate-btn"><i class="fas fa-wand-magic-sparkles"></i><span>AI 生成网页</span></button><span class="im-fake-link-status">AI 生成只需域名和提示词</span></div>',
+            '      <div class="im-fake-link-generation-row"><button type="button" class="im-fake-link-generate-btn" aria-label="调用 API 生成网页" title="调用 API 生成网页"><i class="fas fa-search"></i></button><span class="im-fake-link-status">输入域名和提示词后，点搜索调用 API</span></div>',
             '    </div>',
             '    <div class="im-fake-link-panel" data-panel="manual" hidden>',
             '      <label class="im-fake-link-field"><span>域名 / 地址</span><input class="im-fake-link-manual-domain-input" type="text" inputmode="url" autocomplete="off" placeholder="example.com/page"></label>',
@@ -616,6 +616,13 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         overlay._imFakeLinkState = state;
 
+        function setGenerateButtonLoading(isLoading) {
+            if (!generateButton) return;
+            const icon = generateButton.querySelector('i');
+            if (icon) icon.className = isLoading ? 'fas fa-spinner fa-spin' : 'fas fa-search';
+            generateButton.setAttribute('aria-busy', String(!!isLoading));
+        }
+
         function setStatus(message, tone = 'idle') {
             if (!statusText) return;
             statusText.textContent = message || '';
@@ -629,7 +636,7 @@ document.addEventListener('DOMContentLoaded', () => {
         function buildDataFromManual(normalized) {
             const displayUrl = normalized?.displayUrl || cleanText(manualDomainInput.value, 180);
             const domain = normalized?.domain || '';
-            const siteName = cleanText(siteInput.value, 80) || domain || displayUrl || 'Fake Web';
+            const siteName = cleanText(siteInput.value, 80) || domain || displayUrl || 'Web';
             const title = cleanText(titleInput.value, 180) || siteName;
             const summary = cleanText(summaryInput.value, 800);
             const bodyText = cleanText(bodyInput.value, 50000);
@@ -705,7 +712,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!normalized) {
                 renderMiniPreview(null);
                 if (domainInput.value.trim()) setStatus('请输入有效域名或 http/https 地址', 'error');
-                else setStatus(state.activeTab === 'ai' ? 'AI 生成只需域名和提示词' : DEFAULT_FAKE_LINK_STATUS, 'idle');
+                else setStatus(state.activeTab === 'ai' ? '输入域名和提示词后，点搜索调用 API' : DEFAULT_FAKE_LINK_STATUS, 'idle');
                 return;
             }
             previewSite.textContent = data.siteName;
@@ -714,7 +721,7 @@ document.addEventListener('DOMContentLoaded', () => {
             previewUrl.textContent = data.displayUrl;
             renderMiniPreview(data.webPage);
             if (state.activeTab === 'ai') {
-                setStatus(data.webPage ? 'AI 网页已生成，可以发送或重新生成' : '填写提示词后点击 AI 生成网页', data.webPage ? 'ready' : 'idle');
+                setStatus(data.webPage ? 'AI 网页已生成，可以发送或重新生成' : '填写提示词后点击搜索生成网页', data.webPage ? 'ready' : 'idle');
             } else {
                 setStatus('手动网页预览已就绪，可以发送', 'ready');
             }
@@ -759,7 +766,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state.generating = true;
             state.generatedData = null;
             generateButton.disabled = true;
-            generateButton.querySelector('span').textContent = '生成中…';
+            setGenerateButtonLoading(true);
             setStatus('正在让 AI 生成仿真网页…', 'loading');
             renderPreview();
             try {
@@ -799,7 +806,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } finally {
                 state.generating = false;
                 generateButton.disabled = false;
-                generateButton.querySelector('span').textContent = 'AI 生成网页';
+                setGenerateButtonLoading(false);
             }
         }
 
@@ -815,14 +822,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             if (state.activeTab === 'ai' && (!data.webPage || !data.webPage.html)) {
-                setStatus('请先点击 AI 生成网页', 'error');
+                setStatus('请先点击搜索生成网页', 'error');
                 focusFakeLinkControl(generateButton);
                 return;
             }
 
             const friend = window.imData.currentActiveFriend;
             if (!friend || (friend.type === 'group' && Number(friend.leftGroupAt) > 0)) {
-                if (window.showToast) window.showToast('当前聊天无法发送假链接');
+                if (window.showToast) window.showToast('当前聊天无法发送链接');
                 return;
             }
 
@@ -845,7 +852,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? await window.imApp.appendFriendMessage(friend.id, msgObj, { silent: true })
                 : false;
             if (!saved) {
-                if (window.showToast) window.showToast('假链接消息保存失败');
+                if (window.showToast) window.showToast('链接消息保存失败');
                 state.sending = false;
                 sendButton.disabled = false;
                 sendButton.textContent = '发送';
@@ -905,7 +912,7 @@ document.addEventListener('DOMContentLoaded', () => {
             sendButton.disabled = false;
             sendButton.textContent = '发送';
             generateButton.disabled = false;
-            generateButton.querySelector('span').textContent = 'AI 生成网页';
+            setGenerateButtonLoading(false);
             setActiveTab('ai');
             overlay.style.display = 'flex';
             void overlay.offsetWidth;

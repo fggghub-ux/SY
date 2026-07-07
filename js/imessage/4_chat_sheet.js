@@ -201,7 +201,7 @@ function createAttachmentSheet(page) {
                                 <div class="attachment-more-link-icon">
                                     <i class="fas fa-link"></i>
                                 </div>
-                                <div class="attachment-more-link-label">假链接</div>
+                                <div class="attachment-more-link-label">链接</div>
                             </div>
                             <div class="attachment-more-voice-entry">
                                 <div class="attachment-more-voice-icon">
@@ -3318,13 +3318,11 @@ function createAttachmentSheet(page) {
                     messages: [
                         {
                             role: 'system',
-                            content: identityContext.isGroup
-                                ? `Write a concise third-person summary of one completed face-to-face group meeting involving ${charName}. Do not roleplay a new scene. Output exactly two sections in Chinese: first line starts with 标题：, then 见面内容： followed by the summary. Never output any date, time, timestamp, or time-related heading.`
-                                : `You are ${charName}. Write a concise first-person summary of one completed face-to-face meeting. Do not roleplay a new scene. Output exactly two sections in Chinese: first line starts with 标题：, then 见面内容： followed by the summary. Never output any date, time, timestamp, or time-related heading.`
+                            content: `Write a concise third-person summary of one completed face-to-face ${identityContext.isGroup ? 'group meeting' : 'meeting'} involving ${charName}. Do not roleplay a new scene. The summary must be limited to Char's perspective: only describe what Char saw, heard, said, did, noticed, or could reasonably infer. Do not use first-person "I" for Char. Do not enter User's or other people's private thoughts. Output exactly two sections in Chinese: first line starts with 标题：, then 见面内容： followed by the summary. Never output any date, time, timestamp, or time-related heading.`
                         },
                         {
                             role: 'user',
-                            content: `${identityContext.isGroup ? '请以第三人称客观总结以下群体线下见面的所有楼层。' : '请以 Char 的第一视角总结以下线下见面的所有楼层。'}只生成标题和见面内容，不要生成日期或时间。\n\n${transcript}`
+                            content: `请以第三人称、Char 限定视角总结以下${identityContext.isGroup ? '群体线下见面' : '线下见面'}的所有楼层。只描述 Char 看到、听到、说出、做出、注意到或能合理推断的事情；不要写 Char 的第一人称“我”，不要进入 User 或其他人的内心。只生成标题和见面内容，不要生成日期或时间。\n\n${transcript}`
                         }
                     ]
                 })
@@ -5106,7 +5104,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                 if (window.imChat.openFakeLinkComposer) {
                     window.imChat.openFakeLinkComposer();
                 } else if (window.showToast) {
-                    window.showToast('假链接功能加载失败');
+                    window.showToast('链接功能加载失败');
                 }
             });
         }

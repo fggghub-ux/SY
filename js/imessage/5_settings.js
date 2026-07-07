@@ -3748,6 +3748,20 @@ document.addEventListener('DOMContentLoaded', () => {
         window.imData.currentSettingsFriend = friend;
     }
 
+    function escapeCssAttributeValue(value) {
+        return String(value ?? '')
+            .replace(/\\/g, '\\\\')
+            .replace(/"/g, '\\"')
+            .replace(/\r/g, '\\d ')
+            .replace(/\n/g, '\\a ');
+    }
+
+    function scopeThemeCss(css, scope) {
+        return window.imApp.scopeUserCss
+            ? window.imApp.scopeUserCss(css, scope)
+            : css.replace(/([^\r\n,{}]+)(,(?=[^}]*{)|\s*{)/ig, `${scope} ` + '$1$2');
+    }
+
     function applyFriendCss(friend) {
         let styleTag = document.getElementById(`custom-style-${friend.id}`);
         if (!styleTag) {
@@ -3761,18 +3775,17 @@ document.addEventListener('DOMContentLoaded', () => {
         // 气泡 CSS
         if (friend.customCssEnabled && friend.customCss) {
             const prefix = `#chat-interface-${friend.id}`;
-            combinedCss += window.imApp.scopeUserCss
-                ? window.imApp.scopeUserCss(friend.customCss, prefix)
-                : friend.customCss.replace(/([^\r\n,{}]+)(,(?=[^}]*{)|\s*{)/ig, `${prefix} ` + '$1$2');
+            const contextPrefix = `#msg-context-bubble-clone[data-current-friend-id="${escapeCssAttributeValue(friend.id)}"]`;
+            combinedCss += scopeThemeCss(friend.customCss, prefix);
+            combinedCss += '\n';
+            combinedCss += scopeThemeCss(friend.customCss, contextPrefix);
             combinedCss += '\n';
         }
         
         // Status CSS
         if (friend.statusCssEnabled && friend.statusCss) {
             const prefix = `#chat-interface-${friend.id}`;
-            combinedCss += window.imApp.scopeUserCss
-                ? window.imApp.scopeUserCss(friend.statusCss, prefix)
-                : friend.statusCss.replace(/([^\r\n,{}]+)(,(?=[^}]*{)|\s*{)/ig, `${prefix} ` + '$1$2');
+            combinedCss += scopeThemeCss(friend.statusCss, prefix);
             combinedCss += '\n';
         }
 
