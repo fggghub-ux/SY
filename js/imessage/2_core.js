@@ -459,6 +459,7 @@ window.imApp.normalizeFriendData = function(friend) {
     normalized.unreadCount = Math.max(0, Number(normalized.unreadCount) || 0);
     normalized.showTimestamp = !!normalized.showTimestamp;
     normalized.timeAware = normalized.timeAware !== false;
+    normalized.allowRoleRecall = normalized.allowRoleRecall !== false;
     normalized.dynamicActionNarrationEnabled = !!normalized.dynamicActionNarrationEnabled;
     normalized.timestampPosition = normalized.timestampPosition === 'outside' ? 'outside' : 'inside';
     normalized.boundBooks = Array.isArray(normalized.boundBooks) ? normalized.boundBooks : [];

@@ -3342,6 +3342,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const chatAvatarToggle = document.getElementById('chat-avatar-toggle');
         const chatLanguageSelect = document.getElementById('chat-language-select');
         const chatTimeAwareToggle = document.getElementById('chat-time-aware-toggle');
+        const chatRoleRecallToggle = document.getElementById('chat-role-recall-toggle');
         const chatMinimaxEnabledToggle = document.getElementById('chat-minimax-enabled-toggle');
         const chatMinimaxBody = document.getElementById('chat-minimax-settings-body');
         const chatMinimaxVoiceInput = document.getElementById('chat-minimax-voice-id-input');
@@ -3357,6 +3358,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (chatTimeAwareToggle) {
             chatTimeAwareToggle.checked = friend.timeAware !== false;
+        }
+
+        if (chatRoleRecallToggle) {
+            chatRoleRecallToggle.checked = friend.allowRoleRecall !== false;
         }
 
         const minimaxVoice = friend.minimaxVoice && typeof friend.minimaxVoice === 'object' ? friend.minimaxVoice : {};
@@ -3609,6 +3614,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!saved) {
                     e.target.checked = previousValue;
                     showToast('时间感知设置保存失败');
+                }
+            }
+        });
+    }
+
+    const chatRoleRecallToggle = document.getElementById('chat-role-recall-toggle');
+    if (chatRoleRecallToggle && chatRoleRecallToggle.dataset.bound !== 'true') {
+        chatRoleRecallToggle.dataset.bound = 'true';
+        chatRoleRecallToggle.addEventListener('change', async (e) => {
+            if (window.imData.currentSettingsFriend) {
+                const previousValue = window.imData.currentSettingsFriend.allowRoleRecall !== false;
+                const nextValue = e.target.checked;
+
+                const saved = await commitSettingsFriendChange((targetFriend) => {
+                    targetFriend.allowRoleRecall = nextValue;
+                }, { silent: true });
+
+                if (!saved) {
+                    e.target.checked = previousValue;
+                    showToast('角色撤回设置保存失败');
                 }
             }
         });

@@ -1896,6 +1896,10 @@ ${commonMemorySections || 'None'}${dynamicActionNarrationRequirement}`;
 - 回复时自然感知：我是谁？我的人设底色是什么？我目前和 User 的关系处于什么阶段？User 这些话背后的真实情绪和潜台词是什么？这些话是否让我想起了某些共同记忆或私人记忆？
 - 【User 未回复也必须继续】：如果本轮没有 User 新发言，或触发来源是 AI继续/空输入/自动续写/角色主动说话，你仍然必须以角色身份主动生成回复；可以承接上一轮、补充没说完的话、分享身边状态、回应沉默、表达等待后的反应或开启符合关系的新话题。不要说“用户没有输入”，不要等待 User，不要输出空内容。`;
 
+            const singleChatRoleRecallPrompt = friend.allowRoleRecall !== false
+                ? `\n5d. 【真人撤回行为】：你可以像真人聊天一样偶尔手滑打错字、叫错名字、把话发错，或在冲动表达、暴露真心、说得太重、越过关系边界后突然反悔撤回。要模拟“先发出去再撤回”，必须先输出一条普通 text 气泡，紧接着输出 recall 对象，并且 recall.text 必须与上一条被撤回气泡的 text 完全一致。打错字后可以自然补发正确内容；反悔后可以沉默、装作无事发生、含糊带过或换一句更克制的话，不必主动说明自己为何撤回。格式示例：{"type":"text","text":"我其实一直很想你","translation":"","quote":""},{"type":"recall","text":"我其实一直很想你"},{"type":"text","text":"没什么，你早点睡","translation":"","quote":""}。撤回只能偶尔发生，必须由当前情绪、人设和关系推动，禁止每轮固定撤回或为了展示功能而撤回。`
+                : '';
+
             systemPrompt = `${systemDepthWorldBookContext ? `System Depth Rules (Highest Priority):\n${systemDepthWorldBookContext}\n\n` : ''}${beforeRoleWorldBookContext ? `Before Role Rules:\n${beforeRoleWorldBookContext}\n\n` : ''}You are playing the role of ${friend.realName || friend.nickname}. 
 【核心设定/Core Persona】：${friend.persona || 'No specific persona'}。
 You are talking to ${currentUserState.name || 'User'}, whose persona is: ${effectiveUserPersona || 'A normal user'}。
@@ -1910,8 +1914,7 @@ Reply naturally as your character in a chat app.
 5. 普通文本对象格式必须为 {"type":"text","text":"气泡内容","translation":"该条气泡的中文翻译或空字符串","quote":"被引用内容或空字符串"}。
 5a. 语音对象格式可以为 {"type":"voice","text":"语音内容","translation":"该条语音的中文翻译或空字符串","quote":"被引用内容或空字符串"}。
 5b. 表情包对象格式可以为 {"type":"sticker","category":"分类名","name":"表情包名"}；只能使用 Available Stickers 中列出的已绑定分类和名称。
-5c. 图片对象格式可以为 {"type":"image","description":"图片内容文字"}；图片会使用系统默认图展示，description 必须具体描述这张图的内容。
-5d. 【真人撤回行为】：你可以像真人聊天一样偶尔手滑打错字、叫错名字、把话发错，或在冲动表达、暴露真心、说得太重、越过关系边界后突然反悔撤回。要模拟“先发出去再撤回”，必须先输出一条普通 text 气泡，紧接着输出 recall 对象，并且 recall.text 必须与上一条被撤回气泡的 text 完全一致。打错字后可以自然补发正确内容；反悔后可以沉默、装作无事发生、含糊带过或换一句更克制的话，不必主动说明自己为何撤回。格式示例：{"type":"text","text":"我其实一直很想你","translation":"","quote":""},{"type":"recall","text":"我其实一直很想你"},{"type":"text","text":"没什么，你早点睡","translation":"","quote":""}。撤回只能偶尔发生，必须由当前情绪、人设和关系推动，禁止每轮固定撤回或为了展示功能而撤回。
+5c. 图片对象格式可以为 {"type":"image","description":"图片内容文字"}；图片会使用系统默认图展示，description 必须具体描述这张图的内容。${singleChatRoleRecallPrompt}
 6. 支付对象格式必须为 {"type":"payment","paymentAction":"receive|reject|transfer|pay_for_friend","amount":88.88,"description":"原因或商品名"}。
 7. 当 paymentAction 为 receive 时，表示收下转账；为 reject 时退回转账；为 transfer 时主动转账；如果用户发来了【[代付请求]】卡片，且你愿意帮他付款，必须使用 "pay_for_friend" 并把 amount 设为代付总价，description 设为商品名称。paymentAction 也可以是 "family_card" (给亲属卡) 或 "family_card_increase" (亲属卡提额)。
 7. translation 只能翻译当前这一条 text；如果 text 不是中文，translation 必须填写自然中文翻译；如果 text 本身是中文，translation 必须是空字符串。

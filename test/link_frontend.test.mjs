@@ -278,18 +278,21 @@ test('keeps iOS modal, theme preset, stickers, and private-chat safeguards', asy
     assert.match(cssSource, /\.group-private-chat-detail-original,\s*\n\.group-private-chat-detail-translation\s*\{[\s\S]*hyphens:\s*auto/);
 });
 
-test('keeps group time awareness, Chinese generated thoughts, member removal, and clear-context safeguards', async () => {
-    const [indexSource, groupsSource, aiSource, interfaceSource, statusSource, coreSource] = await Promise.all([
+test('keeps group time awareness, role recall toggle, Chinese generated thoughts, member removal, and clear-context safeguards', async () => {
+    const [indexSource, groupsSource, aiSource, interfaceSource, statusSource, coreSource, settingsSource] = await Promise.all([
         fs.readFile(new URL('../index.html', import.meta.url), 'utf8'),
         fs.readFile(new URL('../js/imessage/3_groups.js', import.meta.url), 'utf8'),
         fs.readFile(new URL('../js/imessage/4_chat_ai.js', import.meta.url), 'utf8'),
         fs.readFile(new URL('../js/imessage/4_chat_interface.js', import.meta.url), 'utf8'),
         fs.readFile(new URL('../js/imessage/4_chat_status.js', import.meta.url), 'utf8'),
-        fs.readFile(new URL('../js/imessage/2_core.js', import.meta.url), 'utf8')
+        fs.readFile(new URL('../js/imessage/2_core.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/5_settings.js', import.meta.url), 'utf8')
     ]);
 
     assert.match(indexSource, /id="group-time-aware-toggle"/);
     assert.match(indexSource, />时间感知</);
+    assert.match(indexSource, /id="chat-role-recall-toggle"/);
+    assert.match(indexSource, />允许角色撤回</);
     assert.match(groupsSource, /groupTimeAwareToggle/);
     assert.match(groupsSource, /targetGroup\.timeAware\s*=\s*timeAware/);
     assert.match(groupsSource, /gmm-kick-btn/);
@@ -304,6 +307,9 @@ test('keeps group time awareness, Chinese generated thoughts, member removal, an
     assert.match(aiSource, /【中文强制】thought、location、action、mood、expression、events 以及 memoryPayload/);
     assert.match(aiSource, /memberProfiles\[memberProfileKey\]/);
     assert.match(aiSource, /updatedAt\s*=\s*Date\.now\(\)/);
+    assert.match(aiSource, /singleChatRoleRecallPrompt/);
+    assert.match(aiSource, /friend\.allowRoleRecall\s*!==\s*false/);
+    assert.match(aiSource, /\$\{singleChatRoleRecallPrompt\}/);
 
     assert.match(interfaceSource, /window\.imApp\.getFriendById\(friend\.id\)/);
     assert.match(interfaceSource, /hasHistoricalThought/);
@@ -313,9 +319,13 @@ test('keeps group time awareness, Chinese generated thoughts, member removal, an
     assert.match(statusSource, /formatProfileStatusLabel/);
 
     assert.match(coreSource, /targetFriend\.messages\s*=\s*\[\]/);
+    assert.match(coreSource, /normalized\.allowRoleRecall\s*=\s*normalized\.allowRoleRecall\s*!==\s*false/);
     assert.match(coreSource, /targetFriend\.memberProfiles\s*=\s*\{\}/);
     assert.match(coreSource, /notes:\s*''/);
     assert.match(coreSource, /cleared\.lastSummaryMessageCount\s*=\s*0/);
     assert.match(coreSource, /cleared\.mountSettings\s*=/);
     assert.match(coreSource, /clearFriendRuntimeMessageContext\(targetFriend\)/);
+
+    assert.match(settingsSource, /chatRoleRecallToggle\.checked\s*=\s*friend\.allowRoleRecall\s*!==\s*false/);
+    assert.match(settingsSource, /targetFriend\.allowRoleRecall\s*=\s*nextValue/);
 });
