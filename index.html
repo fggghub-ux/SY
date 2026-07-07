@@ -3463,23 +3463,16 @@
                         </div>
                     </div>
                     <div class="detail-sheet-content im-group-more-content">
-                        <div class="settings-group fully-rounded" style="margin: 0;">
-                            <div class="settings-item" id="group-overview-btn" style="border-bottom: 1px solid var(--separator-color); cursor: pointer;">
-                                <div class="settings-icon" style="background-color: #ff2d55;"><i class="fas fa-layer-group"></i></div>
-                                <div class="settings-text">群总览</div>
-                            </div>
-                            <div class="settings-item" id="group-call-btn" style="border-bottom: 1px solid var(--separator-color); cursor: pointer;">
+                        <div class="settings-group fully-rounded" style="margin: 0 0 12px;">
+                            <div class="settings-item" id="group-call-btn" style="border-bottom: none; cursor: pointer;">
                                 <div class="settings-icon" style="background-color: #34c759;"><i class="fas fa-phone-alt"></i></div>
                                 <div class="settings-text">群通话</div>
                             </div>
-                            <div class="settings-item" id="group-affairs-btn" style="border-bottom: 1px solid var(--separator-color); cursor: pointer;">
-                                <div class="settings-icon" style="background-color: #ff9500;"><i class="fas fa-tasks"></i></div>
-                                <div class="settings-text">群事务</div>
-                            </div>
-                            <div class="settings-item" id="group-total-memory-btn" style="border-bottom: none; cursor: pointer;">
-                                <div class="settings-icon" style="background-color: #5856d6;"><i class="fas fa-database"></i></div>
-                                <div class="settings-text">总记忆</div>
-                            </div>
+                        </div>
+                        <div class="group-summary-more-panel">
+                            <div class="group-summary-more-stats" id="group-summary-more-stats"></div>
+                            <div class="group-summary-more-title">群聊总结</div>
+                            <div class="group-summary-more-list" id="group-summary-more-list"></div>
                         </div>
                     </div>
                 </div>
@@ -3595,36 +3588,9 @@
                         </div>
                     </div>
                     <div class="detail-sheet-content im-group-context-content">
-                        
-                        <!-- 群公告、群头衔与群bot -->
-                        <div class="settings-group fully-rounded" style="margin: 10px 0;">
-                            <!-- 群公告 -->
-                            <div class="form-item" style="justify-content: space-between; border-bottom: 1px solid var(--separator-color); cursor: pointer;" id="group-announcement-btn">
-                                <label style="width: auto; font-size: 17px; color: #000; padding-left: 0;">群公告</label>
-                                <div style="display: flex; align-items: center; color: #8e8e93;">
-                                    <i class="fas fa-chevron-right" style="font-size: 14px;"></i>
-                                </div>
-                            </div>
-                            <div class="form-item" style="justify-content: space-between; border-bottom: 1px solid var(--separator-color); cursor: pointer;" id="group-title-btn">
-                                <label style="width: auto; font-size: 17px; color: #000; padding-left: 0;">群头衔</label>
-                                <div style="display: flex; align-items: center; color: #8e8e93;">
-                                    <i class="fas fa-chevron-right" style="font-size: 14px;"></i>
-                                </div>
-                            </div>
-                            <div class="form-item" style="justify-content: space-between; border-bottom: none;">
-                                <label style="width: auto; font-size: 17px; color: #000; padding-left: 0;">群bot</label>
-                                <div style="display: flex; align-items: center; gap: 10px;">
-                                    <label class="toggle-switch">
-                                        <input type="checkbox" id="group-bot-enabled-toggle">
-                                        <span class="slider"></span>
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-
                         <div class="settings-group fully-rounded" style="margin: 10px 0; overflow: visible;">
 
-                            <div class="form-item" style="justify-content: space-between; border-bottom: none;">
+                            <div class="form-item" style="justify-content: space-between; border-bottom: 1px solid var(--separator-color);">
                                 <label style="width: auto; font-size: 17px; color: #000; padding-left: 0;">上下文</label>
                                 <div style="display: flex; align-items: center; gap: 10px;">
                                     <input type="number" id="group-context-limit-input" style="width: 56px; text-align: center; border: 1px solid #e5e5ea; border-radius: 8px; padding: 4px; font-size: 15px;" value="80" min="1">
@@ -3632,6 +3598,12 @@
                                         <input type="checkbox" id="group-context-enabled-toggle" checked="">
                                         <span class="slider"></span>
                                     </label>
+                                </div>
+                            </div>
+                            <div class="form-item" style="justify-content: space-between; border-bottom: none; cursor: pointer;" id="group-manual-summary-btn">
+                                <label style="width: auto; font-size: 17px; color: #000; padding-left: 0;">总结对话</label>
+                                <div style="display: flex; align-items: center; color: #8e8e93;">
+                                    <i class="fas fa-chevron-right" style="font-size: 14px;"></i>
                                 </div>
                             </div>
                         </div>
@@ -7309,13 +7281,13 @@
     <script src="js/imessage/data_utils.js?v=20260706-bugfix-v2"></script>
     <script src="js/imessage/2_core.js?v=20260706-private-translation-v1"></script>
     <script src="js/imessage/3_contacts.js"></script>
-    <script src="js/imessage/3_groups.js?v=20260706-private-translation-v1"></script>
+    <script src="js/imessage/3_groups.js?v=20260707-group-summary-v1"></script>
     <script src="js/imessage/4_chat_common.js"></script>
     <script src="js/imessage/4_chat_status.js"></script>
     <script src="js/imessage/4_chat_payment.js?v=20260705-offline-identity-v2"></script>
     <script src="js/imessage/4_chat_bubbles.js?v=20260705-offline-identity-v2"></script>
     <script src="js/imessage/minimax_tts.js"></script>
-    <script src="js/imessage/4_chat_ai.js?v=20260706-private-translation-v1"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260707-group-summary-v1"></script>
     <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
     <script src="js/imessage/4_chat_sheet.js?v=20260706-private-translation-v1"></script>
     <script src="js/imessage/4_chat_link.js?v=20260706-bugfix-v1"></script>
@@ -7323,7 +7295,7 @@
     <script src="js/imessage/4_chat_interface.js?v=20260705-offline-identity-v2"></script>
     <script src="js/imessage/4_chat_voice_call.js"></script>
     <script src="js/imessage/4_chat_main.js?v=20260705-recall-v1"></script>
-    <script src="js/imessage/5_settings.js?v=20260706-bugfix-v1"></script>
+    <script src="js/imessage/5_settings.js?v=20260707-group-summary-v1"></script>
     <script src="js/imessage/6_moments.js"></script>
 
     <!-- 引入其他应用模块 -->
@@ -7352,7 +7324,7 @@
     <script src="js/netflix.js"></script>
     <script src="js/shopping.js"></script>
     <script src="js/xapp.js?v=20260702-x-dm-reply-batch-v8"></script>
-    <script src="js/home_desktop.js?v=20260707-app-launcher-fallback-v2"></script>
+    <script src="js/home_desktop.js?v=20260707-no-launcher-fallback-v1"></script>
     <script src="js/home_widget_panel_enhance.js"></script>
     <!-- 引入主逻辑脚本 -->
     <script src="script.js?v=20260705-modal-tone-v1"></script>

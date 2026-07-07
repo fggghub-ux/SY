@@ -14,14 +14,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const groupDetailsMoreBtn = document.getElementById('group-details-more-btn');
     const groupMoreSheet = document.getElementById('group-more-sheet');
     const groupMemberManageSheet = document.getElementById('group-member-manage-sheet');
-    const groupOverviewBtn = document.getElementById('group-overview-btn');
     const groupCallBtn = document.getElementById('group-call-btn');
     const groupCallInviteSheet = document.getElementById('group-call-invite-sheet');
     const groupCallMembersList = document.getElementById('group-call-members-list');
     const groupCallStartBtn = document.getElementById('group-call-start-btn');
     const groupContextEnabledToggle = document.getElementById('group-context-enabled-toggle');
     const groupContextLimitInput = document.getElementById('group-context-limit-input');
-    const groupBotEnabledToggle = document.getElementById('group-bot-enabled-toggle');
+    const groupManualSummaryBtn = document.getElementById('group-manual-summary-btn');
+    const groupSummaryMoreStats = document.getElementById('group-summary-more-stats');
+    const groupSummaryMoreList = document.getElementById('group-summary-more-list');
     const confirmGroupContextBtn = document.getElementById('confirm-group-context-btn');
     const confirmGroupEditBtn = document.getElementById('confirm-group-edit-btn');
     const groupEditNameInput = document.getElementById('group-edit-name-input');
@@ -161,6 +162,288 @@ document.addEventListener('DOMContentLoaded', () => {
             ...options
         });
     }
+
+    function resolveLatestGroup(groupOrId = currentViewingGroup) {
+        const groupId = groupOrId && typeof groupOrId === 'object' ? groupOrId.id : groupOrId;
+        const group = (window.imData?.friends || []).find(item => String(item.id) === String(groupId))
+            || (groupOrId && typeof groupOrId === 'object' ? groupOrId : null);
+        if (!group || group.type !== 'group') return null;
+        group.memory = window.imApp.normalizeFriendData(group).memory;
+        currentViewingGroup = group;
+        return group;
+    }
+
+    window.imApp.calculateChatMemoryTokenEstimate = window.imApp.calculateChatMemoryTokenEstimate || function(friend) {
+        const normalizedFriend = window.imApp.normalizeFriendData(friend || {});
+        const memory = normalizedFriend.memory || window.imApp.createDefaultMemory();
+        let systemContextLen = 0;
+
+        if (window.getGlobalWorldBookContext) {
+            systemContextLen += (window.getGlobalWorldBookContext() || '').length;
+        }
+
+        systemContextLen += (normalizedFriend.nickname || '').length;
+        systemContextLen += (normalizedFriend.persona || '').length;
+        systemContextLen += (window.userState?.persona || '').length;
+        systemContextLen += (memory.overview || '').length;
+        systemContextLen += (memory.longTerm || '').length;
+        systemContextLen += (memory.cherished || '').length;
+        systemContextLen += (memory.context?.notes || '').length;
+
+        if (Array.isArray(memory.shortTermEntries)) {
+            systemContextLen += memory.shortTermEntries.reduce((sum, entry) => (
+                sum
+                + String(entry?.title || '').length
+                + String(entry?.event || '').length
+                + String(entry?.memoryPoints || '').length
+            ), 0);
+        }
+
+        if (Array.isArray(memory.relationships)) {
+            systemContextLen += memory.relationships.reduce((sum, rel) => sum + String(rel?.relation || '').length, 0);
+        }
+
+        if (normalizedFriend.type === 'group') {
+            const members = Array.isArray(normalizedFriend.members) ? normalizedFriend.members : [];
+            const mountSettings = memory.mountSettings || {};
+            const mountLimits = memory.mountLimits || {};
+            members.forEach(memberId => {
+                const member = (window.imData?.friends || []).find(item => String(item.id) === String(memberId));
+                if (!member) return;
+                systemContextLen += String(member.nickname || '').length;
+                systemContextLen += String(member.persona || '').length;
+                systemContextLen += String(member.memory?.overview || '').length;
+                if (mountSettings[String(memberId)] === false) return;
+                const limit = Math.max(1, Number(mountLimits[String(memberId)]) || 20);
+                const mountedMessages = Array.isArray(member.messages) ? member.messages.slice(-limit) : [];
+                systemContextLen += mountedMessages.reduce((sum, message) => (
+                    sum + String(message?.content || message?.text || message?.transcript || message?.description || '').length
+                ), 0);
+            });
+        }
+
+        systemContextLen += normalizedFriend.type === 'group' ? 1600 : 800;
+
+        let recentMessagesLen = 0;
+        if (window.imApp.buildApiContextMessages) {
+            const contextMsgs = window.imApp.buildApiContextMessages(normalizedFriend);
+            if (Array.isArray(contextMsgs)) {
+                recentMessagesLen = contextMsgs.reduce((sum, msg) => sum + String(msg?.content || '').length, 0);
+            }
+        }
+
+        return systemContextLen + recentMessagesLen;
+    };
+
+    function renderGroupSummaryMorePanel(group = currentViewingGroup) {
+        const latestGroup = resolveLatestGroup(group);
+        if (!latestGroup) return;
+
+        const messages = Array.isArray(latestGroup.messages) ? latestGroup.messages : [];
+        const summaries = Array.isArray(latestGroup.memory?.shortTermEntries) ? latestGroup.memory.shortTermEntries : [];
+        const tokenEstimate = window.imApp.calculateChatMemoryTokenEstimate
+            ? window.imApp.calculateChatMemoryTokenEstimate(latestGroup)
+            : 0;
+
+        if (groupSummaryMoreStats) {
+            groupSummaryMoreStats.innerHTML = `
+                <div class="group-summary-stat-card">
+                    <span>群聊总条数</span>
+                    <strong>${messages.length}</strong>
+                </div>
+                <div class="group-summary-stat-card">
+                    <span>单次 API Token 估算</span>
+                    <strong>${Math.max(0, Math.round(tokenEstimate)).toLocaleString()}</strong>
+                </div>
+            `;
+        }
+
+        if (!groupSummaryMoreList) return;
+        if (summaries.length === 0) {
+            groupSummaryMoreList.innerHTML = '<div class="group-summary-empty">暂无群聊总结</div>';
+            return;
+        }
+
+        groupSummaryMoreList.innerHTML = summaries.slice().reverse().map(entry => `
+            <button type="button" class="group-summary-card" data-summary-id="${escapeGroupHtml(entry.id || '')}">
+                <div class="group-summary-card-main">
+                    <div class="group-summary-card-title">${escapeGroupHtml(entry.title || '群聊总结')}</div>
+                    <div class="group-summary-card-time">${escapeGroupHtml(entry.time || '未记录时间')}</div>
+                    <div class="group-summary-card-event">${escapeGroupHtml(entry.event || entry.memoryPoints || '点击编辑这条总结')}</div>
+                </div>
+                <span class="group-summary-card-delete" data-summary-delete="${escapeGroupHtml(entry.id || '')}" title="删除总结" aria-label="删除总结">
+                    <i class="fas fa-trash-alt"></i>
+                </span>
+            </button>
+        `).join('');
+
+        groupSummaryMoreList.querySelectorAll('.group-summary-card').forEach(card => {
+            card.addEventListener('click', event => {
+                const deleteTarget = event.target.closest('[data-summary-delete]');
+                if (deleteTarget) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    deleteGroupSummary(deleteTarget.getAttribute('data-summary-delete') || '');
+                    return;
+                }
+                openGroupSummaryDetail(card.getAttribute('data-summary-id') || '');
+            });
+        });
+    }
+
+    function hideGroupSummaryDetailModal() {
+        const modal = document.getElementById('group-summary-detail-modal');
+        if (modal && window.closeView) window.closeView(modal);
+    }
+
+    function ensureGroupSummaryDetailModal() {
+        let modal = document.getElementById('group-summary-detail-modal');
+        if (modal) return modal;
+
+        modal = document.createElement('div');
+        modal.id = 'group-summary-detail-modal';
+        modal.className = 'bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay group-summary-detail-modal';
+        modal.style.zIndex = '920';
+        modal.innerHTML = `
+            <div class="wb-centered-modal-card group-summary-detail-card">
+                <div class="group-summary-detail-header">
+                    <div>
+                        <div class="group-summary-detail-title">编辑群聊总结</div>
+                        <div class="group-summary-detail-subtitle" id="group-summary-detail-subtitle"></div>
+                    </div>
+                    <button type="button" class="group-summary-detail-close" aria-label="关闭">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="group-summary-detail-body">
+                    <label class="group-summary-detail-field">
+                        <span>标题</span>
+                        <input type="text" id="group-summary-detail-title-input" maxlength="40">
+                    </label>
+                    <label class="group-summary-detail-field">
+                        <span>事件</span>
+                        <textarea id="group-summary-detail-event-input" rows="5"></textarea>
+                    </label>
+                    <label class="group-summary-detail-field">
+                        <span>记忆点</span>
+                        <textarea id="group-summary-detail-points-input" rows="4"></textarea>
+                    </label>
+                    <div class="group-summary-detail-actions">
+                        <button type="button" class="group-summary-detail-delete" id="group-summary-detail-delete-btn">删除</button>
+                        <button type="button" class="group-summary-detail-save" id="group-summary-detail-save-btn">保存</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        modal.addEventListener('click', event => {
+            if (event.target === modal) hideGroupSummaryDetailModal();
+        });
+        modal.querySelector('.group-summary-detail-close')?.addEventListener('click', hideGroupSummaryDetailModal);
+        modal.querySelector('#group-summary-detail-save-btn')?.addEventListener('click', () => {
+            saveGroupSummaryDetail(modal.dataset.summaryId || '');
+        });
+        modal.querySelector('#group-summary-detail-delete-btn')?.addEventListener('click', () => {
+            deleteGroupSummary(modal.dataset.summaryId || '', { closeDetail: true });
+        });
+
+        return modal;
+    }
+
+    function openGroupSummaryDetail(entryId) {
+        const group = resolveLatestGroup();
+        if (!group || !entryId) return;
+        const entries = Array.isArray(group.memory?.shortTermEntries) ? group.memory.shortTermEntries : [];
+        const entry = entries.find(item => String(item.id) === String(entryId));
+        if (!entry) return;
+
+        const modal = ensureGroupSummaryDetailModal();
+        modal.dataset.summaryId = String(entry.id);
+        const titleInput = modal.querySelector('#group-summary-detail-title-input');
+        const eventInput = modal.querySelector('#group-summary-detail-event-input');
+        const pointsInput = modal.querySelector('#group-summary-detail-points-input');
+        const subtitle = modal.querySelector('#group-summary-detail-subtitle');
+
+        if (titleInput) titleInput.value = entry.title || '群聊总结';
+        if (eventInput) eventInput.value = entry.event || '';
+        if (pointsInput) pointsInput.value = entry.memoryPoints || '';
+        if (subtitle) subtitle.textContent = entry.time ? `总结时间：${entry.time}` : '总结时间：未记录';
+
+        if (window.openView) window.openView(modal);
+    }
+
+    async function saveGroupSummaryDetail(entryId) {
+        if (!entryId) return;
+        const modal = ensureGroupSummaryDetailModal();
+        const title = String(modal.querySelector('#group-summary-detail-title-input')?.value || '').trim() || '群聊总结';
+        const eventText = String(modal.querySelector('#group-summary-detail-event-input')?.value || '').trim();
+        const memoryPoints = String(modal.querySelector('#group-summary-detail-points-input')?.value || '').trim();
+
+        const saved = await commitCurrentGroupChange(targetGroup => {
+            targetGroup.memory = window.imApp.normalizeFriendData(targetGroup).memory;
+            const entries = Array.isArray(targetGroup.memory.shortTermEntries) ? targetGroup.memory.shortTermEntries : [];
+            const entry = entries.find(item => String(item.id) === String(entryId));
+            if (!entry) return;
+            entry.title = title;
+            entry.event = eventText;
+            entry.memoryPoints = memoryPoints;
+        }, { silent: true });
+
+        if (!saved) {
+            if (window.showToast) window.showToast('群聊总结保存失败');
+            return;
+        }
+
+        renderGroupSummaryMorePanel(currentViewingGroup);
+        if (window.imApp.renderMemoryView) window.imApp.renderMemoryView();
+        hideGroupSummaryDetailModal();
+        if (window.showToast) window.showToast('群聊总结已保存');
+    }
+
+    async function removeGroupSummaryEntry(entryId, options = {}) {
+        const saved = await commitCurrentGroupChange(targetGroup => {
+            targetGroup.memory = window.imApp.normalizeFriendData(targetGroup).memory;
+            const entries = Array.isArray(targetGroup.memory.shortTermEntries) ? targetGroup.memory.shortTermEntries : [];
+            const nextEntries = entries.filter(item => String(item.id) !== String(entryId));
+            targetGroup.memory.shortTermEntries = nextEntries;
+            targetGroup.memory.lastSummaryMessageCount = nextEntries.reduce((max, item) => {
+                const endCount = Number(item?.sourceEndMessageCount) || 0;
+                return Math.max(max, endCount);
+            }, 0);
+        }, { silent: true });
+
+        if (!saved) {
+            if (window.showToast) window.showToast('群聊总结删除失败');
+            return;
+        }
+
+        renderGroupSummaryMorePanel(currentViewingGroup);
+        if (window.imApp.renderMemoryView) window.imApp.renderMemoryView();
+        if (options.closeDetail) hideGroupSummaryDetailModal();
+        if (window.showToast) window.showToast('群聊总结已删除');
+    }
+
+    function deleteGroupSummary(entryId, options = {}) {
+        if (!entryId) return;
+        const doDelete = () => removeGroupSummaryEntry(entryId, options);
+        if (window.showCustomModal) {
+            window.showCustomModal({
+                title: '删除群聊总结',
+                message: '确定删除这条群聊总结吗？此操作不可恢复。',
+                confirmText: '删除',
+                isDestructive: true,
+                onConfirm: doDelete
+            });
+            return;
+        }
+        if (window.confirm && !window.confirm('确定删除这条群聊总结吗？')) return;
+        doDelete();
+    }
+
+    window.imApp.renderGroupSummaryMorePanel = renderGroupSummaryMorePanel;
+    window.imApp.openGroupSummaryDetail = openGroupSummaryDetail;
+    window.imApp.deleteGroupSummary = deleteGroupSummary;
 
     function getGroupUserDisplayMeta(group) {
         const currentAccountId = typeof window.getCurrentAccountId === 'function' ? window.getCurrentAccountId() : null;
@@ -330,10 +613,6 @@ document.addEventListener('DOMContentLoaded', () => {
             groupContextLimitInput.value = limit;
         }
 
-        if (groupBotEnabledToggle) {
-            groupBotEnabledToggle.checked = !!currentViewingGroup.botEnabled;
-        }
-
         openView(groupContextSettingsSheet);
     }
 
@@ -436,23 +715,6 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
 
-        if (group.botEnabled) {
-            membersHtml += `
-                <div class="group-detail-member-item" data-id="__group_bot__" style="padding: 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #f2f2f7; cursor: pointer;">
-                    <div style="display: flex; align-items: center; gap: 15px;">
-                        <div style="width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, #ff9500, #ff2d55); display: flex; justify-content: center; align-items: center; overflow: hidden;">
-                            <i class="fas fa-robot" style="color: #fff;"></i>
-                        </div>
-                        <div>
-                            <div style="font-size: 16px; font-weight: 600; color: #000;">群bot</div>
-                            <div style="font-size: 12px; color: #007aff;">online</div>
-                        </div>
-                    </div>
-                    <div style="font-size: 12px; color: #8e8e93; background: #f2f2f7; padding: 2px 8px; border-radius: 10px;">bot</div>
-                </div>
-            `;
-        }
-
         if (group.members) {
             group.members.forEach(id => {
                 const f = window.imData.friends.find(x => x.id === id);
@@ -487,7 +749,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 window.imApp.showGroupAccountSwitchSheet(currentViewingGroup);
                             }
                         }
-                    } else if (memberId !== '__group_bot__') {
+                    } else {
                         if (window.imApp && window.imApp.showGroupMemberManageSheet) {
                             window.imApp.showGroupMemberManageSheet(currentViewingGroup, memberId);
                         }
@@ -572,13 +834,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const sheet = groupMemberManageSheet || document.getElementById('group-member-manage-sheet');
         if (!sheet || !group) return;
 
-        let targetMember = null;
-        if (memberId === '__group_bot__') {
-            targetMember = { id: '__group_bot__', nickname: '群bot', avatarUrl: null };
-            return;
-        } else {
-            targetMember = window.imData.friends.find(x => String(x.id) === String(memberId));
-        }
+        const targetMember = window.imData.friends.find(x => String(x.id) === String(memberId));
 
         if (!targetMember) return;
 
@@ -609,54 +865,48 @@ document.addEventListener('DOMContentLoaded', () => {
                 memoryLimitInput.parentNode.replaceChild(newLimitInput, memoryLimitInput);
             }
             
-            if (memberId === '__group_bot__') {
-                newToggle.disabled = true;
-                newToggle.checked = false;
-                if (newLimitInput) newLimitInput.disabled = true;
-            } else {
-                newToggle.disabled = false;
-                if (newLimitInput) newLimitInput.disabled = false;
+            newToggle.disabled = false;
+            if (newLimitInput) newLimitInput.disabled = false;
+            
+            const groupMemory = group.memory || {};
+            const mountSettings = groupMemory.mountSettings || {};
+            const mountLimits = groupMemory.mountLimits || {};
+            
+            newToggle.checked = mountSettings[String(memberId)] !== false;
+            if (newLimitInput) {
+                newLimitInput.value = mountLimits[memberId] || 20;
+            }
+            
+            const saveSettings = async () => {
+                const isChecked = newToggle.checked;
+                const limitVal = newLimitInput ? parseInt(newLimitInput.value) || 20 : 20;
                 
-                const groupMemory = group.memory || {};
-                const mountSettings = groupMemory.mountSettings || {};
-                const mountLimits = groupMemory.mountLimits || {};
+                // 同步更新本地引用
+                group.memory = group.memory || window.imApp.createDefaultMemory();
+                group.memory.mountSettings = group.memory.mountSettings || {};
+                group.memory.mountLimits = group.memory.mountLimits || {};
+                group.memory.mountSettings[memberId] = isChecked;
+                group.memory.mountLimits[memberId] = limitVal;
                 
-                newToggle.checked = mountSettings[String(memberId)] !== false;
-                if (newLimitInput) {
-                    newLimitInput.value = mountLimits[memberId] || 20;
-                }
-                
-                const saveSettings = async () => {
-                    const isChecked = newToggle.checked;
-                    const limitVal = newLimitInput ? parseInt(newLimitInput.value) || 20 : 20;
+                await commitCurrentGroupChange((targetGroup) => {
+                    targetGroup.memory = targetGroup.memory || window.imApp.createDefaultMemory();
+                    targetGroup.memory.mountSettings = targetGroup.memory.mountSettings || {};
+                    targetGroup.memory.mountLimits = targetGroup.memory.mountLimits || {};
                     
-                    // 同步更新本地引用
-                    group.memory = group.memory || window.imApp.createDefaultMemory();
-                    group.memory.mountSettings = group.memory.mountSettings || {};
-                    group.memory.mountLimits = group.memory.mountLimits || {};
-                    group.memory.mountSettings[memberId] = isChecked;
-                    group.memory.mountLimits[memberId] = limitVal;
-                    
-                    await commitCurrentGroupChange((targetGroup) => {
-                        targetGroup.memory = targetGroup.memory || window.imApp.createDefaultMemory();
-                        targetGroup.memory.mountSettings = targetGroup.memory.mountSettings || {};
-                        targetGroup.memory.mountLimits = targetGroup.memory.mountLimits || {};
-                        
-                        targetGroup.memory.mountSettings[memberId] = isChecked;
-                        targetGroup.memory.mountLimits[memberId] = limitVal;
-                    }, { silent: true });
-                };
+                    targetGroup.memory.mountSettings[memberId] = isChecked;
+                    targetGroup.memory.mountLimits[memberId] = limitVal;
+                }, { silent: true });
+            };
 
-                newToggle.addEventListener('change', async (e) => {
+            newToggle.addEventListener('change', async (e) => {
+                await saveSettings();
+                if (window.showToast) window.showToast(e.target.checked ? '已开启单聊挂载' : '已关闭单聊挂载');
+            });
+            
+            if (newLimitInput) {
+                newLimitInput.addEventListener('change', async () => {
                     await saveSettings();
-                    if (window.showToast) window.showToast(e.target.checked ? '已开启单聊挂载' : '已关闭单聊挂载');
                 });
-                
-                if (newLimitInput) {
-                    newLimitInput.addEventListener('change', async () => {
-                        await saveSettings();
-                    });
-                }
             }
         }
 
@@ -765,6 +1015,12 @@ document.addEventListener('DOMContentLoaded', () => {
     window.imApp.renderGroupsList = renderGroupsList;
     renderGroupsList();
 
+    window.addEventListener('u2:group-summary-updated', (event) => {
+        const groupId = event?.detail?.groupId;
+        if (!groupId || !currentViewingGroup || String(currentViewingGroup.id) !== String(groupId)) return;
+        renderGroupSummaryMorePanel(currentViewingGroup);
+    });
+
     if (groupDetailsSheet) {
         groupDetailsSheet.addEventListener('click', (e) => {
             if (e.target === groupDetailsSheet) closeView(groupDetailsSheet);
@@ -777,28 +1033,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (event.target === sheet) closeView(sheet);
         });
     });
-
-    if (groupBotEnabledToggle) {
-        groupBotEnabledToggle.addEventListener('change', async (e) => {
-            if (currentViewingGroup) {
-                const previousValue = !!currentViewingGroup.botEnabled;
-                const nextValue = e.target.checked;
-                const saved = await commitCurrentGroupChange((targetGroup) => {
-                    targetGroup.botEnabled = nextValue;
-                }, { silent: true });
-
-                if (!saved) {
-                    e.target.checked = previousValue;
-                    if (window.showToast) window.showToast('群bot设置保存失败');
-                    return;
-                }
-
-                if (window.imApp.openGroupDetails) {
-                    window.imApp.openGroupDetails(currentViewingGroup);
-                }
-            }
-        });
-    }
 
     if (groupEditSheet) {
         groupEditSheet.addEventListener('click', (e) => {
@@ -833,22 +1067,29 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    if (groupManualSummaryBtn) {
+        groupManualSummaryBtn.addEventListener('click', () => {
+            const group = resolveLatestGroup(currentViewingGroup);
+            if (!group) return;
+            window.imData.currentSettingsFriend = group;
+            if (window.imChat?.openManualSummaryModal) {
+                window.imChat.openManualSummaryModal(group);
+            } else if (window.showToast) {
+                window.showToast('总结功能尚未初始化');
+            }
+        });
+    }
+
     if (groupDetailsMoreBtn) {
         groupDetailsMoreBtn.addEventListener('click', () => {
             if (groupMoreSheet) {
+                renderGroupSummaryMorePanel(currentViewingGroup);
                 if (window.openView) window.openView(groupMoreSheet);
                 else {
                     groupMoreSheet.style.display = 'flex';
                     setTimeout(() => { groupMoreSheet.style.opacity = '1'; }, 10);
                 }
             }
-        });
-    }
-
-    if (groupOverviewBtn) {
-        groupOverviewBtn.addEventListener('click', () => {
-            if (window.showToast) window.showToast('群总览功能开发中');
-            closeView(groupMoreSheet);
         });
     }
 

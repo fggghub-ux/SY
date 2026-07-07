@@ -2768,17 +2768,79 @@ document.addEventListener('DOMContentLoaded', () => {
         return Math.max(0, total - Math.min(last, total));
     }
 
+    function isGroupSummarySourceMessage(message) {
+        if (!message) return false;
+        if (message.privateFromGroup) return false;
+        if (message.payload?.privateFromGroup) return false;
+        if (message.privateChatSnapshot) return false;
+        if (message.payload?.privateChatSnapshot) return false;
+        const noticeKind = String(message.noticeKind || '').trim();
+        if (noticeKind === 'group_private_to_user' || noticeKind === 'group_friend_private_chat') {
+            return false;
+        }
+        return true;
+    }
+
     function getChatSummaryBatch(friend, roundLimit) {
         const messages = Array.isArray(friend?.messages) ? friend.messages : [];
         const lastCount = Math.max(0, Number(friend?.memory?.lastSummaryMessageCount) || 0);
+        const startIndex = Math.min(lastCount, messages.length);
+        const limit = window.imDataUtils?.normalizeRoundLimit
+            ? window.imDataUtils.normalizeRoundLimit(roundLimit, 30)
+            : Math.max(1, Math.round(Number(roundLimit) || 30));
+
+        if (friend?.type === 'group') {
+            let availableRounds = 0;
+            let pendingSourceCount = 0;
+            for (let index = startIndex; index < messages.length; index += 1) {
+                const message = messages[index];
+                if (!isGroupSummarySourceMessage(message)) continue;
+                pendingSourceCount += 1;
+                if (message?.role === 'user') availableRounds += 1;
+            }
+
+            let selectedRounds = 0;
+            let endIndex = startIndex;
+            const selectedMessages = [];
+            for (let index = startIndex; index < messages.length; index += 1) {
+                const message = messages[index];
+                if (!isGroupSummarySourceMessage(message)) {
+                    endIndex = index + 1;
+                    continue;
+                }
+                if (message?.role === 'user') {
+                    if (selectedRounds >= limit) break;
+                    selectedRounds += 1;
+                }
+                selectedMessages.push(message);
+                endIndex = index + 1;
+            }
+
+            if (selectedRounds === 0) {
+                endIndex = startIndex;
+                selectedMessages.length = 0;
+            }
+
+            return {
+                startIndex,
+                endIndex,
+                roundLimit: limit,
+                availableRounds,
+                unsummarizedMessageCount: pendingSourceCount,
+                selectedRounds,
+                selectedMessageCount: selectedMessages.length,
+                selectedMessages,
+                ready: availableRounds >= limit
+            };
+        }
+
         if (window.imDataUtils?.getSummaryBatch) {
             return window.imDataUtils.getSummaryBatch(messages, lastCount, roundLimit);
         }
-        const limit = Math.max(1, Math.round(Number(roundLimit) || 30));
-        const pending = messages.slice(Math.min(lastCount, messages.length));
+        const pending = messages.slice(startIndex);
         const availableRounds = pending.filter(message => message?.role === 'user').length;
         return {
-            startIndex: Math.min(lastCount, messages.length),
+            startIndex,
             endIndex: messages.length,
             roundLimit: limit,
             availableRounds,
@@ -2791,6 +2853,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function formatSummarySourceMessage(msg, friend) {
+        if (friend?.type === 'group' && window.imApp.formatMessageForApiContext) {
+            const formatted = window.imApp.formatMessageForApiContext(msg, friend, {
+                userName: userState?.name || 'User'
+            });
+            const time = msg.timestamp ? new Date(msg.timestamp).toLocaleString('zh-CN', { hour12: false }) : '';
+            return `[${time}] ${formatted?.content || msg.content || msg.text || ''}`;
+        }
+
         const speaker = msg.role === 'assistant'
             ? (friend.nickname || friend.realname || friend.realName || 'Char')
             : (userState?.name || 'User');
@@ -2940,7 +3010,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const dialogueText = sourceMessages.map(msg => formatSummarySourceMessage(msg, friend)).join('\n');
         const existingSummariesText = formatExistingSummaryEntries(friend);
 
-        const prompt = `查看已有的总结，将与本次需要总结的对话的内容相关的记忆点的记忆条目激活（记忆程度改为高）。\n\n已有短期记忆总结：\n${existingSummariesText}\n\n你是${charName}，请站在${charName}的第一人称视角，将以下${batch.selectedRounds}轮、共${sourceMessages.length}条对话进行一次记忆总结，整合精炼成一件完整的事。\n\n当前真实总结时间：${nowString}\nUser 名称：${userName}\n\n必须只输出 JSON，不要 markdown，不要解释。JSON 字段如下：\n{\n  "activatedEntryIds": ["与本次对话相关、需要激活的已有记忆ID，没有则为空数组"],\n  "summary": {\n    "title": "10字内，事件名称",\n    "time": "真实时间，精确到总结时的年月日时",\n    "event": "20-50字，内容为一件完整的事",\n    "memoryPoints": "请输出纯文本字符串格式，必须包含情绪/声音/画面/气味/环境五个感官记忆，每个感官不超过10字，最好用一个词形容",\n    "degree": "高"\n  }\n}\n\nsummary.degree 只可输出“高”。activatedEntryIds 只能使用已有短期记忆总结中的 ID。\n\n对话：\n${dialogueText}\n\n查看已有的总结，将所有记忆程度超过真实时间1天的高改成中，超过7天的改成低，超过30天的改成遗忘。`;
+        const prompt = friend.type === 'group'
+            ? `查看已有的群聊总结，将与本次需要总结的公开群聊内容相关的记忆条目激活（记忆程度改为高）。\n\n已有群聊总结：\n${existingSummariesText}\n\n你是群聊记录整理员。请用第三人称总结群聊「${charName}」中的公开聊天，把以下${batch.selectedRounds}轮、共${sourceMessages.length}条公开消息整合成一件完整的事情，必须说清楚前因、过程和结果。\n\n当前真实总结时间：${nowString}\nUser 名称：${userName}\n\n严格限制：\n- 只总结当前群聊里公开发生的消息。\n- 不要写入、推断或复述任何群成员给 User 的私信内容。\n- 不要写入、推断或复述任何群成员与自己好友/私有联系人的私信内容。\n- 如果记录里只有“有人发了私信”这类系统提示，也只能当作不可展开的背景事件，不得编造私信细节。\n\n必须只输出 JSON，不要 markdown，不要解释。JSON 字段如下：\n{\n  "activatedEntryIds": ["与本次群聊相关、需要激活的已有总结ID，没有则为空数组"],\n  "summary": {\n    "title": "10字内，事件名称",\n    "time": "真实总结时间，前端会覆盖为当前真实时间",\n    "event": "40-100字，第三人称，把公开群聊总结为一件完整的事，写清前因后果",\n    "memoryPoints": "纯文本字符串，概括公开群聊里的关键参与者、矛盾/目标、情绪变化、结果或悬而未决点",\n    "degree": "高"\n  }\n}\n\nsummary.degree 只可输出“高”。activatedEntryIds 只能使用已有群聊总结中的 ID。\n\n公开群聊：\n${dialogueText}\n\n查看已有总结，将所有记忆程度超过真实时间1天的高改成中，超过7天的改成低，超过30天的改成遗忘。`
+            : `查看已有的总结，将与本次需要总结的对话的内容相关的记忆点的记忆条目激活（记忆程度改为高）。\n\n已有短期记忆总结：\n${existingSummariesText}\n\n你是${charName}，请站在${charName}的第一人称视角，将以下${batch.selectedRounds}轮、共${sourceMessages.length}条对话进行一次记忆总结，整合精炼成一件完整的事。\n\n当前真实总结时间：${nowString}\nUser 名称：${userName}\n\n必须只输出 JSON，不要 markdown，不要解释。JSON 字段如下：\n{\n  "activatedEntryIds": ["与本次对话相关、需要激活的已有记忆ID，没有则为空数组"],\n  "summary": {\n    "title": "10字内，事件名称",\n    "time": "真实时间，精确到总结时的年月日时",\n    "event": "20-50字，内容为一件完整的事",\n    "memoryPoints": "请输出纯文本字符串格式，必须包含情绪/声音/画面/气味/环境五个感官记忆，每个感官不超过10字，最好用一个词形容",\n    "degree": "高"\n  }\n}\n\nsummary.degree 只可输出“高”。activatedEntryIds 只能使用已有短期记忆总结中的 ID。\n\n对话：\n${dialogueText}\n\n查看已有的总结，将所有记忆程度超过真实时间1天的高改成中，超过7天的改成低，超过30天的改成遗忘。`;
 
         const endpoint = normalizeSummaryApiEndpoint(currentApiConfig);
         const response = await fetch(endpoint, {
@@ -2963,7 +3035,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const data = await response.json();
         const summary = parseManualSummary(getSummaryResponseContent(data));
         summary.id = `stm-${Date.now()}`;
-        summary.time = summary.time || nowString;
+        summary.time = friend.type === 'group' ? nowString : (summary.time || nowString);
         summary.degree = '高';
         summary.sourceCount = sourceMessages.length;
         summary.sourceRoundCount = batch.selectedRounds;
@@ -3046,12 +3118,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function runChatSummary(friend, options = {}) {
-        if (!friend || friend.type === 'group') return false;
+        if (!friend) return false;
         const friendId = String(friend.id);
         if (summaryInFlight.has(friendId)) return false;
         if (window.imApp.ensureFriendMessagesLoaded) await window.imApp.ensureFriendMessagesLoaded(friend);
         friend = window.imData.friends.find(item => String(item.id) === friendId) || friend;
         friend.memory = window.imApp.normalizeFriendData(friend).memory;
+        const isGroupSummary = friend.type === 'group';
         const roundLimit = friend.memory.summary?.roundLimit || 30;
         const batch = getChatSummaryBatch(friend, roundLimit);
         if (options.auto && (!friend.memory.summary?.enabled || !batch.ready)) return false;
@@ -3074,7 +3147,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 refreshSummaryModal(latestFriend);
             }
             if (window.imApp.renderMemoryView) window.imApp.renderMemoryView();
-            showToast(options.auto ? `已自动总结 ${summary.sourceRoundCount || roundLimit} 轮对话` : '总结已存入短期记忆');
+            if (isGroupSummary) {
+                if (window.imApp.renderGroupSummaryMorePanel) window.imApp.renderGroupSummaryMorePanel(latestFriend);
+                window.dispatchEvent(new CustomEvent('u2:group-summary-updated', {
+                    detail: { groupId: friendId }
+                }));
+            }
+            showToast(options.auto
+                ? `已自动总结 ${summary.sourceRoundCount || roundLimit} 轮${isGroupSummary ? '群聊' : '对话'}`
+                : (isGroupSummary ? '群聊总结已存入 More' : '总结已存入短期记忆'));
             return true;
         } catch (error) {
             console.error(options.auto ? 'Auto summary failed' : 'Manual summary failed', error);
@@ -3089,9 +3170,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!friend || !manualSummaryModal) return;
         if (window.imApp.ensureFriendMessagesLoaded) await window.imApp.ensureFriendMessagesLoaded(friend);
         friend = window.imData.friends.find(item => String(item.id) === String(friend.id)) || friend;
+        window.imData.currentSettingsFriend = friend;
         refreshSummaryModal(friend);
         openView(manualSummaryModal);
     }
+
+    window.imChat = window.imChat || {};
+    window.imChat.openManualSummaryModal = openManualSummaryModal;
 
     if (manualSummaryBtn) {
         manualSummaryBtn.addEventListener('click', () => {

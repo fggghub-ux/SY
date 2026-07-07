@@ -1378,12 +1378,14 @@ ${latestMessages || 'None'}
         }
 
         function buildShortTermMemoryContext(friend) {
-            if (friend.type === 'group') return '';
+            const isGroupChat = friend.type === 'group';
             const entries = Array.isArray(friend.memory?.shortTermEntries)
                 ? friend.memory.shortTermEntries.filter(entry => entry && (entry.event || entry.memoryPoints || entry.title))
                 : [];
             
-            const triggeredEntries = entries.filter(entry => isMemoryEntryTriggered(entry, recentText));
+            const triggeredEntries = isGroupChat
+                ? entries.slice(-12)
+                : entries.filter(entry => isMemoryEntryTriggered(entry, recentText));
             if (triggeredEntries.length === 0) return '';
 
             const buckets = {
@@ -1415,6 +1417,10 @@ ${latestMessages || 'None'}
                 .filter(([, items]) => items.length > 0)
                 .map(([title, items]) => `${title}\n${items.map(formatShortTermMemoryEntry).join('\n')}`)
                 .join('\n\n');
+
+            if (isGroupChat) {
+                return `<group_public_summary_library>\n<rules>\n- 以下是当前群聊公开聊天的第三人称总结，只能作为群聊共同背景使用。\n- 这些总结不包含群成员给 User 的私信，也不包含群成员与自己好友的私信；不要据此让其他成员全知任何私聊内容。\n- 高：强参考，优先影响群内话题连续性、公开关系变化和共同事件。\n- 中/低：只在当前话题相关时辅助参考。\n- 遗忘：仅作为模糊残影，不主动提起。\n</rules>\n\n<memories>\n${sections}\n</memories>\n</group_public_summary_library>`;
+            }
 
             return `<short_term_memory_library>\n<rules>\n- 高：强参考，优先影响情绪、态度、称呼和细节联想，占记忆影响约70%。\n- 中：辅助参考，只在话题相关时使用，占约25%。\n- 低：弱参考，只在用户明确触发时轻微使用，占约5%。\n- 遗忘：仅作为模糊残影，不主动提起，除非用户强烈触发。\n</rules>\n\n<memories>\n${sections}\n</memories>\n</short_term_memory_library>`;
         }
@@ -1671,7 +1677,7 @@ ${pendingRegenerateContext.previousReply || 'None'}${regenerateUserRequirement}`
 
             const membersInfo = groupMembers.length > 0
                 ? groupMembers.map(member => {
-                    let infoStr = `Name: ${member.nickname}\nPersona: ${member.persona || 'None'}\nOverview: ${member.memory?.overview || 'None'}`;
+                    let infoStr = `Name: ${member.nickname}\nMember ID: ${member.id}\nPersona: ${member.persona || 'None'}\nOverview: ${member.memory?.overview || 'None'}`;
                     const memberStickers = buildMountedStickerContext(member);
                     if (memberStickers) {
                         infoStr += `\nAvailable Stickers for ${member.nickname}:\n${memberStickers}`;
@@ -1712,9 +1718,9 @@ ${pendingRegenerateContext.previousReply || 'None'}${regenerateUserRequirement}`
                                 return `${timeStr}${role}: ${text}`;
                             }).join('\n');
 
-                            infoStr += `\n\n【挂载单聊记忆｜${member.nickname} 与 ${currentUserState.name || 'User'}】\n以下内容是 char「${member.nickname}」和 user「${currentUserState.name || 'User'}」的单聊记忆/私聊上下文，不是当前群聊内公开发生的消息。你必须把它当作该 char 与 user 之间已经存在的私人关系、经历、称呼和语气参考；只有 ${member.nickname} 本人可以自然参考这些记忆，其他群成员默认不知道这些私聊内容，除非 ${member.nickname} 在群里主动说出。\n${formattedContext}`;
+                            infoStr += `\n\n【挂载单聊记忆｜成员：${member.nickname}｜成员ID：${member.id}｜User：${currentUserState.name || 'User'}】\n以下内容只属于群成员「${member.nickname}」（ID: ${member.id}）与 User「${currentUserState.name || 'User'}」之间的单聊记忆/私聊上下文，不是当前群聊内公开发生的消息。\n使用规则：\n- 只有 ${member.nickname} 本人可以在自己的公开发言、心声或给 User 的私信中参考这些记忆，用来承接私人关系、称呼、语气、前文和共同经历。\n- 其他群成员不是全知视角，默认完全不知道这些私聊内容；除非 ${member.nickname} 已经在公开群聊里主动说出某个信息，否则其他成员不得引用、反应或暗示知道。\n- 当 ${member.nickname} 触发给 User 发私信时，必须优先参考这一段单聊记忆来衔接内容，但私信内容仍不能让其他群成员默认知情。\n${formattedContext}`;
                         } else {
-                            infoStr += `\n\n【挂载单聊记忆｜${member.nickname} 与 ${currentUserState.name || 'User'}】\n已开启挂载，但暂未找到可注入的单聊上下文。`;
+                            infoStr += `\n\n【挂载单聊记忆｜成员：${member.nickname}｜成员ID：${member.id}｜User：${currentUserState.name || 'User'}】\n已开启挂载，但暂未找到可注入的单聊上下文。仍需记住：这类记忆只属于 ${member.nickname} 本人与 User，其他群成员默认不知道。`;
                         }
                     }
 
@@ -1761,7 +1767,7 @@ ${JSON.stringify(memberFriendChatCandidates)}${afterRoleWorldBookContext ? `\n\n
 13. 【User 未回复也必须继续】：如果本轮没有 User 新发言，或触发来源是 AI继续/空输入/自动续写/角色主动说话，你仍然必须让群成员继续自然聊天；不要等待 User、不要输出空内容、不要说“用户没有输入”，可以承接上一句、回应沉默、成员互相接话或开启符合当前关系的新话题。
 14. 【群聊衍生私信｜严格按需】：群成员只有在自己明确觉得某些话不适合公开说、不能让其他成员知道，或必须避开群内其他人单独告诉 User 时，才可以在本轮群聊回复之外给 User 发私信。普通寒暄、公开可说的话、对群消息的常规回应不得转成私信；私信也不得复制群内公开回复。
 15. 如果没有真实且具体的保密动机，完全不要输出私信标签。需要私信时，在 <chat_json>...</chat_json> 之外额外输出且只输出一个 <group_private_messages>...</group_private_messages> 标签，标签内必须是合法 JSON 数组，格式为：[{"speaker":"成员完整准确名字","messages":[{"text":"第一条私信","translation":"中文翻译或空字符串"},{"text":"第二条私信","translation":"中文翻译或空字符串"}]}]。
-16. 每个发私信的成员必须属于允许发言名单，每名成员必须连续发送 2-5 条私信；可以有多名成员，但每个人都必须有独立且合理的保密动机。其他成员不知道这些私信内容，后续群聊也不得默认其他成员已经知情。
+16. 每个发私信的成员必须属于允许发言名单，每名成员必须连续发送 2-5 条私信；可以有多名成员，但每个人都必须有独立且合理的保密动机。发给 User 的私信必须站在该 speaker 本人的视角，优先参考该 speaker 自己的挂载单聊记忆来衔接称呼、私人关系、前文和语气；严禁引用其他成员的单聊记忆。其他成员不知道这些私信内容，后续群聊也不得默认其他成员已经知情。
 17. 【成员与自己好友的私聊｜可选】：当群内话题、人设、关系或刚发生的事情让某位群成员自然地想联系自己的好友时，可以额外生成好友私聊。优先选择 relationshipCandidates；没有合适关系网对象时可复用 linkedCandidates。只有 canGeneratePrivateFriend 为 true 且现有私有联系人也不合适时，才可按该成员人设创造一个合理的新好友。
 18. 需要生成时，在 <chat_json>...</chat_json> 之外额外输出且只输出一个 <group_friend_private_chats>...</group_friend_private_chats> 标签。已有关系网好友使用 recipientId；已有私有联系人使用 linkedChatId；生成新好友使用 generatedRecipient，三者只能选一个。格式示例：[{"speaker":"群成员完整准确名字","recipientId":"关系网候选准确ID","rounds":[{"speakerMessages":[{"text":"群成员发给好友的原文","translation":"非中文原文的自然中文翻译；中文则空字符串"}],"friendMessages":[{"text":"好友回复的原文","translation":"非中文原文的自然中文翻译；中文则空字符串"}]}]},{"speaker":"群成员完整准确名字","linkedChatId":"已有私有联系人准确ID","rounds":[...]},{"speaker":"群成员完整准确名字","generatedRecipient":{"realName":"真实姓名","remark":"该成员给此人的备注","persona":"人物设定","relationship":"与该成员的关系"},"rounds":[...]}]。
 19. 每段好友私聊必须有 2-4 轮完整往返。每一轮先由群成员连续发送 2-5 条 speakerMessages，再由好友连续回复 2-5 条 friendMessages；每条消息都必须是 {"text":"原文","translation":"中文翻译或空字符串"}。如果 text 不是中文，translation 必须填写自然中文翻译；如果 text 本身是中文，translation 必须是空字符串。消息必须承接上一轮，形成真实连续的私聊，不能是互不相关的句子。
@@ -3483,7 +3489,7 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
             }
 
             await flushFriendPersistence(latestFriend.id || friend.id, { silent: true });
-            if (latestFriend.type !== 'group' && window.imChat?.maybeAutoSummarize) {
+            if (window.imChat?.maybeAutoSummarize) {
                 void window.imChat.maybeAutoSummarize(latestFriend.id || friend.id);
             }
             if (btnEl) btnEl.style.opacity = '1';
