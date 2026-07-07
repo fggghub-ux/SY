@@ -180,3 +180,88 @@ test('supports guided regenerate from the iMessage More sheet', async () => {
     assert.match(aiSource, /User 本次重回补充要求/);
     assert.match(aiSource, /\{ previousReply, userRequirement \}/);
 });
+test('keeps iOS modal, theme preset, stickers, and private-chat safeguards', async () => {
+    const [linkSource, bubbleSource, coreSource, settingsSource, cssSource] = await Promise.all([
+        fs.readFile(new URL('../js/imessage/4_chat_link.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_bubbles.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/2_core.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/settings.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../css/imessage.css', import.meta.url), 'utf8')
+    ]);
+    const fakeDetailSource = bubbleSource.slice(
+        bubbleSource.indexOf('function ensureFakeLinkDetailOverlay'),
+        bubbleSource.indexOf('function openFakeLinkDetail')
+    );
+
+    assert.match(linkSource, /getFakeLinkAppContainer/);
+    assert.match(linkSource, /host\.appendChild\(overlay\)/);
+    assert.match(linkSource, /focus\(\{ preventScroll: true \}\)/);
+    assert.doesNotMatch(linkSource, /setTimeout\(\(\) => aiDomainInput\.focus/);
+    assert.doesNotMatch(linkSource, /setTimeout\(\(\) => input\?\.focus/);
+
+    assert.match(fakeDetailSource, /wb-centered-modal-overlay im-fake-link-detail-overlay/);
+    assert.match(fakeDetailSource, /wb-centered-modal-card im-fake-link-detail-sheet/);
+    assert.match(fakeDetailSource, /host\.appendChild\(overlay\)/);
+    assert.doesNotMatch(fakeDetailSource, /document\.body\.appendChild\(overlay\)/);
+
+    assert.match(coreSource, /ensureStickersViewInApp/);
+    assert.match(coreSource, /appEl\.appendChild\(stickersViewEl\)/);
+    assert.match(settingsSource, /function refreshThemePresetUi\(\)/);
+    assert.ok((settingsSource.match(/refreshThemePresetUi\(\)/g) || []).length >= 4);
+
+    assert.match(cssSource, /\.app-view\.stickers-view,/);
+    assert.match(cssSource, /padding-top:\s*0\s*!important/);
+    assert.match(cssSource, /\.im-fake-link-composer-overlay\s*\{[\s\S]*z-index:\s*1230/);
+    assert.match(cssSource, /\.im-fake-link-detail-overlay\s*\{[\s\S]*justify-content:\s*center/);
+    assert.match(cssSource, /\.im-fake-link-detail-sheet\s*\{[\s\S]*border-radius:\s*24px/);
+    assert.match(cssSource, /\.group-private-chat-detail-row\s*\{[\s\S]*width:\s*100%/);
+    assert.match(cssSource, /\.group-private-chat-detail-row\s*\{[\s\S]*max-width:\s*100%/);
+    assert.match(cssSource, /\.group-private-chat-detail-bubble\s*\{[\s\S]*overflow-wrap:\s*anywhere/);
+    assert.match(cssSource, /\.group-private-chat-detail-bubble\s*\{[\s\S]*max-inline-size:\s*min\(78%,\s*300px\)/);
+    assert.match(cssSource, /button\.group-private-chat-detail-bubble\s*\{[\s\S]*-webkit-appearance:\s*none/);
+    assert.match(cssSource, /button\.group-private-chat-detail-bubble\s*\{[\s\S]*max-inline-size:\s*min\(78%,\s*300px\)/);
+    assert.match(cssSource, /\.group-private-chat-detail-original,\s*\n\.group-private-chat-detail-translation\s*\{[\s\S]*overflow-wrap:\s*anywhere/);
+    assert.match(cssSource, /\.group-private-chat-detail-original,\s*\n\.group-private-chat-detail-translation\s*\{[\s\S]*hyphens:\s*auto/);
+});
+
+test('keeps group time awareness, Chinese generated thoughts, member removal, and clear-context safeguards', async () => {
+    const [indexSource, groupsSource, aiSource, interfaceSource, statusSource, coreSource] = await Promise.all([
+        fs.readFile(new URL('../index.html', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/3_groups.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_ai.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_interface.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_status.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/2_core.js', import.meta.url), 'utf8')
+    ]);
+
+    assert.match(indexSource, /id="group-time-aware-toggle"/);
+    assert.match(indexSource, />时间感知</);
+    assert.match(groupsSource, /groupTimeAwareToggle/);
+    assert.match(groupsSource, /targetGroup\.timeAware\s*=\s*timeAware/);
+    assert.match(groupsSource, /gmm-kick-btn/);
+    assert.match(groupsSource, /targetGroup\.members\s*=\s*\(Array\.isArray\(targetGroup\.members\)/);
+    assert.match(groupsSource, /delete targetGroup\.memory\.mountSettings/);
+    assert.match(groupsSource, /delete targetGroup\.memory\.mountLimits/);
+    assert.match(groupsSource, /delete targetGroup\.memberProfiles/);
+
+    assert.match(aiSource, /buildGroupTimeRequirement/);
+    assert.match(aiSource, /【群聊时间感知】/);
+    assert.match(aiSource, /thought 字段必须使用自然中文/);
+    assert.match(aiSource, /【中文强制】thought、location、action、mood、expression、events 以及 memoryPayload/);
+    assert.match(aiSource, /memberProfiles\[memberProfileKey\]/);
+    assert.match(aiSource, /updatedAt\s*=\s*Date\.now\(\)/);
+
+    assert.match(interfaceSource, /window\.imApp\.getFriendById\(friend\.id\)/);
+    assert.match(interfaceSource, /hasHistoricalThought/);
+    assert.match(interfaceSource, /groupProfile\.thought \|\| '暂无心声'/);
+    assert.match(interfaceSource, /formatStatusLabel/);
+    assert.match(interfaceSource, /normalizeStatusForStorage/);
+    assert.match(statusSource, /formatProfileStatusLabel/);
+
+    assert.match(coreSource, /targetFriend\.messages\s*=\s*\[\]/);
+    assert.match(coreSource, /targetFriend\.memberProfiles\s*=\s*\{\}/);
+    assert.match(coreSource, /notes:\s*''/);
+    assert.match(coreSource, /cleared\.lastSummaryMessageCount\s*=\s*0/);
+    assert.match(coreSource, /cleared\.mountSettings\s*=/);
+    assert.match(coreSource, /clearFriendRuntimeMessageContext\(targetFriend\)/);
+});

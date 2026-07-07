@@ -4,6 +4,15 @@
 document.addEventListener('DOMContentLoaded', () => {
     window.imChat = window.imChat || {};
 
+    function formatProfileStatusLabel(value, isSleeping = false) {
+        if (isSleeping) return 'offline';
+        const raw = String(value || 'online').trim();
+        const normalized = raw.toLowerCase();
+        if (normalized === 'offline' || raw === '离线') return 'offline';
+        if (normalized === 'online' || raw === '在线') return 'online';
+        return raw || 'online';
+    }
+
     async function commitStatusFriendChange(friendOrId, mutator, options = {}) {
         const commitOptions = {
             metaOnly: options.metaOnly !== false,
@@ -366,7 +375,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const name = friend.nickname || friend.realName || 'Unknown';
         const signature = friend.signature || '这个人很懒，什么都没写';
-        const onlineLabel = isSleeping ? 'offline' : ((panel.status || friend.status || 'online').toString().trim() || 'online');
+        const onlineLabel = formatProfileStatusLabel(panel.status || friend.status || 'online', isSleeping);
         
         const affection = typeof friend.profilePanel?.affection === 'number' ? friend.profilePanel.affection : (typeof panel.affection === 'number' ? panel.affection : 0);
         const affectionChange = typeof friend.profilePanel?.affectionChange === 'number' ? friend.profilePanel.affectionChange : (typeof panel.affectionChange === 'number' ? panel.affectionChange : 0);

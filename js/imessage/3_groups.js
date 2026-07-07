@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const groupCallStartBtn = document.getElementById('group-call-start-btn');
     const groupContextEnabledToggle = document.getElementById('group-context-enabled-toggle');
     const groupContextLimitInput = document.getElementById('group-context-limit-input');
+    const groupTimeAwareToggle = document.getElementById('group-time-aware-toggle');
     const groupManualSummaryBtn = document.getElementById('group-manual-summary-btn');
     const groupSummaryMoreStats = document.getElementById('group-summary-more-stats');
     const groupSummaryMoreList = document.getElementById('group-summary-more-list');
@@ -171,6 +172,22 @@ document.addEventListener('DOMContentLoaded', () => {
         group.memory = window.imApp.normalizeFriendData(group).memory;
         currentViewingGroup = group;
         return group;
+    }
+
+    function getGroupMemberCount(group) {
+        return (Array.isArray(group?.members) ? group.members.length : 0) + 1;
+    }
+
+    function formatGroupMemberCount(count) {
+        const safeCount = Math.max(0, Number(count) || 0);
+        return `${safeCount} member${safeCount === 1 ? '' : 's'}`;
+    }
+
+    function syncGroupHeaderMemberCount(group) {
+        if (!group?.id) return;
+        const page = document.getElementById(`chat-interface-${group.id}`);
+        const signEl = page ? page.querySelector('.ins-chat-sign') : null;
+        if (signEl) signEl.textContent = formatGroupMemberCount(getGroupMemberCount(group));
     }
 
     window.imApp.calculateChatMemoryTokenEstimate = window.imApp.calculateChatMemoryTokenEstimate || function(friend) {
@@ -594,6 +611,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function openGroupContextSettingsSheet() {
         if (!currentViewingGroup || !groupContextSettingsSheet) return;
+        resolveLatestGroup(currentViewingGroup);
 
         currentViewingGroup.memory = currentViewingGroup.memory || window.imApp.createDefaultMemory();
         currentViewingGroup.memory.context = currentViewingGroup.memory.context || {};
@@ -611,6 +629,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (groupContextLimitInput) {
             groupContextLimitInput.value = limit;
+        }
+
+        if (groupTimeAwareToggle) {
+            groupTimeAwareToggle.checked = currentViewingGroup.timeAware !== false;
         }
 
         openView(groupContextSettingsSheet);
@@ -676,7 +698,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.imApp.openGroupDetails = function(group) {
         if (!group || group.type !== 'group') return;
-        currentViewingGroup = group;
+        currentViewingGroup = resolveLatestGroup(group) || group;
+        group = currentViewingGroup;
 
         const avatarText = document.getElementById('group-details-avatar-text');
         const avatarImg = document.getElementById('group-details-avatar-img');
@@ -693,7 +716,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('group-details-name').textContent = group.nickname;
 
         const count = (group.members ? group.members.length : 0) + 1;
-        document.getElementById('group-details-count').textContent = `${count} member${count > 1 ? 's' : ''}`;
+        document.getElementById('group-details-count').textContent = formatGroupMemberCount(count);
 
         const listContainer = document.getElementById('group-details-members-list');
         const userMeta = getGroupUserDisplayMeta(group);
@@ -833,6 +856,8 @@ document.addEventListener('DOMContentLoaded', () => {
     window.imApp.showGroupMemberManageSheet = function(group, memberId) {
         const sheet = groupMemberManageSheet || document.getElementById('group-member-manage-sheet');
         if (!sheet || !group) return;
+        const latestGroup = resolveLatestGroup(group) || group;
+        currentViewingGroup = latestGroup;
 
         const targetMember = window.imData.friends.find(x => String(x.id) === String(memberId));
 
@@ -849,7 +874,7 @@ document.addEventListener('DOMContentLoaded', () => {
             avatarIcon.style.display = 'block';
         }
 
-        document.getElementById('gmm-name').textContent = targetMember.nickname || 'Member';
+        document.getElementById('gmm-name').textContent = targetMember.nickname || '群成员';
         
         // 单聊记忆开关与数量逻辑
         const memoryToggle = document.getElementById('gmm-memory-toggle');
@@ -868,7 +893,7 @@ document.addEventListener('DOMContentLoaded', () => {
             newToggle.disabled = false;
             if (newLimitInput) newLimitInput.disabled = false;
             
-            const groupMemory = group.memory || {};
+            const groupMemory = latestGroup.memory || {};
             const mountSettings = groupMemory.mountSettings || {};
             const mountLimits = groupMemory.mountLimits || {};
             
@@ -882,11 +907,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const limitVal = newLimitInput ? parseInt(newLimitInput.value) || 20 : 20;
                 
                 // 同步更新本地引用
-                group.memory = group.memory || window.imApp.createDefaultMemory();
-                group.memory.mountSettings = group.memory.mountSettings || {};
-                group.memory.mountLimits = group.memory.mountLimits || {};
-                group.memory.mountSettings[memberId] = isChecked;
-                group.memory.mountLimits[memberId] = limitVal;
+                latestGroup.memory = latestGroup.memory || window.imApp.createDefaultMemory();
+                latestGroup.memory.mountSettings = latestGroup.memory.mountSettings || {};
+                latestGroup.memory.mountLimits = latestGroup.memory.mountLimits || {};
+                latestGroup.memory.mountSettings[memberId] = isChecked;
+                latestGroup.memory.mountLimits[memberId] = limitVal;
                 
                 await commitCurrentGroupChange((targetGroup) => {
                     targetGroup.memory = targetGroup.memory || window.imApp.createDefaultMemory();
@@ -908,6 +933,64 @@ document.addEventListener('DOMContentLoaded', () => {
                     await saveSettings();
                 });
             }
+        }
+
+        const kickBtn = document.getElementById('gmm-kick-btn');
+        if (kickBtn) {
+            const newKickBtn = kickBtn.cloneNode(true);
+            kickBtn.parentNode.replaceChild(newKickBtn, kickBtn);
+            newKickBtn.addEventListener('click', () => {
+                const liveGroup = resolveLatestGroup(latestGroup) || latestGroup;
+                if (!liveGroup) return;
+                const memberName = targetMember.nickname || '群成员';
+                window.showCustomModal({
+                    title: '踢出群聊',
+                    message: `确定要将“${memberName}”从“${liveGroup.nickname || '群聊'}”中移除吗？该成员的角色和单聊记录不会被删除，群聊历史也会保留。`,
+                    confirmText: '删除',
+                    isDestructive: true,
+                    onConfirm: async () => {
+                        currentViewingGroup = liveGroup;
+                        const memberKey = String(memberId);
+                        const saved = await commitCurrentGroupChange((targetGroup) => {
+                            targetGroup.members = (Array.isArray(targetGroup.members) ? targetGroup.members : [])
+                                .filter(id => String(id) !== memberKey);
+
+                            if (targetGroup.memory) {
+                                if (targetGroup.memory.mountSettings) {
+                                    delete targetGroup.memory.mountSettings[memberKey];
+                                    delete targetGroup.memory.mountSettings[memberId];
+                                }
+                                if (targetGroup.memory.mountLimits) {
+                                    delete targetGroup.memory.mountLimits[memberKey];
+                                    delete targetGroup.memory.mountLimits[memberId];
+                                }
+                            }
+
+                            if (targetGroup.memberProfiles) {
+                                delete targetGroup.memberProfiles[memberKey];
+                                delete targetGroup.memberProfiles[memberId];
+                            }
+                        }, { silent: true, metaOnly: true, syncActive: true });
+
+                        if (!saved) {
+                            if (window.showToast) window.showToast('删除成员失败');
+                            return;
+                        }
+
+                        const refreshedGroup = resolveLatestGroup(liveGroup.id) || liveGroup;
+                        syncGroupHeaderMemberCount(refreshedGroup);
+                        closeView(sheet);
+                        if (window.imApp.openGroupDetails) window.imApp.openGroupDetails(refreshedGroup);
+                        if (window.imApp.renderGroupsList) window.imApp.renderGroupsList();
+                        if (window.imChat?.renderChatsList) window.imChat.renderChatsList();
+                        if (groupCallInviteSheet?.classList.contains('active')) {
+                            selectedGroupCallMembers = selectedGroupCallMembers.filter(id => String(id) !== memberKey);
+                            renderGroupCallInviteList();
+                        }
+                        if (window.showToast) window.showToast(`已删除 ${memberName}`);
+                    }
+                });
+            });
         }
 
         window.openView(sheet);
@@ -1007,7 +1090,7 @@ document.addEventListener('DOMContentLoaded', () => {
             closeView(createGroupSheet);
 
             if (window.showToast) {
-                window.showToast('Created a group', 'Groups can have:\n✓ Up to 200,000 members\n✓ Persistent chat history\n✓ Public links such as t.me/title\n✓ Admins with different rights', 3000);
+                window.showToast('Created a group', 'Groups can have:\n✓ Persistent chat history\n✓ Member management\n✓ Public links and group summaries\n✓ Mounted member memories', 3000);
             }
         });
     }
@@ -1194,10 +1277,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 confirmText: '清空',
                 isDestructive: true,
                 onConfirm: async () => {
-                    const success = await window.imApp.resetFriendConversation(currentViewingGroup.id);
+                    const groupId = currentViewingGroup.id;
+                    const success = await window.imApp.resetFriendConversation(groupId);
                     if (success) {
-                        if (window.showToast) window.showToast('聊天记录已清空');
-                        if (window.imApp.openChatTab) window.imApp.openChatTab(currentViewingGroup);
+                        const latestGroup = resolveLatestGroup(groupId) || currentViewingGroup;
+                        currentViewingGroup = latestGroup;
+                        if (window.showToast) window.showToast('聊天记录、总结、上下文和成员心声已清空');
+                        if (window.imApp.openChatTab) window.imApp.openChatTab(latestGroup);
                     }
                 }
             });
@@ -1350,6 +1436,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!currentViewingGroup) return;
 
             const enabled = !!(groupContextEnabledToggle && groupContextEnabledToggle.checked);
+            const timeAware = groupTimeAwareToggle
+                ? !!groupTimeAwareToggle.checked
+                : currentViewingGroup.timeAware !== false;
             let limit = groupContextLimitInput ? Number(groupContextLimitInput.value) : 100;
 
             if (!Number.isFinite(limit) || limit <= 0) {
@@ -1367,6 +1456,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 targetGroup.memory.context = targetGroup.memory.context || {};
                 targetGroup.memory.context.enabled = enabled;
                 targetGroup.memory.context.limit = limit;
+                targetGroup.timeAware = timeAware;
             }, { silent: true });
 
             if (!saved) {

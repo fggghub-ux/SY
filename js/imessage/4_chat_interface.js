@@ -12,6 +12,28 @@ document.addEventListener('DOMContentLoaded', () => {
     let androidViewportWidth = 0;
     let androidKeyboardWasOpen = false;
 
+    function formatStatusLabel(value, isSleeping = false) {
+        if (isSleeping) return 'offline';
+        const raw = String(value || 'online').trim();
+        const normalized = raw.toLowerCase();
+        if (normalized === 'offline' || raw === '离线') return 'offline';
+        if (normalized === 'online' || raw === '在线') return 'online';
+        return raw || 'online';
+    }
+
+    function normalizeStatusForStorage(value) {
+        const raw = String(value || '').trim();
+        const normalized = raw.toLowerCase();
+        if (!raw || normalized === 'online' || raw === '在线') return 'online';
+        if (normalized === 'offline' || raw === '离线') return 'offline';
+        return raw;
+    }
+
+    function formatGroupMemberCount(count) {
+        const safeCount = Math.max(0, Number(count) || 0);
+        return `${safeCount} member${safeCount === 1 ? '' : 's'}`;
+    }
+
     function isChatInputFocused(page) {
         const input = page?.querySelector('.chat-input');
         return !!input && document.activeElement === input;
@@ -324,7 +346,7 @@ async function openChatTab(friend) {
         const isNpcChat = friend.type === 'npc';
         const interfaceClassName = `active-chat-interface im-chat-interface ${isGroupChat ? 'im-chat-group' : (isNpcChat ? 'im-chat-npc' : 'im-chat-single')}`;
         const isSleeping = window.imApp.isCharacterSleeping(friend);
-        const statusLabel = isSleeping ? 'offline' : 'online';
+        const statusLabel = formatStatusLabel(isSleeping ? 'offline' : 'online', isSleeping);
         const statusColor = isSleeping ? '#8e8e93' : '#34c759';
 
         if (page) {
@@ -358,7 +380,7 @@ async function openChatTab(friend) {
             if (isGroupChat) {
                 titleHtml = `<div class="im-chat-group-title-wrap" style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 0; padding: 4px 16px; background: rgba(242, 242, 247, 0.85);   border-radius: 40px;  pointer-events: auto;">
                         <div class="ins-chat-name" style="font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;">${friend.nickname}</div>
-                        <div class="ins-chat-sign" style="font-size: 11px; font-weight: 500; color: #8e8e93; margin-top: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px;">${(friend.members ? friend.members.length : 0) + 1} member${(friend.members ? friend.members.length : 0) + 1 > 1 ? 's' : ''}</div>
+                        <div class="ins-chat-sign" style="font-size: 11px; font-weight: 500; color: #8e8e93; margin-top: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px;">${formatGroupMemberCount((friend.members ? friend.members.length : 0) + 1)}</div>
                    </div>`;
             } else if (friend.type === 'official') {
                 titleHtml = `<div class="im-chat-avatar-wrap">
@@ -835,11 +857,14 @@ async function openChatTab(friend) {
                                 const speakerMemberId = row.getAttribute('data-speaker-member-id');
                                 const thought = row.getAttribute('data-thought');
                                 if (speakerName || speakerMemberId) {
+                                    const latestGroup = window.imApp.getFriendById
+                                        ? (window.imApp.getFriendById(friend.id) || friend)
+                                        : friend;
                                     const speakerInfo = window.imChat.normalizeGroupSpeaker
-                                        ? window.imChat.normalizeGroupSpeaker(friend, speakerName, speakerMemberId)
+                                        ? window.imChat.normalizeGroupSpeaker(latestGroup, speakerName, speakerMemberId)
                                         : null;
                                     if (speakerInfo && window.imChat.showGroupMemberProfileCard) {
-                                        window.imChat.showGroupMemberProfileCard(speakerInfo, page, avatarSlot, friend, thought);
+                                        window.imChat.showGroupMemberProfileCard(speakerInfo, page, avatarSlot, latestGroup, thought);
                                     }
                                 }
                             }
@@ -1289,6 +1314,10 @@ function closeContextMenu() {
 
     function showGroupMemberProfileCard(speakerInfo, page, anchorElement, group, historicalThought = null) {
         if (!page) return;
+        const latestGroup = group && window.imApp.getFriendById
+            ? (window.imApp.getFriendById(group.id || group) || group)
+            : group;
+        const memberProfileKey = String(speakerInfo?.id ?? speakerInfo?.memberId ?? '');
         let overlay = document.getElementById('global-gmp-overlay');
         if (!overlay) {
             // Mount overlay to body so it covers everything and isn't clipped
@@ -1323,26 +1352,29 @@ function closeContextMenu() {
 
         const card = overlay.querySelector('.group-member-profile-card');
         const avatarUrl = speakerInfo.avatarUrl || 'https://picsum.photos/seed/char/100/100';
-        const name = speakerInfo.nickname || 'Unknown';
+        const name = speakerInfo.nickname || '群成员';
         const signature = speakerInfo.signature || '这个人很懒，什么都没写';
         const title = speakerInfo.groupTitle || '';
         
         let groupProfile = {};
-        if (group && group.memberProfiles && group.memberProfiles[speakerInfo.id]) {
-            groupProfile = group.memberProfiles[speakerInfo.id];
+        if (latestGroup && latestGroup.memberProfiles) {
+            groupProfile = latestGroup.memberProfiles[memberProfileKey]
+                || latestGroup.memberProfiles[speakerInfo.id]
+                || {};
         }
         
-        const thought = historicalThought || (historicalThought === null ? '暂无心声' : (groupProfile.thought || '暂无心声'));
+        const hasHistoricalThought = typeof historicalThought === 'string' && historicalThought.trim();
+        const thought = hasHistoricalThought ? historicalThought.trim() : (groupProfile.thought || '暂无心声');
         
         // For group members, we check if they have individual sleeping schedules if we can retrieve them
         let isSleeping = false;
-        const members = window.imChat.getGroupMemberFriends(group);
-        const actualMember = members.find(m => String(m.id) === String(speakerInfo.id));
+        const members = window.imChat.getGroupMemberFriends(latestGroup);
+        const actualMember = members.find(m => String(m.id) === memberProfileKey);
         if (actualMember) {
             isSleeping = window.imApp.isCharacterSleeping(actualMember);
         }
         
-        const status = isSleeping ? 'offline' : (groupProfile.status || 'online');
+        const status = formatStatusLabel(groupProfile.status || 'online', isSleeping);
         const statusColor = isSleeping ? '#8e8e93' : '#34c759';
 
         let titleHtml = title ? `<div class="gmp-title">${title}</div>` : '';
@@ -1366,16 +1398,17 @@ function closeContextMenu() {
 
         const statusBubble = card.querySelector('.gmp-status-bubble');
         statusBubble.addEventListener('blur', async (e) => {
-            const nextStatus = e.target.innerText.trim() || 'online';
-            if (group) {
+            const nextStatus = normalizeStatusForStorage(e.target.innerText);
+            if (latestGroup) {
                 const saved = window.imApp.commitFriendChange
-                    ? await window.imApp.commitFriendChange(group.id, (targetGroup) => {
+                    ? await window.imApp.commitFriendChange(latestGroup.id, (targetGroup) => {
                         if (!targetGroup) return;
                         if (!targetGroup.memberProfiles) targetGroup.memberProfiles = {};
-                        if (!targetGroup.memberProfiles[speakerInfo.id]) {
-                            targetGroup.memberProfiles[speakerInfo.id] = { thought: '暂无心声', status: 'online' };
+                        if (!targetGroup.memberProfiles[memberProfileKey]) {
+                            targetGroup.memberProfiles[memberProfileKey] = { thought: '暂无心声', status: 'online', updatedAt: 0 };
                         }
-                        targetGroup.memberProfiles[speakerInfo.id].status = nextStatus;
+                        targetGroup.memberProfiles[memberProfileKey].status = nextStatus;
+                        targetGroup.memberProfiles[memberProfileKey].updatedAt = Date.now();
                     }, { silent: true })
                     : false;
 
@@ -1384,6 +1417,7 @@ function closeContextMenu() {
                     if (window.showToast) window.showToast('状态保存失败');
                     return;
                 }
+                e.target.innerText = formatStatusLabel(nextStatus, isSleeping);
             } else {
                 // Fallback if no group context
                 e.target.innerText = status;

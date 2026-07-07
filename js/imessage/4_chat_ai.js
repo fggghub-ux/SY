@@ -1338,6 +1338,66 @@ ${latestMessages || 'None'}
             return `[时间：${year}年${month}月${day}日 ${dayOfWeek} ${period}${displayHour}:${minute}:${second}] `;
         }
 
+        function formatPromptTime(timestamp) {
+            const value = Number(timestamp);
+            if (!Number.isFinite(value) || value <= 0) return '未知';
+            const date = new Date(value);
+            return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
+        }
+
+        function formatPromptDuration(durationMs) {
+            const value = Number(durationMs);
+            if (!Number.isFinite(value) || value < 0) return '未知';
+            const totalMinutes = Math.floor(value / 60000);
+            if (totalMinutes < 1) return '不到1分钟';
+            if (totalMinutes < 60) return `${totalMinutes}分钟`;
+            const hours = Math.floor(totalMinutes / 60);
+            const minutes = totalMinutes % 60;
+            if (hours < 24) return minutes > 0 ? `${hours}小时${minutes}分钟` : `${hours}小时`;
+            const days = Math.floor(hours / 24);
+            const restHours = hours % 24;
+            return restHours > 0 ? `${days}天${restHours}小时` : `${days}天`;
+        }
+
+        function getGroupMessageSpeakerName(message, groupMembers) {
+            const memberId = message?.speakerMemberId || message?.senderMemberId || '';
+            if (memberId) {
+                const member = groupMembers.find(item => String(item.id) === String(memberId));
+                if (member) return member.nickname || member.realName || '群成员';
+            }
+            return message?.speaker || message?.senderName || '群成员';
+        }
+
+        function buildGroupTimeRequirement(group, groupMembers) {
+            if (!group || group.timeAware === false) return '';
+
+            const currentTime = new Date();
+            const timeString = `${currentTime.getFullYear()}年${currentTime.getMonth() + 1}月${currentTime.getDate()}日 ${currentTime.getHours()}:${currentTime.getMinutes().toString().padStart(2, '0')}`;
+            const historyMessages = Array.isArray(group.messages)
+                ? group.messages.filter(msg => msg && Number(msg.timestamp) > 0)
+                : [];
+            const lastUserMessage = historyMessages.slice().reverse().find(msg => msg.role === 'user') || null;
+            const lastMemberMessage = historyMessages.slice().reverse().find(msg => msg.role === 'assistant') || null;
+            const lastPublicMessage = historyMessages.slice().reverse().find(msg => msg.role === 'user' || msg.role === 'assistant') || null;
+            const lastSpeakerName = lastMemberMessage ? getGroupMessageSpeakerName(lastMemberMessage, groupMembers) : '未知';
+            const gapSinceLastPublic = lastPublicMessage
+                ? currentTime.getTime() - Number(lastPublicMessage.timestamp)
+                : null;
+            const gapSinceUser = lastUserMessage
+                ? currentTime.getTime() - Number(lastUserMessage.timestamp)
+                : null;
+            const gapSinceMember = lastMemberMessage
+                ? currentTime.getTime() - Number(lastMemberMessage.timestamp)
+                : null;
+
+            return `\n\n【群聊时间感知】：
+- 当前系统时间是：${timeString}。
+- User 最后一次发言时间：${lastUserMessage ? formatPromptTime(lastUserMessage.timestamp) : '未知'}${lastUserMessage ? `（距离现在约 ${formatPromptDuration(gapSinceUser)}）` : ''}。
+- 群成员最近一次公开发言：${lastMemberMessage ? `${lastSpeakerName} 于 ${formatPromptTime(lastMemberMessage.timestamp)}` : '未知'}${lastMemberMessage ? `（距离现在约 ${formatPromptDuration(gapSinceMember)}）` : ''}。
+- 群聊最后一条公开消息距离现在：${lastPublicMessage ? `约 ${formatPromptDuration(gapSinceLastPublic)}` : '未知'}。
+- 回复前所有发言成员都必须感知现在的具体日期、时间段、距离上次群聊过去多久，以及这段间隔对情绪、动作、称呼和话题承接的影响；但如果间隔很短，不要刻意提时间，只把它作为背景。`;
+        }
+
         const relationshipText = friend.memory.relationships && friend.memory.relationships.length > 0
             ? friend.memory.relationships.map(rel => {
                 const npc = window.imData.friends.find(item => String(item.id) === String(rel.npcId));
@@ -1541,7 +1601,7 @@ ${pendingRegenerateContext.previousReply || 'None'}${regenerateUserRequirement}`
 
         const profilePanelRequirement = friend.type === 'group'
             ? ''
-            : `\n\nProfile Panel Requirement:\n- 在正常聊天气泡之外，你必须额外输出 1 个 <profile_panel>...</profile_panel>\n- <profile_panel> 内必须是合法 JSON，不能有 markdown 代码块，不能有额外解释文字\n- JSON 必须包含字段：thought、location、action、mood、expression、affectionChange、events\n- thought 必须是 45-60 字左右，严格基于当前聊天上下文，使用第一人称，像角色此刻没有说出口的心声，并且你必须在心声的最前面带上当前的具体时间（例如：[6月11日 凌晨2:14] 心声内容）\n- location 必须是 2-16 字，表示角色此刻所处的位置或场景\n- action 必须是 2-10 字，表示角色此刻正在做的动作或状态\n- mood 必须是 2-10 字，表示角色此刻的心情\n- expression 必须是 2-10 字，表示角色此刻的面部表情或神态\n- affectionChange 必须是整数（范围 -5 到 5），表示你对用户好感度因本轮对话产生的增减变化\n- 不要输出 online 或类似在线文案，在线状态由系统统一控制\n- events 必须是 JSON 数组；如果当前没有新的事件就输出 []；如果有事件，最多 3 条\n- 普通事件格式为 {"title":"事件标题","description":"事件描述","time":"时间或留空","type":"note"}\n- 珍视回忆必须由你（当前角色/char）自己发起：只有当你基于自己的感受，觉得刚刚这段聊天很在意、很珍贵、自己想以后记住时，才额外加入 1 条珍视回忆事件，type 必须为 "memory_request"\n- 不要把珍视回忆写成外部指令、替对方保存、接受要求或向对方请求许可；即使对方提到保存或记忆相关内容，也只在你自己也真心想珍藏时才输出\n- 珍视回忆事件格式为 {"title":"想珍藏这一刻","description":"一句简短说明","time":"时间或留空","type":"memory_request","requestText":"我想记住的具体事情","detail":"我为什么想记住或补充细节","confirmText":"收下","cancelText":"算了","memoryPayload":{"title":"珍视回忆标题","content":"我想记住的内容","detail":"更多细节","reason":"我想记住的原因","createdAt":"时间或留空","sourceThought":"可留空"}}\n- 只有当你真的觉得值得自己记住时才输出 memory_request，不能每次都输出\n- thought、location、action、mood、expression、events 必须和当前聊天内容连贯，不能复读，不能脱离角色人设`;
+            : `\n\nProfile Panel Requirement:\n- 在正常聊天气泡之外，你必须额外输出 1 个 <profile_panel>...</profile_panel>\n- <profile_panel> 内必须是合法 JSON，不能有 markdown 代码块，不能有额外解释文字\n- JSON 必须包含字段：thought、location、action、mood、expression、affectionChange、events\n- 【中文强制】thought、location、action、mood、expression、events 以及 memoryPayload 内所有可见文本必须使用简体中文；禁止输出英文、日文、韩文、法文等非中文内容，不受默认语言设置影响\n- thought 必须是 45-60 字左右，严格基于当前聊天上下文，使用第一人称，像角色此刻没有说出口的心声，并且你必须在心声的最前面带上当前的具体时间（例如：[6月11日 凌晨2:14] 心声内容）\n- location 必须是 2-16 字，表示角色此刻所处的位置或场景\n- action 必须是 2-10 字，表示角色此刻正在做的动作或状态\n- mood 必须是 2-10 字，表示角色此刻的心情\n- expression 必须是 2-10 字，表示角色此刻的面部表情或神态\n- affectionChange 必须是整数（范围 -5 到 5），表示你对用户好感度因本轮对话产生的增减变化\n- 不要输出 online/offline 或类似在线状态文案，在线状态由系统统一控制并在界面显示为中文\n- events 必须是 JSON 数组；如果当前没有新的事件就输出 []；如果有事件，最多 3 条\n- 普通事件格式为 {"title":"事件标题","description":"事件描述","time":"时间或留空","type":"note"}\n- 珍视回忆必须由你（当前角色/char）自己发起：只有当你基于自己的感受，觉得刚刚这段聊天很在意、很珍贵、自己想以后记住时，才额外加入 1 条珍视回忆事件，type 必须为 "memory_request"\n- 不要把珍视回忆写成外部指令、替对方保存、接受要求或向对方请求许可；即使对方提到保存或记忆相关内容，也只在你自己也真心想珍藏时才输出\n- 珍视回忆事件格式为 {"title":"想珍藏这一刻","description":"一句简短说明","time":"时间或留空","type":"memory_request","requestText":"我想记住的具体事情","detail":"我为什么想记住或补充细节","confirmText":"收下","cancelText":"算了","memoryPayload":{"title":"珍视回忆标题","content":"我想记住的内容","detail":"更多细节","reason":"我想记住的原因","createdAt":"时间或留空","sourceThought":"可留空"}}\n- 只有当你真的觉得值得自己记住时才输出 memory_request，不能每次都输出\n- thought、location、action、mood、expression、events 必须和当前聊天内容连贯，不能复读，不能脱离角色人设`;
 
         const targetLanguage = friend.language || 'zh';
         let languageRequirement = '';
@@ -1555,6 +1615,7 @@ ${pendingRegenerateContext.previousReply || 'None'}${regenerateUserRequirement}`
             const langName = langMap[targetLanguage] || targetLanguage;
             languageRequirement = `\n\n【!!! CRITICAL LANGUAGE RULE / 绝对最高优先级语言指令 !!!】:\n- [ABSOLUTE REQUIREMENT]: You MUST speak ONLY in ${langName} for the "text" field. This overrides ALL persona and memory settings.\n- Even if your persona is Chinese or the user speaks in Chinese, your spoken "text" MUST be in ${langName}.\n- [TRANSLATION]: You MUST provide an accurate Chinese translation of your ${langName} "text" in the "translation" field.\n- [THOUGHT]: The "thought" field MUST remain in Chinese.`;
         }
+        const effectiveProfilePanelRequirement = profilePanelRequirement.replace('并在界面显示为中文', '');
 
         let systemPrompt = '';
         let isGroupAfterUserLeft = false;
@@ -1734,6 +1795,7 @@ ${pendingRegenerateContext.previousReply || 'None'}${regenerateUserRequirement}`
                     return infoStr;
                 }).join('\n\n')
                 : 'None';
+            const groupTimeRequirement = buildGroupTimeRequirement(friend, groupMembers);
 
             systemPrompt = `${systemDepthWorldBookContext ? `系统深度规则（最高优先级）：\n${systemDepthWorldBookContext}\n\n` : ''}${beforeRoleWorldBookContext ? `角色前规则：\n${beforeRoleWorldBookContext}\n\n` : ''}你正在模拟一个名为 "${friend.nickname}" 的群聊。${groupExitPrompt}
 ${isGroupAfterUserLeft ? `${currentUserState.name || 'User'} 曾在这个群聊中，其人设为: ${effectiveUserPersona || '一个普通用户'}。` : `你正在与 ${currentUserState.name || 'User'} 聊天，其人设为: ${effectiveUserPersona || '一个普通用户'}。`}
@@ -1745,7 +1807,7 @@ ${membersInfo}
 ${allowedSpeakerNames.length > 0 ? allowedSpeakerNames.join('、') : 'None'}
 
 群成员可私聊的好友候选（优先关系网，其次复用角色已有私有联系人；只有 canGeneratePrivateFriend 为 true 时才允许按人设生成新好友）：
-${JSON.stringify(memberFriendChatCandidates)}${afterRoleWorldBookContext ? `\n\n角色后规则：\n${afterRoleWorldBookContext}` : ''}
+${JSON.stringify(memberFriendChatCandidates)}${groupTimeRequirement}${afterRoleWorldBookContext ? `\n\n角色后规则：\n${afterRoleWorldBookContext}` : ''}
 
 群聊特定规则：
 1. 请根据上下文和群成员性格进行回复，所有群员都必须参与回复，除非群聊人数大于10人则挑选5-8人回复。
@@ -1763,7 +1825,7 @@ ${JSON.stringify(memberFriendChatCandidates)}${afterRoleWorldBookContext ? `\n\n
 9. speaker 必须且只能使用以上允许发言名单中的完整准确名字。
 10. translation 只能翻译当前这一条 text；如果 text 不是中文，translation 必须填写自然中文翻译；如果 text 本身是中文，translation 必须是空字符串。
 11. quote 只有在你确实想引用用户或上一条消息时才填写，否则必须是空字符串。
-12. 【心声要求】：thought 字段必须填写该发言成员此刻的真实心理活动或未说出口的话，字数严格在10-30字之间。
+12. 【心声要求】：thought 字段必须使用自然中文填写该发言成员此刻的真实心理活动或未说出口的话，字数严格在10-30字之间；不受默认语言设置影响，禁止使用英文、日文、韩文、法文等非中文内容。
 13. 【User 未回复也必须继续】：如果本轮没有 User 新发言，或触发来源是 AI继续/空输入/自动续写/角色主动说话，你仍然必须让群成员继续自然聊天；不要等待 User、不要输出空内容、不要说“用户没有输入”，可以承接上一句、回应沉默、成员互相接话或开启符合当前关系的新话题。
 14. 【群聊衍生私信｜严格按需】：群成员只有在自己明确觉得某些话不适合公开说、不能让其他成员知道，或必须避开群内其他人单独告诉 User 时，才可以在本轮群聊回复之外给 User 发私信。普通寒暄、公开可说的话、对群消息的常规回应不得转成私信；私信也不得复制群内公开回复。
 15. 如果没有真实且具体的保密动机，完全不要输出私信标签。需要私信时，在 <chat_json>...</chat_json> 之外额外输出且只输出一个 <group_private_messages>...</group_private_messages> 标签，标签内必须是合法 JSON 数组，格式为：[{"speaker":"成员完整准确名字","messages":[{"text":"第一条私信","translation":"中文翻译或空字符串"},{"text":"第二条私信","translation":"中文翻译或空字符串"}]}]。
@@ -1861,7 +1923,7 @@ Reply naturally as your character in a chat app.
 11. 你必须额外输出 1 个 <profile_panel>...</profile_panel>，用于更新角色资料卡。${languageRequirement}
 
 Character Memory:
-${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequirement}${lovesSpaceRequirement}${lovesActionRequirement}${familyCardRequirement}${dynamicActionNarrationRequirement}`;
+${commonMemorySections || 'None'}${regenerateRequirement}${effectiveProfilePanelRequirement}${lovesSpaceRequirement}${lovesActionRequirement}${familyCardRequirement}${dynamicActionNarrationRequirement}`;
         }
 
         const messages = [{ role: 'system', content: systemPrompt }];
@@ -3064,11 +3126,14 @@ ${commonMemorySections || 'None'}${regenerateRequirement}${profilePanelRequireme
                         if (currentItem.thought && window.imApp.commitScopedFriendChange) {
                             await window.imApp.commitScopedFriendChange(speakerFriend.id, (targetGroup) => {
                                 if (!targetGroup) return;
+                                const memberProfileKey = String(detectedSpeaker.id);
                                 if (!targetGroup.memberProfiles) targetGroup.memberProfiles = {};
-                                if (!targetGroup.memberProfiles[detectedSpeaker.id]) {
-                                    targetGroup.memberProfiles[detectedSpeaker.id] = { thought: '', status: 'online' };
+                                if (!targetGroup.memberProfiles[memberProfileKey]) {
+                                    targetGroup.memberProfiles[memberProfileKey] = { thought: '', status: 'online', updatedAt: 0 };
                                 }
-                                targetGroup.memberProfiles[detectedSpeaker.id].thought = currentItem.thought;
+                                targetGroup.memberProfiles[memberProfileKey].thought = currentItem.thought;
+                                targetGroup.memberProfiles[memberProfileKey].status = targetGroup.memberProfiles[memberProfileKey].status || 'online';
+                                targetGroup.memberProfiles[memberProfileKey].updatedAt = Date.now();
                             }, {
                                 syncActive: true,
                                 metaOnly: true,
