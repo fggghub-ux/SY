@@ -1859,6 +1859,9 @@ ${latestMessages || 'None'}
 
         const pendingRegenerateContext = friend.pendingRegenerateContext || null;
         const userInputModalityRule = '\nUser 发送的内容/消息为线上打字发送的文字消息，除非上下文明确标注为“语音消息”的才为user发的语音';
+        const chatBubbleFormatGuardPrompt = `\n【防掉格式规则】：
+当前聊天以多气泡独立渲染。每一段独立对话、动作、反应或语义切换，都必须拆成 <chat_json> JSON 数组中的独立对象；严禁把多条气泡合并进同一个 text 字段，严禁输出 JSON 数组以外的正文、解释、Markdown 或分隔符。
+如果内容较长，必须主动拆成多个 text/voice/image 等合法对象，而不是用换行、斜杠、序号或连续长段落硬塞进一个气泡。`;
 
 
         const profilePanelRequirement = friend.type === 'group'
@@ -2110,6 +2113,7 @@ ${rolePsychologyAndEvolutionPrompt}
 3. 同一个成员如果刚刚自己表达过观点、情绪、计划、态度、称呼对象，本轮继续发言时必须与其最近发言保持连续性，除非有明确的新消息让他改变想法。
 4. 回复时优先承接最近几条消息中的具体对象、话题、称呼、问题和情绪，不要只对最后一条做泛泛回应。
 5. 【强限制】：严禁使用名单之外的名字发言，严禁虚构新成员，严禁让 User 冒充群成员发言。
+${chatBubbleFormatGuardPrompt}
 6. 【输出格式】：必须把聊天气泡放在 <chat_json> 和 </chat_json> 标签内，标签内只能是合法 JSON 数组，不能有 markdown 代码块，不能有解释文字。
 7. 【重要】如果群员想要发红包，或者你觉得气氛到了该发红包了，可以输出红包对象格式：{"type":"red_packet","speaker":"发红包的成员名","amount":100,"count":5,"description":"红包封面语"}。
 8. 普通文本气泡格式必须为 {"type":"text","speaker":"成员名","text":"气泡内容","thought":"该成员此刻的心理活动，10-30字心声，基于当前聊天上下文","translation":"中文翻译或空字符串","quote":"被引用内容或空字符串"}。
@@ -2206,6 +2210,7 @@ Reply naturally as your character in a chat app.
   角色: *是餐馆
 1. 【重要限制】：如果用户仅仅是口头提到“转账”，但系统并没有提示“[用户刚刚向你转账...]”，绝对禁止输出收下转账或退回转账的指令。
 2. 如果系统提示用户向你发起了一笔真实转账，你可以额外输出 1 个支付对象，选择“收下转账”或“退回转账”；如果你想主动给用户转账，也可以输出 1 个支付对象。
+${chatBubbleFormatGuardPrompt}
 3. 【输出格式】必须把聊天气泡放在 <chat_json> 和 </chat_json> 标签内，标签内只能是合法 JSON 数组，不能有 markdown 代码块，不能有解释文字。
 4. JSON 数组中的每一个对象都严格对应“一个独立气泡”或“一个独立支付卡片”，绝对禁止把多条气泡合并到同一个 text 字段里。
 5. 普通文本对象格式必须为 {"type":"text","text":"气泡内容","translation":"该条气泡的中文翻译或空字符串","quote":"被引用内容或空字符串"}。

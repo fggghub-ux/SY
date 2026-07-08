@@ -304,7 +304,7 @@ test('keeps iOS modal, theme preset, stickers, and private-chat safeguards', asy
 });
 
 test('keeps group time awareness, role recall toggle, Chinese generated thoughts, member removal, and clear-context safeguards', async () => {
-    const [indexSource, groupsSource, aiSource, interfaceSource, statusSource, coreSource, settingsSource, contactsSource] = await Promise.all([
+    const [indexSource, groupsSource, aiSource, interfaceSource, statusSource, coreSource, settingsSource, contactsSource, builtinWorldBookSource] = await Promise.all([
         fs.readFile(new URL('../index.html', import.meta.url), 'utf8'),
         fs.readFile(new URL('../js/imessage/3_groups.js', import.meta.url), 'utf8'),
         fs.readFile(new URL('../js/imessage/4_chat_ai.js', import.meta.url), 'utf8'),
@@ -312,7 +312,8 @@ test('keeps group time awareness, role recall toggle, Chinese generated thoughts
         fs.readFile(new URL('../js/imessage/4_chat_status.js', import.meta.url), 'utf8'),
         fs.readFile(new URL('../js/imessage/2_core.js', import.meta.url), 'utf8'),
         fs.readFile(new URL('../js/imessage/5_settings.js', import.meta.url), 'utf8'),
-        fs.readFile(new URL('../js/imessage/3_contacts.js', import.meta.url), 'utf8')
+        fs.readFile(new URL('../js/imessage/3_contacts.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/builtin_worldbook.js', import.meta.url), 'utf8')
     ]);
 
     assert.match(indexSource, /id="group-time-aware-toggle"/);
@@ -340,6 +341,16 @@ test('keeps group time awareness, role recall toggle, Chinese generated thoughts
     assert.match(aiSource, /现在认为与 User 的关系是：\$\{userRelationship\}/);
     assert.equal(aiSource.includes('User 发送的内容/消息为线上打字发送的文字消息，除非上下文明确标注为“语音消息”的才为user发的语音'), true);
     assert.equal((aiSource.match(/\$\{userInputModalityRule\}/g) || []).length, 2);
+    assert.match(aiSource, /chatBubbleFormatGuardPrompt/);
+    assert.equal((aiSource.match(/\$\{chatBubbleFormatGuardPrompt\}/g) || []).length, 2);
+    assert.match(aiSource, /严禁把多条气泡合并进同一个 text 字段/);
+    assert.match(aiSource, /严禁输出 JSON 数组以外的正文/);
+
+    const enabledBuiltinWorldBookSource = builtinWorldBookSource.slice(
+        builtinWorldBookSource.indexOf('const ENABLED_BUILTIN_WORLD_BOOK_ENTRY_IDS'),
+        builtinWorldBookSource.indexOf('window.getBuiltinWorldBookEntries')
+    );
+    assert.doesNotMatch(enabledBuiltinWorldBookSource, /builtin-anti-format-drop-1-0/);
 
     assert.match(interfaceSource, /window\.imApp\.getFriendById\(friend\.id\)/);
     assert.match(interfaceSource, /hasHistoricalThought/);
