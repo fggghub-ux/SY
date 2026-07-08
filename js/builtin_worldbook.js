@@ -301,10 +301,16 @@ function decodeBuiltinWorldBookPayload(payload) {
 }
 
 window.builtinWorldBookEntries = decodeBuiltinWorldBookPayload(BUILTIN_WB_PAYLOAD);
+const ENABLED_BUILTIN_WORLD_BOOK_ENTRY_IDS = new Set([
+    'builtin-living-vibe-1-0',
+    'builtin-punctuation-usage-rules'
+]);
 
 window.getBuiltinWorldBookEntries = function() {
     if (!Array.isArray(window.builtinWorldBookEntries)) return [];
-    return window.builtinWorldBookEntries.map(entry => window.normalizeWorldBookEntry(entry));
+    return window.builtinWorldBookEntries
+        .filter(entry => ENABLED_BUILTIN_WORLD_BOOK_ENTRY_IDS.has(String(entry?.id || '')))
+        .map(entry => window.normalizeWorldBookEntry(entry));
 };
 
 window.getBuiltinWorldBookEntriesByPosition = function(position = 'before_role', contextText = '') {

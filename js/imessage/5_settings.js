@@ -2158,6 +2158,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const realNameInput = document.getElementById('char-realname-input');
             const nicknameInput = document.getElementById('char-nickname-input');
             const signatureInput = document.getElementById('char-signature-input');
+            const relationshipInput = document.getElementById('char-relationship-input');
             const personaInput = document.getElementById('char-persona-input');
             const avatarPreview = document.getElementById('char-edit-avatar-img');
             const avatarIcon = document.getElementById('char-edit-avatar-preview');
@@ -2171,6 +2172,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if(realNameInput) realNameInput.value = friend.realName || '';
             if(nicknameInput) nicknameInput.value = friend.nickname || '';
             if(signatureInput) signatureInput.value = friend.signature || '';
+            if(relationshipInput) relationshipInput.value = friend.relationship || '';
             if(personaInput) personaInput.value = friend.persona || '';
             
             if (friend.avatarUrl) {
@@ -2240,6 +2242,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         targetFriend.realName = realNameInput ? realNameInput.value : '';
                         targetFriend.nickname = nicknameInput ? (nicknameInput.value || fallbackName) : fallbackName;
                         targetFriend.signature = signatureInput ? signatureInput.value : '';
+                        targetFriend.relationship = relationshipInput ? relationshipInput.value : '';
                         targetFriend.persona = personaInput ? personaInput.value : '';
                         targetFriend.avatarUrl = tempAvatarUrl;
                     }, { silent: true });

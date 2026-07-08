@@ -15,11 +15,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const friendRealName = document.getElementById('friend-realname-input');
         const friendNickname = document.getElementById('friend-nickname-input');
         const friendSignature = document.getElementById('friend-signature-input');
+        const friendRelationship = document.getElementById('friend-relationship-input');
         const friendPersona = document.getElementById('friend-persona-input');
 
         if(friendRealName) friendRealName.value = '';
         if(friendNickname) friendNickname.value = '';
         if(friendSignature) friendSignature.value = '';
+        if(friendRelationship) friendRelationship.value = '';
         if(friendPersona) friendPersona.value = '';
         
         setFriendAvatar(null);
@@ -194,6 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 nickname: document.getElementById('friend-nickname-input') ? document.getElementById('friend-nickname-input').value || 'New Friend' : 'New Friend',
                 signature: document.getElementById('friend-signature-input') ? document.getElementById('friend-signature-input').value || 'No Signature' : 'No Signature',
                 persona: document.getElementById('friend-persona-input') ? document.getElementById('friend-persona-input').value : '',
+                relationship: document.getElementById('friend-relationship-input') ? document.getElementById('friend-relationship-input').value : '',
                 avatarUrl: (document.getElementById('friend-avatar-img') && document.getElementById('friend-avatar-img').style.display === 'block') ? document.getElementById('friend-avatar-img').src : null,
                 messages: [],
                 chatBg: null,
@@ -237,6 +240,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 nickname: document.getElementById('friend-nickname-input') ? document.getElementById('friend-nickname-input').value || 'New NPC' : 'New NPC',
                 signature: document.getElementById('friend-signature-input') ? document.getElementById('friend-signature-input').value || 'No Signature' : 'No Signature',
                 persona: document.getElementById('friend-persona-input') ? document.getElementById('friend-persona-input').value : '',
+                relationship: document.getElementById('friend-relationship-input') ? document.getElementById('friend-relationship-input').value : '',
                 avatarUrl: (document.getElementById('friend-avatar-img') && document.getElementById('friend-avatar-img').style.display === 'block') ? document.getElementById('friend-avatar-img').src : null,
                 messages: [],
                 chatBg: null,

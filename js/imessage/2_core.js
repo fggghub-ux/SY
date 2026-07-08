@@ -444,6 +444,7 @@ window.imApp.normalizeFriendData = function(friend) {
     normalized.nickname = normalized.nickname || (normalized.type === 'npc' ? 'New NPC' : 'New Friend');
     normalized.signature = normalized.signature || 'No Signature';
     normalized.persona = normalized.persona || '';
+    normalized.relationship = typeof normalized.relationship === 'string' ? normalized.relationship.trim() : '';
     normalized.avatarUrl = normalized.avatarUrl || null;
     normalized.avatarAssetId = normalized.avatarAssetId || null;
     normalized.messages = Array.isArray(normalized.messages) ? normalized.messages : [];
