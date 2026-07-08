@@ -273,6 +273,11 @@ test('keeps iOS modal, theme preset, stickers, and private-chat safeguards', asy
     assert.match(coreSource, /appEl\.appendChild\(stickersViewEl\)/);
     assert.match(settingsSource, /function refreshThemePresetUi\(\)/);
     assert.ok((settingsSource.match(/refreshThemePresetUi\(\)/g) || []).length >= 4);
+    assert.match(settingsSource, /iconDiv\.classList\.add\('has-custom-app-icon'\)/);
+    assert.match(settingsSource, /iconDiv\.style\.setProperty\('background', `url\(\$\{app\.icon\}\) center \/ cover no-repeat`, 'important'\)/);
+    assert.match(settingsSource, /iconDiv\.style\.setProperty\('background-image', `url\(\$\{app\.icon\}\)`, 'important'\)/);
+    assert.match(settingsSource, /iconDiv\.classList\.remove\('has-custom-app-icon'\)/);
+    assert.match(settingsSource, /iconDiv\.style\.removeProperty\('background'\)/);
     assert.match(indexSource, /<div class="app-view im-theme-config-view" id="theme-config-sheet"/);
     assert.doesNotMatch(indexSource, /<div class="bottom-sheet-overlay detail-sheet-overlay" id="theme-config-sheet"/);
     assert.match(indexSource, /id="theme-current-apply-btn"/);

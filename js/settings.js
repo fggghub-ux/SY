@@ -2210,13 +2210,24 @@
         
             if (app.icon) {
                 iconDiv.innerHTML = '';
-            iconDiv.style.backgroundImage = `url(${app.icon})`;
-            iconDiv.style.backgroundSize = 'cover';
-            iconDiv.style.backgroundPosition = 'center';
-            iconDiv.style.backgroundColor = 'transparent';
-            // Reset possible inner borders
-            iconDiv.style.border = 'none';
+                iconDiv.classList.add('has-custom-app-icon');
+                iconDiv.style.setProperty('background', `url(${app.icon}) center / cover no-repeat`, 'important');
+                iconDiv.style.setProperty('background-image', `url(${app.icon})`, 'important');
+                iconDiv.style.setProperty('background-size', 'cover', 'important');
+                iconDiv.style.setProperty('background-position', 'center', 'important');
+                iconDiv.style.setProperty('background-repeat', 'no-repeat', 'important');
+                iconDiv.style.setProperty('background-color', 'transparent', 'important');
+                // Reset possible inner borders
+                iconDiv.style.setProperty('border', 'none', 'important');
             } else {
+                iconDiv.classList.remove('has-custom-app-icon');
+                iconDiv.style.removeProperty('background');
+                iconDiv.style.removeProperty('background-image');
+                iconDiv.style.removeProperty('background-size');
+                iconDiv.style.removeProperty('background-position');
+                iconDiv.style.removeProperty('background-repeat');
+                iconDiv.style.removeProperty('background-color');
+                iconDiv.style.removeProperty('border');
                 iconDiv.style.backgroundImage = 'none';
                 iconDiv.style.backgroundSize = '';
                 iconDiv.style.backgroundPosition = '';
