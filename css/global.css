@@ -492,6 +492,36 @@ input, textarea, [contenteditable] {
     pointer-events: auto;
 }
 
+.bottom-sheet-overlay.u2-android-input-locked {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    max-width: 100vw;
+    height: 100%;
+    overflow-x: hidden;
+    overscroll-behavior: none;
+    touch-action: none;
+}
+
+.bottom-sheet-overlay.u2-android-input-locked .bottom-sheet {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    overflow-x: hidden;
+}
+
+.bottom-sheet-overlay.u2-android-input-locked .detail-sheet-content,
+.bottom-sheet-overlay.u2-android-input-locked :is(.form-group, .settings-group, .form-item, .settings-item) {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: hidden;
+}
+
+.bottom-sheet-overlay.u2-android-input-locked :is(input, textarea, select) {
+    min-width: 0;
+    max-width: 100%;
+}
+
 .detail-sheet-overlay {
     z-index: 250;
 }

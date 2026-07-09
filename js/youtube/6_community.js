@@ -299,6 +299,7 @@
     }
 
     function getYtBubbleSpeakerKey(msg) {
+        if (msg?.type === 'system') return `system:${msg?.status || ''}`;
         if (msg?.type === 'user') return 'user';
         if (msg?.type === 'admin') return `admin:${msg?.speakerId || msg?.name || ''}`;
         if (msg?.isOffer || msg?.type === 'char') return `char:${msg?.name || currentSubChannelData?.name || ''}`;
@@ -343,6 +344,175 @@
             toggle();
         });
     }
+
+    const YT_CHAT_GENERATION_STALE_MS = 2 * 60 * 1000;
+    const YT_CHAT_GENERATION_SOURCE = 'yt-chat-api';
+
+    function createYtChatRuntimeId(prefix = 'yt_msg') {
+        return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    }
+
+    function getCurrentYtChatMode() {
+        return groupChatTitle && currentSubChannelData && groupChatTitle.textContent === currentSubChannelData.name ? 'dm' : 'group';
+    }
+
+    function resolveYtChatThread(channelId, mode) {
+        const safeMode = mode === 'dm' ? 'dm' : 'group';
+        const safeChannelId = String(channelId || '');
+        let channel = null;
+
+        if (channelState?.userCommunityChannel && String(channelState.userCommunityChannel.id) === safeChannelId) {
+            channel = channelState.userCommunityChannel;
+        }
+        if (!channel && Array.isArray(mockSubscriptions)) {
+            channel = mockSubscriptions.find(sub => String(sub?.id) === safeChannelId) || null;
+        }
+        if (!channel && currentSubChannelData && String(currentSubChannelData.id) === safeChannelId) {
+            channel = currentSubChannelData;
+        }
+        if (!channel) return null;
+
+        const historyKey = safeMode === 'dm' ? 'dmHistory' : 'groupChatHistory';
+        if (!Array.isArray(channel[historyKey])) channel[historyKey] = [];
+        return {
+            channel,
+            channelId: String(channel.id || safeChannelId),
+            mode: safeMode,
+            historyKey,
+            history: channel[historyKey]
+        };
+    }
+
+    function getCurrentYtChatThreadRef() {
+        if (!currentSubChannelData?.id) return null;
+        return {
+            channelId: String(currentSubChannelData.id),
+            mode: getCurrentYtChatMode()
+        };
+    }
+
+    function isCurrentYtChatThread(threadRef) {
+        if (!threadRef || !currentSubChannelData?.id) return false;
+        return String(currentSubChannelData.id) === String(threadRef.channelId)
+            && getCurrentYtChatMode() === threadRef.mode;
+    }
+
+    function refreshYtChatThreadIfVisible(threadRef) {
+        if (isCurrentYtChatThread(threadRef)) {
+            renderGroupChatHistory(threadRef.mode === 'dm');
+        }
+        if (typeof renderMessagesList === 'function') renderMessagesList();
+    }
+
+    function getLatestYtNonSystemMessage(history) {
+        for (let index = history.length - 1; index >= 0; index--) {
+            if (history[index]?.type !== 'system') return history[index];
+        }
+        return null;
+    }
+
+    function createYtGenerationPlaceholder(generationId) {
+        return {
+            type: 'system',
+            id: generationId,
+            generationId,
+            source: YT_CHAT_GENERATION_SOURCE,
+            status: 'generating',
+            text: '\u751f\u6210\u4e2d...',
+            createdAt: Date.now()
+        };
+    }
+
+    function markYtGenerationMessageFailed(message, now = Date.now()) {
+        if (!message || message.type !== 'system' || message.status !== 'generating') return false;
+        message.status = 'failed';
+        message.text = '\u751f\u6210\u4e2d\u65ad\uff0c\u8bf7\u91cd\u65b0\u751f\u6210';
+        message.updatedAt = now;
+        return true;
+    }
+
+    function cleanupStaleYtGeneratingMessages(history, now = Date.now()) {
+        if (!Array.isArray(history)) return false;
+        let changed = false;
+        history.forEach(message => {
+            if (message?.type !== 'system' || message.status !== 'generating') return;
+            const createdAt = Number(message.createdAt) || 0;
+            if (createdAt > 0 && now - createdAt <= YT_CHAT_GENERATION_STALE_MS) return;
+            changed = markYtGenerationMessageFailed(message, now) || changed;
+        });
+        return changed;
+    }
+
+    function cleanupAllStaleYtChatGenerations() {
+        const channels = [];
+        if (channelState?.userCommunityChannel) channels.push(channelState.userCommunityChannel);
+        if (Array.isArray(mockSubscriptions)) channels.push(...mockSubscriptions.filter(Boolean));
+
+        let changed = false;
+        const now = Date.now();
+        channels.forEach(channel => {
+            if (Array.isArray(channel.dmHistory)) changed = cleanupStaleYtGeneratingMessages(channel.dmHistory, now) || changed;
+            if (Array.isArray(channel.groupChatHistory)) changed = cleanupStaleYtGeneratingMessages(channel.groupChatHistory, now) || changed;
+        });
+
+        if (changed) {
+            saveYoutubeData();
+            const currentRef = getCurrentYtChatThreadRef();
+            if (currentRef) refreshYtChatThreadIfVisible(currentRef);
+        }
+        return changed;
+    }
+
+    function markYtChatGenerationFailed(threadRef, generationId) {
+        const thread = resolveYtChatThread(threadRef?.channelId, threadRef?.mode);
+        if (!thread) return;
+        const placeholder = thread.history.find(message => message?.generationId === generationId);
+        if (placeholder) {
+            markYtGenerationMessageFailed(placeholder);
+            saveYoutubeData();
+            refreshYtChatThreadIfVisible(threadRef);
+        }
+    }
+
+    function replaceYtChatGenerationWithReplies(threadRef, generationId, replyMessages) {
+        const thread = resolveYtChatThread(threadRef?.channelId, threadRef?.mode);
+        if (!thread) return false;
+        const messages = Array.isArray(replyMessages) ? replyMessages.filter(message => message?.text) : [];
+        if (!messages.length) {
+            const placeholder = thread.history.find(message => message?.generationId === generationId);
+            if (placeholder) markYtGenerationMessageFailed(placeholder);
+            saveYoutubeData();
+            refreshYtChatThreadIfVisible(threadRef);
+            return false;
+        }
+        const placeholderIndex = thread.history.findIndex(message => message?.generationId === generationId);
+        if (placeholderIndex < 0) return false;
+        thread.history.splice(placeholderIndex, 1, ...messages);
+        saveYoutubeData();
+        refreshYtChatThreadIfVisible(threadRef);
+        return true;
+    }
+
+    function buildYtGeneratedChatMessage(item, index = 0) {
+        const normalizedReply = normalizeYtChatReply(item?.reply);
+        if (!normalizedReply.text) return null;
+        return {
+            type: item.type,
+            name: item.name,
+            speakerId: item.speakerId,
+            avatarUrl: item.avatarUrl,
+            text: normalizedReply.text,
+            translationZh: normalizedReply.translationZh,
+            id: createYtChatRuntimeId('yt_reply'),
+            source: YT_CHAT_GENERATION_SOURCE,
+            createdAt: Date.now() + index
+        };
+    }
+
+    window.addEventListener('pageshow', cleanupAllStaleYtChatGenerations);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') cleanupAllStaleYtChatGenerations();
+    });
 
     if (communityDetailBackBtn) {
         communityDetailBackBtn.addEventListener('click', () => {
@@ -1723,6 +1893,10 @@
             currentSubChannelData.groupChatHistory = historyArray;
         }
 
+        if (cleanupStaleYtGeneratingMessages(historyArray)) {
+            saveYoutubeData();
+        }
+
         historyArray.forEach(msg => {
             addGroupChatMessageToUI(msg);
         });
@@ -2000,6 +2174,18 @@
                 }
             }, 0);
 
+        } else if (msg.type === 'system') {
+            row.className = `yt-bubble-row left ${groupClass}`;
+            const isGenerating = msg.status === 'generating';
+            const iconClass = isGenerating ? 'fas fa-circle-notch fa-spin' : 'fas fa-triangle-exclamation';
+            const text = msg.text || (isGenerating ? '\u751f\u6210\u4e2d...' : '\u751f\u6210\u4e2d\u65ad\uff0c\u8bf7\u91cd\u65b0\u751f\u6210');
+            row.innerHTML = `
+                <div class="yt-bubble-avatar"><i class="${iconClass}" style="color:#8e8e93; font-size:16px; line-height:36px; text-align:center; width:100%;"></i></div>
+                <div class="yt-bubble-content">
+                    <div class="yt-bubble-msg" style="background:#f2f2f7; color:#8e8e93; font-size:12px;">${ytEscapeHtml(text)}</div>
+                </div>
+            `;
+
         } else if (msg.type === 'user') {
             row.className = `yt-bubble-row right ${groupClass}`;
             const effectiveYtUser = getCurrentYtCommunityUser();
@@ -2101,41 +2287,46 @@
     async function triggerGroupChatAPI(text) {
         if (isGroupChatLoading || !currentSubChannelData) return;
 
-        const isDM = groupChatTitle.textContent === currentSubChannelData.name;
-        const targetHistory = isDM ? 
-            (currentSubChannelData.dmHistory = currentSubChannelData.dmHistory || []) : 
-            (currentSubChannelData.groupChatHistory = currentSubChannelData.groupChatHistory || []);
+        const threadRef = getCurrentYtChatThreadRef();
+        const thread = threadRef ? resolveYtChatThread(threadRef.channelId, threadRef.mode) : null;
+        if (!thread) return;
+
+        const isDM = threadRef.mode === 'dm';
+        const targetHistory = thread.history;
+        cleanupStaleYtGeneratingMessages(targetHistory);
 
         let isUserMsg = false;
+        let userMsg = null;
         if (text.length > 0) {
             isUserMsg = true;
             const effectiveYtUser = getCurrentYtCommunityUser();
-            const userMsg = { type: 'user', name: effectiveYtUser.name || '我', text: text };
+            userMsg = {
+                type: 'user',
+                name: effectiveYtUser.name || '我',
+                text: text,
+                id: createYtChatRuntimeId('yt_user'),
+                source: 'yt-chat-user',
+                createdAt: Date.now()
+            };
             targetHistory.push(userMsg);
-            saveYoutubeData();
-            addGroupChatMessageToUI(userMsg);
             if(groupChatInput) groupChatInput.value = '';
         } else {
-            isUserMsg = targetHistory[targetHistory.length - 1]?.type === 'user';
+            isUserMsg = getLatestYtNonSystemMessage(targetHistory)?.type === 'user';
         }
 
         isGroupChatLoading = true;
-        
-        const typingId = 'typing-' + Date.now();
-        const typingRow = document.createElement('div');
-        typingRow.className = 'yt-bubble-row left';
-        typingRow.id = typingId;
-        typingRow.innerHTML = `
-            <div class="yt-bubble-avatar"><i class="fas fa-users" style="color:#aaa; font-size:20px; line-height:36px; text-align:center; width:100%;"></i></div>
-            <div class="yt-bubble-content">
-                <div class="yt-bubble-msg"><i class="fas fa-ellipsis-h fa-fade"></i></div>
-            </div>
-        `;
-        groupChatContainer.appendChild(typingRow);
-        groupChatContainer.scrollTop = groupChatContainer.scrollHeight;
+        const generationId = createYtChatRuntimeId('yt_gen');
+        const placeholder = createYtGenerationPlaceholder(generationId);
+        targetHistory.push(placeholder);
+        saveYoutubeData();
+
+        if (isCurrentYtChatThread(threadRef)) {
+            if (userMsg) addGroupChatMessageToUI(userMsg);
+            addGroupChatMessageToUI(placeholder);
+        }
 
         try {
-            const char = currentSubChannelData;
+            const char = thread.channel;
             const effectiveYtUser = getCurrentYtCommunityUser();
             const userPersona = effectiveYtUser.persona || '普通粉丝';
             
@@ -2152,16 +2343,20 @@
                 });
             }
 
-            const fanGroup = getCurrentYtFanGroup();
-            const isOwnedGroup = !isDM && Boolean(currentSubChannelData.isUserOwnedCommunity || fanGroup?.isOwned);
+            const fanGroup = char?.generatedContent?.fanGroup || null;
+            const isOwnedGroup = !isDM && Boolean(char.isUserOwnedCommunity || fanGroup?.isOwned);
             const resolvedAdmins = (fanGroup?.admins || []).map(resolveYtCommunityAdmin).filter(Boolean);
+            const findCapturedAdmin = (speakerId, name) => resolvedAdmins.find(admin => String(admin.charId) === String(speakerId || ''))
+                || resolvedAdmins.find(admin => String(admin.name || '').trim() === String(name || '').trim())
+                || null;
             const adminContext = resolvedAdmins.length > 0
                 ? resolvedAdmins.map(admin => `- speakerId: ${admin.charId}; 姓名: ${admin.name}; 人设: ${admin.persona || '未设置'}`).join('\n')
                 : '无管理员';
             const contextLimit = isDM
                 ? (char.isBusiness ? 10 : clampCurrentYtContextLimit(char.dmContextLimit, 80))
                 : clampCurrentYtContextLimit(fanGroup?.contextLimit, 80);
-            const historyStr = targetHistory.slice(-contextLimit).map(m => `${m.type || 'fan'}${m.speakerId ? `(${m.speakerId})` : ''} ${m.name}: ${m.text}`).join('\n');
+            const promptHistory = targetHistory.filter(message => message?.type !== 'system');
+            const historyStr = promptHistory.slice(-contextLimit).map(m => `${m.type || 'fan'}${m.speakerId ? `(${m.speakerId})` : ''} ${m.name}: ${m.text}`).join('\n');
 
             let instructionStr = isUserMsg 
                 ? `用户"${effectiveYtUser.name || '我'}"刚刚发送了消息。请先生成其他粉丝的讨论或附和，然后你作为群主回复用户的消息（也可以带上其他粉丝）。`
@@ -2224,9 +2419,6 @@
             resultText = resultText.replace(/```json/g, '').replace(/```/g, '').trim();
             const responseObj = sanitizeObj(JSON.parse(resultText));
 
-            const tRow = document.getElementById(typingId);
-            if (tRow) tRow.remove();
-
             const scheduledReplies = [];
             if (isDM) {
                 const replies = Array.isArray(responseObj.charReplies)
@@ -2238,7 +2430,7 @@
                     const role = String(reply?.role || '').toLowerCase();
                     if (role === 'admin') {
                         if (!isOwnedGroup) return;
-                        const admin = findYtCommunityAdmin(reply?.speakerId || reply?.charId, reply?.name);
+                        const admin = findCapturedAdmin(reply?.speakerId || reply?.charId, reply?.name);
                         if (!admin) return;
                         scheduledReplies.push({ type: 'admin', name: admin.name, speakerId: admin.charId, avatarUrl: admin.avatarUrl, reply });
                     } else if (role === 'fan' || role === 'otherfan' || role === 'other_fan') {
@@ -2252,7 +2444,7 @@
                 fanReplies.forEach(reply => scheduledReplies.push({ type: 'fan', name: reply?.name || '粉丝', reply }));
                 if (isOwnedGroup && Array.isArray(responseObj.adminReplies)) {
                     responseObj.adminReplies.forEach(reply => {
-                        const admin = findYtCommunityAdmin(reply?.speakerId || reply?.charId, reply?.name);
+                        const admin = findCapturedAdmin(reply?.speakerId || reply?.charId, reply?.name);
                         if (admin) scheduledReplies.push({ type: 'admin', name: admin.name, speakerId: admin.charId, avatarUrl: admin.avatarUrl, reply });
                     });
                 } else if (!isOwnedGroup) {
@@ -2263,29 +2455,14 @@
                 }
             }
 
-            scheduledReplies.forEach((item, index) => {
-                setTimeout(() => {
-                    const normalizedReply = normalizeYtChatReply(item.reply);
-                    if (normalizedReply.text) {
-                        const replyMsg = {
-                            type: item.type,
-                            name: item.name,
-                            speakerId: item.speakerId,
-                            avatarUrl: item.avatarUrl,
-                            text: normalizedReply.text,
-                            translationZh: normalizedReply.translationZh
-                        };
-                        targetHistory.push(replyMsg);
-                        saveYoutubeData();
-                        addGroupChatMessageToUI(replyMsg);
-                    }
-                }, index * 1500);
-            });
+            const replyMessages = scheduledReplies
+                .map((item, index) => buildYtGeneratedChatMessage(item, index))
+                .filter(Boolean);
+            replaceYtChatGenerationWithReplies(threadRef, generationId, replyMessages);
 
         } catch (error) {
             console.error('Group Chat API Error:', error);
-            const tRow = document.getElementById(typingId);
-            if (tRow) tRow.remove();
+            markYtChatGenerationFailed(threadRef, generationId);
             if(window.showToast) window.showToast('网络错误，无法获取回复');
         } finally {
             setTimeout(() => { isGroupChatLoading = false; }, 2000);

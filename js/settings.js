@@ -286,6 +286,23 @@
         UI.inputs.assistiveBallOpacity = document.getElementById('assistive-ball-opacity-range');
         UI.inputs.assistiveBallOpacityValue = document.getElementById('assistive-ball-opacity-value');
 
+        function openApiConfigSheet() {
+            openView(UI.overlays.apiConfig);
+        }
+
+        function closeApiConfigSheet() {
+            closeView(UI.overlays.apiConfig);
+        }
+
+        if (UI.overlays.apiConfig) {
+            UI.overlays.apiConfig.addEventListener('click', (event) => {
+                if (event.target === UI.overlays.apiConfig) {
+                    event.stopPropagation();
+                    closeApiConfigSheet();
+                }
+            });
+        }
+
         // ==========================================
         // NAVIGATION EVENT LISTENERS
         // ==========================================
@@ -3196,7 +3213,7 @@
                 syncBackgroundActivityControls();
                 syncSystemNotificationControls();
 
-                openView(UI.overlays.apiConfig);
+                openApiConfigSheet();
             });
         }
 
@@ -3278,7 +3295,7 @@
                 saveGlobalData();
                 syncAssistiveBallPanel();
                 
-                closeView(UI.overlays.apiConfig);
+                closeApiConfigSheet();
                 showToast('API 设置已保存');
             });
         }

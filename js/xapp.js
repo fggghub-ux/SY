@@ -728,6 +728,14 @@ X is a global app. Non-User authors may write in the language that naturally fit
             return saveXState(draft);
         }
 
+        function flushXStateNow(reason = 'x-state') {
+            if (typeof window.saveGlobalData !== 'function') return Promise.resolve(false);
+            return Promise.resolve(window.saveGlobalData()).catch((error) => {
+                console.warn(`[X] Failed to flush ${reason}`, error);
+                return false;
+            });
+        }
+
         function resolveXAuthorIdentity(authorId, handle, name, avatar = '') {
             const displayName = safeText(name || handle, 'X User');
             const displayHandle = makeHandle(displayName, safeText(handle).split('·')[0].trim() || displayName);
@@ -1317,6 +1325,10 @@ X is a global app. Non-User authors may write in the language that naturally fit
                             <span class="x-settings-spacer"></span>
                         </div>
                         <div class="x-dm-settings-body">
+                            <button class="x-dm-settings-action" id="x-post-advance-btn" type="button">
+                                <i class="fas fa-forward"></i>
+                                <span>Advance post</span>
+                            </button>
                             <button class="x-dm-settings-action danger" id="x-post-delete-btn" type="button">
                                 <i class="far fa-trash-alt"></i>
                                 <span>删除帖子</span>
@@ -1708,10 +1720,8 @@ X is a global app. Non-User authors may write in the language that naturally fit
                 superTopicName: superTopic ? safeText(superTopic.name || superTopic.title, '超话') : '',
                 reposts: 0,
                 likes: 0,
-                commentsCount: 1,
-                comments: [
-                    { authorName: 'X App', handle: '@xapp', text: '帖子已发布。' }
-                ],
+                commentsCount: 0,
+                comments: [],
                 mediaType: composeImageDraft ? 'image' : 'text',
                 images: composeImageDraft ? [{ id: `${id}-image-0`, text: '用户上传图片', url: composeImageDraft }] : [],
                 createdAt: Date.now()
@@ -1719,6 +1729,11 @@ X is a global app. Non-User authors may write in the language that naturally fit
             const added = appendGeneratedPosts([rawPost]);
             if (superTopic && added.length) updateSuperHomeCard(superTopic);
             closeComposer();
+            if (added.length) {
+                flushXStateNow('x-post-publish');
+                if (typeof window.showToast === 'function') window.showToast('Post published; generating engagement');
+                generatePostPublishInteractions(added[0].id);
+            }
         }
 
         function ensureCommentDepth(post) {
@@ -2574,7 +2589,7 @@ ${worldbook || 'None'}
                 }
                 
                 createTopicImessageContainer.innerHTML = chars.map(char => {
-                    const item = normalizeDmChar(char, 'imessage');
+                    const item = normalizeDmChar(stripImessageCharMessagesForXImport(char), 'imessage');
                     return `
                         <div style="display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid #eee;">
                             <div style="display:flex; align-items:center; gap:10px;">
@@ -2593,7 +2608,7 @@ ${worldbook || 'None'}
                         const charId = btn.dataset.charId;
                         const char = chars.find(c => String(c.id) === String(charId));
                         if (char) {
-                            const normalized = normalizeDmChar(char, 'imessage');
+                            const normalized = normalizeDmChar(stripImessageCharMessagesForXImport(char), 'imessage');
                             if (!createTopicSelectedChars.find(c => c.id === normalized.id)) {
                                 createTopicSelectedChars.push(normalized);
                                 renderCreateTopicSelectedChars();
@@ -2776,7 +2791,7 @@ ${worldbook || 'None'}
                 return;
             }
 
-            const normalizedChars = chars.map((char) => normalizeDmChar(char, 'imessage'));
+            const normalizedChars = chars.map((char) => normalizeDmChar(stripImessageCharMessagesForXImport(char), 'imessage'));
             importContainer.innerHTML =
                 '<div class="x-topic-native-picker">' +
                     '<select class="x-topic-imessage-select" aria-label="选择 iMessage 角色">' +
@@ -3293,6 +3308,18 @@ User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-leve
             }).filter((message) => message.text || message.type === 'post-card');
         }
 
+        function stripImessageCharMessagesForXImport(source = {}) {
+            if (!source || typeof source !== 'object') return source;
+            const id = source.id || source.sourceFriendId || makeLocalId('imessage');
+            return {
+                ...source,
+                id,
+                origin: 'imessage',
+                sourceFriendId: source.sourceFriendId || source.id || id,
+                messages: []
+            };
+        }
+
         function getDmLastMessageText(item) {
             const messages = normalizeDmMessages(item?.messages);
             if (!messages.length) return safeText(item?.bio, '暂无签名');
@@ -3373,7 +3400,10 @@ User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-leve
         }
 
         function addDirectMessageChar(charItem) {
-            const item = normalizeDmChar(charItem, charItem.origin || 'manual');
+            const sourceItem = charItem?.origin === 'imessage'
+                ? stripImessageCharMessagesForXImport(charItem)
+                : charItem;
+            const item = normalizeDmChar(sourceItem, sourceItem?.origin || 'manual');
             updateXState((draft) => {
                 const existingIndex = draft.xDirectMessages.findIndex((entry) =>
                     String(entry.id) === String(item.id) || safeText(entry.name).toLowerCase() === item.name.toLowerCase()
@@ -3501,7 +3531,7 @@ User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-leve
                 return;
             }
             imessageCharList.innerHTML = chars.map((friend) => {
-                const item = normalizeDmChar(friend, 'imessage');
+                const item = normalizeDmChar(stripImessageCharMessagesForXImport(friend), 'imessage');
                 return `
                     <button class="x-char-pick-row" type="button" data-char-id="${escapeHtml(item.id)}">
                         <div class="x-avatar">${buildAvatarHtml(item.avatar, item.name)}</div>
@@ -4707,6 +4737,256 @@ ${worldbook || 'None'}`;
             }, 'generated');
         }
 
+        function countGeneratedCommentItems(item) {
+            if (Array.isArray(item)) {
+                return item.reduce((total, child) => total + countGeneratedCommentItems(child), 0);
+            }
+            if (!item || typeof item !== 'object') return 0;
+            return 1 + countGeneratedCommentItems(item.replies || []);
+        }
+
+        function collectCommentIds(comments, ids = new Set()) {
+            (Array.isArray(comments) ? comments : []).forEach((comment) => {
+                if (!comment || typeof comment !== 'object') return;
+                if (comment.id) ids.add(String(comment.id));
+                collectCommentIds(comment.replies, ids);
+            });
+            return ids;
+        }
+
+        function ensureUniqueGeneratedCommentIds(comment, seenIds) {
+            const next = {
+                ...comment,
+                replies: Array.isArray(comment.replies) ? comment.replies : []
+            };
+            if (!next.id || seenIds.has(String(next.id))) next.id = makeLocalId('auto-comment');
+            seenIds.add(String(next.id));
+            next.replies = next.replies.map((reply) => {
+                const normalizedReply = { ...reply, replies: [] };
+                if (!normalizedReply.id || seenIds.has(String(normalizedReply.id))) {
+                    normalizedReply.id = makeLocalId('auto-reply');
+                }
+                seenIds.add(String(normalizedReply.id));
+                return normalizedReply;
+            });
+            return next;
+        }
+
+        function normalizePostInteractionComments(payload = {}) {
+            const rawComments = Array.isArray(payload)
+                ? payload
+                : (Array.isArray(payload.comments)
+                    ? payload.comments
+                    : (Array.isArray(payload.replies) ? payload.replies : []));
+            return rawComments
+                .map((comment) => sanitizeApiGeneratedComment(comment))
+                .filter(Boolean)
+                .map((comment, index) => normalizeGeneratedComment(comment, index))
+                .filter(Boolean);
+        }
+
+        function normalizePostInteractionPrivateMessages(payload = {}) {
+            const rawMessages = Array.isArray(payload?.privateMessages)
+                ? payload.privateMessages
+                : (Array.isArray(payload?.dmConversations)
+                    ? payload.dmConversations
+                    : (Array.isArray(payload?.dms) ? payload.dms : []));
+            return sanitizeApiGeneratedAuthors(rawMessages)
+                .map((item, index) => normalizeGeneratedStranger(item, index))
+                .filter(Boolean);
+        }
+
+        function getPostForInteraction(postId, state = getXState()) {
+            return postData[postId]
+                || (state.xGeneratedPosts || []).find((post) => String(post.id) === String(postId))
+                || {};
+        }
+
+        function buildPostInteractionContext(postId) {
+            const state = getXState();
+            const post = getPostForInteraction(postId, state);
+            const thread = getPostThread(postId, state);
+            const existingComments = (thread.comments || []).slice(0, 25).map((comment) => ({
+                author: comment.name || comment.handle || '',
+                text: comment.text || '',
+                replies: (Array.isArray(comment.replies) ? comment.replies : []).slice(0, 5).map((reply) => ({
+                    author: reply.name || reply.handle || '',
+                    text: reply.text || ''
+                }))
+            }));
+            const images = getPostImages(post).map((image) => ({
+                text: image.text || image.description || '',
+                url: image.url || ''
+            }));
+            return {
+                user: {
+                    name: currentProfile.name,
+                    handle: currentProfile.handle,
+                    bio: currentProfile.bio,
+                    persona: currentProfile.persona
+                },
+                post: {
+                    id: postId,
+                    author: post.name || post.authorName || '',
+                    handle: post.handle || post.authorHandle || '',
+                    text: post.text || post.content || '',
+                    topicTag: post.topicTag || '',
+                    translation: post.translation || '',
+                    images
+                },
+                existingComments,
+                existingDmContacts: (state.xDirectMessages || []).slice(0, 50).map((item) => ({
+                    name: item.name || item.nickname || '',
+                    handle: item.handle || ''
+                }))
+            };
+        }
+
+        async function requestPostInteractionBatch(postId, options = {}) {
+            const includePrivateMessages = options.includePrivateMessages !== false;
+            const context = buildPostInteractionContext(postId);
+            const contextText = JSON.stringify(context);
+            const worldbook = getSelectedWorldBookContext(`${context.post.text} ${context.post.topicTag} ${currentProfile.persona} ${contextText}`);
+            const outputShape = includePrivateMessages
+                ? '{"comments":[{"authorName":"","handle":"","text":"","translation":"","replies":[{"authorName":"","handle":"","text":"","translation":""}]}],"privateMessages":[{"name":"","handle":"","bio":"","translation":"","persona":"","messages":[{"text":"","translation":""},{"text":"","translation":""}]}]}'
+                : '{"comments":[{"authorName":"","handle":"","text":"","translation":"","replies":[{"authorName":"","handle":"","text":"","translation":""}]}]}';
+            const prompt = `Return strict JSON only in this shape: ${outputShape}.
+Generate engagement for this exact X post.
+Minimum requirements:
+- comments plus nested replies combined MUST contain at least 10 generated comment objects.
+- Comments and replies must react to concrete details from the post, image descriptions, topic, existing comments, User persona, or Worldbook.
+${includePrivateMessages ? '- privateMessages MUST contain at least 2 new stranger private-message conversations.\n- Each privateMessages[].messages MUST contain 2 to 5 incoming message objects, and every message is authored by that stranger.\n- Private messages must be prompted by this specific User post and must not reuse existing DM contacts.' : '- Do not include privateMessages or any private-message content.'}
+- Never generate content authored by the current User. The User is context only.
+- Every generated author must be a non-User identity.
+- Every user-facing text object must include translation. If the original text is Simplified Chinese, translation must be "".
+- Do not include markdown, explanations, or text outside JSON.
+${options.retryReason ? `Retry reason: ${options.retryReason}` : ''}
+
+User profile/persona:
+${JSON.stringify(context.user)}
+
+Post context:
+${contextText}
+
+Worldbook:
+${worldbook || 'None'}`;
+            const raw = await requestXChatCompletion([
+                { role: 'system', content: 'Generate strict JSON for fictional X post engagement. Output JSON only.' },
+                { role: 'user', content: prompt }
+            ], { temperature: 0.9 });
+            const parsed = parseJsonPayload(raw);
+            return {
+                comments: normalizePostInteractionComments(parsed),
+                privateMessages: includePrivateMessages ? normalizePostInteractionPrivateMessages(parsed) : []
+            };
+        }
+
+        async function requestPostInteractionsWithRetry(postId, options = {}) {
+            const minCommentItems = Number(options.minCommentItems) || 10;
+            const minPrivateMessages = options.includePrivateMessages === false ? 0 : (Number(options.minPrivateMessages) || 2);
+            let retryReason = '';
+            let lastError = null;
+            for (let attempt = 0; attempt < 2; attempt += 1) {
+                try {
+                    const result = await requestPostInteractionBatch(postId, {
+                        ...options,
+                        retryReason
+                    });
+                    const commentCount = countGeneratedCommentItems(result.comments);
+                    const dmCount = result.privateMessages.length;
+                    if (commentCount >= minCommentItems && dmCount >= minPrivateMessages) return result;
+                    retryReason = `Previous response produced ${commentCount} comment/reply objects and ${dmCount} private-message conversations; minimums are ${minCommentItems} comments/replies and ${minPrivateMessages} private-message conversations.`;
+                    lastError = new Error(retryReason);
+                } catch (error) {
+                    lastError = error;
+                    retryReason = `Previous response failed validation: ${error?.message || error}`;
+                }
+            }
+            throw lastError || new Error('Post interaction generation failed');
+        }
+
+        function appendGeneratedCommentsToPost(postId, comments = []) {
+            const normalized = (Array.isArray(comments) ? comments : []).filter(Boolean);
+            if (!normalized.length) return 0;
+            const thread = getPostThread(postId);
+            const seenIds = collectCommentIds(thread.comments);
+            const nextComments = normalized.map((comment) => ensureUniqueGeneratedCommentIds(comment, seenIds));
+            const addedCount = countGeneratedCommentItems(nextComments);
+            thread.comments = [...nextComments, ...(thread.comments || [])];
+            thread.commentsCount = Math.max(Number(thread.commentsCount) || 0, 0) + addedCount;
+            savePostThread(postId, thread);
+            updatePostCountNodes(postId, thread);
+            if (String(currentDetailPostId) === String(postId)) {
+                renderCommentsList(postId, thread);
+                const commentsEl = document.getElementById('x-detail-comments');
+                if (commentsEl) commentsEl.textContent = formatCompactCount(thread.commentsCount);
+            }
+            return addedCount;
+        }
+
+        function prependGeneratedPrivateMessages(privateMessages = []) {
+            const normalized = (Array.isArray(privateMessages) ? privateMessages : []).filter(Boolean);
+            if (!normalized.length) return 0;
+            updateXState((draft) => {
+                draft.xDirectMessages = [...normalized, ...(draft.xDirectMessages || [])];
+            });
+            renderDirectMessages();
+            return normalized.length;
+        }
+
+        async function generatePostPublishInteractions(postId) {
+            try {
+                const result = await requestPostInteractionsWithRetry(postId, {
+                    includePrivateMessages: true,
+                    minCommentItems: 10,
+                    minPrivateMessages: 2
+                });
+                const addedComments = appendGeneratedCommentsToPost(postId, result.comments);
+                const addedDms = prependGeneratedPrivateMessages(result.privateMessages);
+                await flushXStateNow('x-post-publish-interactions');
+                if (typeof window.showToast === 'function') {
+                    window.showToast(`Generated ${addedComments} replies and ${addedDms} DMs`);
+                }
+            } catch (error) {
+                console.error('[X] Post publish interaction generation failed', error);
+                if (typeof window.showToast === 'function') window.showToast('Post published, but API engagement generation failed');
+            }
+        }
+
+        async function advanceCurrentPostComments() {
+            const postId = currentActionPostId || currentDetailPostId;
+            if (!postId) return;
+            const button = document.getElementById('x-post-advance-btn');
+            if (button?.classList.contains('loading')) return;
+            const buttonLabel = button?.querySelector('span');
+            const idleLabel = buttonLabel?.textContent || 'Advance post';
+            button?.classList.add('loading');
+            button?.setAttribute('aria-busy', 'true');
+            if (button) button.disabled = true;
+            if (buttonLabel) buttonLabel.textContent = 'Generating...';
+            if (typeof window.showToast === 'function') window.showToast('Generating post engagement...');
+            try {
+                const result = await requestPostInteractionsWithRetry(postId, {
+                    includePrivateMessages: false,
+                    minCommentItems: 10
+                });
+                const addedComments = appendGeneratedCommentsToPost(postId, result.comments);
+                await flushXStateNow('x-post-advance-comments');
+                closePostSettingsSheet();
+                if (typeof window.showToast === 'function') {
+                    window.showToast(`Advanced post with ${addedComments} new replies`);
+                }
+            } catch (error) {
+                console.error('[X] Advance post comments failed', error);
+                if (typeof window.showToast === 'function') window.showToast('Advance post failed; existing content was unchanged');
+            } finally {
+                button?.classList.remove('loading');
+                button?.removeAttribute('aria-busy');
+                if (button) button.disabled = false;
+                if (buttonLabel) buttonLabel.textContent = idleLabel;
+            }
+        }
+
         async function requestAdvanceStrangerBatch(count, excludedKeys, plot, storyContext, worldbook) {
             const prompt = `Return strict JSON only: {"strangers":[{"name":"","handle":"","bio":"","translation":"","persona":"","messages":[{"text":"","translation":""},{"text":"","translation":""}]}]}.
 Generate exactly ${count} unique strangers who proactively send private messages to the X user. Each stranger must send 2 to 5 incoming messages; do not write messages for the user. Messages should form a natural short sequence related to the ongoing plot.
@@ -5049,6 +5329,7 @@ ${worldbook || 'None'}`;
             closePostForwardSheet();
             closeImagePreview();
             view.classList.remove('active');
+            flushXStateNow('x-close');
         }
 
         function readXImageFile(file) {
@@ -5169,6 +5450,7 @@ ${worldbook || 'None'}`;
             });
         });
         document.getElementById('x-post-settings-close-btn')?.addEventListener('click', closePostSettingsSheet);
+        document.getElementById('x-post-advance-btn')?.addEventListener('click', advanceCurrentPostComments);
         document.getElementById('x-post-delete-btn')?.addEventListener('click', deleteTargetPost);
         document.getElementById('x-post-detail-menu-btn')?.addEventListener('click', () => {
             if (currentDetailPostId) openPostSettingsSheet(currentDetailPostId);

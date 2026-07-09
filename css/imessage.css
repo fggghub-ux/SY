@@ -6676,6 +6676,49 @@ input:checked + .slider:before {
     padding-bottom: 20px;
 }
 
+#edit-char-persona-sheet .char-settings-sheet {
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+#edit-char-persona-sheet .char-settings-content {
+    min-height: 0;
+    max-width: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: max(20px, env(safe-area-inset-bottom, 0px));
+}
+
+#edit-char-persona-sheet .form-group,
+#edit-char-persona-sheet .form-item,
+#edit-char-persona-sheet .global-textarea {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+#edit-char-persona-sheet .form-item {
+    gap: 12px;
+}
+
+#edit-char-persona-sheet .form-item label {
+    flex: 0 0 auto;
+    max-width: 48%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#edit-char-persona-sheet .form-item input,
+#edit-char-persona-sheet .global-textarea {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 100%;
+}
+
 .char-settings-segment-wrap {
     padding: 0 16px 16px;
 }

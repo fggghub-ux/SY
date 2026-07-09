@@ -49,7 +49,13 @@
         togetherListening: null,
         togetherPicker: null,
         playerReturnToChatFriendId: null,
+        readerPage: 0,
+        readerPageCount: 1,
+        readerMetrics: null,
+        readerPointerStart: null,
         readerLastActivityAt: 0,
+        readerProgressSaveTimer: null,
+        readerProgressSaveBook: null,
         pendingReadingSeconds: 0,
         pendingListeningSeconds: 0,
         lastMediaTime: 0,
@@ -376,35 +382,199 @@
         }
     }
 
+    function parseLibraryXml(text, label) {
+        const doc = new DOMParser().parseFromString(String(text || ''), 'application/xml');
+        const parserError = doc.getElementsByTagName('parsererror')[0];
+        if (parserError) throw new Error(`${label || 'XML'} 解析失败`);
+        return doc;
+    }
+
+    function getXmlElementsByLocalName(doc, localName) {
+        return [...doc.getElementsByTagName('*')].filter((node) => node.localName === localName);
+    }
+
+    function getFirstXmlText(doc, localNames) {
+        const names = new Set((Array.isArray(localNames) ? localNames : [localNames]).map(String));
+        const match = [...doc.getElementsByTagName('*')].find((node) => names.has(node.localName));
+        return String(match?.textContent || '').trim();
+    }
+
+    function cleanBookPlainText(text) {
+        return String(text || '')
+            .replace(/\u00a0/g, ' ')
+            .replace(/\r\n/g, '\n')
+            .replace(/\r/g, '\n')
+            .replace(/[ \t]+\n/g, '\n')
+            .replace(/\n[ \t]+/g, '\n')
+            .replace(/[ \t]{2,}/g, ' ')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+    }
+
+    function getZipDir(path) {
+        const normalized = String(path || '').replace(/\\/g, '/');
+        const index = normalized.lastIndexOf('/');
+        return index >= 0 ? normalized.slice(0, index + 1) : '';
+    }
+
+    function resolveZipPath(baseDir, href) {
+        let safeHref = String(href || '');
+        try {
+            safeHref = decodeURIComponent(safeHref);
+        } catch (error) {
+            // Keep the original href when an EPUB contains malformed percent escapes.
+        }
+        const parts = `${baseDir || ''}${safeHref}`.replace(/\\/g, '/').split('/');
+        const resolved = [];
+        parts.forEach((part) => {
+            if (!part || part === '.') return;
+            if (part === '..') resolved.pop();
+            else resolved.push(part);
+        });
+        return resolved.join('/');
+    }
+
+    async function readZipText(zip, path, label) {
+        const entry = zip.file(path);
+        if (!entry) throw new Error(`${label || path} 缺失`);
+        return entry.async('string');
+    }
+
+    function htmlNodeToPlainText(node) {
+        if (!node) return '';
+        if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || '';
+        if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.DOCUMENT_NODE) return '';
+
+        const tag = node.nodeType === Node.ELEMENT_NODE ? node.tagName.toLowerCase() : '';
+        if (['script', 'style', 'svg', 'head', 'nav'].includes(tag)) return '';
+        if (tag === 'br') return '\n';
+
+        const text = [...node.childNodes].map(htmlNodeToPlainText).join('');
+        if (['address', 'article', 'aside', 'blockquote', 'body', 'div', 'dl', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hr', 'li', 'main', 'ol', 'p', 'pre', 'section', 'table', 'tr', 'ul'].includes(tag)) {
+            return `\n${text}\n`;
+        }
+        return text;
+    }
+
+    function extractEpubHtmlChapter(html, fallbackTitle) {
+        const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
+        const title = String(
+            doc.querySelector('h1,h2,h3,title')?.textContent
+            || fallbackTitle
+            || ''
+        ).trim();
+        const rawText = htmlNodeToPlainText(doc.body || doc.documentElement);
+        return {
+            title,
+            text: cleanBookPlainText(rawText)
+        };
+    }
+
+    async function readEpubBookFile(file) {
+        if (!window.JSZip?.loadAsync) throw new Error('EPUB 解析组件未加载，请检查网络后重试');
+
+        const zip = await window.JSZip.loadAsync(await file.arrayBuffer());
+        const containerText = await readZipText(zip, 'META-INF/container.xml', 'EPUB container.xml');
+        const containerXml = parseLibraryXml(containerText, 'EPUB container.xml');
+        const rootfilePath = getXmlElementsByLocalName(containerXml, 'rootfile')[0]?.getAttribute('full-path');
+        if (!rootfilePath) throw new Error('EPUB 缺少 OPF 入口');
+
+        const opfText = await readZipText(zip, rootfilePath, 'EPUB OPF');
+        const opfXml = parseLibraryXml(opfText, 'EPUB OPF');
+        const opfDir = getZipDir(rootfilePath);
+        const title = getFirstXmlText(opfXml, 'title') || fileBaseName(file.name);
+        const author = getFirstXmlText(opfXml, 'creator') || '未知作者';
+        const synopsis = getFirstXmlText(opfXml, 'description') || '暂无简介';
+
+        const manifest = new Map();
+        getXmlElementsByLocalName(opfXml, 'item').forEach((item) => {
+            const id = item.getAttribute('id');
+            const href = item.getAttribute('href');
+            if (!id || !href) return;
+            manifest.set(id, {
+                href,
+                mediaType: item.getAttribute('media-type') || '',
+                properties: item.getAttribute('properties') || ''
+            });
+        });
+
+        const spineItems = getXmlElementsByLocalName(opfXml, 'itemref')
+            .map((itemref) => manifest.get(itemref.getAttribute('idref') || ''))
+            .filter((item) => item && (
+                /application\/xhtml\+xml|text\/html/i.test(item.mediaType)
+                || /\.x?html?$/i.test(item.href)
+            ));
+        if (!spineItems.length) throw new Error('EPUB 缺少可读取章节');
+
+        const chapters = [];
+        for (const item of spineItems) {
+            const chapterPath = resolveZipPath(opfDir, item.href);
+            const chapterHtml = await readZipText(zip, chapterPath, chapterPath);
+            const chapter = extractEpubHtmlChapter(chapterHtml, fileBaseName(item.href));
+            if (chapter.text) chapters.push(chapter);
+        }
+
+        if (!chapters.length) throw new Error('EPUB 没有可读取正文');
+        const text = cleanBookPlainText(chapters.map((chapter) => {
+            const heading = chapter.title ? `# ${chapter.title}` : '';
+            return [heading, chapter.text].filter(Boolean).join('\n\n');
+        }).join('\n\n'));
+        if (!text) throw new Error('EPUB 解析后正文为空');
+
+        return {
+            text,
+            sourceType: 'EPUB',
+            title,
+            author,
+            synopsis
+        };
+    }
+
     async function readBookFile(file) {
         const lower = String(file.name || '').toLowerCase();
+        if (lower.endsWith('.epub')) {
+            return readEpubBookFile(file);
+        }
         if (lower.endsWith('.docx')) {
             if (!window.mammoth?.extractRawText) throw new Error('DOCX 解析组件未加载，请检查网络后重试');
             const result = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
-            return String(result?.value || '').replace(/\r\n/g, '\n');
+            return {
+                text: String(result?.value || '').replace(/\r\n/g, '\n'),
+                sourceType: 'DOCX',
+                title: fileBaseName(file.name),
+                author: '未知作者',
+                synopsis: '暂无简介'
+            };
         }
-        return decodeTextFile(await file.arrayBuffer()).replace(/\r\n/g, '\n').replace(/\u0000/g, '');
+        return {
+            text: decodeTextFile(await file.arrayBuffer()).replace(/\r\n/g, '\n').replace(/\u0000/g, ''),
+            sourceType: 'TXT',
+            title: fileBaseName(file.name),
+            author: '未知作者',
+            synopsis: '暂无简介'
+        };
     }
 
     async function importBook(file) {
         if (!file) return;
         const lower = String(file.name || '').toLowerCase();
-        if (!lower.endsWith('.txt') && !lower.endsWith('.text') && !lower.endsWith('.docx')) {
-            toast('仅支持 TXT 和 DOCX 文件');
+        if (!lower.endsWith('.txt') && !lower.endsWith('.text') && !lower.endsWith('.docx') && !lower.endsWith('.epub')) {
+            toast('仅支持 TXT、DOCX 和 EPUB 文件');
             return;
         }
         toast('正在整理书籍…');
         try {
-            const text = await readBookFile(file);
+            const parsedBook = await readBookFile(file);
+            const text = String(parsedBook?.text || '');
             if (!text.trim()) throw new Error('文件内容为空');
             const now = Date.now();
             const book = {
                 id: uid('book'),
-                title: fileBaseName(file.name),
-                sourceType: lower.endsWith('.docx') ? 'DOCX' : 'TXT',
+                title: String(parsedBook.title || fileBaseName(file.name)).slice(0, 100),
+                sourceType: parsedBook.sourceType || (lower.endsWith('.docx') ? 'DOCX' : (lower.endsWith('.epub') ? 'EPUB' : 'TXT')),
                 text,
-                author: '未知作者',
-                synopsis: '暂无简介',
+                author: String(parsedBook.author || '未知作者').slice(0, 80),
+                synopsis: String(parsedBook.synopsis || '暂无简介').slice(0, 2000),
                 progress: 0,
                 createdAt: now,
                 updatedAt: now,
@@ -539,17 +709,152 @@
         dom.reader_panel.querySelectorAll('[data-reader-theme]').forEach((button) => {
             button.classList.toggle('active', button.dataset.readerTheme === theme);
         });
+        invalidateReaderMetrics();
     }
 
-    function updateReaderProgress(save = false) {
+    function clampReaderValue(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    function clampReaderProgress(value) {
+        return clampReaderValue(Number(value) || 0, 0, 1);
+    }
+
+    function invalidateReaderMetrics() {
+        state.readerMetrics = null;
+    }
+
+    function readReaderPixelValue(value) {
+        const number = parseFloat(value);
+        return Number.isFinite(number) ? number : 0;
+    }
+
+    function getReaderScrollPadding() {
+        if (!dom.reader_scroll || typeof getComputedStyle !== 'function') return { left: 0, right: 0, horizontal: 0 };
+        const style = getComputedStyle(dom.reader_scroll);
+        const left = readReaderPixelValue(style.paddingLeft);
+        const right = readReaderPixelValue(style.paddingRight);
+        return { left, right, horizontal: left + right };
+    }
+
+    function updateReaderPageGeometry() {
+        if (!dom.reader_scroll) return { pageWidth: 1, columnWidth: 1, pageGap: 0, pageStep: 1, paddingLeft: 0 };
+        const pageWidth = Math.max(1, Math.round(dom.reader_scroll.clientWidth || 1));
+        const padding = getReaderScrollPadding();
+        const pageGap = Math.max(0, Math.round(padding.horizontal));
+        const columnWidth = Math.max(1, pageWidth - pageGap);
+        const pageStep = columnWidth + pageGap;
+        dom.reader_view.style.setProperty('--reader-page-width', `${pageWidth}px`);
+        dom.reader_view.style.setProperty('--reader-column-width', `${columnWidth}px`);
+        dom.reader_view.style.setProperty('--reader-page-gap', `${pageGap}px`);
+        dom.reader_view.style.setProperty('--reader-page-step', `${pageStep}px`);
+        return { pageWidth, columnWidth, pageGap, pageStep, paddingLeft: padding.left };
+    }
+
+    function updateReaderPageWidth() {
+        invalidateReaderMetrics();
+        return updateReaderPageGeometry().pageStep;
+    }
+
+    function getReaderPageMetrics(options = {}) {
+        if (!options.force && state.readerMetrics) return state.readerMetrics;
+        const geometry = updateReaderPageGeometry();
+        dom.reader_view.style.setProperty('--reader-content-width', `${geometry.columnWidth}px`);
+        const articleWidth = Math.max(
+            geometry.columnWidth,
+            Math.ceil(dom.reader_content?.scrollWidth || 0),
+            Math.ceil(dom.reader_content?.getBoundingClientRect?.().width || 0)
+        );
+        const pageCount = Math.max(1, Math.ceil((articleWidth + geometry.pageGap) / geometry.pageStep - 0.01));
+        const contentWidth = Math.max(geometry.columnWidth, (pageCount - 1) * geometry.pageStep + geometry.columnWidth);
+        dom.reader_view.style.setProperty('--reader-content-width', `${contentWidth}px`);
+        const maxOffset = Math.max(0, (pageCount - 1) * geometry.pageStep);
+        state.readerMetrics = { ...geometry, contentWidth, maxOffset, pageCount };
+        return state.readerMetrics;
+    }
+
+    function getReaderPageFromOffset(metrics = getReaderPageMetrics(), offset = state.readerPage * metrics.pageStep) {
+        return clampReaderValue(Math.round(offset / metrics.pageStep), 0, metrics.pageCount - 1);
+    }
+
+    function formatReaderProgressLabel(progress, page, pageCount) {
+        const safePageCount = Math.max(1, pageCount);
+        const safePage = clampReaderValue(page, 0, safePageCount - 1) + 1;
+        return `${safePage}/${safePageCount} ${String.fromCharCode(183)} ${Math.round(clampReaderProgress(progress) * 100)}%`;
+    }
+
+    function saveReaderProgress(book, immediate = false) {
+        if (!book) return Promise.resolve();
+        if (state.readerProgressSaveTimer) {
+            clearTimeout(state.readerProgressSaveTimer);
+            state.readerProgressSaveTimer = null;
+        }
+        if (immediate) {
+            state.readerProgressSaveBook = null;
+            return storage().saveLibraryBook(book).catch(console.error);
+        }
+        state.readerProgressSaveBook = book;
+        state.readerProgressSaveTimer = setTimeout(() => {
+            state.readerProgressSaveTimer = null;
+            const pendingBook = state.readerProgressSaveBook;
+            state.readerProgressSaveBook = null;
+            if (pendingBook) storage().saveLibraryBook(pendingBook).catch(console.error);
+        }, 600);
+        return Promise.resolve();
+    }
+
+    function flushReaderProgressSave() {
+        const pendingBook = state.readerProgressSaveBook || state.currentBook;
+        return saveReaderProgress(pendingBook, true);
+    }
+
+    function updateReaderProgress(save = false, forcedPage = null, options = {}) {
         const book = state.currentBook;
-        if (!book) return;
-        const scroll = dom.reader_scroll;
-        const max = Math.max(0, scroll.scrollHeight - scroll.clientHeight);
-        book.progress = max > 0 ? Math.max(0, Math.min(1, scroll.scrollTop / max)) : 1;
+        if (!book || !dom.reader_scroll) return;
+        const metrics = getReaderPageMetrics();
+        const page = clampReaderValue(forcedPage == null ? state.readerPage : forcedPage, 0, metrics.pageCount - 1);
+        const progress = metrics.pageCount > 1 ? clampReaderProgress(page / (metrics.pageCount - 1)) : 1;
+        state.readerPage = page;
+        state.readerPageCount = metrics.pageCount;
+        book.progress = progress;
         book.updatedAt = Date.now();
-        dom.reader_progress_label.textContent = `${Math.round(book.progress * 100)}%`;
-        if (save) storage().saveLibraryBook(book).catch(console.error);
+        dom.reader_progress_label.textContent = formatReaderProgressLabel(progress, page, metrics.pageCount);
+        if (save) saveReaderProgress(book, !!options.immediate);
+    }
+
+    function setReaderPage(page, options = {}) {
+        if (!dom.reader_scroll || !dom.reader_content) return;
+        const metrics = getReaderPageMetrics();
+        const nextPage = clampReaderValue(Math.round(Number(page) || 0), 0, metrics.pageCount - 1);
+        const left = Math.min(metrics.maxOffset, nextPage * metrics.pageStep);
+        state.readerPage = nextPage;
+        state.readerPageCount = metrics.pageCount;
+        if (typeof dom.reader_scroll.scrollTo === 'function') {
+            dom.reader_scroll.scrollTo({ left, top: 0, behavior: options.animate ? 'smooth' : 'auto' });
+        } else {
+            dom.reader_scroll.scrollLeft = left;
+        }
+        if (options.updateProgress !== false) updateReaderProgress(!!options.save, nextPage);
+    }
+
+    function restoreReaderProgress(progress = state.currentBook?.progress || 0) {
+        const metrics = getReaderPageMetrics();
+        const targetPage = Math.round(clampReaderProgress(progress) * (metrics.pageCount - 1));
+        setReaderPage(targetPage, { animate: false, save: false });
+    }
+
+    function getReaderElementPage(element) {
+        if (!element || !dom.reader_scroll) return state.readerPage;
+        const rect = element.getClientRects()[0] || element.getBoundingClientRect();
+        const viewport = dom.reader_scroll.getBoundingClientRect();
+        const metrics = getReaderPageMetrics();
+        const currentOffset = Math.max(0, Math.round(Number(dom.reader_scroll.scrollLeft) || state.readerPage * metrics.pageStep));
+        const left = rect.left - viewport.left - metrics.paddingLeft + currentOffset;
+        return getReaderPageFromOffset(metrics, left);
+    }
+
+    function turnReaderPage(delta, options = {}) {
+        setReaderPage(state.readerPage + delta, { animate: true, save: options.save !== false });
     }
 
     function markReaderActivity() {
@@ -581,6 +886,7 @@
             return `<span class="library-reader-line" data-reader-line="${lineIndex}" data-text-start="${start}" data-text-end="${end}">${content}</span>`;
         }).join('');
         dom.reader_content.innerHTML = `<span id="library-reader-start"></span>${html}`;
+        invalidateReaderMetrics();
         state.chapters = chapters;
         dom.reader_toc_list.innerHTML = chapters.map((chapter, index) => `
             <button type="button" data-chapter-anchor="${escapeHtml(chapter.anchorId)}">
@@ -596,8 +902,12 @@
         if (!book || !dom.reader_scroll) return '';
         const viewport = dom.reader_scroll.getBoundingClientRect();
         const visibleLines = [...dom.reader_content.querySelectorAll('[data-reader-line]')].filter((line) => {
-            const rect = line.getBoundingClientRect();
-            return rect.bottom >= viewport.top && rect.top <= viewport.bottom;
+            return [...line.getClientRects()].some((rect) => (
+                rect.right >= viewport.left
+                && rect.left <= viewport.right
+                && rect.bottom >= viewport.top
+                && rect.top <= viewport.bottom
+            ));
         });
         const visibleText = visibleLines.map((line) => line.textContent || '').join('\n').trim();
         if (visibleText && visibleText.length <= 6000) return visibleText;
@@ -605,8 +915,8 @@
 
         const fullText = String(book.text || '');
         if (!fullText) return '';
-        const maxScroll = Math.max(1, dom.reader_scroll.scrollHeight - dom.reader_scroll.clientHeight);
-        const ratio = Math.max(0, Math.min(1, dom.reader_scroll.scrollTop / maxScroll));
+        const metrics = getReaderPageMetrics();
+        const ratio = metrics.pageCount > 1 ? clampReaderProgress(state.readerPage / (metrics.pageCount - 1)) : 0;
         const center = Math.round(fullText.length * ratio);
         const start = Math.max(0, Math.min(fullText.length - 6000, center - 3000));
         return fullText.slice(start, start + 6000).trim();
@@ -614,6 +924,7 @@
 
     function openReader(book) {
         if (!book) return;
+        const savedProgress = clampReaderProgress(Number(book.progress) || 0);
         state.currentBook = book;
         book.lastOpenedAt = Date.now();
         dom.reader_title.textContent = book.title || '未命名';
@@ -621,11 +932,10 @@
         applyReaderPreferences();
         dom.reader_view.classList.add('active');
         dom.reader_view.setAttribute('aria-hidden', 'false');
+        setReaderPage(0, { animate: false, save: false, updateProgress: false });
         markReaderActivity();
         requestAnimationFrame(() => {
-            const max = Math.max(0, dom.reader_scroll.scrollHeight - dom.reader_scroll.clientHeight);
-            dom.reader_scroll.scrollTop = max * Math.max(0, Math.min(1, Number(book.progress) || 0));
-            updateReaderProgress(false);
+            restoreReaderProgress(savedProgress);
         });
     }
 
@@ -643,7 +953,7 @@
             return;
         }
         stopTogether();
-        updateReaderProgress(true);
+        updateReaderProgress(true, null, { immediate: true });
         flushReadingStats().catch(console.error);
         dom.reader_panel.hidden = true;
         dom.reader_toc.hidden = true;
@@ -651,6 +961,67 @@
         dom.reader_view.setAttribute('aria-hidden', 'true');
         state.currentBook = null;
         renderBooks();
+    }
+
+    function isReaderActive() {
+        return !!state.currentBook && dom.reader_view.classList.contains('active');
+    }
+
+    function repaginateReaderAtCurrentProgress() {
+        if (!isReaderActive()) return;
+        const progress = Number(state.currentBook.progress) || 0;
+        invalidateReaderMetrics();
+        updateReaderPageWidth();
+        requestAnimationFrame(() => restoreReaderProgress(progress));
+    }
+
+    function handleReaderPointerDown(event) {
+        if (!isReaderActive()) return;
+        state.readerPointerStart = {
+            x: event.clientX,
+            y: event.clientY,
+            page: state.readerPage,
+            time: Date.now()
+        };
+    }
+
+    function handleReaderPointerUp(event) {
+        if (!isReaderActive() || !state.readerPointerStart) return;
+        const start = state.readerPointerStart;
+        state.readerPointerStart = null;
+        const dx = event.clientX - start.x;
+        const dy = event.clientY - start.y;
+        const absX = Math.abs(dx);
+        const absY = Math.abs(dy);
+        const elapsed = Date.now() - start.time;
+
+        if (absX >= 45 && absX > absY * 1.2) {
+            setReaderPage(start.page + (dx < 0 ? 1 : -1), { animate: true, save: true });
+            markReaderActivity();
+            return;
+        }
+
+        if (absX <= 8 && absY <= 8 && elapsed <= 350) {
+            const rect = dom.reader_scroll.getBoundingClientRect();
+            const ratio = (event.clientX - rect.left) / Math.max(1, rect.width);
+            setReaderPage(state.readerPage + (ratio < 0.5 ? -1 : 1), { animate: true, save: true });
+            markReaderActivity();
+        }
+    }
+
+    function handleReaderKeydown(event) {
+        if (!isReaderActive()) return;
+        const tagName = event.target?.tagName;
+        if (tagName === 'INPUT' || tagName === 'TEXTAREA' || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+        if (event.key === 'ArrowRight' || event.key === 'PageDown' || event.key === ' ') {
+            event.preventDefault();
+            turnReaderPage(1, { save: true });
+            markReaderActivity();
+        } else if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
+            event.preventDefault();
+            turnReaderPage(-1, { save: true });
+            markReaderActivity();
+        }
     }
 
     function updateTogetherControls() {
@@ -1954,28 +2325,28 @@ ${xml(fullLyrics)}
             const anchor = document.getElementById(button.dataset.chapterAnchor);
             if (!anchor) return;
             dom.reader_toc.hidden = true;
-            dom.reader_scroll.scrollTo({ top: Math.max(0, anchor.offsetTop - 24), behavior: 'smooth' });
+            setReaderPage(getReaderElementPage(anchor), { animate: true, save: true });
             markReaderActivity();
         });
         dom.reader_panel.addEventListener('click', (event) => {
             const font = event.target.closest('[data-reader-font]');
             const line = event.target.closest('[data-reader-line]');
             const theme = event.target.closest('[data-reader-theme]');
+            const progress = state.currentBook ? Number(state.currentBook.progress) || 0 : 0;
             if (font) state.preferences.readerFontSize = (Number(state.preferences.readerFontSize) || 18) + Number(font.dataset.readerFont);
             if (line) state.preferences.readerLineHeight = (Number(state.preferences.readerLineHeight) || 1.85) + Number(line.dataset.readerLine) * .15;
             if (theme) state.preferences.readerTheme = theme.dataset.readerTheme;
             applyReaderPreferences();
-            updateReaderProgress(false);
+            if (state.currentBook) requestAnimationFrame(() => restoreReaderProgress(progress));
+            else updateReaderProgress(false);
             savePreferences().catch(console.error);
         });
-        let readerScrollTimer = null;
-        dom.reader_scroll.addEventListener('scroll', () => {
-            markReaderActivity();
-            updateReaderProgress(false);
-            clearTimeout(readerScrollTimer);
-            readerScrollTimer = setTimeout(() => updateReaderProgress(true), 400);
-        }, { passive: true });
-        ['pointerdown', 'keydown', 'touchstart'].forEach((eventName) => dom.reader_view.addEventListener(eventName, markReaderActivity, { passive: true }));
+        dom.reader_scroll.addEventListener('pointerdown', handleReaderPointerDown, { passive: true });
+        dom.reader_scroll.addEventListener('pointerup', handleReaderPointerUp, { passive: true });
+        dom.reader_scroll.addEventListener('pointercancel', () => { state.readerPointerStart = null; }, { passive: true });
+        ['pointerdown', 'touchstart'].forEach((eventName) => dom.reader_view.addEventListener(eventName, markReaderActivity, { passive: true }));
+        document.addEventListener('keydown', handleReaderKeydown);
+        window.addEventListener('resize', repaginateReaderAtCurrentProgress);
 
         dom.import_netease_btn.addEventListener('click', () => openModal(dom.import_modal));
         dom.music_add_btn.addEventListener('click', () => openModal(dom.track_modal));
@@ -2066,12 +2437,15 @@ ${xml(fullLyrics)}
         });
 
         window.addEventListener('pagehide', () => {
-            if (state.currentBook) updateReaderProgress(true);
+            if (state.currentBook) updateReaderProgress(true, null, { immediate: true });
+            else flushReaderProgressSave().catch(console.error);
             flushReadingStats().catch(console.error);
             flushListeningStats().catch(console.error);
         });
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
+                if (state.currentBook) updateReaderProgress(true, null, { immediate: true });
+                else flushReaderProgressSave().catch(console.error);
                 flushReadingStats().catch(console.error);
                 flushListeningStats().catch(console.error);
             }

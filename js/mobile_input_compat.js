@@ -1,8 +1,20 @@
 (function() {
     const isAndroid = /Android/i.test(navigator.userAgent || '');
     const registrations = new Map();
+    const bottomSheetExcludedInputTypes = new Set(['file', 'hidden', 'checkbox', 'radio', 'range', 'color']);
     let activeEntry = null;
     let viewportListenersBound = false;
+    let bottomSheetViewportGuardBound = false;
+    const bottomSheetFocusGuard = {
+        active: false,
+        overlay: null,
+        scrollLeft: 0,
+        previousScrollSnapType: '',
+        previousScrollBehavior: '',
+        previousOverflowX: '',
+        previousTouchAction: '',
+        restoreTimers: []
+    };
 
     function resolveElement(value) {
         if (typeof value === 'function') return value() || null;
@@ -16,6 +28,152 @@
             height: Math.round(viewport?.height || window.innerHeight || 0),
             width: Math.round(viewport?.width || window.innerWidth || 0)
         };
+    }
+
+    function getPagesContainer() {
+        return document.getElementById('pages-container');
+    }
+
+    function isBottomSheetEditableTarget(target) {
+        if (!target || !target.closest || target.disabled) return false;
+
+        const tagName = target.tagName;
+        if (tagName === 'TEXTAREA') return !target.readOnly;
+        if (tagName === 'SELECT') return true;
+        if (tagName !== 'INPUT') return false;
+
+        const type = String(target.getAttribute('type') || target.type || 'text').toLowerCase();
+        return !target.readOnly && !bottomSheetExcludedInputTypes.has(type);
+    }
+
+    function getActiveBottomSheetOverlay(target) {
+        if (!target || !target.closest) return null;
+        const overlay = target.closest('.bottom-sheet-overlay.active');
+        return overlay || null;
+    }
+
+    function resetHorizontalWindowScroll() {
+        try {
+            window.scrollTo(0, window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0);
+        } catch (error) {
+            // Some embedded Android WebViews can reject scrollTo while the keyboard is animating.
+        }
+        document.documentElement.scrollLeft = 0;
+        document.body.scrollLeft = 0;
+    }
+
+    function restoreBottomSheetFocusPosition() {
+        if (!isAndroid || !bottomSheetFocusGuard.active) return;
+
+        const pagesContainer = getPagesContainer();
+        if (pagesContainer) {
+            try {
+                pagesContainer.scrollTo({ left: bottomSheetFocusGuard.scrollLeft, behavior: 'auto' });
+            } catch (error) {
+                pagesContainer.scrollLeft = bottomSheetFocusGuard.scrollLeft;
+            }
+            pagesContainer.scrollLeft = bottomSheetFocusGuard.scrollLeft;
+        }
+        resetHorizontalWindowScroll();
+    }
+
+    function scheduleBottomSheetFocusRestore() {
+        if (!isAndroid || !bottomSheetFocusGuard.active) return;
+        bottomSheetFocusGuard.restoreTimers.forEach(timer => clearTimeout(timer));
+        bottomSheetFocusGuard.restoreTimers = [];
+        requestAnimationFrame(restoreBottomSheetFocusPosition);
+        [0, 60, 180, 360].forEach(delay => {
+            bottomSheetFocusGuard.restoreTimers.push(setTimeout(restoreBottomSheetFocusPosition, delay));
+        });
+    }
+
+    function lockBottomSheetFocusScroll(target) {
+        if (!isAndroid || !isBottomSheetEditableTarget(target)) return false;
+
+        const overlay = getActiveBottomSheetOverlay(target);
+        if (!overlay) return false;
+
+        const pagesContainer = getPagesContainer();
+        if (!bottomSheetFocusGuard.active) {
+            bottomSheetFocusGuard.active = true;
+            bottomSheetFocusGuard.scrollLeft = pagesContainer ? pagesContainer.scrollLeft : 0;
+            if (pagesContainer) {
+                bottomSheetFocusGuard.previousScrollSnapType = pagesContainer.style.scrollSnapType || '';
+                bottomSheetFocusGuard.previousScrollBehavior = pagesContainer.style.scrollBehavior || '';
+                bottomSheetFocusGuard.previousOverflowX = pagesContainer.style.overflowX || '';
+                bottomSheetFocusGuard.previousTouchAction = pagesContainer.style.touchAction || '';
+            }
+        }
+
+        bottomSheetFocusGuard.overlay = overlay;
+        overlay.classList.add('u2-android-input-locked');
+
+        if (pagesContainer) {
+            pagesContainer.style.scrollSnapType = 'none';
+            pagesContainer.style.scrollBehavior = 'auto';
+            pagesContainer.style.overflowX = 'hidden';
+            pagesContainer.style.touchAction = 'none';
+        }
+
+        bindBottomSheetViewportGuard();
+        scheduleBottomSheetFocusRestore();
+        return true;
+    }
+
+    function unlockBottomSheetFocusScroll() {
+        if (!bottomSheetFocusGuard.active) return;
+
+        bottomSheetFocusGuard.restoreTimers.forEach(timer => clearTimeout(timer));
+        bottomSheetFocusGuard.restoreTimers = [];
+
+        const pagesContainer = getPagesContainer();
+        if (pagesContainer) {
+            pagesContainer.style.scrollSnapType = bottomSheetFocusGuard.previousScrollSnapType;
+            pagesContainer.style.scrollBehavior = bottomSheetFocusGuard.previousScrollBehavior;
+            pagesContainer.style.overflowX = bottomSheetFocusGuard.previousOverflowX;
+            pagesContainer.style.touchAction = bottomSheetFocusGuard.previousTouchAction;
+            pagesContainer.scrollLeft = bottomSheetFocusGuard.scrollLeft;
+        }
+
+        if (bottomSheetFocusGuard.overlay?.classList) {
+            bottomSheetFocusGuard.overlay.classList.remove('u2-android-input-locked');
+        }
+
+        bottomSheetFocusGuard.active = false;
+        bottomSheetFocusGuard.overlay = null;
+        bottomSheetFocusGuard.scrollLeft = 0;
+        bottomSheetFocusGuard.previousScrollSnapType = '';
+        bottomSheetFocusGuard.previousScrollBehavior = '';
+        bottomSheetFocusGuard.previousOverflowX = '';
+        bottomSheetFocusGuard.previousTouchAction = '';
+        resetHorizontalWindowScroll();
+    }
+
+    function isBottomSheetGuardContextActive() {
+        const activeElement = document.activeElement;
+        return isBottomSheetEditableTarget(activeElement) && !!getActiveBottomSheetOverlay(activeElement);
+    }
+
+    function releaseBottomSheetFocusScrollIfIdle() {
+        if (!isAndroid || !bottomSheetFocusGuard.active) return;
+        if (isBottomSheetGuardContextActive()) {
+            scheduleBottomSheetFocusRestore();
+            return;
+        }
+        unlockBottomSheetFocusScroll();
+    }
+
+    function handleBottomSheetViewportChange() {
+        if (!isAndroid || !bottomSheetFocusGuard.active) return;
+        scheduleBottomSheetFocusRestore();
+        setTimeout(releaseBottomSheetFocusScrollIfIdle, 120);
+    }
+
+    function bindBottomSheetViewportGuard() {
+        if (!isAndroid || !window.visualViewport || bottomSheetViewportGuardBound) return;
+        bottomSheetViewportGuardBound = true;
+        window.visualViewport.addEventListener('resize', handleBottomSheetViewportChange, { passive: true });
+        window.visualViewport.addEventListener('scroll', handleBottomSheetViewportChange, { passive: true });
     }
 
     function isSendEnter(event, options = {}) {
@@ -191,6 +349,8 @@
     }
 
     document.addEventListener('focusin', (event) => {
+        lockBottomSheetFocusScroll(event.target);
+
         const entry = registrations.get(event.target);
         if (entry) {
             activeEntry = entry;
@@ -199,6 +359,28 @@
             activeEntry = null;
         }
     }, true);
+
+    document.addEventListener('pointerdown', (event) => {
+        lockBottomSheetFocusScroll(event.target);
+    }, { capture: true, passive: true });
+
+    document.addEventListener('touchstart', (event) => {
+        lockBottomSheetFocusScroll(event.target);
+    }, { capture: true, passive: true });
+
+    document.addEventListener('focusout', () => {
+        if (!isAndroid || !bottomSheetFocusGuard.active) return;
+        setTimeout(releaseBottomSheetFocusScrollIfIdle, 120);
+    }, true);
+
+    document.addEventListener('selectionchange', () => {
+        if (!isAndroid || !bottomSheetFocusGuard.active) return;
+        if (isBottomSheetGuardContextActive()) {
+            scheduleBottomSheetFocusRestore();
+        } else {
+            setTimeout(releaseBottomSheetFocusScrollIfIdle, 120);
+        }
+    });
 
     window.mobileInputCompat = {
         isAndroid,

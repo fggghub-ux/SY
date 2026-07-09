@@ -647,8 +647,9 @@
 .library-reader.theme-dark .library-subview-header > button { color: #e7e8e4; background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.08) !important; }
 .library-reader.theme-dark .library-reader-leading button,
 .library-reader.theme-dark .library-reader-actions button { color: #e7e8e4; background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.08); }
-.library-reader-scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; color: var(--reader-text); background: var(--reader-bg); }
-.library-reader-scroll article { max-width: 700px; margin: 0 auto; padding: 38px 24px 120px; white-space: pre-wrap; word-break: break-word; font-family: "Songti SC", "STSong", "Noto Serif SC", serif; font-size: var(--reader-font, 18px); line-height: var(--reader-line, 1.85); letter-spacing: .04em; }
+.library-reader-scroll { flex: 1; min-height: 0; padding: 38px 24px 32px; box-sizing: border-box; overflow: hidden; scroll-behavior: auto; overscroll-behavior: none; touch-action: pan-y; color: var(--reader-text); background: var(--reader-bg); }
+.library-reader-scroll::-webkit-scrollbar { display: none; }
+.library-reader-scroll article { width: var(--reader-content-width, var(--reader-column-width, 312px)); min-width: var(--reader-column-width, 312px); height: 100%; margin: 0; padding: 0; box-sizing: border-box; contain: layout style; column-width: var(--reader-column-width, 312px); column-gap: var(--reader-page-gap, 48px); column-fill: auto; transform: none; transition: none; white-space: pre-wrap; word-break: break-word; font-family: "Songti SC", "STSong", "Noto Serif SC", serif; font-size: var(--reader-font, 18px); line-height: var(--reader-line, 1.85); letter-spacing: .04em; }
 .library-reader-line { display: block; min-height: 1em; }
 .library-reader-chapter { display: inline-block; width: 100%; padding-top: .7em; font-size: 1.12em; font-weight: 760; letter-spacing: .02em; }
 .library-reader-toc { position: absolute; z-index: 7; left: 14px; right: 14px; top: calc(70px + var(--safe-top)); bottom: max(14px, calc(var(--safe-bottom) + 10px)); display: flex; flex-direction: column; overflow: hidden; border-radius: 26px; background: rgba(249,249,246,.96); box-shadow: 0 20px 58px rgba(35,43,37,.24); backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px); }
