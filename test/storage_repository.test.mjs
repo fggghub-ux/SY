@@ -225,6 +225,29 @@ test('iMessage field patches preserve persona and moments-cover assets across co
     assert.ok(String(friend.momentsCover).startsWith('blob:'));
 });
 
+test('iMessage per-chat theme CSS survives durable friend storage', async () => {
+    await window.appStorage.saveFriend({
+        id: 'theme-friend',
+        nickname: 'Theme Friend',
+        customCssEnabled: true,
+        customCss: '.user-bubble { background: #123456; }',
+        chatCssEnabled: true,
+        chatCss: ':scope { --im-chat-bg-color: #f0f0f0; }',
+        statusCssEnabled: true,
+        statusCss: '.chat-top-bar { color: #654321; }',
+        messages: [],
+        messagesLoaded: true
+    });
+
+    const friend = (await window.appStorage.loadFriends()).find((item) => item.id === 'theme-friend');
+    assert.equal(friend.customCssEnabled, true);
+    assert.equal(friend.customCss, '.user-bubble { background: #123456; }');
+    assert.equal(friend.chatCssEnabled, true);
+    assert.equal(friend.chatCss, ':scope { --im-chat-bg-color: #f0f0f0; }');
+    assert.equal(friend.statusCssEnabled, true);
+    assert.equal(friend.statusCss, '.chat-top-bar { color: #654321; }');
+});
+
 test('plain-text message commits update only message and compact summary records', async () => {
     const friend = {
         id: 'atomic-friend',

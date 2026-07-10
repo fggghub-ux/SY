@@ -117,6 +117,7 @@
     // Theme Configuration State
     // ==========================================
     const DEFAULT_SYSTEM_THEME_FONT_FAMILY = 'system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
+    const IMESSAGE_CSS_THEME_TYPES = ['bubble', 'chat', 'status'];
     const BUILTIN_THEME_FONTS = [
         {
             key: 'system-default',
@@ -149,6 +150,11 @@
         fontSize: 16,
         fontSources: { woff2: '', woff: '', ttf: '' },
         savedFontPresets: [],
+        imessageCssPresets: {
+            bubble: [],
+            chat: [],
+            status: []
+        },
         imessageChatCssEnabled: false,
         imessageChatCss: ''
     };
@@ -168,6 +174,7 @@
             console.warn('Failed to hydrate settings from IndexedDB:', error);
         }
 
+        let migratedImessageCssPresets = false;
         if (savedSettings && typeof savedSettings === 'object') {
             apiConfig = { ...apiConfig, ...(savedSettings.apiConfig || {}) };
             minimaxConfig = { ...minimaxConfig, ...(savedSettings.minimaxConfig || {}) };
@@ -213,11 +220,30 @@
                 }
                 themeState = { ...themeState, ...savedThemeState };
             }
+            themeState.imessageCssPresets = normalizeImessageCssPresets(themeState.imessageCssPresets);
+
+            // Move the old generic-key presets into the durable settings domain once.
+            IMESSAGE_CSS_THEME_TYPES.forEach((type) => {
+                if (themeState.imessageCssPresets[type].length > 0) return;
+                const legacyPresets = window.appStorage?.loadLegacyKey
+                    ? window.appStorage.loadLegacyKey(`u2_theme_${type}Presets`, [])
+                    : [];
+                const normalizedLegacyPresets = normalizeImessageCssPresets({ [type]: legacyPresets })[type];
+                if (normalizedLegacyPresets.length > 0) {
+                    themeState.imessageCssPresets[type] = normalizedLegacyPresets;
+                    migratedImessageCssPresets = true;
+                }
+            });
             window.u2ThemeState = themeState;
             
             // Apply loaded theme state immediately
             applySavedTheme();
         }
+
+        if (migratedImessageCssPresets) {
+            await persistSettingsData();
+        }
+        document.dispatchEvent(new CustomEvent('u2-theme-state-ready'));
         
         // Expose globally for other modules if needed
         window.apiConfig = apiConfig;
@@ -909,6 +935,26 @@
             }
         }
 
+        function normalizeImessageCssPresets(rawPresets) {
+            const source = rawPresets && typeof rawPresets === 'object' ? rawPresets : {};
+            return IMESSAGE_CSS_THEME_TYPES.reduce((presetsByType, type) => {
+                const seenNames = new Set();
+                presetsByType[type] = (Array.isArray(source[type]) ? source[type] : [])
+                    .map((preset, index) => ({
+                        id: String(preset?.id || `${type}-preset-${index}`),
+                        name: String(preset?.name || '').trim(),
+                        css: typeof preset?.css === 'string' ? preset.css : ''
+                    }))
+                    .filter((preset) => preset.name && preset.css.trim())
+                    .filter((preset) => {
+                        if (seenNames.has(preset.name)) return false;
+                        seenNames.add(preset.name);
+                        return true;
+                    });
+                return presetsByType;
+            }, {});
+        }
+
         if (themeConfigBtn && desktopThemeConfigSheet) {
             themeConfigBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -1006,8 +1052,8 @@
                             chatThemeStatusSelect.value = friend.statusCss || '';
                         }
                     }
-                    if (chatThemeChatSelect && themeState.imessageChatCssEnabled) {
-                        chatThemeChatSelect.value = themeState.imessageChatCss || '';
+                    if (chatThemeChatSelect && window.imData?.currentSettingsFriend?.chatCssEnabled) {
+                        chatThemeChatSelect.value = window.imData.currentSettingsFriend.chatCss || '';
                     }
                 } else {
                     chatThemeBeautifyBody.style.display = 'none';
@@ -1867,28 +1913,45 @@
             });
         }
 
-        // Preset management logic
+        // Preset management lives with themeState so writes are durable before the UI confirms them.
         function loadPresets(type) {
-            const presets = window.StorageManager ? window.StorageManager.load(`u2_theme_${type}Presets`, []) : [];
-            return Array.isArray(presets) ? presets : [];
+            themeState.imessageCssPresets = normalizeImessageCssPresets(themeState.imessageCssPresets);
+            return themeState.imessageCssPresets[type] || [];
         }
 
-        function savePresets(type, presets) {
-            if (window.StorageManager) {
-                window.StorageManager.save(`u2_theme_${type}Presets`, presets);
-            }
+        async function savePresets(type, presets) {
+            themeState.imessageCssPresets = {
+                ...normalizeImessageCssPresets(themeState.imessageCssPresets),
+                [type]: normalizeImessageCssPresets({ [type]: presets })[type]
+            };
+            window.u2ThemeState = themeState;
+            return saveGlobalData();
         }
 
-        function updatePresetSelect(type, selectEl) {
+        function getCurrentFriendThemeCss(friend, type) {
+            if (!friend) return '';
+            if (type === 'bubble') return friend.customCssEnabled ? (friend.customCss || '') : '';
+            if (type === 'chat') return friend.chatCssEnabled ? (friend.chatCss || '') : '';
+            return friend.statusCssEnabled ? (friend.statusCss || '') : '';
+        }
+
+        function updatePresetSelect(type, selectEl, activeCss = '') {
             if (!selectEl) return;
             const presets = loadPresets(type);
-            selectEl.innerHTML = '<option value="">选择已保存的预设加载</option>';
+            selectEl.innerHTML = '<option value="">默认主题（不应用 CSS）</option>';
             presets.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = p.css;
                 opt.textContent = p.name;
                 selectEl.appendChild(opt);
             });
+            if (activeCss && !presets.some((preset) => preset.css === activeCss)) {
+                const currentOption = document.createElement('option');
+                currentOption.value = activeCss;
+                currentOption.textContent = '当前已应用的自定义主题';
+                selectEl.appendChild(currentOption);
+            }
+            selectEl.value = activeCss || '';
         }
 
         function renderThemePresetList(type, listEl, selectEl, cssInputEl) {
@@ -1926,13 +1989,17 @@
                     }
                 });
 
-                item.querySelector('.delete-icon').addEventListener('click', (e) => {
+                item.querySelector('.delete-icon').addEventListener('click', async (e) => {
                     e.stopPropagation();
                     if (confirm(`删除预设“${preset.name}”？`)) {
                         const newPresets = presets.filter(p => p.id !== preset.id);
-                        savePresets(type, newPresets);
-                        refreshThemePresetUi();
-                        if (window.showToast) window.showToast('预设已删除');
+                        const persisted = await savePresets(type, newPresets);
+                        if (persisted) {
+                            refreshThemePresetUi(window.imData?.currentSettingsFriend);
+                            if (window.showToast) window.showToast('预设已删除');
+                        } else if (window.showToast) {
+                            window.showToast('预设删除失败');
+                        }
                     }
                 });
 
@@ -1940,10 +2007,10 @@
             });
         }
 
-        function refreshThemePresetUi() {
-            updatePresetSelect('bubble', chatThemeBubbleSelect);
-            updatePresetSelect('chat', chatThemeChatSelect);
-            updatePresetSelect('status', chatThemeStatusSelect);
+        function refreshThemePresetUi(friend = window.imData?.currentSettingsFriend) {
+            updatePresetSelect('bubble', chatThemeBubbleSelect, getCurrentFriendThemeCss(friend, 'bubble'));
+            updatePresetSelect('chat', chatThemeChatSelect, getCurrentFriendThemeCss(friend, 'chat'));
+            updatePresetSelect('status', chatThemeStatusSelect, getCurrentFriendThemeCss(friend, 'status'));
             renderThemePresetList('bubble', themeBubblePresetList, chatThemeBubbleSelect, themeBubbleCssInput);
             renderThemePresetList('chat', themeChatPresetList, chatThemeChatSelect, themeChatCssInput);
             renderThemePresetList('status', themeStatusPresetList, chatThemeStatusSelect, themeStatusCssInput);
@@ -1951,7 +2018,7 @@
 
         function setupPresetLogic(type, saveBtn, nameInput, selectEl, listEl, cssInputEl) {
             if (saveBtn) {
-                saveBtn.addEventListener('click', () => {
+                saveBtn.addEventListener('click', async () => {
                     let cssInput;
                     if (type === 'bubble') cssInput = themeBubbleCssInput;
                     else if (type === 'chat') cssInput = themeChatCssInput;
@@ -1970,12 +2037,16 @@
                     const presets = loadPresets(type);
                     const existingIndex = presets.findIndex(p => p.name === name);
                     if (existingIndex >= 0) {
-                        presets[existingIndex].css = css;
+                        presets[existingIndex] = { ...presets[existingIndex], css };
                     } else {
-                        presets.push({ id: Date.now(), name, css });
+                        presets.push({ id: `${type}-preset-${Date.now()}`, name, css });
                     }
-                    savePresets(type, presets);
-                    refreshThemePresetUi();
+                    const persisted = await savePresets(type, presets);
+                    if (!persisted) {
+                        if (window.showToast) window.showToast(`预设 "${name}" 保存失败`);
+                        return;
+                    }
+                    refreshThemePresetUi(window.imData?.currentSettingsFriend);
                     if (nameInput) nameInput.value = '';
                     if (window.showToast) window.showToast(`预设 "${name}" 已保存`);
                 });
@@ -1983,7 +2054,7 @@
 
             if (selectEl) {
                 // Initial load
-                updatePresetSelect(type, selectEl);
+                updatePresetSelect(type, selectEl, getCurrentFriendThemeCss(window.imData?.currentSettingsFriend, type));
             }
             if (listEl) {
                 renderThemePresetList(type, listEl, selectEl, cssInputEl);
@@ -1993,6 +2064,8 @@
         setupPresetLogic('bubble', themeBubbleSaveBtn, themeBubblePresetName, chatThemeBubbleSelect, themeBubblePresetList, themeBubbleCssInput);
         setupPresetLogic('chat', themeChatSaveBtn, themeChatPresetName, chatThemeChatSelect, themeChatPresetList, themeChatCssInput);
         setupPresetLogic('status', themeStatusSaveBtn, themeStatusPresetName, chatThemeStatusSelect, themeStatusPresetList, themeStatusCssInput);
+        window.imApp = window.imApp || {};
+        window.imApp.refreshChatThemePresetUi = refreshThemePresetUi;
         refreshThemePresetUi();
         
         // "应用"按钮统一逻辑
@@ -2014,26 +2087,21 @@
                         targetFriend.customCss = nextBubbleCss;
                         targetFriend.customCssEnabled = !!nextBubbleCss;
                         
+                        // Chat CSS
+                        targetFriend.chatCss = nextChatCss;
+                        targetFriend.chatCssEnabled = !!nextChatCss;
+
                         // 状态栏 CSS
                         targetFriend.statusCss = nextStatusCss;
                         targetFriend.statusCssEnabled = !!nextStatusCss;
                     }, { silent: true, syncSettings: true });
                     
                     if (saved) {
-                        // Chat CSS 通常作为全局设置，或可挂载到当前对象。这里将其设为全局主题配置以适配现有逻辑
-                        themeState.imessageChatCss = nextChatCss;
-                        themeState.imessageChatCssEnabled = !!nextChatCss;
-                        window.u2ThemeState = themeState;
-
-                        if (window.imApp.applyGlobalChatCss) {
-                            window.imApp.applyGlobalChatCss(themeState);
-                        }
-
                         if (window.imApp.applyFriendCss) {
                             window.imApp.applyFriendCss(window.imData.currentSettingsFriend);
                         }
-                        const persisted = await saveGlobalData();
-                        showToast(persisted ? '主题美化已应用' : 'Chat CSS 保存失败，当前效果未持久化');
+                        refreshThemePresetUi(window.imData.currentSettingsFriend);
+                        showToast('主题美化已应用');
                     } else {
                         showToast('应用主题失败');
                     }

@@ -140,6 +140,23 @@ test('iMessage Chat CSS hydrates from the IndexedDB settings domain and confirms
     assert.match(clearChatSource, /const persisted = await saveGlobalData\(\)/);
 });
 
+test('chat settings persist per-friend CSS and durable theme presets', () => {
+    assert.match(settingsSource, /imessageCssPresets:\s*\{\s*bubble:\s*\[\],\s*chat:\s*\[\],\s*status:\s*\[\]/);
+    assert.match(settingsSource, /async function savePresets\(type, presets\)/);
+    assert.match(settingsSource, /return saveGlobalData\(\)/);
+    assert.match(settingsSource, /u2_theme_\$\{type\}Presets/);
+    assert.match(settingsSource, /document\.dispatchEvent\(new CustomEvent\('u2-theme-state-ready'\)\)/);
+    assert.match(settingsSource, /currentOption\.textContent = '当前已应用的自定义主题'/);
+
+    const chatSettingsApply = settingsSource.slice(
+        settingsSource.indexOf("if (chatThemeApplyBtn)"),
+        settingsSource.indexOf('// Theme Background', settingsSource.indexOf("if (chatThemeApplyBtn)"))
+    );
+    assert.match(chatSettingsApply, /targetFriend\.chatCss = nextChatCss/);
+    assert.match(chatSettingsApply, /targetFriend\.chatCssEnabled = !!nextChatCss/);
+    assert.doesNotMatch(chatSettingsApply, /themeState\.imessageChatCss = nextChatCss/);
+});
+
 test('Char edit sheet is hardened against Android input focus overflow', () => {
     assert.match(imessageCssSource, /#edit-char-persona-sheet \.char-settings-sheet\s*\{[\s\S]*overflow:\s*hidden/);
     assert.match(imessageCssSource, /#edit-char-persona-sheet \.char-settings-content\s*\{[\s\S]*overflow-x:\s*hidden[\s\S]*-webkit-overflow-scrolling:\s*touch/);
@@ -152,7 +169,7 @@ test('changed Android input assets are cache-busted', () => {
     assert.match(indexSource, /css\/imessage\.css\?v=20260709-android-input-v1/);
     assert.match(indexSource, /css\/settings\.css\?v=20260710-storage-v7-cache1/);
     assert.match(indexSource, /js\/mobile_input_compat\.js\?v=20260709-android-input-v1/);
-    assert.match(indexSource, /js\/settings\.js\?v=20260710-imessage-theme-idb-v1/);
+    assert.match(indexSource, /js\/settings\.js\?v=20260711-chat-theme-v1/);
     assert.match(indexSource, /id="storage-clean-cache-btn"[^>]*>优化存储<\/button>/);
     assert.match(settingsSource, /appStorage\.optimizeStorage\(\{ progressCallback: updateOperation \}\)/);
 });

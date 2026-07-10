@@ -3320,6 +3320,9 @@ document.addEventListener('DOMContentLoaded', () => {
         initChatSettingsInteractions();
         setActiveChatSettingsTab('info');
         refreshChatSettingsHeader(friend);
+        if (window.imApp.refreshChatThemePresetUi) {
+            window.imApp.refreshChatThemePresetUi(friend);
+        }
 
 
         const chatMemoryOverviewInput = document.getElementById('chat-memory-overview-input');
@@ -3809,6 +3812,13 @@ document.addEventListener('DOMContentLoaded', () => {
             combinedCss += scopeThemeCss(friend.customCss, contextPrefix);
             combinedCss += '\n';
         }
+
+        // Chat CSS is owned by this friend, unlike the separate global Chat CSS editor.
+        if (friend.chatCssEnabled && friend.chatCss) {
+            const prefix = `#chat-interface-${friend.id}`;
+            combinedCss += scopeThemeCss(friend.chatCss, prefix);
+            combinedCss += '\n';
+        }
         
         // Status CSS
         if (friend.statusCssEnabled && friend.statusCss) {
@@ -3820,17 +3830,28 @@ document.addEventListener('DOMContentLoaded', () => {
         styleTag.textContent = combinedCss;
     }
     
-    function applyAllSavedCss() {
-        if(window.imData.friends) {
+    async function applyAllSavedCss() {
+        if (window.imApp.ensureDataReady) {
+            await window.imApp.ensureDataReady();
+        }
+
+        if (Array.isArray(window.imData.friends)) {
             window.imData.friends.forEach(f => applyFriendCss(f));
         }
         if (window.imApp.applyGlobalChatCss) {
             window.imApp.applyGlobalChatCss(window.u2ThemeState || {});
         }
     }
-    
-    // Call it initially
-    setTimeout(() => applyAllSavedCss(), 100);
+
+    function restoreSavedCss() {
+        applyAllSavedCss().catch((error) => {
+            console.warn('Failed to restore saved iMessage CSS:', error);
+        });
+    }
+
+    document.addEventListener('imessage-data-ready', restoreSavedCss);
+    document.addEventListener('u2-theme-state-ready', restoreSavedCss);
+    restoreSavedCss();
 
     const saveCssPresetBtn = document.getElementById('save-css-preset-btn');
     const loadCssPresetBtn = document.getElementById('load-css-preset-btn');

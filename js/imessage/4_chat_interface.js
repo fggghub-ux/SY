@@ -354,6 +354,9 @@ async function openChatTab(friend) {
             page.style.setProperty('--im-chat-status-color', statusColor);
             const msgContainer = page.querySelector('.ins-chat-messages');
             if (msgContainer) msgContainer.innerHTML = '';
+            if (window.imApp.applyFriendCss) {
+                window.imApp.applyFriendCss(friend);
+            }
         }
 
         if (!page) {
@@ -511,6 +514,9 @@ async function openChatTab(friend) {
             `;
 
             if(chatsContent) chatsContent.appendChild(page);
+            if (window.imApp.applyFriendCss) {
+                window.imApp.applyFriendCss(friend);
+            }
             if (window.imApp.applyGlobalChatCss) {
                 window.imApp.applyGlobalChatCss(window.u2ThemeState || {});
             }
