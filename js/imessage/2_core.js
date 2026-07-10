@@ -266,6 +266,7 @@ window.imApp.createDefaultMemory = function() {
         autonomous: window.imApp.createDefaultAutonomousActivity(),
         longTerm: '',
         shortTermEntries: [],
+        groupChatContexts: [],
         cherished: '',
         longTermEntries: [],
         cherishedEntries: [],
@@ -535,6 +536,9 @@ window.imApp.normalizeFriendData = function(friend) {
                 sourceEndMessageCount: Math.max(0, Number(entry?.sourceEndMessageCount) || 0)
             }))
             : defaultMemory.shortTermEntries,
+        groupChatContexts: window.imDataUtils?.normalizeGroupChatContexts
+            ? window.imDataUtils.normalizeGroupChatContexts(memory.groupChatContexts, 5)
+            : defaultMemory.groupChatContexts,
         longTermEntries: Array.isArray(memory.longTermEntries)
             ? memory.longTermEntries.map((entry, index) => ({
                 id: entry?.id != null ? entry.id : `longterm-${index}`,
@@ -617,6 +621,36 @@ window.imApp.getRecentContextMessages = function(friend) {
     const contextLimit = window.imApp.getContextLimit(normalizedFriend);
     const allMessages = Array.isArray(normalizedFriend.messages) ? normalizedFriend.messages : [];
     return contextLimit > 0 ? allMessages.slice(-contextLimit) : [];
+};
+
+window.imApp.getGroupChatMemoryCandidates = function(friend) {
+    const normalizedFriend = window.imApp.normalizeFriendData(friend || {});
+    if (!normalizedFriend || normalizedFriend.type === 'group' || normalizedFriend.type === 'official') return [];
+
+    return (window.imData?.friends || []).filter((group) => {
+        if (!group || group.type !== 'group' || !Array.isArray(group.members)) return false;
+        if (window.imChat?.getGroupMemberFriends) {
+            return window.imChat.getGroupMemberFriends(group)
+                .some(member => String(member?.id) === String(normalizedFriend.id));
+        }
+        return group.members.some(memberRef => (
+            String(memberRef) === String(normalizedFriend.id)
+            || String(memberRef) === String(normalizedFriend.nickname)
+        ));
+    });
+};
+
+window.imApp.getEligibleGroupChatMemoryContexts = function(friend) {
+    const normalizedFriend = window.imApp.normalizeFriendData(friend || {});
+    const contexts = window.imDataUtils?.normalizeGroupChatContexts
+        ? window.imDataUtils.normalizeGroupChatContexts(normalizedFriend.memory?.groupChatContexts, 5)
+        : [];
+    const groupsById = new Map(window.imApp.getGroupChatMemoryCandidates(normalizedFriend)
+        .map(group => [String(group.id), group]));
+
+    return contexts
+        .map(context => ({ ...context, group: groupsById.get(String(context.groupId)) || null }))
+        .filter(context => context.group);
 };
 
 window.imApp.isRecallableUserMessage = function(message) {
@@ -1288,6 +1322,7 @@ window.imApp.createClearedConversationMemory = function(memory = {}) {
         : null;
     cleared.mountSettings = window.imApp.cloneDataSnapshot(normalizedMemory.mountSettings || {});
     cleared.mountLimits = window.imApp.cloneDataSnapshot(normalizedMemory.mountLimits || {});
+    cleared.groupChatContexts = window.imApp.cloneDataSnapshot(normalizedMemory.groupChatContexts || []);
     cleared.lastSummaryMessageCount = 0;
     return cleared;
 };

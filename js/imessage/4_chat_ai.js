@@ -1756,6 +1756,46 @@ ${latestMessages || 'None'}
             return `<short_term_memory_library>\n<rules>\n- 高：强参考，优先影响情绪、态度、称呼和细节联想，占记忆影响约70%。\n- 中：辅助参考，只在话题相关时使用，占约25%。\n- 低：弱参考，只在用户明确触发时轻微使用，占约5%。\n- 遗忘：仅作为模糊残影，不主动提起，除非用户强烈触发。\n</rules>\n\n<memories>\n${sections}\n</memories>\n</short_term_memory_library>`;
         }
 
+        async function buildGroupChatMemoryContext(currentFriend) {
+            if (currentFriend.type === 'group') return '';
+            const eligibleContexts = window.imApp.getEligibleGroupChatMemoryContexts
+                ? window.imApp.getEligibleGroupChatMemoryContexts(currentFriend)
+                : [];
+            if (eligibleContexts.length === 0) return '';
+
+            if (window.imApp.ensureFriendMessagesLoaded) {
+                await Promise.all(eligibleContexts.map(({ group }) => window.imApp.ensureFriendMessagesLoaded(group)));
+            }
+
+            const freshContexts = window.imApp.getEligibleGroupChatMemoryContexts
+                ? window.imApp.getEligibleGroupChatMemoryContexts(currentFriend)
+                : [];
+            const userName = currentUserState.name || 'User';
+            const charName = currentFriend.nickname || currentFriend.realName || 'Char';
+            const blocks = freshContexts.map(({ group, roundLimit }) => {
+                const roundData = window.imDataUtils?.getRecentUserRounds
+                    ? window.imDataUtils.getRecentUserRounds(group.messages, roundLimit)
+                    : { selectedMessages: [], selectedRounds: 0, selectedMessageCount: 0 };
+                const publicMessages = roundData.selectedMessages.filter((message) => (
+                    message?.noticeKind !== 'group_private_to_user'
+                    && message?.noticeKind !== 'group_friend_private_chat'
+                ));
+                const formattedMessages = publicMessages.map((message) => {
+                    const formatted = window.imApp.formatMessageForApiContext(message, group, { userName });
+                    if (!formatted?.content) return '';
+                    const timePrefix = message.timestamp ? `${formatPromptTime(message.timestamp)} ` : '';
+                    return `${timePrefix}${formatted.content}`;
+                }).filter(Boolean);
+                const groupName = group.nickname || group.realName || '未命名群聊';
+
+                return `<group_chat_memory>\n<group_name>${groupName}</group_name>\n<member_identity>${charName} 是这个群聊的成员。</member_identity>\n<scope>以下是该群聊的公开聊天记录，共读取 ${roundData.selectedRounds}/${roundLimit} 轮、${formattedMessages.length} 条。它不是当前单聊的消息，也不包含任何成员私聊正文。</scope>\n<rules>\n- 只将这些内容作为 ${charName} 所在群聊的共同公开背景，不要编造未提供的群消息。\n- 不要把任何群成员的私密想法、私聊经历或未在群内公开的信息当成群内事实。\n- 你可以自然地知晓自己在群内亲历的公开事件，但不要假装正在当前群聊中回复。\n</rules>\n<messages>\n${formattedMessages.length > 0 ? formattedMessages.join('\n') : '暂无可读取的公开群聊记录。'}\n</messages>\n</group_chat_memory>`;
+            });
+
+            return blocks.length > 0
+                ? `<group_chat_memories>\n${blocks.join('\n\n')}\n</group_chat_memories>`
+                : '';
+        }
+
         // 提取日程信息
         let scheduleSection = '';
         let busyPrompt = '';
@@ -1813,11 +1853,14 @@ ${latestMessages || 'None'}
             longTermXml = `<long_term_memories>\n${friend.memory.longTerm}\n</long_term_memories>`;
         }
 
+        const groupChatMemoryContext = await buildGroupChatMemoryContext(friend);
+
         const commonMemorySections = [
             friend.memory.overview ? `<core_memory_overview>\n${friend.memory.overview}\n</core_memory_overview>` : '',
             longTermXml,
             friend.memory.context?.notes ? `<extra_context_notes>\n${friend.memory.context.notes}\n</extra_context_notes>` : '',
             buildShortTermMemoryContext(friend),
+            groupChatMemoryContext,
             scheduleSection,
             `<relationship_network>\n${relationshipText}\n</relationship_network>`,
             window.imApp.buildLinkedAccountMemoryContext

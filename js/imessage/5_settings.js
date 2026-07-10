@@ -922,6 +922,18 @@ document.addEventListener('DOMContentLoaded', () => {
         systemContextLen += (memory.longTerm || '').length;
         systemContextLen += (memory.cherished || '').length;
         systemContextLen += (memory.context?.notes || '').length;
+        const groupContextCandidates = window.imApp.getEligibleGroupChatMemoryContexts
+            ? window.imApp.getEligibleGroupChatMemoryContexts(normalizedFriend)
+            : [];
+        groupContextCandidates.forEach(({ group, roundLimit }) => {
+            const stats = getGroupChatMemoryRoundStats(group, roundLimit);
+            systemContextLen += (group.nickname || group.realName || '').length + 280;
+            systemContextLen += stats.selectedMessages
+                ? stats.selectedMessages.reduce((sum, message) => (
+                    sum + String(message?.content || message?.text || message?.transcript || message?.description || '').length
+                ), 0)
+                : 0;
+        });
         if (Array.isArray(memory.relationships)) {
             systemContextLen += memory.relationships.reduce((sum, r) => sum + (r.relation || '').length, 0);
         }
@@ -973,6 +985,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (el) el.textContent = value > 0 ? `${value}项` : '';
         };
         setCountText('chat-memory-shortterm-count', shortTermEntries.length);
+        setCountText('chat-memory-group-context-count', groupContextCandidates.length);
         setCountText('chat-memory-longterm-count', longTermEntries.length);
         setCountText('chat-memory-social-count', socialAccounts.length);
 
@@ -1248,6 +1261,229 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function escapeGroupChatMemoryHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function getGroupChatMemoryContexts(friend) {
+        const memory = window.imApp.normalizeFriendData(friend || {}).memory || {};
+        return window.imDataUtils?.normalizeGroupChatContexts
+            ? window.imDataUtils.normalizeGroupChatContexts(memory.groupChatContexts, 5)
+            : [];
+    }
+
+    function getGroupChatMemoryRoundStats(group, roundLimit) {
+        const messages = Array.isArray(group?.messages) ? group.messages : [];
+        return window.imDataUtils?.getRecentUserRounds
+            ? window.imDataUtils.getRecentUserRounds(messages, roundLimit)
+            : { selectedRounds: 0, selectedMessageCount: 0 };
+    }
+
+    async function saveGroupChatMemoryContexts(friend, contexts) {
+        if (!friend) return false;
+        const candidates = window.imApp.getGroupChatMemoryCandidates
+            ? window.imApp.getGroupChatMemoryCandidates(friend)
+            : [];
+        const candidateIds = new Set(candidates.map(group => String(group.id)));
+        const normalizedContexts = (window.imDataUtils?.normalizeGroupChatContexts
+            ? window.imDataUtils.normalizeGroupChatContexts(contexts, 5)
+            : [])
+            .filter(context => candidateIds.has(String(context.groupId)));
+
+        const saved = await commitNamedFriendChange(friend, (targetFriend) => {
+            targetFriend.memory = targetFriend.memory || window.imApp.createDefaultMemory();
+            targetFriend.memory.groupChatContexts = normalizedContexts;
+        }, { silent: true });
+
+        if (saved && window.imData.currentSettingsFriend
+            && String(window.imData.currentSettingsFriend.id) === String(friend.id)) {
+            const latest = window.imApp.getFriendById(friend.id);
+            if (latest) window.imData.currentSettingsFriend = latest;
+        }
+        return saved;
+    }
+
+    async function renderGroupChatMemoryList(friend) {
+        const list = document.getElementById('chat-memory-group-context-list');
+        if (!list || !friend) return;
+
+        const eligibleContexts = window.imApp.getEligibleGroupChatMemoryContexts
+            ? window.imApp.getEligibleGroupChatMemoryContexts(friend)
+            : [];
+        await Promise.all(eligibleContexts.map(({ group }) => (
+            window.imApp.ensureFriendMessagesLoaded
+                ? window.imApp.ensureFriendMessagesLoaded(group)
+                : Promise.resolve()
+        )));
+
+        const currentFriend = window.imApp.getFriendById(friend.id) || friend;
+        const contexts = getGroupChatMemoryContexts(currentFriend);
+        const groupsById = new Map((window.imApp.getGroupChatMemoryCandidates?.(currentFriend) || [])
+            .map(group => [String(group.id), group]));
+        const visibleContexts = contexts
+            .map(context => ({ ...context, group: groupsById.get(String(context.groupId)) || null }))
+            .filter(context => context.group);
+
+        list.innerHTML = visibleContexts.map(({ group, groupId, roundLimit }) => {
+            const stats = getGroupChatMemoryRoundStats(group, roundLimit);
+            const groupName = group.nickname || group.realName || '未命名群聊';
+            return `
+                <div class="chat-memory-group-context-item" data-group-id="${escapeGroupChatMemoryHtml(groupId)}">
+                    <div class="chat-memory-group-context-icon"><i class="fas fa-users"></i></div>
+                    <div class="chat-memory-group-context-main">
+                        <div class="chat-memory-group-context-name">${escapeGroupChatMemoryHtml(groupName)}</div>
+                        <div class="chat-memory-group-context-meta">读取 ${stats.selectedRounds}/${roundLimit} 轮，共 ${stats.selectedMessageCount} 条</div>
+                    </div>
+                    <input class="chat-memory-group-context-round-input" type="number" min="1" max="999" value="${roundLimit}" aria-label="读取轮数">
+                    <button type="button" class="chat-memory-group-context-remove" aria-label="移除群聊记忆" title="移除群聊记忆"><i class="fas fa-trash-alt"></i></button>
+                </div>
+            `;
+        }).join('');
+
+        list.querySelectorAll('.chat-memory-group-context-round-input').forEach((input) => {
+            input.addEventListener('change', async () => {
+                const item = input.closest('[data-group-id]');
+                const groupId = item?.getAttribute('data-group-id') || '';
+                const nextContexts = getGroupChatMemoryContexts(currentFriend).map((context) => (
+                    String(context.groupId) === String(groupId)
+                        ? { ...context, roundLimit: input.value }
+                        : context
+                ));
+                const saved = await saveGroupChatMemoryContexts(currentFriend, nextContexts);
+                if (!saved && window.showToast) window.showToast('群聊记忆保存失败');
+                await renderGroupChatMemoryList(currentFriend);
+                renderChatMemoryOverviewStats(window.imApp.getFriendById(currentFriend.id) || currentFriend);
+            });
+        });
+
+        list.querySelectorAll('.chat-memory-group-context-remove').forEach((button) => {
+            button.addEventListener('click', async () => {
+                const item = button.closest('[data-group-id]');
+                const groupId = item?.getAttribute('data-group-id') || '';
+                const nextContexts = getGroupChatMemoryContexts(currentFriend)
+                    .filter(context => String(context.groupId) !== String(groupId));
+                const saved = await saveGroupChatMemoryContexts(currentFriend, nextContexts);
+                if (!saved && window.showToast) window.showToast('群聊记忆保存失败');
+                await renderGroupChatMemoryList(currentFriend);
+                renderChatMemoryOverviewStats(window.imApp.getFriendById(currentFriend.id) || currentFriend);
+            });
+        });
+    }
+
+    function showGroupChatMemoryPicker(friend) {
+        const ui = ensureChatMemoryModalUi();
+        if (!ui || !friend) return;
+
+        const candidates = window.imApp.getGroupChatMemoryCandidates
+            ? window.imApp.getGroupChatMemoryCandidates(friend)
+            : [];
+        const draftContexts = new Map(getGroupChatMemoryContexts(friend)
+            .map(context => [String(context.groupId), { ...context }]));
+
+        ui.labelEl.textContent = '角色记忆';
+        ui.titleEl.textContent = '群聊记忆';
+        ui.subtitleEl.textContent = '单聊时会读取角色所在群聊的公开聊天记录。';
+        ui.subtitleEl.style.display = 'block';
+
+        const renderPicker = () => {
+            if (candidates.length === 0) {
+                ui.contentEl.innerHTML = '<div class="chat-memory-modal-empty">该角色暂未加入可读取的群聊</div>';
+                return;
+            }
+
+            const selectedGroups = candidates.filter(group => draftContexts.has(String(group.id)));
+            const availableGroups = candidates.filter(group => !draftContexts.has(String(group.id)));
+            ui.contentEl.innerHTML = `
+                <div class="chat-memory-modal-plain-note">选择群聊</div>
+                <select class="chat-memory-group-picker-select" ${availableGroups.length === 0 ? 'disabled' : ''}>
+                    <option value="">${availableGroups.length > 0 ? '选择群聊' : '没有更多可添加的群聊'}</option>
+                    ${availableGroups.map((group) => {
+                        const groupId = String(group.id);
+                        const groupName = group.nickname || group.realName || '未命名群聊';
+                        return `<option value="${escapeGroupChatMemoryHtml(groupId)}">${escapeGroupChatMemoryHtml(groupName)}</option>`;
+                    }).join('')}
+                </select>
+                <div class="chat-memory-modal-plain-note">已加入群聊记忆</div>
+                <div class="chat-memory-group-picker-list">
+                    ${selectedGroups.length > 0 ? selectedGroups.map((group) => {
+                        const groupId = String(group.id);
+                        const context = draftContexts.get(groupId) || { groupId, roundLimit: 5 };
+                        const stats = getGroupChatMemoryRoundStats(group, context.roundLimit);
+                        const groupName = group.nickname || group.realName || '未命名群聊';
+                        return `
+                            <div class="chat-memory-group-context-item" data-selected-group-id="${escapeGroupChatMemoryHtml(groupId)}">
+                                <div class="chat-memory-group-context-icon"><i class="fas fa-users"></i></div>
+                                <div class="chat-memory-group-context-main">
+                                    <div class="chat-memory-group-context-name">${escapeGroupChatMemoryHtml(groupName)}</div>
+                                    <div class="chat-memory-group-context-meta">读取 ${stats.selectedRounds}/${context.roundLimit} 轮，共 ${stats.selectedMessageCount} 条</div>
+                                </div>
+                                <input class="chat-memory-group-context-round-input" type="number" min="1" max="999" value="${context.roundLimit}" aria-label="读取轮数">
+                                <button type="button" class="chat-memory-group-context-remove" aria-label="移除群聊记忆" title="移除群聊记忆"><i class="fas fa-trash-alt"></i></button>
+                            </div>
+                        `;
+                    }).join('') : '<div class="chat-memory-modal-empty">暂未加入群聊记忆</div>'}
+                </div>
+                <button type="button" class="chat-memory-group-picker-save">保存</button>
+            `;
+
+            const groupSelect = ui.contentEl.querySelector('.chat-memory-group-picker-select');
+            if (groupSelect) {
+                groupSelect.addEventListener('change', () => {
+                    const groupId = groupSelect.value;
+                    if (!groupId) return;
+                    draftContexts.set(groupId, { groupId, roundLimit: 5 });
+                    renderPicker();
+                });
+            }
+
+            ui.contentEl.querySelectorAll('.chat-memory-group-context-round-input').forEach((input) => {
+                input.addEventListener('change', () => {
+                    const item = input.closest('[data-selected-group-id]');
+                    const groupId = item?.getAttribute('data-selected-group-id') || '';
+                    const context = draftContexts.get(groupId);
+                    if (context) context.roundLimit = input.value;
+                    renderPicker();
+                });
+            });
+
+            ui.contentEl.querySelectorAll('.chat-memory-group-context-remove').forEach((button) => {
+                button.addEventListener('click', () => {
+                    const item = button.closest('[data-selected-group-id]');
+                    draftContexts.delete(item?.getAttribute('data-selected-group-id') || '');
+                    renderPicker();
+                });
+            });
+
+            const saveButton = ui.contentEl.querySelector('.chat-memory-group-picker-save');
+            if (saveButton) {
+                saveButton.addEventListener('click', async () => {
+                    const saved = await saveGroupChatMemoryContexts(friend, Array.from(draftContexts.values()));
+                    if (!saved) {
+                        if (window.showToast) window.showToast('群聊记忆保存失败');
+                        return;
+                    }
+                    const latestFriend = window.imApp.getFriendById(friend.id) || friend;
+                    renderChatMemoryOverviewStats(latestFriend);
+                    hideChatMemoryModal();
+                });
+            }
+        };
+
+        void Promise.all(candidates.map(group => (
+            window.imApp.ensureFriendMessagesLoaded
+                ? window.imApp.ensureFriendMessagesLoaded(group)
+                : Promise.resolve()
+        ))).then(renderPicker);
+        renderPicker();
+        ui.overlay.style.display = 'flex';
+        requestAnimationFrame(() => ui.overlay.classList.add('active'));
+    }
+
     function bindChatMemoryPanelButtons() {
         const panelNames = ['overview', 'longterm', 'cherished'];
         const getCurrentFriend = () => window.imData.currentSettingsFriend || window.imData.currentActiveFriend || null;
@@ -1280,6 +1516,15 @@ document.addEventListener('DOMContentLoaded', () => {
         bindMemoryLocationButton('chat-memory-shortterm-btn', 'iphone');
         bindMemoryLocationButton('chat-memory-longterm-library-btn', 'downloads');
         bindMemoryLocationButton('chat-memory-social-btn', 'social');
+
+        const groupContextBtn = document.getElementById('chat-memory-group-context-btn');
+        if (groupContextBtn && groupContextBtn.dataset.memoryPanelBound !== 'true') {
+            groupContextBtn.dataset.memoryPanelBound = 'true';
+            groupContextBtn.addEventListener('click', () => {
+                const currentFriend = getCurrentFriend();
+                if (currentFriend) showGroupChatMemoryPicker(currentFriend);
+            });
+        }
 
         const scheduleBtn = document.getElementById('chat-memory-schedule-entry-btn');
         if (scheduleBtn && scheduleBtn.dataset.memoryPanelBound !== 'true') {

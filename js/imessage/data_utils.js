@@ -15,6 +15,47 @@
             : fallback;
     }
 
+    function normalizeGroupChatContexts(contexts, fallbackRoundLimit = 5) {
+        const seenGroupIds = new Set();
+        return (Array.isArray(contexts) ? contexts : [])
+            .map((context) => {
+                if (!context || typeof context !== 'object') return null;
+                const groupId = String(context.groupId ?? '').trim();
+                if (!groupId || seenGroupIds.has(groupId)) return null;
+                seenGroupIds.add(groupId);
+                return {
+                    groupId,
+                    roundLimit: normalizeRoundLimit(context.roundLimit, fallbackRoundLimit)
+                };
+            })
+            .filter(Boolean);
+    }
+
+    function getRecentUserRounds(messages, roundLimit = 5) {
+        const safeMessages = Array.isArray(messages) ? messages : [];
+        const limit = normalizeRoundLimit(roundLimit, 5);
+        const userMessageIndexes = [];
+
+        safeMessages.forEach((message, index) => {
+            if (message?.role === 'user') userMessageIndexes.push(index);
+        });
+
+        const selectedRounds = Math.min(limit, userMessageIndexes.length);
+        const startIndex = selectedRounds > 0
+            ? userMessageIndexes[userMessageIndexes.length - selectedRounds]
+            : safeMessages.length;
+        const selectedMessages = selectedRounds > 0 ? safeMessages.slice(startIndex) : [];
+
+        return {
+            roundLimit: limit,
+            availableRounds: userMessageIndexes.length,
+            selectedRounds,
+            selectedMessageCount: selectedMessages.length,
+            startIndex,
+            selectedMessages
+        };
+    }
+
     function normalizeLocalDateTime(value) {
         const text = String(value || '').trim();
         if (!text) return '';
@@ -168,6 +209,8 @@
 
     return {
         normalizeRoundLimit,
+        normalizeGroupChatContexts,
+        getRecentUserRounds,
         normalizeScheduleEvent,
         normalizeSchedule,
         getSummaryBatch,

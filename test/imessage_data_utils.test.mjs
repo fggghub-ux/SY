@@ -46,6 +46,46 @@ test('summary batch respects an existing message boundary and ignores assistant-
     assert.equal(batch.endIndex, messages.length);
 });
 
+test('group chat memory keeps the latest complete user-started rounds and reports messages', () => {
+    const messages = [
+        { role: 'user', content: 'u1' },
+        { role: 'assistant', content: 'a1-1' },
+        { role: 'assistant', content: 'a1-2' },
+        { role: 'user', content: 'u2' },
+        { role: 'assistant', content: 'a2-1' },
+        { role: 'user', content: 'u3' },
+        { role: 'assistant', content: 'a3-1' },
+        { role: 'assistant', content: 'a3-2' }
+    ];
+
+    const recent = utils.getRecentUserRounds(messages, 2);
+    assert.equal(recent.availableRounds, 3);
+    assert.equal(recent.selectedRounds, 2);
+    assert.equal(recent.selectedMessageCount, 5);
+    assert.deepEqual(recent.selectedMessages.map(message => message.content), ['u2', 'a2-1', 'u3', 'a3-1', 'a3-2']);
+
+    const allAvailable = utils.getRecentUserRounds(messages, 9);
+    assert.equal(allAvailable.selectedRounds, 3);
+    assert.equal(allAvailable.selectedMessageCount, messages.length);
+
+    const assistantOnly = utils.getRecentUserRounds([{ role: 'assistant', content: 'proactive' }], 5);
+    assert.equal(assistantOnly.selectedRounds, 0);
+    assert.equal(assistantOnly.selectedMessageCount, 0);
+});
+
+test('normalizes group chat memory contexts with default round limits and unique group IDs', () => {
+    assert.deepEqual(utils.normalizeGroupChatContexts([
+        { groupId: 'group-a' },
+        { groupId: 'group-a', roundLimit: 20 },
+        { groupId: 7, roundLimit: 0 },
+        { groupId: '', roundLimit: 8 },
+        null
+    ]), [
+        { groupId: 'group-a', roundLimit: 5 },
+        { groupId: '7', roundLimit: 5 }
+    ]);
+});
+
 test('deleting short-term summaries keeps the covered conversation out of the unsummarized queue', () => {
     const messages = [];
     for (let round = 1; round <= 10; round += 1) {
@@ -125,4 +165,17 @@ test('ships the full-screen sticker manager, manifest upload, and protected mome
     assert.match(html, /class="publish-moment-content"/);
     assert.match(html, /id="chat-memory-auto-summary-toggle"/);
     assert.match(html, /id="chat-memory-summary-round-input" value="30"/);
+    assert.match(html, /id="chat-memory-group-context-btn"/);
+});
+
+test('injects group chat memory only into character single-chat prompts', async () => {
+    const source = await fs.readFile(new URL('../js/imessage/4_chat_ai.js', import.meta.url), 'utf8');
+    const settingsSource = await fs.readFile(new URL('../js/imessage/5_settings.js', import.meta.url), 'utf8');
+    assert.match(source, /async function buildGroupChatMemoryContext\(currentFriend\)/);
+    assert.match(source, /if \(currentFriend\.type === 'group'\) return ''/);
+    assert.match(source, /<group_chat_memories>/);
+    assert.match(source, /<member_identity>/);
+    assert.match(source, /group_private_to_user/);
+    assert.match(settingsSource, /<select class="chat-memory-group-picker-select"/);
+    assert.doesNotMatch(settingsSource, /id="chat-memory-group-context-list"/);
 });

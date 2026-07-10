@@ -237,6 +237,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     sum + String(message?.content || message?.text || message?.transcript || message?.description || '').length
                 ), 0);
             });
+        } else if (window.imApp.getEligibleGroupChatMemoryContexts) {
+            window.imApp.getEligibleGroupChatMemoryContexts(normalizedFriend).forEach(({ group, roundLimit }) => {
+                const roundData = window.imDataUtils?.getRecentUserRounds
+                    ? window.imDataUtils.getRecentUserRounds(group.messages, roundLimit)
+                    : { selectedMessages: [] };
+                systemContextLen += String(group.nickname || group.realName || '').length + 280;
+                systemContextLen += roundData.selectedMessages.reduce((sum, message) => (
+                    sum + String(message?.content || message?.text || message?.transcript || message?.description || '').length
+                ), 0);
+            });
         }
 
         systemContextLen += normalizedFriend.type === 'group' ? 1600 : 800;
