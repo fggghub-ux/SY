@@ -1454,7 +1454,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const TIME_THRESHOLD = 5 * 60 * 1000; // 5 minutes
         if (!lastMsg || !lastMsg.timestamp || (timestamp - lastMsg.timestamp > TIME_THRESHOLD)) {
             const timeText = formatTimeBubble(timestamp);
-            member.chatHistory.push({ type: 'date', text: timeText, timestamp: timestamp });
+            const dateMessage = { type: 'date', text: timeText, timestamp: timestamp };
+            member.chatHistory.push(dateMessage);
             
             if (contentContainer) {
                 const dateDiv = document.createElement('div');
@@ -1462,7 +1463,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 dateDiv.textContent = timeText;
                 contentContainer.appendChild(dateDiv);
             }
+            return dateMessage;
         }
+        return null;
     }
 
     function migrateRandomAvatarEntity(entity, seed) {
@@ -1557,8 +1560,9 @@ document.addEventListener('DOMContentLoaded', () => {
         return changed;
     }
 
-    function saveBstageData() {
+    function saveBstageData(options = {}) {
         try {
+            const flush = options && options.flush === true;
             const nextUpdatedAt = Date.now();
             bstageStateUpdatedAt = nextUpdatedAt;
             const nextState = {
@@ -1581,12 +1585,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (typeof window.setAppState === 'function') {
                 window.setAppState('bstage', nextState);
-            } else if (window.saveGlobalData) {
-                window.saveGlobalData();
+                if (flush && typeof window.saveGlobalData === 'function') {
+                    return Promise.resolve(window.saveGlobalData()).then(Boolean);
+                }
+                return true;
+            }
+            if (window.saveGlobalData) {
+                return flush ? Promise.resolve(window.saveGlobalData()).then(Boolean) : window.saveGlobalData();
             }
         } catch (e) {
             console.warn('Bstage data save failed (possibly quota exceeded):', e);
         }
+        return false;
     }
 
     function loadBstageData() {
@@ -3475,9 +3485,11 @@ ${generationIntent}
         newApiBtn.addEventListener('click', async () => {
             if (newApiBtn.classList.contains('is-loading')) return;
             setChatActionLoading(newApiBtn, true);
+            inputArea.disabled = true;
             try {
                 await triggerChatApi(member, content);
             } finally {
+                inputArea.disabled = false;
                 setChatActionLoading(newApiBtn, false);
             }
         });
@@ -3733,11 +3745,11 @@ ${history}
                 });
             }
 
-            // Add Date Bubble if needed before AI replies / fan batch marker
-            if (parsedMsgs.length > 0 || otherFanMessages.length > 0) {
-                checkAndAddDateBubble(member, contentContainer, Date.now());
-            }
-
+            const generationStartedAt = Date.now();
+            const playbackItems = [];
+            const dateMessage = (parsedMsgs.length > 0 || otherFanMessages.length > 0)
+                ? checkAndAddDateBubble(member, null, generationStartedAt)
+                : null;
             let delay = 0;
             const otherFanMessageById = new Map(otherFanMessages.map(fan => [String(fan.id), fan]));
             parsedMsgs.forEach(msgItem => {
@@ -3766,77 +3778,31 @@ ${history}
                     ? createOtherFanReplyMeta(fanReplySource)
                     : (userReplySource ? createReplyMeta(userReplySource, '当前粉丝') : null);
 
-                setTimeout(() => {
-                    let savedMsg = null;
-                    
-                    if (type === 'image') {
-                        // Use default image
-                        const fakeImgUrl = 'assets/moren.jpg';
-
-                        // Automatically save to locker
-                        chatPhotos.push(fakeImgUrl);
-                        saveBstageData();
-                        
-                        // Re-render locker preview if chat settings are open
-                        const previewList = document.getElementById('bstage-locker-preview-list');
-                        if (previewList && chatDetailSheet.style.display === 'block') {
-                            renderLockerPreview();
-                        }
-                        
-                        // Save image message to history
-                        if (!member.chatHistory) member.chatHistory = [];
-                        savedMsg = {
-                            id: createBstageMessageId('char'),
-                            isUser: false,
-                            type: 'image',
-                            imgUrl: fakeImgUrl,
-                            imgDesc: imgDesc,
-                            timestamp: Date.now(),
-                            replyTo,
-                            isUnread: !contentContainer
-                        };
-                    } else {
-                        // Save text message to history
-                        if (!member.chatHistory) member.chatHistory = [];
-                        savedMsg = {
-                            id: createBstageMessageId('char'),
-                            isUser: false,
-                            type: 'text',
-                            text: text,
-                            trans: trans,
-                            timestamp: Date.now(),
-                            replyTo,
-                            isUnread: !contentContainer
-                        };
+                const savedMsg = type === 'image'
+                    ? {
+                        id: createBstageMessageId('char'),
+                        isUser: false,
+                        type: 'image',
+                        imgUrl: 'assets/moren.jpg',
+                        imgDesc,
+                        timestamp: generationStartedAt + delay,
+                        replyTo,
+                        isUnread: !contentContainer
                     }
-
-                    member.chatHistory.push(savedMsg);
-                    saveBstageData();
-
-                    if (contentContainer) {
-                        appendCharChatMessage(member, savedMsg, contentContainer);
-                        contentContainer.scrollTop = contentContainer.scrollHeight;
-                        
-                        // Mark as read immediately if chatting
-                        savedMsg.isUnread = false;
-                        saveBstageData();
-                    } else {
-                        // Background message received, show simple toast notification
-                        if (isAuto) {
-                            if (window.showBannerNotification) {
-                                window.showBannerNotification({
-                                    nickname: member.name,
-                                    avatarUrl: member.avatar,
-                                    id: member.id,
-                                    // 标记来源以便可能的话可以在点击通知时跳转
-                                    sourceApp: 'bstage'
-                                }, type === 'image' ? '[图片]' : text);
-                            } else if (window.showToast) {
-                                window.showToast(`收到来自 ${member.name} 的新消息`);
-                            }
-                        }
-                    }
-                }, delay);
+                    : {
+                        id: createBstageMessageId('char'),
+                        isUser: false,
+                        type: 'text',
+                        text,
+                        trans,
+                        timestamp: generationStartedAt + delay,
+                        replyTo,
+                        isUnread: !contentContainer
+                    };
+                if (!member.chatHistory) member.chatHistory = [];
+                member.chatHistory.push(savedMsg);
+                if (type === 'image') chatPhotos.push(savedMsg.imgUrl);
+                playbackItems.push({ delay, message: savedMsg });
                 delay += 1500 + Math.random() * 1000;
             });
 
@@ -3844,19 +3810,47 @@ ${history}
                 const fanBatchMsg = {
                     id: createBstageMessageId('fan_batch'),
                     type: 'fan_batch',
-                    timestamp: Date.now() + delay,
+                    timestamp: generationStartedAt + delay,
                     fanMessages: otherFanMessages
                 };
-                const batchDelay = delay + (parsedMsgs.length > 0 ? 250 : 0);
-                setTimeout(() => {
-                    if (!member.chatHistory) member.chatHistory = [];
-                    member.chatHistory.push(fanBatchMsg);
-                    saveBstageData();
-                    if (contentContainer) {
-                        appendCharChatMessage(member, fanBatchMsg, contentContainer);
-                        contentContainer.scrollTop = contentContainer.scrollHeight;
+                if (!member.chatHistory) member.chatHistory = [];
+                member.chatHistory.push(fanBatchMsg);
+                playbackItems.push({ delay: delay + (parsedMsgs.length > 0 ? 250 : 0), message: fanBatchMsg });
+            }
+
+            if (playbackItems.length === 0 && !dateMessage) return;
+            const persisted = await saveBstageData({ flush: true });
+            if (!persisted) throw new Error('storage_write_failed');
+
+            if (!contentContainer) {
+                if (isAuto && playbackItems.length > 0) {
+                    const firstMessage = playbackItems[0].message;
+                    if (window.showBannerNotification) {
+                        window.showBannerNotification({
+                            nickname: member.name,
+                            avatarUrl: member.avatar,
+                            id: member.id,
+                            sourceApp: 'bstage'
+                        }, firstMessage.type === 'image' ? '[图片]' : firstMessage.text);
+                    } else if (window.showToast) {
+                        window.showToast(`收到来自 ${member.name} 的新消息`);
                     }
-                }, batchDelay);
+                }
+                return;
+            }
+
+            if (dateMessage) appendCharChatMessage(member, dateMessage, contentContainer);
+            let previousDelay = 0;
+            for (const item of playbackItems) {
+                const waitMs = Math.max(0, item.delay - previousDelay);
+                if (waitMs > 0) await new Promise(resolve => setTimeout(resolve, waitMs));
+                previousDelay = item.delay;
+                if (item.message.type === 'image') {
+                    const previewList = document.getElementById('bstage-locker-preview-list');
+                    if (previewList && chatDetailSheet.style.display === 'block') renderLockerPreview();
+                }
+                appendCharChatMessage(member, item.message, contentContainer);
+                contentContainer.scrollTop = contentContainer.scrollHeight;
             }
 
         } catch (error) {
