@@ -135,13 +135,18 @@ await import(`../js/storage/app_storage.js?storage-test=${Date.now()}`);
 await window.appStorage.ready;
 await import(`../storage.js?storage-test=${Date.now()}`);
 
-test('migration moves app state and login session into IndexedDB and clears localStorage', async () => {
+test('startup ignores browser localStorage and preserves it without importing', async () => {
     const xState = window.appStorage.readDomain('x', {});
     assert.equal(xState.xData.name, 'Durable User');
     assert.deepEqual(xState.xGeneratedPosts.map((post) => post.id), ['durable-post']);
-    assert.equal(localStorage.getItem('u2_appState'), null);
-    assert.equal(localStorage.getItem('u2_mockAuthSession'), null);
-    assert.deepEqual(await window.appStorage.getAuthSession(), { loggedIn: true });
+    assert.equal(localStorage.getItem('u2_appState'), JSON.stringify({
+        x: {
+            xData: { name: 'Stale Local User' },
+            xGeneratedPosts: [{ id: 'local-post', text: 'from localStorage', createdAt: 20 }]
+        }
+    }));
+    assert.equal(localStorage.getItem('u2_mockAuthSession'), JSON.stringify({ loggedIn: true }));
+    assert.equal(await window.appStorage.getAuthSession(), null);
 });
 
 test('v8 startup compaction restores missing main records before deleting inflated copies', async () => {
@@ -306,6 +311,7 @@ test('storage breakdown never labels unclassified IndexedDB usage as cache', asy
 });
 
 test('verified shadow-database optimization preserves auth and user records', async () => {
+    await window.appStorage.setAuthSession({ loggedIn: true });
     const report = await window.appStorage.optimizeStorage();
     const [auth, messages] = await Promise.all([
         window.appStorage.getAuthSession(),
@@ -435,9 +441,39 @@ test('business modules do not access browser localStorage directly', async () =>
     const violations = [];
     for (const file of files) {
         const relative = path.relative(root, file).replaceAll('\\', '/');
-        if (relative === 'js/login.js' || relative === 'js/storage/app_storage.js') continue;
+        if (relative === 'js/login.js') continue;
         const source = await fs.readFile(file, 'utf8');
         if (/\b(?:window\.)?localStorage\s*\.(?:getItem|setItem|removeItem|clear)\s*\(/.test(source)) violations.push(relative);
     }
     assert.deepEqual(violations, []);
+});
+
+test('manual legacy snapshot import converts backup rows into IndexedDB only', async () => {
+    const legacySnapshot = {
+        app: 'u2phone',
+        version: 7,
+        stores: {},
+        localStorage: [
+            { key: 'u2_appState', value: JSON.stringify({ bstage: { updatedAt: 9, teams: [{ id: 'team-legacy', members: [] }] } }) },
+            { key: 'shopping_cart', value: JSON.stringify([{ id: 'cart-legacy', qty: 1 }]) }
+        ]
+    };
+
+    await window.appStorage.importAllData(legacySnapshot);
+    const [bstageRecord, legacyRecord] = await window.appStorage.withStore(
+        [window.appStorage.STORES.appDomains],
+        'readonly',
+        (stores) => Promise.all([
+            window.appStorage.requestToPromise(stores[window.appStorage.STORES.appDomains].get('bstage')),
+            window.appStorage.requestToPromise(stores[window.appStorage.STORES.appDomains].get('legacy'))
+        ])
+    );
+    assert.equal(bstageRecord.value.teams[0].id, 'team-legacy');
+    assert.deepEqual(legacyRecord.value.shopping_cart, [{ id: 'cart-legacy', qty: 1 }]);
+    assert.equal(localStorage.getItem('u2_appState'), JSON.stringify({
+        x: {
+            xData: { name: 'Stale Local User' },
+            xGeneratedPosts: [{ id: 'local-post', text: 'from localStorage', createdAt: 20 }]
+        }
+    }));
 });

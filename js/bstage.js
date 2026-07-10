@@ -927,6 +927,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let bstageFanSubscriberCount = null;
     let bstageFanSubscriberGrowthTimer = null;
     let bstageStateUpdatedAt = 0;
+    let bstageHydrationComplete = false;
     let bstageRevenueState = { withdrawnCny: 0, lastWithdrawAt: null };
     let pendingVideoCommentReply = null;
     let currentGenerateTypeAction = null;
@@ -1072,6 +1073,48 @@ document.addEventListener('DOMContentLoaded', () => {
             subStartDate: Date.now()
         }, ...extraMembers];
         return bstageUserTeamState;
+    }
+
+    function findCanonicalBstageMember(memberId, preferredTeamId = null) {
+        if (memberId === undefined || memberId === null) return null;
+        const targetId = String(memberId);
+        const teamId = preferredTeamId === undefined || preferredTeamId === null ? null : String(preferredTeamId);
+        const userTeam = getBstageUserTeam();
+        const candidates = [userTeam, ...teams];
+        const preferred = teamId
+            ? candidates.filter(team => team && String(team.id) === teamId)
+            : candidates;
+        const searchTeams = preferred.length > 0 ? preferred : candidates;
+        for (const team of searchTeams) {
+            const member = Array.isArray(team?.members)
+                ? team.members.find(item => item && String(item.id) === targetId)
+                : null;
+            if (member) return { team, member };
+        }
+        return null;
+    }
+
+    function rebindActiveBstageReferences() {
+        const selectedTeamId = currentTeam?.id;
+        if (selectedTeamId !== undefined && selectedTeamId !== null) {
+            currentTeam = String(selectedTeamId) === '__bstage_user_team__'
+                ? getBstageUserTeam()
+                : (teams.find(team => team && String(team.id) === String(selectedTeamId)) || null);
+        }
+
+        if (!currentChatMember) return false;
+        const rebound = findCanonicalBstageMember(currentChatMember.id, currentTeam?.id);
+        currentChatMember = rebound ? rebound.member : null;
+        if (rebound) currentTeam = rebound.team;
+        return !!rebound;
+    }
+
+    function ensureBstageHydrated(showFeedback = true) {
+        if (bstageHydrationComplete) return true;
+        if (showFeedback && typeof window.showToast === 'function') {
+            window.showToast('b.stage 数据正在加载，请稍候');
+        }
+        return false;
     }
 
     function createExternalBackground(seed) {
@@ -1561,6 +1604,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function saveBstageData(options = {}) {
+        if (!bstageHydrationComplete) return false;
         try {
             const flush = options && options.flush === true;
             const nextUpdatedAt = Date.now();
@@ -1601,6 +1645,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function loadBstageData(options = {}) {
         const persistNormalized = options.persistNormalized !== false;
+        let normalized = false;
         try {
             const data = typeof window.getAppState === 'function'
                 ? window.getAppState('bstage')
@@ -1636,10 +1681,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (Number.isFinite(Number(window.__bstageGlobalState.updatedAt))) {
                 bstageStateUpdatedAt = Number(window.__bstageGlobalState.updatedAt) || 0;
             }
-            if (persistNormalized && normalizeLoadedBstageData()) saveBstageData();
+            if (persistNormalized) {
+                normalized = normalizeLoadedBstageData();
+                if (normalized && bstageHydrationComplete) saveBstageData();
+            }
         } catch (e) {
             console.error('Bstage data load failed:', e);
         }
+        return normalized;
     }
 
     // Load data on init
@@ -1703,6 +1752,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (appBtn) {
         appBtn.addEventListener('click', () => {
             window.openView(bstageView);
+            if (!bstageHydrationComplete && typeof window.showToast === 'function') {
+                window.showToast('b.stage 数据正在加载，请稍候');
+            }
         });
     }
 
@@ -1763,6 +1815,13 @@ document.addEventListener('DOMContentLoaded', () => {
         let intervalSec = member.autoActivityInterval || 60;
         
         autoActivityIntervals[member.id] = setInterval(() => {
+            if (!ensureBstageHydrated(false)) return;
+            const canonical = findCanonicalBstageMember(member.id);
+            if (!canonical) {
+                stopAutoActivity(member);
+                return;
+            }
+            member = canonical.member;
             // Determine container: if currently chatting with this member, use DOM, else null
             const contentContainer = (currentChatMember && currentChatMember.id === member.id && bstageChatView.style.display !== 'none') 
                 ? document.getElementById('bstage-chat-content') 
@@ -1792,9 +1851,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-    // Call init right after loading data
-    setTimeout(initAllAutoActivities, 1000);
-
     // Chat Menu Button
     document.getElementById('bstage-chat-menu-btn').addEventListener('click', () => {
         if (currentChatMember) {
@@ -3366,6 +3422,14 @@ ${generationIntent}
     }
 
     function openChat(member) {
+        if (!ensureBstageHydrated()) return;
+        const canonical = findCanonicalBstageMember(member?.id, currentTeam?.id);
+        if (!canonical) {
+            if (typeof window.showToast === 'function') window.showToast('该角色已不存在，无法打开聊天');
+            return;
+        }
+        currentTeam = canonical.team;
+        member = canonical.member;
         currentChatMember = member; // Set current member
         document.getElementById('bstage-chat-name').textContent = member.name;
         const days = Math.floor((Date.now() - member.subStartDate) / (1000 * 60 * 60 * 24)) + 1;
@@ -3433,6 +3497,15 @@ ${generationIntent}
 
         // Helper to send
         const sendMsg = () => {
+            if (!ensureBstageHydrated()) return;
+            const canonical = findCanonicalBstageMember(member?.id, currentTeam?.id);
+            if (!canonical) {
+                if (typeof window.showToast === 'function') window.showToast('该角色已不存在，无法发送消息');
+                return;
+            }
+            currentTeam = canonical.team;
+            member = canonical.member;
+            currentChatMember = member;
             const txt = inputArea.value.trim();
             if (!txt) return;
             
@@ -3514,6 +3587,17 @@ ${generationIntent}
     }
 
     async function triggerChatApi(member, contentContainer, isAuto = false) {
+        if (!ensureBstageHydrated(!isAuto)) return false;
+        const initialCanonical = findCanonicalBstageMember(member?.id, currentTeam?.id);
+        if (!initialCanonical) {
+            if (!isAuto && typeof window.showToast === 'function') window.showToast('该角色已不存在，无法生成回复');
+            return false;
+        }
+        currentTeam = initialCanonical.team;
+        member = initialCanonical.member;
+        if (currentChatMember && String(currentChatMember.id) === String(member.id)) {
+            currentChatMember = member;
+        }
         // Resolve API Config based on member preset or global
         let resolvedApiConfig = window.apiConfig;
         
@@ -3654,6 +3738,15 @@ ${history}
             if (!response.ok) throw new Error('API Error');
             
             const data = await response.json();
+            const resolvedMember = findCanonicalBstageMember(member.id, currentTeam?.id);
+            if (!resolvedMember) {
+                throw new Error('chat_member_removed');
+            }
+            currentTeam = resolvedMember.team;
+            member = resolvedMember.member;
+            if (currentChatMember && String(currentChatMember.id) === String(member.id)) {
+                currentChatMember = member;
+            }
             let aiReply = data.choices[0].message.content;
             aiReply = aiReply.replace(/```json/g, '').replace(/```/g, '').trim();
             
@@ -5768,21 +5861,31 @@ ${history}
     renderBstageStartupView();
     if (window.globalDataReadyPromise && typeof window.globalDataReadyPromise.then === 'function') {
         const beforeGlobalDataReady = getBstageDataSignature();
-        window.bstageDataReadyPromise = window.globalDataReadyPromise.then(() => {
-            loadBstageData({ persistNormalized: true });
+        window.bstageDataReadyPromise = window.globalDataReadyPromise.then(async () => {
+            const normalized = loadBstageData({ persistNormalized: true });
+            bstageHydrationComplete = true;
+            if (normalized) await saveBstageData({ flush: true });
+            const chatWasOpen = !!currentChatMember && bstageChatView.style.display !== 'none';
+            const chatRebound = rebindActiveBstageReferences();
             startFanSubscriberGrowth();
+            initAllAutoActivities();
             const afterGlobalDataReady = getBstageDataSignature();
             if (afterGlobalDataReady !== beforeGlobalDataReady) {
                 renderBstageStartupView();
             }
+            if (chatWasOpen && chatRebound) openChat(currentChatMember);
             return true;
         }).catch(error => {
             console.warn('Bstage global data recovery failed:', error);
+            bstageHydrationComplete = true;
             startFanSubscriberGrowth();
+            initAllAutoActivities();
             return false;
         });
     } else {
+        bstageHydrationComplete = true;
         startFanSubscriberGrowth();
+        initAllAutoActivities();
         window.bstageDataReadyPromise = Promise.resolve(true);
     }
 });

@@ -12,21 +12,6 @@
     const BACKUP_APP_NAME = 'u2phone';
     const AUTH_SESSION_ID = 'current';
     const LEGACY_AUTH_SESSION_KEY = 'u2_mockAuthSession';
-    const PERSISTENT_LOCALSTORAGE_EXCLUDE_PREFIXES = [];
-    const PERSISTENT_LOCALSTORAGE_EXACT_EXCLUDES = new Set();
-    const MANAGED_LOCALSTORAGE_EXACT_KEYS = new Set([
-        'app_global_data',
-        'ios_emulator_global_data',
-        'shopping_bound_wb_id',
-        'shopping_generated_food',
-        'shopping_generated_mall',
-        'shopping_comments',
-        'shopping_qa',
-        'shopping_orders',
-        'shopping_cart',
-        LEGACY_AUTH_SESSION_KEY
-    ]);
-    const MANAGED_LOCALSTORAGE_PREFIXES = ['u2_', 'shopping_', 'iiso_auth_'];
 
     const STORES = {
         meta: 'meta',
@@ -136,60 +121,25 @@
         }
     }
 
-    function isExcludedLocalStorageKey(key) {
-        const safeKey = String(key || '');
-        return PERSISTENT_LOCALSTORAGE_EXACT_EXCLUDES.has(safeKey)
-            || PERSISTENT_LOCALSTORAGE_EXCLUDE_PREFIXES.some((prefix) => safeKey.startsWith(prefix));
-    }
-
-    function isManagedLocalStorageKey(key) {
-        const safeKey = String(key || '');
-        if (!safeKey || isExcludedLocalStorageKey(safeKey)) return false;
-        if (MANAGED_LOCALSTORAGE_EXACT_KEYS.has(safeKey)) return true;
-        return MANAGED_LOCALSTORAGE_PREFIXES.some((prefix) => safeKey.startsWith(prefix));
-    }
-
-    function collectManagedLocalStorageSnapshot() {
-        const rows = [];
-        if (!window.localStorage) return rows;
-
-        const keys = [];
-        for (let i = 0; i < localStorage.length; i += 1) {
-            const key = localStorage.key(i);
-            if (isManagedLocalStorageKey(key)) keys.push(key);
-        }
-
-        keys.sort().forEach((key) => {
-            rows.push({
-                key,
-                value: localStorage.getItem(key)
-            });
-        });
-
-        return rows;
-    }
-
-    function getLocalStorageSnapshotValue(snapshot = [], key) {
+    // Browser localStorage is intentionally never read at runtime. These helpers
+    // only parse rows embedded in a user-selected legacy backup file.
+    function getLegacyBackupValue(snapshot = [], key) {
         const row = Array.isArray(snapshot)
             ? snapshot.find((item) => item && item.key === key)
             : null;
         return row ? row.value : undefined;
     }
 
-    function parseLocalStorageSnapshotJson(snapshot = [], key) {
-        const rawValue = getLocalStorageSnapshotValue(snapshot, key);
+    function parseLegacyBackupJson(snapshot = [], key) {
+        const rawValue = getLegacyBackupValue(snapshot, key);
         if (rawValue === undefined || rawValue === null || rawValue === '') return undefined;
 
         try {
             return JSON.parse(rawValue);
         } catch (error) {
-            console.warn(`Failed to parse localStorage backup key "${key}":`, error);
+            console.warn(`Failed to parse legacy backup key "${key}":`, error);
             return undefined;
         }
-    }
-
-    function hasLocalStorageSnapshotKey(snapshot = [], key) {
-        return Array.isArray(snapshot) && snapshot.some((item) => item && item.key === key);
     }
 
     function parseLegacyRawValue(rawValue) {
@@ -201,7 +151,7 @@
         }
     }
 
-    async function migrateManagedLocalStorageSnapshot(snapshot = []) {
+    async function importLegacyBackupStorageRows(snapshot = []) {
         const rows = Array.isArray(snapshot) ? snapshot.filter((row) => row?.key) : [];
         if (rows.length === 0) return { migratedKeys: [], authMigrated: false };
 
@@ -251,7 +201,7 @@
                 }
             }
 
-            const oldAppState = parseLocalStorageSnapshotJson(rows, 'u2_appState');
+            const oldAppState = parseLegacyBackupJson(rows, 'u2_appState');
             if (oldAppState && typeof oldAppState === 'object') {
                 for (const [name, value] of Object.entries(oldAppState)) {
                     if (!name || !value || typeof value !== 'object') continue;
@@ -291,7 +241,7 @@
                 stores[STORES.authSessions].put({ id: AUTH_SESSION_ID, session: authValue, updatedAt: now });
                 authMigrated = true;
             }
-            stores[STORES.meta].put({ key: 'localstorage_migrated_v8', value: { migratedAt: now, keys: rows.map((row) => row.key) } });
+            stores[STORES.meta].put({ key: 'legacy_backup_imported_at', value: { importedAt: now, keys: rows.map((row) => row.key) } });
         });
 
         if (authMigrated) {
@@ -299,58 +249,7 @@
             if (!verified?.session) throw new Error('Auth session migration verification failed.');
         }
 
-        const migratedKeys = [];
-        rows.forEach((row) => {
-            try {
-                localStorage.removeItem(row.key);
-                migratedKeys.push(row.key);
-            } catch (error) {}
-        });
-        return { migratedKeys, authMigrated };
-    }
-
-    function upsertBackupSettingRecord(storesData, key, value) {
-        if (value === undefined) return;
-        if (!Array.isArray(storesData[STORES.settings])) storesData[STORES.settings] = [];
-
-        const existing = storesData[STORES.settings].find((record) => record && record.key === key);
-        if (existing) {
-            existing.value = cloneDeep(value);
-        } else {
-            storesData[STORES.settings].push({ key, value: cloneDeep(value) });
-        }
-    }
-
-    function mergeLocalStorageCompatibilityIntoStores(storesData = {}, localStorageSnapshot = []) {
-        const localStorageSettingsMap = {
-            u2_userState: 'userState',
-            u2_apiConfig: 'apiConfig',
-            u2_minimaxConfig: 'minimaxConfig',
-            u2_apiPresets: 'apiPresets',
-            u2_fetchedModels: 'fetchedModels',
-            u2_assistiveBallSettings: 'assistiveBallSettings',
-            u2_themeState: 'themeState',
-            u2_currentAccountId: 'currentAccountId',
-            u2_wbGroups: 'wbGroups',
-            u2_worldBooks: 'worldBooks',
-            u2_appState: 'appState'
-        };
-
-        Object.entries(localStorageSettingsMap).forEach(([storageKey, settingKey]) => {
-            const value = parseLocalStorageSnapshotJson(localStorageSnapshot, storageKey);
-            if (value !== undefined) upsertBackupSettingRecord(storesData, settingKey, value);
-        });
-
-        const accounts = parseLocalStorageSnapshotJson(localStorageSnapshot, 'u2_accounts');
-        if (Array.isArray(accounts)) {
-            if (!Array.isArray(storesData[STORES.accounts])) storesData[STORES.accounts] = [];
-            const existing = storesData[STORES.accounts].find((record) => record && record.id === '__all__');
-            if (existing) {
-                existing.value = cloneDeep(accounts);
-            } else {
-                storesData[STORES.accounts].push({ id: '__all__', value: cloneDeep(accounts) });
-            }
-        }
+        return { importedKeys: rows.map((row) => row.key), authMigrated };
     }
 
     function estimateJsonBytes(value) {
@@ -3223,66 +3122,6 @@
         };
     }
 
-    function syncCompatibilityLocalStorageFromStores(storesData = {}, restoredLocalStorageSnapshot = []) {
-        if (!window.localStorage) return;
-
-        const settingsRows = Array.isArray(storesData[STORES.settings]) ? storesData[STORES.settings] : [];
-        const settingsByKey = {};
-        settingsRows.forEach((record) => {
-            if (record && record.key) settingsByKey[record.key] = record.value;
-        });
-
-        const compatibilityMap = {
-            userState: 'u2_userState',
-            apiConfig: 'u2_apiConfig',
-            minimaxConfig: 'u2_minimaxConfig',
-            apiPresets: 'u2_apiPresets',
-            fetchedModels: 'u2_fetchedModels',
-            assistiveBallSettings: 'u2_assistiveBallSettings',
-            themeState: 'u2_themeState',
-            currentAccountId: 'u2_currentAccountId',
-            wbGroups: 'u2_wbGroups',
-            worldBooks: 'u2_worldBooks',
-            appState: 'u2_appState'
-        };
-
-        Object.entries(compatibilityMap).forEach(([settingKey, storageKey]) => {
-            if (hasLocalStorageSnapshotKey(restoredLocalStorageSnapshot, storageKey)) return;
-            if (settingsByKey[settingKey] !== undefined) {
-                setLocalStorageJson(storageKey, settingsByKey[settingKey]);
-            }
-        });
-
-        const accountsRows = Array.isArray(storesData[STORES.accounts]) ? storesData[STORES.accounts] : [];
-        const accountsRecord = accountsRows.find((row) => row && row.id === '__all__');
-        if (!hasLocalStorageSnapshotKey(restoredLocalStorageSnapshot, 'u2_accounts') && accountsRecord && Array.isArray(accountsRecord.value)) {
-            setLocalStorageJson('u2_accounts', accountsRecord.value);
-        }
-    }
-
-    function syncCompatibilityLocalStorageFromGlobalData(globalData = {}) {
-        const map = {
-            userState: 'u2_userState',
-            apiConfig: 'u2_apiConfig',
-            minimaxConfig: 'u2_minimaxConfig',
-            apiPresets: 'u2_apiPresets',
-            fetchedModels: 'u2_fetchedModels',
-            assistiveBallSettings: 'u2_assistiveBallSettings',
-            accounts: 'u2_accounts',
-            currentAccountId: 'u2_currentAccountId',
-            themeState: 'u2_themeState',
-            wbGroups: 'u2_wbGroups',
-            worldBooks: 'u2_worldBooks',
-            appState: 'u2_appState'
-        };
-
-        Object.entries(map).forEach(([dataKey, storageKey]) => {
-            if (globalData[dataKey] !== undefined) {
-                setLocalStorageJson(storageKey, globalData[dataKey]);
-            }
-        });
-    }
-
     async function restoreBackupSnapshot(snapshot = {}, progressCallback) {
         const storesData = snapshot.stores || {};
         const storeNames = BACKUP_STORES;
@@ -3311,7 +3150,7 @@
             .filter((row) => row?.key && row.key !== LEGACY_AUTH_SESSION_KEY);
         if (legacyRows.length > 0) {
             reportProgress(progressCallback, '迁移旧版兼容数据...', 90);
-            await migrateManagedLocalStorageSnapshot(legacyRows);
+            await importLegacyBackupStorageRows(legacyRows);
         }
         reportProgress(progressCallback, '导入完成', 100);
         return true;
@@ -4035,16 +3874,6 @@
         }
     }
 
-    function parseLegacySnapshotValue(snapshot, key, fallbackValue = null) {
-        const row = (Array.isArray(snapshot) ? snapshot : []).find((item) => item?.key === key);
-        if (!row) return cloneDeep(fallbackValue);
-        try {
-            return JSON.parse(row.value);
-        } catch (error) {
-            return cloneDeep(fallbackValue);
-        }
-    }
-
     async function recoverOptimizationShadowIfNeeded() {
         const shadow = await openExistingShadowDatabase();
         if (!shadow) return false;
@@ -4069,7 +3898,6 @@
     async function initializeUnifiedStorage() {
         storageHealthState.status = 'initializing';
         await recoverOptimizationShadowIfNeeded();
-        const localSnapshot = collectManagedLocalStorageSnapshot();
         const existingDomains = await getAllRecords(STORES.appDomains);
 
         if (existingDomains.length === 0) {
@@ -4081,8 +3909,7 @@
             const durableAppState = appStateRecord && appStateRecord.value && typeof appStateRecord.value === 'object'
                 ? appStateRecord.value
                 : null;
-            const fallbackAppState = parseLegacySnapshotValue(localSnapshot, 'u2_appState', {});
-            const appStateSource = durableAppState || fallbackAppState || {};
+            const appStateSource = durableAppState || {};
             const settingsValue = {};
             settingRows.forEach((row) => {
                 if (!row || row.key === 'appState') return;
@@ -4090,16 +3917,10 @@
             });
             if (Array.isArray(accountsRecord?.value)) settingsValue.accounts = cloneDeep(accountsRecord.value);
 
-            const legacyValues = {};
-            localSnapshot.forEach((row) => {
-                if (!row?.key || row.key === 'u2_appState' || row.key === LEGACY_AUTH_SESSION_KEY) return;
-                legacyValues[row.key] = parseLegacySnapshotValue(localSnapshot, row.key, row.value);
-            });
-
             const domainValues = {
                 ...Object.fromEntries(Object.entries(appStateSource).map(([name, value]) => [name, cloneDeep(value)])),
                 settings: settingsValue,
-                legacy: legacyValues
+                legacy: {}
             };
             const now = Date.now();
             await withStore([
@@ -4140,7 +3961,6 @@
             });
         }
 
-        await migrateManagedLocalStorageSnapshot(localSnapshot);
         storageHealthState.lastCompaction = await compactStorage({ skipReady: true });
         storageHealthState.lastCacheCleanup = await getMeta('storage_last_cache_cleanup');
 
