@@ -422,12 +422,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const saved = await commitCurrentGroupChange(targetGroup => {
             targetGroup.memory = window.imApp.normalizeFriendData(targetGroup).memory;
             const entries = Array.isArray(targetGroup.memory.shortTermEntries) ? targetGroup.memory.shortTermEntries : [];
-            const nextEntries = entries.filter(item => String(item.id) !== String(entryId));
-            targetGroup.memory.shortTermEntries = nextEntries;
-            targetGroup.memory.lastSummaryMessageCount = nextEntries.reduce((max, item) => {
-                const endCount = Number(item?.sourceEndMessageCount) || 0;
-                return Math.max(max, endCount);
-            }, 0);
+            targetGroup.memory.shortTermEntries = window.imDataUtils?.removeShortTermSummaryEntry
+                ? window.imDataUtils.removeShortTermSummaryEntry(entries, entryId)
+                : entries.filter(item => !item || String(item.id) !== String(entryId));
         }, { silent: true });
 
         if (!saved) {

@@ -139,6 +139,11 @@
         };
     }
 
+    function removeShortTermSummaryEntry(entries, entryId) {
+        const safeEntries = Array.isArray(entries) ? entries : [];
+        return safeEntries.filter(entry => !entry || String(entry.id) !== String(entryId));
+    }
+
     function parseStickerManifestText(text) {
         const items = [];
         const invalidLines = [];
@@ -166,6 +171,7 @@
         normalizeScheduleEvent,
         normalizeSchedule,
         getSummaryBatch,
+        removeShortTermSummaryEntry,
         parseStickerManifestText
     };
 });

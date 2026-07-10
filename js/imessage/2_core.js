@@ -4791,11 +4791,9 @@ document.addEventListener('DOMContentLoaded', () => {
             targetFriend.memory = targetFriend.memory || window.imApp.createDefaultMemory();
             if (!Array.isArray(targetFriend.memory.shortTermEntries)) targetFriend.memory.shortTermEntries = [];
             const entries = Array.isArray(targetFriend.memory.shortTermEntries) ? targetFriend.memory.shortTermEntries : [];
-            const nextEntries = entries.filter(e => String(e.id) !== String(entry.id));
-            targetFriend.memory.shortTermEntries = nextEntries;
-            targetFriend.memory.lastSummaryMessageCount = nextEntries.reduce((max, item) => {
-                return Math.max(max, Number(item?.sourceEndMessageCount) || 0);
-            }, 0);
+            targetFriend.memory.shortTermEntries = window.imDataUtils?.removeShortTermSummaryEntry
+                ? window.imDataUtils.removeShortTermSummaryEntry(entries, entry.id)
+                : entries.filter(item => !item || String(item.id) !== String(entry.id));
             if (window.imApp.clearFriendRuntimeMessageContext) {
                 window.imApp.clearFriendRuntimeMessageContext(targetFriend);
             }

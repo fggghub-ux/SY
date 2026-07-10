@@ -46,6 +46,32 @@ test('summary batch respects an existing message boundary and ignores assistant-
     assert.equal(batch.endIndex, messages.length);
 });
 
+test('deleting short-term summaries keeps the covered conversation out of the unsummarized queue', () => {
+    const messages = [];
+    for (let round = 1; round <= 10; round += 1) {
+        messages.push({ role: 'user', content: `u${round}` });
+        messages.push({ role: 'assistant', content: `a${round}` });
+    }
+
+    const memory = {
+        lastSummaryMessageCount: 5,
+        shortTermEntries: [
+            { id: 'earlier-summary', sourceEndMessageCount: 3 },
+            { id: 'latest-summary', sourceEndMessageCount: 5 }
+        ]
+    };
+    const getUnsummarizedRounds = () => utils.getSummaryBatch(messages, memory.lastSummaryMessageCount, 30).availableRounds;
+
+    assert.equal(getUnsummarizedRounds(), 7);
+    memory.shortTermEntries = utils.removeShortTermSummaryEntry(memory.shortTermEntries, 'latest-summary');
+    assert.deepEqual(memory.shortTermEntries.map(entry => entry.id), ['earlier-summary']);
+    assert.equal(getUnsummarizedRounds(), 7);
+
+    memory.shortTermEntries = utils.removeShortTermSummaryEntry(memory.shortTermEntries, 'earlier-summary');
+    assert.deepEqual(memory.shortTermEntries, []);
+    assert.equal(getUnsummarizedRounds(), 7);
+});
+
 test('normalizes AI, Loves and manual schedule event shapes without dropping compatibility fields', () => {
     const schedule = utils.normalizeSchedule({
         enabled: true,
