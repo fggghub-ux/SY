@@ -55,11 +55,14 @@ async function seedVersionFourDatabase() {
         request.onupgradeneeded = () => {
             const db = request.result;
             if (!db.objectStoreNames.contains('settings')) db.createObjectStore('settings', { keyPath: 'key' });
+            if (!db.objectStoreNames.contains('app_domains')) db.createObjectStore('app_domains', { keyPath: 'name' });
+            if (!db.objectStoreNames.contains('storage_checkpoints')) db.createObjectStore('storage_checkpoints', { keyPath: 'id' });
+            if (!db.objectStoreNames.contains('im_friends')) db.createObjectStore('im_friends', { keyPath: 'id' });
         };
         request.onerror = () => reject(request.error);
         request.onsuccess = () => {
             const db = request.result;
-            const transaction = db.transaction(['settings'], 'readwrite');
+            const transaction = db.transaction(['settings', 'app_domains', 'storage_checkpoints', 'im_friends'], 'readwrite');
             transaction.objectStore('settings').put({
                 key: 'appState',
                 value: {
@@ -70,6 +73,45 @@ async function seedVersionFourDatabase() {
                         xDirectMessages: []
                     }
                 }
+            });
+            transaction.objectStore('app_domains').put({
+                name: 'x',
+                schemaVersion: 6,
+                revision: 1,
+                updatedAt: 1,
+                value: { xData: { name: 'Durable User' } }
+            });
+            transaction.objectStore('im_friends').put({ id: 'seed-friend', nickname: 'Seed Friend', messageCount: 1 });
+            transaction.objectStore('storage_checkpoints').put({
+                id: 'domain:x',
+                schemaVersion: 6,
+                current: {
+                    revision: 1,
+                    updatedAt: 1,
+                    value: {
+                        xData: { name: 'Durable User' },
+                        xGeneratedPosts: [{ id: 'durable-post', text: 'from IndexedDB', createdAt: 10 }],
+                        xPostThreads: {},
+                        xDirectMessages: []
+                    }
+                },
+                previous: null
+            });
+            transaction.objectStore('storage_checkpoints').put({
+                id: 'im-messages:seed-friend',
+                schemaVersion: 6,
+                current: {
+                    revision: 1,
+                    updatedAt: 1,
+                    value: [{ id: 'seed-message', text: 'recover me', timestamp: 1 }]
+                },
+                previous: null
+            });
+            transaction.objectStore('storage_checkpoints').put({
+                id: 'migration:legacy-localstorage',
+                schemaVersion: 6,
+                current: { revision: 1, updatedAt: 1, value: 'x'.repeat(100000) },
+                previous: null
             });
             transaction.oncomplete = () => {
                 db.close();
@@ -99,6 +141,23 @@ test('migration uses IndexedDB app state and preserves only the login localStora
     assert.deepEqual(xState.xGeneratedPosts.map((post) => post.id), ['durable-post']);
     assert.equal(localStorage.getItem('u2_appState'), null);
     assert.notEqual(localStorage.getItem('u2_mockAuthSession'), null);
+});
+
+test('v7 startup compaction restores missing main records before deleting inflated v6 copies', async () => {
+    const [checkpoints, oldAppState, messages, health] = await Promise.all([
+        window.appStorage.withStore([window.appStorage.STORES.storageCheckpoints], 'readonly', (stores) =>
+            window.appStorage.requestToPromise(stores[window.appStorage.STORES.storageCheckpoints].getAll())
+        ),
+        window.appStorage.getSetting('appState', null),
+        window.appStorage.loadMessagesByFriendId('seed-friend'),
+        window.appStorage.getStorageHealth()
+    ]);
+    assert.deepEqual(checkpoints, []);
+    assert.equal(oldAppState, null);
+    assert.ok(messages.some((message) => message.id === 'seed-message'));
+    assert.equal(health.lastCompaction.schemaVersion, 7);
+    assert.equal(health.lastCompaction.messagesRecovered, 1);
+    assert.ok(health.lastCompaction.checkpointRecordsDeleted >= 3);
 });
 
 test('legacy storage facade returns null for missing shopping keys without cloning sentinels', () => {
@@ -160,11 +219,39 @@ test('iMessage field patches preserve persona and moments-cover assets across co
     assert.ok(String(friend.momentsCover).startsWith('blob:'));
 });
 
-test('dual checkpoints can restore the previous successful domain revision', async () => {
+test('normal domain, X and iMessage writes no longer create full local-history checkpoints', async () => {
     await window.appStorage.commitDomain('checkpoint-test', { value: 1 });
     await window.appStorage.commitDomain('checkpoint-test', { value: 2 });
-    await window.appStorage.restorePreviousCheckpoint('checkpoint-test');
-    assert.equal(window.appStorage.readDomain('checkpoint-test').value, 1);
+    const checkpoints = await window.appStorage.withStore(
+        [window.appStorage.STORES.storageCheckpoints],
+        'readonly',
+        (stores) => window.appStorage.requestToPromise(stores[window.appStorage.STORES.storageCheckpoints].getAll())
+    );
+    assert.deepEqual(checkpoints, []);
+});
+
+test('compaction is idempotent and aborts before cleanup when a missing domain cannot be recovered', async () => {
+    const first = await window.appStorage.compactStorage();
+    const second = await window.appStorage.compactStorage();
+    assert.equal(second.compactedAt, first.compactedAt);
+
+    await window.appStorage.withStore(
+        [window.appStorage.STORES.settings, window.appStorage.STORES.storageCheckpoints],
+        'readwrite',
+        (stores) => {
+            stores[window.appStorage.STORES.settings].put({ key: 'appState', value: { invalidDomain: 'not-an-object' } });
+            stores[window.appStorage.STORES.storageCheckpoints].put({ id: 'validation-sentinel', current: { value: 'keep-me' } });
+        }
+    );
+    await assert.rejects(() => window.appStorage.compactStorage({ force: true }), /safely recover/i);
+    const [sentinel, appState] = await Promise.all([
+        window.appStorage.withStore([window.appStorage.STORES.storageCheckpoints], 'readonly', (stores) =>
+            window.appStorage.requestToPromise(stores[window.appStorage.STORES.storageCheckpoints].get('validation-sentinel'))
+        ),
+        window.appStorage.getSetting('appState', null)
+    ]);
+    assert.equal(sentinel.current.value, 'keep-me');
+    assert.equal(appState.invalidDomain, 'not-an-object');
 });
 
 test('backup checksum rejects corrupted snapshots', async () => {

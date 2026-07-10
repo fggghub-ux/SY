@@ -3476,8 +3476,9 @@
             const storageHealthUsage = document.getElementById('storage-health-usage');
             const storageHealthLastSave = document.getElementById('storage-health-last-save');
             const storageHealthWarning = document.getElementById('storage-health-warning');
+            const storageHealthBreakdown = document.getElementById('storage-health-breakdown');
+            const storageHealthCompaction = document.getElementById('storage-health-compaction');
             const storageRetryBtn = document.getElementById('storage-retry-btn');
-            const storageRestoreBtn = document.getElementById('storage-restore-btn');
 
             function stopLegacy(e) {
                 e.preventDefault();
@@ -3547,6 +3548,27 @@
                     storageHealthWarning.textContent = warning;
                     storageHealthWarning.hidden = !warning;
                 }
+                if (storageHealthBreakdown) {
+                    storageHealthBreakdown.replaceChildren();
+                    const groups = Object.entries(health.breakdown?.groups || {})
+                        .filter(([, value]) => Number(value?.bytes) > 0)
+                        .sort((a, b) => Number(b[1]?.bytes || 0) - Number(a[1]?.bytes || 0));
+                    groups.forEach(([name, value]) => {
+                        const row = document.createElement('div');
+                        const label = document.createElement('span');
+                        const size = document.createElement('strong');
+                        label.textContent = name;
+                        size.textContent = formatBytesForUi(value.bytes);
+                        row.append(label, size);
+                        storageHealthBreakdown.appendChild(row);
+                    });
+                }
+                if (storageHealthCompaction) {
+                    const compacted = health.lastCompaction;
+                    storageHealthCompaction.textContent = compacted?.compactedAt
+                        ? `最近自动优化：${formatDateForUi(compacted.compactedAt)}，预计释放 ${formatBytesForUi(compacted.estimatedBytesFreed)}`
+                        : '尚未执行存储优化';
+                }
             }
 
             storageRetryBtn?.addEventListener('click', async () => {
@@ -3557,19 +3579,6 @@
                 } finally {
                     storageRetryBtn.disabled = false;
                     await refreshStorageHealth();
-                }
-            });
-
-            storageRestoreBtn?.addEventListener('click', async () => {
-                if (!confirm('确定恢复全部应用的上一成功检查点吗？当前版本会保留为新的检查点。')) return;
-                storageRestoreBtn.disabled = true;
-                try {
-                    const restored = await window.appStorage.restoreAllPreviousCheckpoints();
-                    showToast(`已恢复 ${restored} 个数据域，正在重启`);
-                    setTimeout(() => window.location.reload(), 800);
-                } catch (error) {
-                    showToast(error?.message || '没有可恢复的检查点');
-                    storageRestoreBtn.disabled = false;
                 }
             });
 

@@ -1022,6 +1022,35 @@
     line-height: 1.45;
 }
 
+.storage-health-breakdown {
+    display: grid;
+    gap: 5px;
+    margin: 10px 0;
+    padding-top: 10px;
+    border-top: 1px solid #ececf0;
+}
+
+.storage-health-breakdown > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: #6e6e73;
+    font-size: 12px;
+}
+
+.storage-health-breakdown strong {
+    color: #1c1c1e;
+    font-weight: 600;
+}
+
+.storage-health-compaction {
+    margin: 8px 0 10px;
+    color: #34c759;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
 .storage-health-actions button {
     flex: 1;
     border: 0;

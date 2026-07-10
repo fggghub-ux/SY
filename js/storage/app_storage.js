@@ -7,7 +7,7 @@
 (function() {
     const DB_NAME = 'iiso_app_storage';
     const DB_VERSION = 5;
-    const STORAGE_SCHEMA_VERSION = 6;
+    const STORAGE_SCHEMA_VERSION = 7;
     const BACKUP_APP_NAME = 'u2phone';
     const PERSISTENT_LOCALSTORAGE_EXCLUDE_PREFIXES = ['iiso_auth_'];
     const PERSISTENT_LOCALSTORAGE_EXACT_EXCLUDES = new Set(['u2_mockAuthSession']);
@@ -67,7 +67,8 @@
         pendingWrites: 0,
         lastCommitAt: 0,
         lastError: null,
-        migrationVersion: 0
+        migrationVersion: 0,
+        lastCompaction: null
     };
     let storageReadyPromise = null;
 
@@ -852,7 +853,7 @@
 
         const previousChain = domainWriteChains.get(domainName) || Promise.resolve();
         const writePromise = previousChain.catch(() => undefined).then(async () => {
-            const storeNames = [STORES.appDomains, STORES.storageCheckpoints];
+            const storeNames = [STORES.appDomains];
             if (domainName === 'x') {
                 storeNames.push(STORES.xPosts, STORES.xThreads, STORES.xDms, STORES.assets);
             }
@@ -898,16 +899,6 @@
                     await replaceCollectionRecords(stores[STORES.xDms], dmRows, 'id');
                 }
 
-                const checkpointId = `domain:${domainName}`;
-                const existingCheckpoint = await requestToPromise(stores[STORES.storageCheckpoints].get(checkpointId));
-                stores[STORES.storageCheckpoints].put({
-                    id: checkpointId,
-                    schemaVersion: STORAGE_SCHEMA_VERSION,
-                    updatedAt: now,
-                    checksum: createChecksum(persistedValue),
-                    current: { revision, updatedAt: now, value: persistedValue },
-                    previous: existingCheckpoint?.current || null
-                });
                 stores[STORES.appDomains].put(record);
                 commitResult = { revision, updatedAt: now, durable: true, domain: domainName };
             }));
@@ -1573,7 +1564,7 @@
         const normalizedList = list.map((msg, idx) => normalizeMessageRecord(safeFriendId, msg, idx));
         const nextMessageIds = new Set(normalizedList.map((msg) => String(msg.id)));
 
-        return withStore([STORES.imMessages, STORES.storageCheckpoints], 'readwrite', async (stores) => {
+        return withStore([STORES.imMessages], 'readwrite', async (stores) => {
             const index = stores[STORES.imMessages].index('friendId');
             const range = IDBKeyRange.only(safeFriendId);
             const existingKeys = await requestToPromise(index.getAllKeys(range));
@@ -1585,18 +1576,6 @@
             });
 
             normalizedList.forEach((msg) => stores[STORES.imMessages].put(msg));
-            const checkpointId = `im-messages:${safeFriendId}`;
-            const checkpoint = await requestToPromise(stores[STORES.storageCheckpoints].get(checkpointId));
-            const now = Date.now();
-            const snapshot = normalizedList.map(denormalizeMessageRecord);
-            stores[STORES.storageCheckpoints].put({
-                id: checkpointId,
-                schemaVersion: STORAGE_SCHEMA_VERSION,
-                updatedAt: now,
-                checksum: createChecksum(snapshot),
-                current: { revision: Number(checkpoint?.current?.revision || 0) + 1, updatedAt: now, value: snapshot },
-                previous: checkpoint?.current || null
-            });
         });
     }
 
@@ -1636,7 +1615,7 @@
             if (isDataUrl(safePatch[urlField])) await assertLargeAssetCapacity(safePatch[urlField]);
         }
 
-        await withStore([STORES.imFriends, STORES.assets, STORES.storageCheckpoints], 'readwrite', async (stores) => {
+        await withStore([STORES.imFriends, STORES.assets], 'readwrite', async (stores) => {
             const current = await requestToPromise(stores[STORES.imFriends].get(safeFriendId));
             if (!current) throw new Error(`Friend ${safeFriendId} does not exist.`);
             const next = { ...current, ...safePatch, id: safeFriendId };
@@ -1673,16 +1652,6 @@
             const sanitized = sanitizePersistentValue(next);
             stores[STORES.imFriends].put(sanitized);
 
-            const checkpointId = `im-friend:${safeFriendId}`;
-            const checkpoint = await requestToPromise(stores[STORES.storageCheckpoints].get(checkpointId));
-            stores[STORES.storageCheckpoints].put({
-                id: checkpointId,
-                schemaVersion: STORAGE_SCHEMA_VERSION,
-                updatedAt: now,
-                checksum: createChecksum(sanitized),
-                current: { revision: next.revision, updatedAt: now, value: sanitized },
-                previous: checkpoint?.current || { revision: Number(current.revision) || 0, updatedAt: Number(current.updatedAt) || 0, value: current }
-            });
         });
 
         refreshAssetIds.forEach((assetId) => revokeRuntimeBlobUrl(assetId));
@@ -2057,8 +2026,7 @@
         const now = Date.now();
         let storedValue = dataUrlOrUrl || null;
         if (isDataUrl(dataUrlOrUrl)) await assertLargeAssetCapacity(dataUrlOrUrl);
-        await withStore([STORES.meta, STORES.assets, STORES.storageCheckpoints], 'readwrite', async (stores) => {
-            const previousMeta = await requestToPromise(stores[STORES.meta].get(META_KEYS.imMomentsCoverAssetId));
+        await withStore([STORES.meta, STORES.assets], 'readwrite', async (stores) => {
             if (isDataUrl(dataUrlOrUrl)) {
                 const assetId = 'im_moments_cover_me';
                 const blob = dataUrlToBlob(dataUrlOrUrl);
@@ -2078,15 +2046,6 @@
                 storedValue = null;
             }
             stores[STORES.meta].put({ key: META_KEYS.imMomentsCoverAssetId, value: storedValue });
-            const checkpoint = await requestToPromise(stores[STORES.storageCheckpoints].get('im-moments-cover'));
-            stores[STORES.storageCheckpoints].put({
-                id: 'im-moments-cover',
-                schemaVersion: STORAGE_SCHEMA_VERSION,
-                updatedAt: now,
-                checksum: createChecksum(storedValue),
-                current: { revision: Number(checkpoint?.current?.revision || 0) + 1, updatedAt: now, value: storedValue },
-                previous: checkpoint?.current || { revision: 0, updatedAt: 0, value: previousMeta?.value ?? null }
-            });
         });
         if (storedValue === 'im_moments_cover_me') revokeRuntimeBlobUrl(storedValue);
         return storedValue;
@@ -2387,7 +2346,6 @@
             setSetting('themeState', normalized.themeState),
             setSetting('wbGroups', normalized.wbGroups),
             setSetting('worldBooks', normalized.worldBooks),
-            setSetting('appState', normalized.appState),
             putRecord(STORES.accounts, { id: '__all__', value: cloneDeep(normalized.accounts) }),
             setMeta(META_KEYS.schemaVersion, STORAGE_SCHEMA_VERSION)
         ]);
@@ -3124,6 +3082,7 @@
     }
 
     async function getStorageHealth() {
+        if (storageReadyPromise) await storageReadyPromise;
         let usage = 0;
         let quota = 0;
         let persisted = false;
@@ -3135,40 +3094,241 @@
             }
             if (navigator.storage?.persisted) persisted = !!(await navigator.storage.persisted());
         } catch (error) {}
+        const breakdown = await getStorageBreakdown({ skipReady: true });
         return {
             ...cloneDeep(storageHealthState),
             usage,
             quota,
             ratio: quota > 0 ? usage / quota : 0,
-            persisted
+            persisted,
+            breakdown
         };
     }
 
-    async function restorePreviousCheckpoint(domainName) {
-        if (storageReadyPromise) await storageReadyPromise;
-        const checkpoint = await getRecord(STORES.storageCheckpoints, `domain:${String(domainName)}`);
-        if (!checkpoint?.previous?.value) throw new Error('No previous checkpoint is available.');
-        const expectedChecksum = createChecksum(checkpoint.previous.value);
-        if (!expectedChecksum) throw new Error('Previous checkpoint validation failed.');
-        await commitDomain(domainName, checkpoint.previous.value, {
-            critical: true,
-            reason: 'restore-previous-checkpoint'
-        });
-        return true;
+    function measureBlobBytes(value, seen = new WeakSet()) {
+        if (!value || typeof value !== 'object') return 0;
+        if (typeof Blob !== 'undefined' && value instanceof Blob) return Math.max(0, Number(value.size) || 0);
+        if (seen.has(value)) return 0;
+        seen.add(value);
+        if (Array.isArray(value)) return value.reduce((sum, item) => sum + measureBlobBytes(item, seen), 0);
+        return Object.values(value).reduce((sum, item) => sum + measureBlobBytes(item, seen), 0);
     }
 
-    async function restoreAllPreviousCheckpoints() {
-        if (storageReadyPromise) await storageReadyPromise;
-        const checkpoints = await getAllRecords(STORES.storageCheckpoints);
-        const restorable = checkpoints.filter((item) => item?.id?.startsWith('domain:') && item.previous?.value);
-        if (restorable.length === 0) throw new Error('No previous checkpoints are available.');
-        for (const checkpoint of restorable) {
-            await commitDomain(checkpoint.id.slice('domain:'.length), checkpoint.previous.value, {
-                critical: true,
-                reason: 'restore-all-previous-checkpoints'
-            });
+    function measureRecordBytes(record) {
+        return estimateJsonBytes(record) + measureBlobBytes(record);
+    }
+
+    const STORAGE_BREAKDOWN_GROUPS = {
+        appDomains: '应用状态',
+        settings: '应用状态',
+        accounts: '应用状态',
+        appState: '应用状态',
+        theme: '应用状态',
+        worldbooks: '应用状态',
+        meta: '应用状态',
+        imFriends: 'iMessage',
+        imMessages: 'iMessage',
+        imMoments: 'iMessage',
+        imMomentMessages: 'iMessage',
+        imStickers: 'iMessage',
+        xPosts: 'X',
+        xThreads: 'X',
+        xDms: 'X',
+        assets: '图片资源',
+        libraryBooks: '书库',
+        libraryPlaylists: '书库',
+        libraryTracks: '书库',
+        libraryDailyStats: '书库',
+        storageCheckpoints: '冗余历史'
+    };
+
+    async function getStorageBreakdown(options = {}) {
+        if (!options.skipReady && storageReadyPromise) await storageReadyPromise;
+        const stores = {};
+        const groups = {};
+        let indexedDbBytes = 0;
+        for (const [storeKey, storeName] of Object.entries(STORES)) {
+            const rows = await getAllRecords(storeName);
+            const bytes = rows.reduce((sum, row) => sum + measureRecordBytes(row), 0);
+            stores[storeName] = { count: rows.length, bytes };
+            indexedDbBytes += bytes;
+            const groupName = STORAGE_BREAKDOWN_GROUPS[storeKey] || '其他数据';
+            const group = groups[groupName] || { count: 0, bytes: 0 };
+            group.count += rows.length;
+            group.bytes += bytes;
+            groups[groupName] = group;
         }
-        return restorable.length;
+        let originUsage = 0;
+        let quota = 0;
+        try {
+            const estimate = navigator.storage?.estimate ? await navigator.storage.estimate() : null;
+            originUsage = Math.max(0, Number(estimate?.usage) || 0);
+            quota = Math.max(0, Number(estimate?.quota) || 0);
+        } catch (error) {}
+        const otherBytes = Math.max(0, originUsage - indexedDbBytes);
+        if (otherBytes > 0) groups['缓存与其他'] = { count: 0, bytes: otherBytes };
+        return { stores, groups, indexedDbBytes, originUsage, quota, otherBytes, measuredAt: Date.now() };
+    }
+
+    async function compactStorage(options = {}) {
+        if (!options.skipReady && storageReadyPromise) await storageReadyPromise;
+        const existingReport = await getMeta('storage_compacted_v7');
+        if (existingReport && !options.force) {
+            storageHealthState.lastCompaction = cloneDeep(existingReport);
+            return cloneDeep(existingReport);
+        }
+
+        const before = await getStorageBreakdown({ skipReady: true });
+        const [checkpoints, domains, friends, messages, xPosts, xThreads, xDms, oldAppStateRecord, momentsCoverMeta] = await Promise.all([
+            getAllRecords(STORES.storageCheckpoints),
+            getAllRecords(STORES.appDomains),
+            getAllRecords(STORES.imFriends),
+            getAllRecords(STORES.imMessages),
+            getAllRecords(STORES.xPosts),
+            getAllRecords(STORES.xThreads),
+            getAllRecords(STORES.xDms),
+            getRecord(STORES.settings, 'appState'),
+            getRecord(STORES.meta, META_KEYS.imMomentsCoverAssetId)
+        ]);
+
+        const domainNames = new Set(domains.map((row) => String(row?.name || '')).filter(Boolean));
+        const friendIds = new Set(friends.map((row) => String(row?.id || '')).filter(Boolean));
+        const messageIds = new Set(messages.map((row) => String(row?.id || '')).filter(Boolean));
+        const xPostIds = new Set(xPosts.map((row) => String(row?.id || '')).filter(Boolean));
+        const xThreadIds = new Set(xThreads.map((row) => String(row?.postId || '')).filter(Boolean));
+        const xDmIds = new Set(xDms.map((row) => String(row?.id || '')).filter(Boolean));
+        const recoveredDomains = [];
+        const recoveredFriends = [];
+        const recoveredMessages = [];
+        let coverRecoveryValue;
+
+        const domainCheckpoints = new Map();
+        checkpoints.forEach((checkpoint) => {
+            if (checkpoint?.id?.startsWith('domain:') && checkpoint.current?.value && typeof checkpoint.current.value === 'object') {
+                domainCheckpoints.set(checkpoint.id.slice('domain:'.length), checkpoint.current.value);
+            }
+            if (checkpoint?.id?.startsWith('im-friend:') && checkpoint.current?.value) {
+                const friendId = checkpoint.id.slice('im-friend:'.length);
+                if (!friendIds.has(friendId)) recoveredFriends.push(sanitizePersistentValue(cloneDeep(checkpoint.current.value)));
+            }
+            if (checkpoint?.id?.startsWith('im-messages:') && Array.isArray(checkpoint.current?.value)) {
+                const friendId = checkpoint.id.slice('im-messages:'.length);
+                checkpoint.current.value.forEach((message, index) => {
+                    if (!message?.id || messageIds.has(String(message.id))) return;
+                    recoveredMessages.push(normalizeMessageRecord(friendId, message, index));
+                });
+            }
+            if (checkpoint?.id === 'im-moments-cover' && !momentsCoverMeta && checkpoint.current?.value) {
+                coverRecoveryValue = cloneDeep(checkpoint.current.value);
+            }
+        });
+
+        const oldAppState = oldAppStateRecord?.value && typeof oldAppStateRecord.value === 'object'
+            ? oldAppStateRecord.value
+            : {};
+        const allDomainNames = new Set([...Object.keys(oldAppState), ...domainCheckpoints.keys()]);
+        allDomainNames.forEach((name) => {
+            if (domainNames.has(name)) return;
+            const value = domainCheckpoints.get(name) ?? oldAppState[name];
+            if (!value || typeof value !== 'object') {
+                throw new Error(`Cannot safely recover missing domain ${name}.`);
+            }
+            recoveredDomains.push({ name, value: cloneDeep(value) });
+        });
+
+        const xDomainValue = domains.find((row) => row?.name === 'x')?.value || {};
+        const xRecoveryValue = domainCheckpoints.get('x') || oldAppState.x || {};
+        const mergedXRecovery = {
+            ...xRecoveryValue,
+            ...xDomainValue,
+            xGeneratedPosts: Array.isArray(xRecoveryValue.xGeneratedPosts) ? xRecoveryValue.xGeneratedPosts : [],
+            xPostThreads: xRecoveryValue.xPostThreads && typeof xRecoveryValue.xPostThreads === 'object' ? xRecoveryValue.xPostThreads : {},
+            xDirectMessages: Array.isArray(xRecoveryValue.xDirectMessages) ? xRecoveryValue.xDirectMessages : []
+        };
+
+        const now = Date.now();
+        await withStore([
+            STORES.appDomains,
+            STORES.imFriends,
+            STORES.imMessages,
+            STORES.xPosts,
+            STORES.xThreads,
+            STORES.xDms,
+            STORES.assets,
+            STORES.meta
+        ], 'readwrite', (stores) => {
+            recoveredDomains.forEach(({ name, value }) => {
+                const persistedValue = name === 'x'
+                    ? persistXAssetsInTransaction(value, stores[STORES.assets])
+                    : sanitizePersistentValue(cloneDeep(value));
+                stores[STORES.appDomains].put({
+                    name,
+                    schemaVersion: STORAGE_SCHEMA_VERSION,
+                    revision: 1,
+                    updatedAt: now,
+                    value: name === 'x' ? stripXCollections(persistedValue) : persistedValue
+                });
+            });
+            recoveredFriends.forEach((friend) => stores[STORES.imFriends].put(friend));
+            recoveredMessages.forEach((message) => stores[STORES.imMessages].put(message));
+            if (coverRecoveryValue !== undefined) {
+                stores[STORES.meta].put({ key: META_KEYS.imMomentsCoverAssetId, value: coverRecoveryValue });
+            }
+
+            const persistedX = persistXAssetsInTransaction(mergedXRecovery, stores[STORES.assets]);
+            (persistedX.xGeneratedPosts || []).forEach((post) => {
+                if (post?.id != null && !xPostIds.has(String(post.id))) stores[STORES.xPosts].put(sanitizePersistentValue(post));
+            });
+            Object.entries(persistedX.xPostThreads || {}).forEach(([postId, value]) => {
+                if (!xThreadIds.has(String(postId))) stores[STORES.xThreads].put({ postId: String(postId), value: sanitizePersistentValue(value) });
+            });
+            (persistedX.xDirectMessages || []).forEach((dm, index) => {
+                const id = String(dm?.id ?? dm?.charId ?? `x-dm-${index}`);
+                if (!xDmIds.has(id)) stores[STORES.xDms].put({ ...sanitizePersistentValue(dm), id, updatedAt: Number(dm?.updatedAt) || now });
+            });
+        });
+
+        const [verifiedDomains, verifiedMessages, verifiedXPosts] = await Promise.all([
+            getAllRecords(STORES.appDomains),
+            getAllRecords(STORES.imMessages),
+            getAllRecords(STORES.xPosts)
+        ]);
+        const verifiedDomainNames = new Set(verifiedDomains.map((row) => String(row?.name || '')));
+        const verifiedMessageIds = new Set(verifiedMessages.map((row) => String(row?.id || '')));
+        const verifiedXPostIds = new Set(verifiedXPosts.map((row) => String(row?.id || '')));
+        if (recoveredDomains.some(({ name }) => !verifiedDomainNames.has(name))) throw new Error('Domain recovery verification failed.');
+        if (recoveredMessages.some((message) => !verifiedMessageIds.has(String(message.id)))) throw new Error('Message recovery verification failed.');
+        if ((mergedXRecovery.xGeneratedPosts || []).some((post) => post?.id != null && !verifiedXPostIds.has(String(post.id)))) {
+            throw new Error('X post recovery verification failed.');
+        }
+
+        const redundantBytes = checkpoints.reduce((sum, row) => sum + measureRecordBytes(row), 0)
+            + (oldAppStateRecord ? measureRecordBytes(oldAppStateRecord) : 0);
+        await withStore([STORES.storageCheckpoints, STORES.settings, STORES.meta], 'readwrite', (stores) => {
+            stores[STORES.storageCheckpoints].clear();
+            stores[STORES.settings].delete('appState');
+            stores[STORES.meta].put({ key: META_KEYS.schemaVersion, value: STORAGE_SCHEMA_VERSION });
+        });
+        const orphanAssetsRemoved = await pruneOrphanedAssets();
+        const after = await getStorageBreakdown({ skipReady: true });
+        const report = {
+            schemaVersion: STORAGE_SCHEMA_VERSION,
+            compactedAt: Date.now(),
+            checkpointRecordsDeleted: checkpoints.length,
+            legacyAppStateDeleted: !!oldAppStateRecord,
+            domainsRecovered: recoveredDomains.length,
+            friendsRecovered: recoveredFriends.length,
+            messagesRecovered: recoveredMessages.length,
+            xPostsRecovered: Math.max(0, verifiedXPosts.length - xPosts.length),
+            orphanAssetsRemoved,
+            estimatedBytesFreed: Math.max(redundantBytes, before.indexedDbBytes - after.indexedDbBytes),
+            beforeIndexedDbBytes: before.indexedDbBytes,
+            afterIndexedDbBytes: after.indexedDbBytes
+        };
+        await setMeta('storage_compacted_v7', report);
+        await setMeta('storage_last_compaction', report);
+        storageHealthState.lastCompaction = cloneDeep(report);
+        return cloneDeep(report);
     }
 
     function parseLegacySnapshotValue(snapshot, key, fallbackValue = null) {
@@ -3222,7 +3382,6 @@
                 STORES.xThreads,
                 STORES.xDms,
                 STORES.assets,
-                STORES.storageCheckpoints,
                 STORES.meta
             ], 'readwrite', async (stores) => {
                 for (const [name, rawValue] of Object.entries(domainValues)) {
@@ -3238,14 +3397,6 @@
                         updatedAt: now,
                         value: storedValue
                     });
-                    stores[STORES.storageCheckpoints].put({
-                        id: `domain:${name}`,
-                        schemaVersion: STORAGE_SCHEMA_VERSION,
-                        updatedAt: now,
-                        checksum: createChecksum(persistedValue),
-                        current: { revision: 1, updatedAt: now, value: persistedValue },
-                        previous: null
-                    });
                     if (name === 'x') {
                         await replaceCollectionRecords(stores[STORES.xPosts], persistedValue.xGeneratedPosts || [], 'id');
                         const threadRows = Object.entries(persistedValue.xPostThreads || {}).map(([postId, threadValue]) => ({ postId, value: threadValue }));
@@ -3258,47 +3409,17 @@
                         await replaceCollectionRecords(stores[STORES.xDms], dmRows, 'id');
                     }
                 }
-                stores[STORES.storageCheckpoints].put({
-                    id: 'migration:legacy-localstorage',
-                    schemaVersion: STORAGE_SCHEMA_VERSION,
-                    updatedAt: now,
-                    checksum: createChecksum(localSnapshot),
-                    current: { revision: 1, updatedAt: now, value: localSnapshot },
-                    previous: null
-                });
                 stores[STORES.meta].put({ key: META_KEYS.schemaVersion, value: STORAGE_SCHEMA_VERSION });
                 stores[STORES.meta].put({ key: 'unified_storage_migrated_at', value: now });
             });
         }
 
+        storageHealthState.lastCompaction = await compactStorage({ skipReady: true });
+
         const hydratedDomains = await getAllRecords(STORES.appDomains);
         for (const record of hydratedDomains) {
             if (!record?.name) continue;
-            let value = record.name === 'x' ? await hydrateXDomain(record.value) : record.value;
-            if (record.name !== 'x') {
-                const checkpoint = await getRecord(STORES.storageCheckpoints, `domain:${record.name}`);
-                if (checkpoint?.checksum && checkpoint.checksum !== createChecksum(value)) {
-                    if (!checkpoint.previous?.value) {
-                        throw new Error(`Storage checkpoint validation failed for ${record.name}.`);
-                    }
-                    value = cloneDeep(checkpoint.previous.value);
-                    await putRecord(STORES.appDomains, {
-                        name: record.name,
-                        schemaVersion: STORAGE_SCHEMA_VERSION,
-                        revision: Number(checkpoint.previous.revision) || 1,
-                        updatedAt: Number(checkpoint.previous.updatedAt) || Date.now(),
-                        value: sanitizePersistentValue(cloneDeep(value))
-                    });
-                    await putRecord(STORES.storageCheckpoints, {
-                        ...checkpoint,
-                        updatedAt: Date.now(),
-                        checksum: createChecksum(value),
-                        current: cloneDeep(checkpoint.previous),
-                        previous: null,
-                        recoveredAt: Date.now()
-                    });
-                }
-            }
+            const value = record.name === 'x' ? await hydrateXDomain(record.value) : record.value;
             domainCache.set(String(record.name), cloneDeep(value));
         }
 
@@ -3523,9 +3644,9 @@
         commitRecords,
         flushPendingWrites,
         getStorageHealth,
+        getStorageBreakdown,
+        compactStorage,
         pruneOrphanedAssets,
-        restorePreviousCheckpoint,
-        restoreAllPreviousCheckpoints,
         subscribe,
         loadLegacyKey,
         saveLegacyKey,
