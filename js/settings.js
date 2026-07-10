@@ -154,23 +154,33 @@
     };
     window.u2ThemeState = themeState;
     
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
         // ==========================================
         // Load Saved Data
         // ==========================================
-        if (window.StorageManager) {
-            apiConfig = StorageManager.load('u2_apiConfig', apiConfig);
-            minimaxConfig = StorageManager.load('u2_minimaxConfig', minimaxConfig);
-            apiPresets = StorageManager.load('u2_apiPresets', []);
-            fetchedModels = StorageManager.load('u2_fetchedModels', []);
+        let savedSettings = null;
+        try {
+            await window.appStorage?.ready;
+            savedSettings = typeof window.appStorage?.readDomain === 'function'
+                ? window.appStorage.readDomain('settings', {})
+                : null;
+        } catch (error) {
+            console.warn('Failed to hydrate settings from IndexedDB:', error);
+        }
+
+        if (savedSettings && typeof savedSettings === 'object') {
+            apiConfig = { ...apiConfig, ...(savedSettings.apiConfig || {}) };
+            minimaxConfig = { ...minimaxConfig, ...(savedSettings.minimaxConfig || {}) };
+            apiPresets = Array.isArray(savedSettings.apiPresets) ? savedSettings.apiPresets : [];
+            fetchedModels = Array.isArray(savedSettings.fetchedModels) ? savedSettings.fetchedModels : [];
             assistiveBallSettings = {
                 ...assistiveBallSettings,
-                ...StorageManager.load('u2_assistiveBallSettings', {})
+                ...(savedSettings.assistiveBallSettings || {})
             };
             
-            accounts = StorageManager.load('u2_accounts', []);
-            currentAccountId = StorageManager.load('u2_currentAccountId', null);
-            const savedUserState = StorageManager.load('u2_userState', null);
+            accounts = Array.isArray(savedSettings.accounts) ? savedSettings.accounts : [];
+            currentAccountId = savedSettings.currentAccountId ?? null;
+            const savedUserState = savedSettings.userState;
             if (savedUserState && typeof savedUserState === 'object') {
                 userState = { ...userState, ...savedUserState };
             }
@@ -180,7 +190,7 @@
             }
 
             // Load Theme State
-            const savedThemeState = StorageManager.load('u2_themeState', null);
+            const savedThemeState = savedSettings.themeState;
             if (savedThemeState) {
                 // Merge arrays smartly to retain new apps if added
                 if (Array.isArray(savedThemeState.apps)) {
@@ -862,8 +872,10 @@
                 if (window.imApp && window.imApp.applyGlobalChatCss) {
                     window.imApp.applyGlobalChatCss(themeState);
                 }
-                saveGlobalData();
-                showToast(nextChatCss.trim() ? 'Chat CSS 已应用' : 'Chat CSS 已清空');
+                const persisted = await saveGlobalData();
+                showToast(persisted
+                    ? (nextChatCss.trim() ? 'Chat CSS 已应用' : 'Chat CSS 已清空')
+                    : 'Chat CSS 保存失败，当前效果未持久化');
                 return;
             }
 
@@ -919,7 +931,10 @@
 
         if (themeCurrentApplyBtn) {
             themeCurrentApplyBtn.addEventListener('click', () => {
-                applyCurrentThemeCss();
+                applyCurrentThemeCss().catch((error) => {
+                    console.warn('Failed to apply Chat CSS:', error);
+                    showToast('Chat CSS 保存失败，当前效果未持久化');
+                });
             });
         }
 
@@ -1027,7 +1042,7 @@
         
         // Clear Chat CSS
         if (themeChatClearBtn) {
-            themeChatClearBtn.addEventListener('click', () => {
+            themeChatClearBtn.addEventListener('click', async () => {
                 themeState.imessageChatCss = '';
                 themeState.imessageChatCssEnabled = false;
                 window.u2ThemeState = themeState;
@@ -1035,8 +1050,8 @@
                 if (window.imApp && window.imApp.applyGlobalChatCss) {
                     window.imApp.applyGlobalChatCss(themeState);
                 }
-                saveGlobalData();
-                showToast('Chat CSS cleared');
+                const persisted = await saveGlobalData();
+                showToast(persisted ? 'Chat CSS cleared' : 'Chat CSS 保存失败，当前效果未持久化');
             });
         }
 
@@ -2009,7 +2024,6 @@
                         themeState.imessageChatCss = nextChatCss;
                         themeState.imessageChatCssEnabled = !!nextChatCss;
                         window.u2ThemeState = themeState;
-                        saveGlobalData();
 
                         if (window.imApp.applyGlobalChatCss) {
                             window.imApp.applyGlobalChatCss(themeState);
@@ -2018,8 +2032,8 @@
                         if (window.imApp.applyFriendCss) {
                             window.imApp.applyFriendCss(window.imData.currentSettingsFriend);
                         }
-                        
-                        showToast('主题美化已应用');
+                        const persisted = await saveGlobalData();
+                        showToast(persisted ? '主题美化已应用' : 'Chat CSS 保存失败，当前效果未持久化');
                     } else {
                         showToast('应用主题失败');
                     }
@@ -2739,7 +2753,7 @@
         // API CONFIGURATION LOGIC
         // ==========================================
         function saveGlobalData() {
-            persistSettingsData();
+            return persistSettingsData();
         }
 
         function getBackgroundActivitySettings() {

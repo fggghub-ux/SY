@@ -15,5 +15,5 @@ test('data management shows only logical application data', () => {
     assert.match(settingsSource, /health\.breakdown\?\.logicalGroups/);
     assert.match(storageSource, /const logicalGroups = cloneDeep\(groups\)/);
     assert.match(storageSource, /logicalGroups,/);
-    assert.match(indexSource, /js\/settings\.js\?v=20260710-effective-data-v1/);
+    assert.match(indexSource, /js\/settings\.js\?v=20260710-imessage-theme-idb-v1/);
 });

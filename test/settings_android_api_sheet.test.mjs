@@ -110,6 +110,36 @@ test('API config sheet now relies on the shared bottom-sheet input guard', () =>
     assert.doesNotMatch(settingsSource, /handleApiConfigViewportChange/);
 });
 
+test('iMessage Chat CSS hydrates from the IndexedDB settings domain and confirms persistence', () => {
+    const startupEnd = settingsSource.indexOf('// Expose globally');
+    const startupSource = settingsSource.slice(0, startupEnd);
+    assert.match(startupSource, /document\.addEventListener\('DOMContentLoaded', async \(\) =>/);
+    assert.match(startupSource, /await window\.appStorage\?\.ready/);
+    assert.match(startupSource, /window\.appStorage\.readDomain\('settings', \{\}\)/);
+    assert.match(startupSource, /const savedThemeState = savedSettings\.themeState/);
+    assert.match(startupSource, /applySavedTheme\(\)/);
+    assert.doesNotMatch(startupSource, /StorageManager\.load/);
+
+    const persistBody = getFunctionBody(settingsSource, 'persistSettingsData');
+    assert.match(persistBody, /appStorage\.commitDomain\('settings'/);
+    assert.match(persistBody, /\.\.\.draft/);
+    assert.match(persistBody, /themeState: clonePlainData\(themeState\)/);
+
+    const currentApplySource = settingsSource.slice(
+        settingsSource.indexOf('async function applyCurrentThemeCss'),
+        settingsSource.indexOf('if (themeConfigBtn', settingsSource.indexOf('async function applyCurrentThemeCss'))
+    );
+    assert.match(currentApplySource, /const persisted = await saveGlobalData\(\)/);
+    assert.match(currentApplySource, /Chat CSS 保存失败，当前效果未持久化/);
+
+    const clearChatSource = settingsSource.slice(
+        settingsSource.indexOf('if (themeChatClearBtn)'),
+        settingsSource.indexOf('// Clear Status CSS', settingsSource.indexOf('if (themeChatClearBtn)'))
+    );
+    assert.match(clearChatSource, /addEventListener\('click', async \(\) =>/);
+    assert.match(clearChatSource, /const persisted = await saveGlobalData\(\)/);
+});
+
 test('Char edit sheet is hardened against Android input focus overflow', () => {
     assert.match(imessageCssSource, /#edit-char-persona-sheet \.char-settings-sheet\s*\{[\s\S]*overflow:\s*hidden/);
     assert.match(imessageCssSource, /#edit-char-persona-sheet \.char-settings-content\s*\{[\s\S]*overflow-x:\s*hidden[\s\S]*-webkit-overflow-scrolling:\s*touch/);
@@ -122,7 +152,7 @@ test('changed Android input assets are cache-busted', () => {
     assert.match(indexSource, /css\/imessage\.css\?v=20260709-android-input-v1/);
     assert.match(indexSource, /css\/settings\.css\?v=20260710-storage-v7-cache1/);
     assert.match(indexSource, /js\/mobile_input_compat\.js\?v=20260709-android-input-v1/);
-    assert.match(indexSource, /js\/settings\.js\?v=20260710-effective-data-v1/);
+    assert.match(indexSource, /js\/settings\.js\?v=20260710-imessage-theme-idb-v1/);
     assert.match(indexSource, /id="storage-clean-cache-btn"[^>]*>优化存储<\/button>/);
     assert.match(settingsSource, /appStorage\.optimizeStorage\(\{ progressCallback: updateOperation \}\)/);
 });
