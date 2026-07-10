@@ -64,42 +64,22 @@
 
     function persistSettingsData() {
         syncUserStateFromCurrentAccount();
-        if (window.StorageManager) {
-            StorageManager.save('u2_userState', userState);
-            StorageManager.save('u2_apiConfig', apiConfig);
-            StorageManager.save('u2_minimaxConfig', minimaxConfig);
-            StorageManager.save('u2_apiPresets', apiPresets);
-            StorageManager.save('u2_fetchedModels', fetchedModels);
-            StorageManager.save('u2_assistiveBallSettings', assistiveBallSettings);
-            StorageManager.save('u2_accounts', accounts);
-            StorageManager.save('u2_currentAccountId', currentAccountId);
-            StorageManager.save('u2_themeState', themeState);
-        }
-
-        if (window.appStorage?.loadGlobalData && window.appStorage?.saveGlobalData) {
-            window.appStorage.loadGlobalData()
-                .then((existing) => {
-                    const safeExisting = existing && typeof existing === 'object' ? existing : {};
-                    return window.appStorage.saveGlobalData({
-                        ...safeExisting,
-                        userState: clonePlainData(userState),
-                        accounts: clonePlainData(accounts),
-                        currentAccountId,
-                        apiConfig: clonePlainData(apiConfig),
-                        minimaxConfig: clonePlainData(minimaxConfig),
-                        apiPresets: clonePlainData(apiPresets),
-                        fetchedModels: clonePlainData(fetchedModels),
-                        assistiveBallSettings: clonePlainData(assistiveBallSettings),
-                        themeState: clonePlainData(themeState),
-                        appState: typeof window.getAllAppState === 'function'
-                            ? clonePlainData(window.getAllAppState())
-                            : safeExisting.appState
-                    });
-                })
-                .catch((error) => {
-                    console.warn('Failed to persist settings to appStorage:', error);
-                });
-        }
+        if (!window.appStorage?.commitDomain) return Promise.resolve(false);
+        return window.appStorage.commitDomain('settings', (draft) => ({
+            ...draft,
+            userState: clonePlainData(userState),
+            accounts: clonePlainData(accounts),
+            currentAccountId,
+            apiConfig: clonePlainData(apiConfig),
+            minimaxConfig: clonePlainData(minimaxConfig),
+            apiPresets: clonePlainData(apiPresets),
+            fetchedModels: clonePlainData(fetchedModels),
+            assistiveBallSettings: clonePlainData(assistiveBallSettings),
+            themeState: clonePlainData(themeState)
+        }), { critical: true, reason: 'settings-update' }).catch((error) => {
+            console.warn('Failed to persist settings:', error);
+            return false;
+        });
     }
 
     exposeAccountGlobals();
@@ -3490,6 +3470,14 @@
             let overlay = null;
             let overlayText = null;
             let overlayProgress = null;
+            const storageHealthDot = document.getElementById('storage-health-dot');
+            const storageHealthStatus = document.getElementById('storage-health-status');
+            const storageHealthPersistence = document.getElementById('storage-health-persistence');
+            const storageHealthUsage = document.getElementById('storage-health-usage');
+            const storageHealthLastSave = document.getElementById('storage-health-last-save');
+            const storageHealthWarning = document.getElementById('storage-health-warning');
+            const storageRetryBtn = document.getElementById('storage-retry-btn');
+            const storageRestoreBtn = document.getElementById('storage-restore-btn');
 
             function stopLegacy(e) {
                 e.preventDefault();
@@ -3528,6 +3516,65 @@
                     return '未知时间';
                 }
             }
+
+            async function refreshStorageHealth() {
+                if (!window.appStorage?.getStorageHealth) return;
+                const health = await window.appStorage.getStorageHealth();
+                const statusLabels = {
+                    initializing: '正在初始化',
+                    saving: '保存中',
+                    saved: '已保存',
+                    error: '保存失败'
+                };
+                if (storageHealthStatus) storageHealthStatus.textContent = statusLabels[health.status] || '存储状态未知';
+                if (storageHealthDot) {
+                    storageHealthDot.classList.toggle('is-saved', health.status === 'saved');
+                    storageHealthDot.classList.toggle('is-error', health.status === 'error');
+                }
+                if (storageHealthPersistence) {
+                    storageHealthPersistence.textContent = `持久存储：${health.persisted ? '已启用' : '浏览器未授予'}`;
+                }
+                if (storageHealthUsage) {
+                    storageHealthUsage.textContent = `空间占用：${formatBytesForUi(health.usage)} / ${formatBytesForUi(health.quota)}`;
+                }
+                if (storageHealthLastSave) {
+                    storageHealthLastSave.textContent = `最后保存：${formatDateForUi(health.lastCommitAt)}`;
+                }
+                if (storageHealthWarning) {
+                    let warning = health.lastError ? `错误：${health.lastError}` : '';
+                    if (!warning && health.ratio >= 0.9) warning = '空间已超过 90%，已停止新增大图片；请立即导出备份。';
+                    else if (!warning && health.ratio >= 0.8) warning = '空间已超过 80%，建议尽快导出完整备份。';
+                    storageHealthWarning.textContent = warning;
+                    storageHealthWarning.hidden = !warning;
+                }
+            }
+
+            storageRetryBtn?.addEventListener('click', async () => {
+                storageRetryBtn.disabled = true;
+                try {
+                    const saved = await window.appStorage.flushPendingWrites();
+                    showToast(saved ? '待保存数据已完成写入' : '仍有数据保存失败');
+                } finally {
+                    storageRetryBtn.disabled = false;
+                    await refreshStorageHealth();
+                }
+            });
+
+            storageRestoreBtn?.addEventListener('click', async () => {
+                if (!confirm('确定恢复全部应用的上一成功检查点吗？当前版本会保留为新的检查点。')) return;
+                storageRestoreBtn.disabled = true;
+                try {
+                    const restored = await window.appStorage.restoreAllPreviousCheckpoints();
+                    showToast(`已恢复 ${restored} 个数据域，正在重启`);
+                    setTimeout(() => window.location.reload(), 800);
+                } catch (error) {
+                    showToast(error?.message || '没有可恢复的检查点');
+                    storageRestoreBtn.disabled = false;
+                }
+            });
+
+            window.appStorage?.subscribe?.(() => refreshStorageHealth());
+            refreshStorageHealth();
 
             function showOperation(text) {
                 if (!overlay) {

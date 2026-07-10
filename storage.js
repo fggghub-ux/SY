@@ -31,8 +31,10 @@ const StorageManager = {
      */
     save: function(key, value) {
         try {
-            const serializedValue = JSON.stringify(this.stripVolatileBlobUrls(value));
-            window.localStorage.setItem(key, serializedValue);
+            if (!window.appStorage?.saveLegacyKey) return false;
+            window.appStorage.saveLegacyKey(key, this.stripVolatileBlobUrls(value)).catch((error) => {
+                console.error(`Storage save error for key "${key}":`, error);
+            });
             return true;
         } catch (error) {
             console.error(`Storage save error for key "${key}":`, error);
@@ -49,11 +51,9 @@ const StorageManager = {
      */
     load: function(key, defaultValue = null) {
         try {
-            const serializedValue = window.localStorage.getItem(key);
-            if (serializedValue === null) {
-                return defaultValue;
-            }
-            return JSON.parse(serializedValue);
+            return window.appStorage?.loadLegacyKey
+                ? window.appStorage.loadLegacyKey(key, defaultValue)
+                : defaultValue;
         } catch (error) {
             console.error(`Storage load error for key "${key}":`, error);
             return defaultValue;
@@ -67,7 +67,10 @@ const StorageManager = {
      */
     remove: function(key) {
         try {
-            window.localStorage.removeItem(key);
+            if (!window.appStorage?.removeLegacyKey) return false;
+            window.appStorage.removeLegacyKey(key).catch((error) => {
+                console.error(`Storage remove error for key "${key}":`, error);
+            });
             return true;
         } catch (error) {
             console.error(`Storage remove error for key "${key}":`, error);
@@ -80,7 +83,11 @@ const StorageManager = {
      */
     clearAll: function() {
         try {
-            window.localStorage.clear();
+            if (window.appStorage?.clearAllPersistentData) {
+                window.appStorage.clearAllPersistentData().catch((error) => {
+                    console.error('Storage clearAll error:', error);
+                });
+            }
         } catch (error) {
             console.error('Storage clearAll error:', error);
         }
@@ -88,3 +95,21 @@ const StorageManager = {
 };
 
 window.StorageManager = StorageManager;
+
+window.u2LegacyStorageFacade = {
+    getItem(key) {
+        const value = StorageManager.load(key, null);
+        if (value === null || value === undefined) return null;
+        return typeof value === 'string' ? value : JSON.stringify(value);
+    },
+    setItem(key, rawValue) {
+        let value = rawValue;
+        try {
+            value = JSON.parse(String(rawValue));
+        } catch (error) {}
+        StorageManager.save(key, value);
+    },
+    removeItem(key) {
+        StorageManager.remove(key);
+    }
+};

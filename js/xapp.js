@@ -1699,7 +1699,7 @@ X is a global app. Non-User authors may write in the language that naturally fit
             else composeSheet?.classList.remove('active');
         }
 
-        function submitComposer() {
+        async function submitComposer() {
             const text = safeText(composeTextInput?.value, '新帖子草稿');
             tempPostCounter += 1;
             const id = `temp-${Date.now()}-${tempPostCounter}`;
@@ -1730,7 +1730,15 @@ X is a global app. Non-User authors may write in the language that naturally fit
             if (superTopic && added.length) updateSuperHomeCard(superTopic);
             closeComposer();
             if (added.length) {
-                flushXStateNow('x-post-publish');
+                const durable = await flushXStateNow('x-post-publish');
+                if (!durable) {
+                    updateXState((draft) => {
+                        draft.xGeneratedPosts = (draft.xGeneratedPosts || []).filter((post) => String(post.id) !== String(id));
+                    });
+                    renderGeneratedPosts();
+                    if (typeof window.showToast === 'function') window.showToast('帖子保存失败，已撤销发布');
+                    return;
+                }
                 if (typeof window.showToast === 'function') window.showToast('Post published; generating engagement');
                 generatePostPublishInteractions(added[0].id);
             }
@@ -1935,6 +1943,7 @@ ${worldbook || 'None'}`;
                 });
 
                 const added = appendGeneratedPosts(posts);
+                await flushXStateNow('x-topic-generation');
                 renderTopicFeed(topic);
                 if (typeof window.showToast === 'function') window.showToast(added.length ? `已生成 ${added.length} 条帖子` : '没有生成可用帖子');
             } catch (error) {
@@ -2133,6 +2142,7 @@ ${worldbook || 'None'}
                 topic.onlineStatus = newOnlineStatus;
                 
                 const added = appendGeneratedPosts(allItems);
+                await flushXStateNow('x-super-topic-generation');
                 renderSuperTopicFeed(topic);
                 
                 if (typeof window.showToast === 'function') {
@@ -4524,6 +4534,7 @@ ${worldbook || 'None'}`;
                 xTrends: entries.slice(0, 10).map((entry) => ({ ...entry.trend, movement: 'none' })),
                 xGeneratedPosts: prependUniquePosts(state.xGeneratedPosts, newPosts)
             });
+            await flushXStateNow('x-discover-generation');
             renderTrends();
             renderGeneratedPosts();
             return `已生成 10 条热搜和 ${newPosts.length} 条关联帖子`;
@@ -4563,6 +4574,7 @@ ${worldbook || 'None'}`;
             const parsed = parseJsonPayload(raw);
             const posts = sanitizeApiGeneratedPosts(Array.isArray(parsed) ? parsed : (Array.isArray(parsed.posts) ? parsed.posts : []));
             const added = appendGeneratedPosts(posts);
+            await flushXStateNow('x-search-generation');
             return added.length ? `已生成 ${added.length} 条帖子` : '没有生成可用帖子';
         }
 
@@ -5135,6 +5147,7 @@ ${worldbook || 'None'}`;
                     xGeneratedPosts: prependUniquePosts(state.xGeneratedPosts, newPosts),
                     xDirectMessages: [...newStrangers, ...(state.xDirectMessages || [])]
                 });
+                await flushXStateNow('x-advance-generation');
                 renderTrends();
                 renderGeneratedPosts();
                 renderDirectMessages();
@@ -5298,9 +5311,10 @@ ${worldbook || 'None'}`;
             });
         }
 
-        function openXApp(event) {
+        async function openXApp(event) {
             if (event) event.stopPropagation();
             if (window.isJiggleMode) return;
+            if (window.globalDataReadyPromise) await window.globalDataReadyPromise;
             view.scrollTop = 0;
             view.classList.add('active');
             ensureXEventBindings();

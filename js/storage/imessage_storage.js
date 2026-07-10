@@ -14,6 +14,7 @@
     function proxy(methodName, fallback) {
         return async function(...args) {
             const storage = getStorage();
+            if (storage.ready) await storage.ready;
             const method = storage[methodName];
             if (typeof method !== 'function') {
                 if (typeof fallback === 'function') {
@@ -47,6 +48,7 @@
         openDb: proxy('openDb'),
         exportAllData: async function() {
             const storage = getStorage();
+            if (storage.ready) await storage.ready;
             return {
                 version: 1,
                 exportedAt: Date.now(),
@@ -59,6 +61,7 @@
         },
         importAllData: async function(payload = {}) {
             const storage = getStorage();
+            if (storage.ready) await storage.ready;
             await storage.saveFriends(Array.isArray(payload.friends) ? payload.friends : []);
             await storage.saveMoments(Array.isArray(payload.moments) ? payload.moments : []);
             await storage.saveMomentMessages(Array.isArray(payload.momentMessages) ? payload.momentMessages : []);
@@ -68,6 +71,7 @@
         },
         clearAllData: async function() {
             const storage = getStorage();
+            if (storage.ready) await storage.ready;
             await storage.saveFriends([]);
             await storage.saveMoments([]);
             await storage.saveMomentMessages([]);
@@ -81,6 +85,7 @@
 
         saveGlobalData: async function(payload = {}) {
             const storage = getStorage();
+            if (storage.ready) await storage.ready;
             await storage.saveFriends(Array.isArray(payload.friends) ? payload.friends : []);
             await storage.saveMoments(Array.isArray(payload.moments) ? payload.moments : []);
             await storage.saveMomentMessages(Array.isArray(payload.momentMessages) ? payload.momentMessages : []);
@@ -90,6 +95,7 @@
         },
         loadGlobalData: async function() {
             const storage = getStorage();
+            if (storage.ready) await storage.ready;
             return {
                 friends: await storage.loadFriends(),
                 moments: await storage.loadMoments(),
@@ -102,6 +108,7 @@
         saveFriends: proxy('saveFriends'),
         saveFriend: proxy('saveFriend'),
         saveFriendMetaOnly: proxy('saveFriendMetaOnly'),
+        patchFriendMeta: proxy('patchFriendMeta'),
         deleteFriend: proxy('deleteFriend'),
         loadFriends: proxy('loadFriends'),
         saveFriendMeta: proxy('saveFriendMeta'),

@@ -45,7 +45,7 @@
     <link rel="stylesheet" href="css/loves.css?v=20260706-diary-v1">
     <link rel="stylesheet" href="css/library.css?v=20260704-together-picker-border-v1">
     <!-- App Styles -->
-    <link rel="stylesheet" href="css/settings.css?v=20260709-android-input-v1">
+    <link rel="stylesheet" href="css/settings.css?v=20260710-storage-v6">
     <link rel="stylesheet" href="css/youtube.css">
     <link rel="stylesheet" href="css/netflix.css">
 </head>
@@ -2424,6 +2424,22 @@
                 <div class="sheet-title">数据管理</div>
 
                 <div class="detail-sheet-content data-management-content">
+                    <div class="storage-health-card" id="storage-health-card">
+                        <div class="storage-health-head">
+                            <span class="storage-health-dot" id="storage-health-dot"></span>
+                            <strong id="storage-health-status">正在检查存储</strong>
+                        </div>
+                        <div class="storage-health-meta">
+                            <span id="storage-health-persistence">持久存储：检查中</span>
+                            <span id="storage-health-usage">空间占用：检查中</span>
+                            <span id="storage-health-last-save">最后保存：-</span>
+                        </div>
+                        <div class="storage-health-warning" id="storage-health-warning" hidden></div>
+                        <div class="storage-health-actions">
+                            <button type="button" id="storage-retry-btn">重试保存</button>
+                            <button type="button" id="storage-restore-btn">恢复上一检查点</button>
+                        </div>
+                    </div>
                     <div class="data-import-preview" id="data-import-preview" style="display: none;">
                         <div class="data-import-preview-title">待导入备份</div>
                         <div class="data-import-preview-file" id="data-import-file-name"></div>
@@ -7393,10 +7409,10 @@
 
 
     
-<script src="js/storage/app_storage.js?v=20260706-storage-v1"></script>
-    <script src="js/storage/imessage_storage.js?v=20260706-storage-v1"></script>
-    <script src="storage.js"></script>
-    <script src="js/app_state_bridge.js"></script>
+<script src="js/storage/app_storage.js?v=20260710-storage-v6"></script>
+    <script src="js/storage/imessage_storage.js?v=20260710-storage-v6"></script>
+    <script src="storage.js?v=20260710-storage-v6"></script>
+    <script src="js/app_state_bridge.js?v=20260710-storage-v6"></script>
     <script src="js/bootstrap_globals.js"></script>
     <script src="js/login.js"></script>
     <script src="js/mobile_input_compat.js?v=20260709-android-input-v1"></script>
@@ -7405,7 +7421,7 @@
     
     <!-- 引入 iMessage 模块分段代码 -->
     <script src="js/imessage/data_utils.js?v=20260706-bugfix-v2"></script>
-    <script src="js/imessage/2_core.js?v=20260706-private-translation-v1"></script>
+    <script src="js/imessage/2_core.js?v=20260710-storage-v6"></script>
     <script src="js/imessage/3_contacts.js"></script>
     <script src="js/imessage/3_groups.js?v=20260707-group-summary-v1"></script>
     <script src="js/imessage/4_chat_common.js"></script>
@@ -7433,7 +7449,7 @@
     <script src="js/worldbook.js"></script>
     <!-- 引入核心 UI 管理与设置模块脚本 -->
     <script src="js/ui.js"></script>
-    <script src="js/settings.js?v=20260709-android-input-v1"></script>
+    <script src="js/settings.js?v=20260710-storage-v6"></script>
     <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="js/library.js?v=20260707-hidden-focus-v1"></script>
     <script src="js/loves.js?v=20260706-diary-v2"></script>
@@ -7449,8 +7465,8 @@
     <script src="js/youtube/7_trending.js"></script>
     <script src="js/youtube/8_user_live.js"></script>
     <script src="js/netflix.js"></script>
-    <script src="js/shopping.js"></script>
-    <script src="js/xapp.js?v=20260702-x-dm-reply-batch-v8"></script>
+    <script src="js/shopping.js?v=20260710-storage-v6"></script>
+    <script src="js/xapp.js?v=20260710-storage-v6"></script>
     <script src="js/home_desktop.js?v=20260707-no-launcher-fallback-v1"></script>
     <script src="js/home_widget_panel_enhance.js"></script>
     <!-- 引入主逻辑脚本 -->

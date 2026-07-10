@@ -91,8 +91,7 @@
 
     function loadSettings() {
         try {
-            const raw = localStorage.getItem(SETTINGS_KEY);
-            const parsed = raw ? JSON.parse(raw) : {};
+            const parsed = window.StorageManager?.load(SETTINGS_KEY, {}) || {};
             return {
                 showStatusBar: parsed.showStatusBar === true,
                 showSearch: parsed.showSearch !== false
@@ -103,7 +102,7 @@
     }
 
     function saveSettings(next) {
-        localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+        window.StorageManager?.save(SETTINGS_KEY, next);
     }
 
     function getDesktopState() {

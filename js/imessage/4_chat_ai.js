@@ -2,6 +2,7 @@
 // IMESSAGE: 4_chat_ai.js
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
+    const durableLocalStorage = window.u2LegacyStorageFacade;
     window.imChat = window.imChat || {};
     const imChat = window.imChat;
 
@@ -3306,7 +3307,7 @@ Never truncate OUTPUT(x)
                             
                             // 更新商城订单状态为完成
                             try {
-                                const savedOrdersStr = localStorage.getItem('shopping_orders');
+                                const savedOrdersStr = durableLocalStorage.getItem('shopping_orders');
                                 if (savedOrdersStr) {
                                     const savedOrders = JSON.parse(savedOrdersStr);
                                     let updated = false;
@@ -3318,7 +3319,7 @@ Never truncate OUTPUT(x)
                                         }
                                     }
                                     if (updated) {
-                                        localStorage.setItem('shopping_orders', JSON.stringify(savedOrders));
+                                        durableLocalStorage.setItem('shopping_orders', JSON.stringify(savedOrders));
                                     }
                                 }
                             } catch(e) {

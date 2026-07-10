@@ -6,6 +6,7 @@
     "test:link": "node --test test/link_frontend.test.mjs"
   },
   "devDependencies": {
+    "fake-indexeddb": "^6.2.5",
     "javascript-obfuscator": "^4.1.1"
   }
 }

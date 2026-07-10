@@ -30,8 +30,7 @@
             if (window.StorageManager && typeof window.StorageManager.load === 'function') {
                 return window.StorageManager.load(key, fallback);
             }
-            const raw = window.localStorage ? window.localStorage.getItem(key) : null;
-            return raw ? JSON.parse(raw) : fallback;
+            return fallback;
         } catch (error) {
             console.warn('[minimax_tts] Failed to load config:', error);
             return fallback;
@@ -44,7 +43,6 @@
                 window.StorageManager.save(key, value);
                 return;
             }
-            if (window.localStorage) window.localStorage.setItem(key, JSON.stringify(value));
         } catch (error) {
             console.warn('[minimax_tts] Failed to save config:', error);
         }

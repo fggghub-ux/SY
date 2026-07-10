@@ -982,3 +982,52 @@
         padding: 11px 12px;
     }
 }
+.storage-health-card {
+    margin-bottom: 14px;
+    padding: 14px;
+    border-radius: 14px;
+    background: #fff;
+    border: 1px solid #e5e5ea;
+}
+
+.storage-health-head,
+.storage-health-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.storage-health-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #ffcc00;
+}
+
+.storage-health-dot.is-saved { background: #34c759; }
+.storage-health-dot.is-error { background: #ff3b30; }
+
+.storage-health-meta {
+    display: grid;
+    gap: 4px;
+    margin: 10px 0;
+    color: #6e6e73;
+    font-size: 12px;
+}
+
+.storage-health-warning {
+    margin: 8px 0;
+    color: #b54708;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.storage-health-actions button {
+    flex: 1;
+    border: 0;
+    border-radius: 10px;
+    padding: 9px 10px;
+    color: #007aff;
+    background: #f2f2f7;
+    font-size: 13px;
+}

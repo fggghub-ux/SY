@@ -1369,6 +1369,7 @@ window.imApp.saveState = {
     momentFlushChains: new Map(),
     friendRevisions: new Map(),
     momentRevisions: new Map(),
+    pendingFriendPatches: new Map(),
     momentMessagesDirty: false,
     stickersDirty: false,
     momentsCoverDirty: false
@@ -1450,7 +1451,10 @@ window.imApp.persistFriendData = async function(friendId, options = {}) {
         const friendSnapshot = window.imApp.cloneDataSnapshot(targetFriend);
         const shouldPersistMetaOnly = options.metaOnly === true && !!window.imStorage.saveFriendMetaOnly;
 
-        if (shouldPersistMetaOnly) {
+        if (shouldPersistMetaOnly && window.imStorage.patchFriendMeta) {
+            const pendingPatch = window.imApp.saveState.pendingFriendPatches.get(String(friendId)) || {};
+            await window.imStorage.patchFriendMeta(friendId, window.imApp.cloneDataSnapshot(pendingPatch));
+        } else if (shouldPersistMetaOnly) {
             await window.imStorage.saveFriendMetaOnly(friendSnapshot);
         } else {
             await window.imStorage.saveFriend(friendSnapshot, {
@@ -1765,6 +1769,31 @@ window.imApp.resetFriendMessages = async function(friendId, options = {}) {
     }
 };
 
+window.imApp.buildFriendMetaPatch = function(previousFriend, nextFriend) {
+    if (!nextFriend || typeof nextFriend !== 'object') return {};
+    if (!previousFriend || typeof previousFriend !== 'object') {
+        const full = window.imApp.cloneDataSnapshot(nextFriend);
+        delete full.messages;
+        return full;
+    }
+    const patch = {};
+    Object.keys(nextFriend).forEach((key) => {
+        if (key === 'messages') return;
+        const previousValue = previousFriend[key];
+        const nextValue = nextFriend[key];
+        let changed = previousValue !== nextValue;
+        if (previousValue && nextValue && typeof previousValue === 'object' && typeof nextValue === 'object') {
+            try {
+                changed = JSON.stringify(previousValue) !== JSON.stringify(nextValue);
+            } catch (error) {
+                changed = true;
+            }
+        }
+        if (changed) patch[key] = window.imApp.cloneDataSnapshot(nextValue);
+    });
+    return patch;
+};
+
 window.imApp.resetFriendConversation = async function(friendId, options = {}) {
     const safeFriendId = String(friendId);
     const targetFriend = (window.imData.friends || []).find(
@@ -1928,6 +1957,7 @@ window.imApp.flushFriendSave = async function(friendId, options = {}) {
             const latestRevision = window.imApp.saveState.friendRevisions.get(safeFriendId) || 0;
             if (latestRevision === revisionBeforeSave) {
                 window.imApp.saveState.friendDirtyIds.delete(safeFriendId);
+                window.imApp.saveState.pendingFriendPatches.delete(safeFriendId);
             }
         }
 
@@ -2233,6 +2263,16 @@ window.imApp.commitFriendChange = async function(friendId, mutator, options = {}
 
         if (typeof mutator === 'function') {
             await mutator(targetFriend, friends, targetIndex);
+        }
+
+        if (options.metaOnly === true && targetFriend) {
+            const safeFriendId = String(friendId);
+            const nextPatch = window.imApp.buildFriendMetaPatch(previousFriend, targetFriend);
+            const existingPatch = window.imApp.saveState.pendingFriendPatches.get(safeFriendId) || {};
+            window.imApp.saveState.pendingFriendPatches.set(safeFriendId, {
+                ...existingPatch,
+                ...nextPatch
+            });
         }
 
         window.imApp.markFriendDirty(friendId);

@@ -1,4 +1,5 @@
 (function() {
+    const durableStorage = window.u2LegacyStorageFacade;
     class ShoppingApp {
         constructor() {
             this.view = document.getElementById('shopping-view');
@@ -92,12 +93,12 @@
 
         loadGeneratedProducts() {
             try {
-                const savedFood = localStorage.getItem('shopping_generated_food');
+                const savedFood = durableStorage.getItem('shopping_generated_food');
                 if (savedFood) {
                     const foodData = JSON.parse(savedFood);
                     this.renderProductCards(foodData, 'food');
                 }
-                const savedMall = localStorage.getItem('shopping_generated_mall');
+                const savedMall = durableStorage.getItem('shopping_generated_mall');
                 if (savedMall) {
                     const mallData = JSON.parse(savedMall);
                     this.renderProductCards(mallData, 'mall');
@@ -112,7 +113,7 @@
                 return window.getWorldBooks() || [];
             }
 
-            const globalDataStr = localStorage.getItem('app_global_data');
+            const globalDataStr = durableStorage.getItem('app_global_data');
             if (globalDataStr) {
                 try {
                     const globalData = JSON.parse(globalDataStr);
@@ -125,7 +126,7 @@
 
         getBoundWorldBookIds() {
             let ids = [];
-            const savedIds = localStorage.getItem('shopping_bound_wb_ids');
+            const savedIds = durableStorage.getItem('shopping_bound_wb_ids');
             if (savedIds) {
                 try {
                     const parsedIds = JSON.parse(savedIds);
@@ -133,7 +134,7 @@
                 } catch (e) {}
             }
 
-            const legacyId = localStorage.getItem('shopping_bound_wb_id');
+            const legacyId = durableStorage.getItem('shopping_bound_wb_id');
             if (legacyId && !ids.map(String).includes(String(legacyId))) {
                 ids.unshift(legacyId);
             }
@@ -149,11 +150,11 @@
                 .filter((id, index, allIds) => id && allIds.indexOf(id) === index);
 
             if (nextIds.length > 0) {
-                localStorage.setItem('shopping_bound_wb_ids', JSON.stringify(nextIds));
-                localStorage.setItem('shopping_bound_wb_id', nextIds[0]);
+                durableStorage.setItem('shopping_bound_wb_ids', JSON.stringify(nextIds));
+                durableStorage.setItem('shopping_bound_wb_id', nextIds[0]);
             } else {
-                localStorage.removeItem('shopping_bound_wb_ids');
-                localStorage.removeItem('shopping_bound_wb_id');
+                durableStorage.removeItem('shopping_bound_wb_ids');
+                durableStorage.removeItem('shopping_bound_wb_id');
             }
         }
 
@@ -564,21 +565,21 @@
             try {
                 const key = targetTab === 'food' ? 'shopping_generated_food' : 'shopping_generated_mall';
                 let saved = [];
-                const stored = localStorage.getItem(key);
+                const stored = durableStorage.getItem(key);
                 if (stored) saved = JSON.parse(stored);
                 saved = saved.concat(productsData);
-                localStorage.setItem(key, JSON.stringify(saved));
+                durableStorage.setItem(key, JSON.stringify(saved));
             } catch (e) {}
 
             let commentsObj = {};
             try {
-                const stored = localStorage.getItem('shopping_comments');
+                const stored = durableStorage.getItem('shopping_comments');
                 if (stored) commentsObj = JSON.parse(stored);
             } catch(err) {}
 
             let qaObj = {};
             try {
-                const storedQa = localStorage.getItem('shopping_qa');
+                const storedQa = durableStorage.getItem('shopping_qa');
                 if (storedQa) qaObj = JSON.parse(storedQa);
             } catch(err) {}
 
@@ -608,8 +609,8 @@
                 }
             });
 
-            localStorage.setItem('shopping_comments', JSON.stringify(commentsObj));
-            localStorage.setItem('shopping_qa', JSON.stringify(qaObj));
+            durableStorage.setItem('shopping_comments', JSON.stringify(commentsObj));
+            durableStorage.setItem('shopping_qa', JSON.stringify(qaObj));
         }
 
         bindProductClicks() {
@@ -783,14 +784,14 @@
 
         loadOrders() {
             try {
-                const saved = localStorage.getItem('shopping_orders');
+                const saved = durableStorage.getItem('shopping_orders');
                 if (saved) return JSON.parse(saved);
             } catch(e) {}
             return [];
         }
 
         saveOrders() {
-            localStorage.setItem('shopping_orders', JSON.stringify(this.orders));
+            durableStorage.setItem('shopping_orders', JSON.stringify(this.orders));
         }
 
         async initCheckout() {
@@ -1300,7 +1301,7 @@
 
             let qaObj = {};
             try {
-                const stored = localStorage.getItem('shopping_qa');
+                const stored = durableStorage.getItem('shopping_qa');
                 if (stored) qaObj = JSON.parse(stored);
             } catch(err) {}
 
@@ -1393,7 +1394,7 @@
 
             let commentsObj = {};
             try {
-                const stored = localStorage.getItem('shopping_comments');
+                const stored = durableStorage.getItem('shopping_comments');
                 if (stored) commentsObj = JSON.parse(stored);
             } catch(err) {}
 
@@ -1468,7 +1469,7 @@
 
                 let commentsObj = {};
                 try {
-                    const stored = localStorage.getItem('shopping_comments');
+                    const stored = durableStorage.getItem('shopping_comments');
                     if (stored) commentsObj = JSON.parse(stored);
                 } catch(err) {}
                 
@@ -1483,7 +1484,7 @@
                     date: new Date().toLocaleDateString()
                 });
                 
-                localStorage.setItem('shopping_comments', JSON.stringify(commentsObj));
+                durableStorage.setItem('shopping_comments', JSON.stringify(commentsObj));
                 
                 if (window.showToast) window.showToast('评价发表成功');
                 else alert('评价发表成功');
@@ -1513,7 +1514,7 @@
 
             let commentsObj = {};
             try {
-                const stored = localStorage.getItem('shopping_comments');
+                const stored = durableStorage.getItem('shopping_comments');
                 if (stored) commentsObj = JSON.parse(stored);
             } catch(err) {}
 
@@ -1567,7 +1568,7 @@
 
         loadCart() {
             try {
-                const savedCart = localStorage.getItem('shopping_cart');
+                const savedCart = durableStorage.getItem('shopping_cart');
                 if (savedCart) {
                     return JSON.parse(savedCart);
                 }
@@ -1579,7 +1580,7 @@
 
         saveCart() {
             try {
-                localStorage.setItem('shopping_cart', JSON.stringify(this.cart));
+                durableStorage.setItem('shopping_cart', JSON.stringify(this.cart));
             } catch (e) {
                 console.error('Failed to save cart to localStorage', e);
             }

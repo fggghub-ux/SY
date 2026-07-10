@@ -104,7 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const loaded = window.StorageManager && typeof window.StorageManager.load === 'function'
                 ? window.StorageManager.load(FAKE_LINK_CONTEXT_OPTIONS_KEY, fallback)
-                : JSON.parse(window.localStorage?.getItem(FAKE_LINK_CONTEXT_OPTIONS_KEY) || 'null');
+                : null;
             return {
                 includeCharPersona: !!loaded?.includeCharPersona,
                 includeUserPersona: !!loaded?.includeUserPersona
@@ -122,8 +122,6 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             if (window.StorageManager && typeof window.StorageManager.save === 'function') {
                 window.StorageManager.save(FAKE_LINK_CONTEXT_OPTIONS_KEY, normalized);
-            } else if (window.localStorage) {
-                window.localStorage.setItem(FAKE_LINK_CONTEXT_OPTIONS_KEY, JSON.stringify(normalized));
             }
         } catch (_) {}
         return normalized;

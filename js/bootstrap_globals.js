@@ -33,8 +33,7 @@
                 return window.StorageManager.load(key, fallback);
             }
 
-            const raw = window.localStorage ? window.localStorage.getItem(key) : null;
-            return raw ? JSON.parse(raw) : fallback;
+            return fallback;
         } catch (error) {
             console.warn(`[bootstrap_globals] Failed to load ${key}:`, error);
             return fallback;
@@ -61,7 +60,7 @@
                 window.StorageManager.save(key, value);
                 return;
             }
-            if (window.localStorage) window.localStorage.setItem(key, JSON.stringify(value));
+            console.warn(`[bootstrap_globals] StorageManager unavailable for ${key}`);
         } catch (error) {
             console.warn(`[bootstrap_globals] Failed to save ${key}:`, error);
         }

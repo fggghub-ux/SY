@@ -40,8 +40,7 @@
                 return window.StorageManager.load(STORAGE_KEY, defaults);
             }
 
-            const raw = window.localStorage ? window.localStorage.getItem(STORAGE_KEY) : null;
-            return raw ? JSON.parse(raw) : defaults;
+            return defaults;
         } catch (error) {
             console.warn('[background_activity] Failed to load settings:', error);
             return defaults;
@@ -55,9 +54,6 @@
                 return;
             }
 
-            if (window.localStorage) {
-                window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-            }
         } catch (error) {
             console.warn('[background_activity] Failed to save settings:', error);
         }

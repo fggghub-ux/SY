@@ -6,10 +6,11 @@
 
 (function() {
     const DB_NAME = 'iiso_app_storage';
-    const DB_VERSION = 4;
-    const STORAGE_SCHEMA_VERSION = 5;
+    const DB_VERSION = 5;
+    const STORAGE_SCHEMA_VERSION = 6;
     const BACKUP_APP_NAME = 'u2phone';
     const PERSISTENT_LOCALSTORAGE_EXCLUDE_PREFIXES = ['iiso_auth_'];
+    const PERSISTENT_LOCALSTORAGE_EXACT_EXCLUDES = new Set(['u2_mockAuthSession']);
     const MANAGED_LOCALSTORAGE_EXACT_KEYS = new Set([
         'app_global_data',
         'ios_emulator_global_data',
@@ -39,7 +40,12 @@
         libraryBooks: 'library_books',
         libraryPlaylists: 'library_playlists',
         libraryTracks: 'library_tracks',
-        libraryDailyStats: 'library_daily_stats'
+        libraryDailyStats: 'library_daily_stats',
+        appDomains: 'app_domains',
+        xPosts: 'x_posts',
+        xThreads: 'x_threads',
+        xDms: 'x_dms',
+        storageCheckpoints: 'storage_checkpoints'
     };
 
     const META_KEYS = {
@@ -52,6 +58,18 @@
     const runtimeBlobUrlAccess = new Map();
     const MAX_RUNTIME_BLOB_URLS = 120;
     let dbPromise = null;
+    const domainCache = new Map();
+    const domainWriteChains = new Map();
+    const pendingWrites = new Set();
+    const storageSubscribers = new Set();
+    const storageHealthState = {
+        status: 'initializing',
+        pendingWrites: 0,
+        lastCommitAt: 0,
+        lastError: null,
+        migrationVersion: 0
+    };
+    let storageReadyPromise = null;
 
     function cloneDeep(value) {
         if (typeof structuredClone === 'function') {
@@ -110,7 +128,9 @@
     }
 
     function isExcludedLocalStorageKey(key) {
-        return PERSISTENT_LOCALSTORAGE_EXCLUDE_PREFIXES.some((prefix) => String(key || '').startsWith(prefix));
+        const safeKey = String(key || '');
+        return PERSISTENT_LOCALSTORAGE_EXACT_EXCLUDES.has(safeKey)
+            || PERSISTENT_LOCALSTORAGE_EXCLUDE_PREFIXES.some((prefix) => safeKey.startsWith(prefix));
     }
 
     function isManagedLocalStorageKey(key) {
@@ -571,6 +591,31 @@
                     statsStore.createIndex('kind', 'kind', { unique: false });
                     statsStore.createIndex('date_kind', ['date', 'kind'], { unique: false });
                 }
+
+                if (!db.objectStoreNames.contains(STORES.appDomains)) {
+                    const domainStore = db.createObjectStore(STORES.appDomains, { keyPath: 'name' });
+                    domainStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains(STORES.xPosts)) {
+                    const postStore = db.createObjectStore(STORES.xPosts, { keyPath: 'id' });
+                    postStore.createIndex('createdAt', 'createdAt', { unique: false });
+                    postStore.createIndex('authorId', 'authorId', { unique: false });
+                    postStore.createIndex('topicTag', 'topicTag', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains(STORES.xThreads)) {
+                    db.createObjectStore(STORES.xThreads, { keyPath: 'postId' });
+                }
+
+                if (!db.objectStoreNames.contains(STORES.xDms)) {
+                    const dmStore = db.createObjectStore(STORES.xDms, { keyPath: 'id' });
+                    dmStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains(STORES.storageCheckpoints)) {
+                    db.createObjectStore(STORES.storageCheckpoints, { keyPath: 'id' });
+                }
             };
 
             request.onsuccess = () => {
@@ -653,6 +698,275 @@
             const rows = await requestToPromise(stores[storeName].getAll());
             return Array.isArray(rows) ? rows : [];
         });
+    }
+
+    function notifyStorageSubscribers(detail) {
+        storageSubscribers.forEach((listener) => {
+            try {
+                listener(cloneDeep(detail));
+            } catch (error) {
+                console.warn('[appStorage] storage subscriber failed', error);
+            }
+        });
+        try {
+            window.dispatchEvent(new CustomEvent('u2-storage-status', { detail: cloneDeep(detail) }));
+        } catch (error) {}
+    }
+
+    function trackPendingWrite(promise) {
+        pendingWrites.add(promise);
+        storageHealthState.pendingWrites = pendingWrites.size;
+        storageHealthState.status = 'saving';
+        notifyStorageSubscribers({ ...storageHealthState });
+        promise.finally(() => {
+            pendingWrites.delete(promise);
+            storageHealthState.pendingWrites = pendingWrites.size;
+            if (pendingWrites.size === 0 && storageHealthState.status !== 'error') {
+                storageHealthState.status = 'saved';
+            }
+            notifyStorageSubscribers({ ...storageHealthState });
+        });
+        return promise;
+    }
+
+    function readDomain(name, fallbackValue = null) {
+        if (!name || !domainCache.has(String(name))) return cloneDeep(fallbackValue);
+        return cloneDeep(domainCache.get(String(name)));
+    }
+
+    function stripXCollections(value = {}) {
+        const safe = value && typeof value === 'object' ? cloneDeep(value) : {};
+        delete safe.xGeneratedPosts;
+        delete safe.xPostThreads;
+        delete safe.xDirectMessages;
+        return safe;
+    }
+
+    function putAssetInTransaction(assetStore, assetId, dataUrl, extra = {}) {
+        const blob = dataUrlToBlob(dataUrl);
+        assetStore.put({
+            id: assetId,
+            blob,
+            mimeType: blob.type || 'application/octet-stream',
+            updatedAt: Date.now(),
+            ...extra
+        });
+    }
+
+    function persistXAssetsInTransaction(value, assetStore) {
+        const next = cloneDeep(value && typeof value === 'object' ? value : {});
+        const persistField = (owner, urlField, assetField, assetId, extra) => {
+            if (!owner || !isDataUrl(owner[urlField])) return;
+            putAssetInTransaction(assetStore, assetId, owner[urlField], extra);
+            owner[assetField] = assetId;
+            owner[urlField] = null;
+        };
+
+        persistField(next.xData, 'avatar', 'avatarAssetId', 'x_profile_avatar', { ownerType: 'x_profile', field: 'avatar' });
+        persistField(next.xData, 'banner', 'bannerAssetId', 'x_profile_banner', { ownerType: 'x_profile', field: 'banner' });
+        persistField(next, 'xHomeBannerUrl', 'xHomeBannerAssetId', 'x_home_banner', { ownerType: 'x_app', field: 'homeBanner' });
+        persistField(next, 'xSearchBannerUrl', 'xSearchBannerAssetId', 'x_search_banner', { ownerType: 'x_app', field: 'searchBanner' });
+
+        (Array.isArray(next.xTopics) ? next.xTopics : []).forEach((topic, topicIndex) => {
+            const topicId = String(topic?.id ?? topic?.name ?? topicIndex);
+            persistField(topic, 'avatar', 'avatarAssetId', `x_topic_${topicId}_avatar`, { ownerType: 'x_topic', ownerId: topicId, field: 'avatar' });
+            persistField(topic, 'banner', 'bannerAssetId', `x_topic_${topicId}_banner`, { ownerType: 'x_topic', ownerId: topicId, field: 'banner' });
+        });
+
+        (Array.isArray(next.xGeneratedPosts) ? next.xGeneratedPosts : []).forEach((post, postIndex) => {
+            const postId = String(post?.id ?? postIndex);
+            persistField(post, 'authorAvatar', 'authorAvatarAssetId', `x_post_${postId}_author`, { ownerType: 'x_post', ownerId: postId, field: 'authorAvatar' });
+            (Array.isArray(post?.images) ? post.images : []).forEach((image, imageIndex) => {
+                if (!image || typeof image !== 'object' || !isDataUrl(image.url)) return;
+                const assetId = String(image.assetId || `x_post_${postId}_image_${imageIndex}`);
+                putAssetInTransaction(assetStore, assetId, image.url, { ownerType: 'x_post', ownerId: postId, field: 'images', index: imageIndex });
+                image.assetId = assetId;
+                image.url = null;
+            });
+        });
+        return next;
+    }
+
+    async function hydrateXAssets(value) {
+        const next = cloneDeep(value && typeof value === 'object' ? value : {});
+        const hydrateField = async (owner, urlField, assetField) => {
+            if (owner?.[assetField] && !owner[urlField]) owner[urlField] = await getAssetUrl(owner[assetField]);
+        };
+        await hydrateField(next.xData, 'avatar', 'avatarAssetId');
+        await hydrateField(next.xData, 'banner', 'bannerAssetId');
+        await hydrateField(next, 'xHomeBannerUrl', 'xHomeBannerAssetId');
+        await hydrateField(next, 'xSearchBannerUrl', 'xSearchBannerAssetId');
+        for (const topic of (Array.isArray(next.xTopics) ? next.xTopics : [])) {
+            await hydrateField(topic, 'avatar', 'avatarAssetId');
+            await hydrateField(topic, 'banner', 'bannerAssetId');
+        }
+        for (const post of (Array.isArray(next.xGeneratedPosts) ? next.xGeneratedPosts : [])) {
+            await hydrateField(post, 'authorAvatar', 'authorAvatarAssetId');
+            for (const image of (Array.isArray(post?.images) ? post.images : [])) {
+                if (image?.assetId && !image.url) image.url = await getAssetUrl(image.assetId);
+            }
+        }
+        return next;
+    }
+
+    async function replaceCollectionRecords(store, rows, keyField) {
+        const safeRows = Array.isArray(rows) ? rows.filter(Boolean) : [];
+        const keepKeys = new Set(safeRows.map((row) => String(row[keyField])).filter(Boolean));
+        const existingKeys = await requestToPromise(store.getAllKeys());
+        (Array.isArray(existingKeys) ? existingKeys : []).forEach((key) => {
+            if (!keepKeys.has(String(key))) store.delete(key);
+        });
+        safeRows.forEach((row) => store.put(sanitizePersistentValue(cloneDeep(row))));
+    }
+
+    async function hydrateXDomain(value = {}) {
+        const [posts, threads, dms] = await Promise.all([
+            getAllRecords(STORES.xPosts),
+            getAllRecords(STORES.xThreads),
+            getAllRecords(STORES.xDms)
+        ]);
+        return hydrateXAssets({
+            ...(value && typeof value === 'object' ? value : {}),
+            xGeneratedPosts: posts.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0)),
+            xPostThreads: Object.fromEntries(threads.map((row) => [String(row.postId), row.value])),
+            xDirectMessages: dms
+        });
+    }
+
+    async function runWithQuotaRetry(task) {
+        try {
+            return await task();
+        } catch (error) {
+            const isQuotaError = error?.name === 'QuotaExceededError'
+                || /quota|storage.*full/i.test(String(error?.message || ''));
+            if (!isQuotaError) throw error;
+            await pruneOrphanedAssets();
+            return task();
+        }
+    }
+
+    async function commitDomain(name, reducer, options = {}) {
+        const domainName = String(name || '').trim();
+        if (!domainName) throw new Error('Domain name is required.');
+        if (storageReadyPromise) await storageReadyPromise;
+
+        const previousChain = domainWriteChains.get(domainName) || Promise.resolve();
+        const writePromise = previousChain.catch(() => undefined).then(async () => {
+            const storeNames = [STORES.appDomains, STORES.storageCheckpoints];
+            if (domainName === 'x') {
+                storeNames.push(STORES.xPosts, STORES.xThreads, STORES.xDms, STORES.assets);
+            }
+
+            const currentCached = readDomain(domainName, {});
+            const nextDraft = cloneDeep(currentCached && typeof currentCached === 'object' ? currentCached : {});
+            const reduced = typeof reducer === 'function' ? reducer(nextDraft) : reducer;
+            const runtimeNextValue = cloneDeep(reduced === undefined ? nextDraft : reduced);
+            const nextValue = domainName === 'x'
+                ? runtimeNextValue
+                : sanitizePersistentValue(cloneDeep(runtimeNextValue));
+            const now = Date.now();
+
+            let commitResult = null;
+            await runWithQuotaRetry(() => withStore(storeNames, 'readwrite', async (stores) => {
+                const currentRecord = await requestToPromise(stores[STORES.appDomains].get(domainName));
+                const revision = Math.max(0, Number(currentRecord?.revision) || 0) + 1;
+                const persistedValue = domainName === 'x'
+                    ? sanitizePersistentValue(persistXAssetsInTransaction(nextValue, stores[STORES.assets]))
+                    : nextValue;
+                const storedValue = domainName === 'x' ? stripXCollections(persistedValue) : persistedValue;
+                const record = {
+                    name: domainName,
+                    schemaVersion: STORAGE_SCHEMA_VERSION,
+                    revision,
+                    updatedAt: now,
+                    value: storedValue
+                };
+
+                if (domainName === 'x') {
+                    await replaceCollectionRecords(
+                        stores[STORES.xPosts],
+                        Array.isArray(persistedValue.xGeneratedPosts) ? persistedValue.xGeneratedPosts : [],
+                        'id'
+                    );
+                    const threadRows = Object.entries(persistedValue.xPostThreads || {}).map(([postId, value]) => ({ postId, value }));
+                    await replaceCollectionRecords(stores[STORES.xThreads], threadRows, 'postId');
+                    const dmRows = (Array.isArray(persistedValue.xDirectMessages) ? persistedValue.xDirectMessages : []).map((item, index) => ({
+                        ...item,
+                        id: String(item?.id ?? item?.charId ?? `x-dm-${index}`),
+                        updatedAt: Number(item?.updatedAt) || now
+                    }));
+                    await replaceCollectionRecords(stores[STORES.xDms], dmRows, 'id');
+                }
+
+                const checkpointId = `domain:${domainName}`;
+                const existingCheckpoint = await requestToPromise(stores[STORES.storageCheckpoints].get(checkpointId));
+                stores[STORES.storageCheckpoints].put({
+                    id: checkpointId,
+                    schemaVersion: STORAGE_SCHEMA_VERSION,
+                    updatedAt: now,
+                    checksum: createChecksum(persistedValue),
+                    current: { revision, updatedAt: now, value: persistedValue },
+                    previous: existingCheckpoint?.current || null
+                });
+                stores[STORES.appDomains].put(record);
+                commitResult = { revision, updatedAt: now, durable: true, domain: domainName };
+            }));
+
+            domainCache.set(domainName, cloneDeep(nextValue));
+            storageHealthState.status = 'saved';
+            storageHealthState.lastCommitAt = now;
+            storageHealthState.lastError = null;
+            notifyStorageSubscribers({ ...storageHealthState, commit: commitResult, reason: options.reason || '' });
+            return commitResult;
+        }).catch((error) => {
+            storageHealthState.status = 'error';
+            storageHealthState.lastError = error?.message || String(error);
+            notifyStorageSubscribers({ ...storageHealthState, domain: domainName });
+            throw error;
+        });
+
+        domainWriteChains.set(domainName, writePromise);
+        trackPendingWrite(writePromise);
+        try {
+            return await writePromise;
+        } finally {
+            if (domainWriteChains.get(domainName) === writePromise) domainWriteChains.delete(domainName);
+        }
+    }
+
+    async function commitRecords(operations = [], options = {}) {
+        if (storageReadyPromise) await storageReadyPromise;
+        const safeOperations = (Array.isArray(operations) ? operations : []).filter((operation) => {
+            return operation && Object.values(STORES).includes(operation.store);
+        });
+        if (safeOperations.length === 0) return { durable: true, updatedAt: Date.now(), count: 0 };
+        const storeNames = Array.from(new Set(safeOperations.map((operation) => operation.store)));
+        const promise = runWithQuotaRetry(() => withStore(storeNames, 'readwrite', (stores) => {
+            safeOperations.forEach((operation) => {
+                const store = stores[operation.store];
+                if (operation.type === 'delete') store.delete(operation.key);
+                else store.put(sanitizePersistentValue(cloneDeep(operation.value)));
+            });
+        })).then(() => {
+            const result = { durable: true, updatedAt: Date.now(), count: safeOperations.length, reason: options.reason || '' };
+            storageHealthState.lastCommitAt = result.updatedAt;
+            storageHealthState.lastError = null;
+            return result;
+        });
+        return trackPendingWrite(promise);
+    }
+
+    async function flushPendingWrites() {
+        const writes = Array.from(pendingWrites);
+        if (writes.length === 0) return true;
+        const results = await Promise.allSettled(writes);
+        return results.every((result) => result.status === 'fulfilled');
+    }
+
+    function subscribe(listener) {
+        if (typeof listener !== 'function') return () => {};
+        storageSubscribers.add(listener);
+        return () => storageSubscribers.delete(listener);
     }
 
     function sanitizeLibraryRecord(record) {
@@ -794,8 +1108,19 @@
         return putRecord(STORES.settings, { key, value: sanitizePersistentValue(cloneDeep(value)) });
     }
 
+    async function assertLargeAssetCapacity(dataUrl) {
+        if (typeof dataUrl !== 'string' || dataUrl.length < 350000 || !navigator.storage?.estimate) return;
+        const estimate = await navigator.storage.estimate();
+        const usage = Math.max(0, Number(estimate?.usage) || 0);
+        const quota = Math.max(0, Number(estimate?.quota) || 0);
+        if (quota > 0 && usage / quota >= 0.9) {
+            throw new DOMException('Storage is above 90%; new large images are temporarily blocked.', 'QuotaExceededError');
+        }
+    }
+
     async function saveAssetFromDataUrl(assetId, dataUrl, extra = {}) {
         if (!assetId || !isDataUrl(dataUrl)) return null;
+        await assertLargeAssetCapacity(dataUrl);
         revokeRuntimeBlobUrl(assetId);
         const blob = dataUrlToBlob(dataUrl);
         return withStore([STORES.assets], 'readwrite', (stores) => {
@@ -838,6 +1163,57 @@
         if (!assetId) return;
         revokeRuntimeBlobUrl(assetId);
         return deleteRecord(STORES.assets, assetId);
+    }
+
+    async function markAssetOrphaned(assetId) {
+        if (!assetId) return false;
+        return withStore([STORES.assets], 'readwrite', async (stores) => {
+            const current = await requestToPromise(stores[STORES.assets].get(String(assetId)));
+            if (!current) return false;
+            stores[STORES.assets].put({ ...current, orphanedAt: current.orphanedAt || Date.now() });
+            return true;
+        });
+    }
+
+    function collectAssetReferences(value, result = new Set(), seen = new WeakSet()) {
+        if (!value || typeof value !== 'object') return result;
+        if (seen.has(value)) return result;
+        seen.add(value);
+        if (Array.isArray(value)) {
+            value.forEach((item) => collectAssetReferences(item, result, seen));
+            return result;
+        }
+        Object.entries(value).forEach(([key, item]) => {
+            if ((key === 'assetId' || key.endsWith('AssetId')) && typeof item === 'string' && item) result.add(item);
+            else collectAssetReferences(item, result, seen);
+        });
+        return result;
+    }
+
+    async function pruneOrphanedAssets(options = {}) {
+        const graceMs = Math.max(0, Number(options.graceMs) || 7 * 24 * 60 * 60 * 1000);
+        const now = Date.now();
+        const referenceStores = Object.values(STORES).filter((name) => ![
+            STORES.assets,
+            STORES.storageCheckpoints,
+            STORES.meta
+        ].includes(name));
+        const rowsByStore = await Promise.all(referenceStores.map((name) => getAllRecords(name)));
+        const references = new Set();
+        rowsByStore.forEach((rows) => collectAssetReferences(rows, references));
+        const coverReference = await getMeta(META_KEYS.imMomentsCoverAssetId);
+        if (typeof coverReference === 'string') references.add(coverReference);
+        const assets = await getAllRecords(STORES.assets);
+        const removable = assets.filter((asset) => {
+            return asset?.id && asset.orphanedAt && now - Number(asset.orphanedAt) >= graceMs && !references.has(String(asset.id));
+        });
+        if (removable.length > 0) {
+            await withStore([STORES.assets], 'readwrite', (stores) => {
+                removable.forEach((asset) => stores[STORES.assets].delete(asset.id));
+            });
+            removable.forEach((asset) => revokeRuntimeBlobUrl(asset.id));
+        }
+        return removable.length;
     }
 
     function resolveMessageOrder(message, fallbackIndex = 0) {
@@ -1071,7 +1447,7 @@
         const nextIds = new Set(getExpectedFriendAssetIds(nextFriend));
         for (const assetId of collectFriendAssetIds(previousFriend)) {
             if (nextIds.has(assetId) || retainedAssetIds.has(assetId)) continue;
-            await deleteAsset(assetId);
+            await markAssetOrphaned(assetId);
         }
     }
 
@@ -1197,7 +1573,7 @@
         const normalizedList = list.map((msg, idx) => normalizeMessageRecord(safeFriendId, msg, idx));
         const nextMessageIds = new Set(normalizedList.map((msg) => String(msg.id)));
 
-        return withStore([STORES.imMessages], 'readwrite', async (stores) => {
+        return withStore([STORES.imMessages, STORES.storageCheckpoints], 'readwrite', async (stores) => {
             const index = stores[STORES.imMessages].index('friendId');
             const range = IDBKeyRange.only(safeFriendId);
             const existingKeys = await requestToPromise(index.getAllKeys(range));
@@ -1209,6 +1585,18 @@
             });
 
             normalizedList.forEach((msg) => stores[STORES.imMessages].put(msg));
+            const checkpointId = `im-messages:${safeFriendId}`;
+            const checkpoint = await requestToPromise(stores[STORES.storageCheckpoints].get(checkpointId));
+            const now = Date.now();
+            const snapshot = normalizedList.map(denormalizeMessageRecord);
+            stores[STORES.storageCheckpoints].put({
+                id: checkpointId,
+                schemaVersion: STORAGE_SCHEMA_VERSION,
+                updatedAt: now,
+                checksum: createChecksum(snapshot),
+                current: { revision: Number(checkpoint?.current?.revision || 0) + 1, updatedAt: now, value: snapshot },
+                previous: checkpoint?.current || null
+            });
         });
     }
 
@@ -1234,6 +1622,74 @@
 
     async function saveFriendMetaOnly(friend) {
         return saveFriend(friend, { skipMessages: true });
+    }
+
+    async function patchFriendMeta(friendId, patch = {}) {
+        if (friendId == null) return false;
+        const safeFriendId = String(friendId);
+        const safePatch = patch && typeof patch === 'object' ? cloneDeep(patch) : {};
+        delete safePatch.id;
+        delete safePatch.messages;
+        const now = Date.now();
+        const refreshAssetIds = [];
+        for (const [urlField] of FRIEND_ASSET_FIELDS) {
+            if (isDataUrl(safePatch[urlField])) await assertLargeAssetCapacity(safePatch[urlField]);
+        }
+
+        await withStore([STORES.imFriends, STORES.assets, STORES.storageCheckpoints], 'readwrite', async (stores) => {
+            const current = await requestToPromise(stores[STORES.imFriends].get(safeFriendId));
+            if (!current) throw new Error(`Friend ${safeFriendId} does not exist.`);
+            const next = { ...current, ...safePatch, id: safeFriendId };
+
+            for (const [urlField, assetField] of FRIEND_ASSET_FIELDS) {
+                if (!Object.prototype.hasOwnProperty.call(safePatch, urlField)) continue;
+                const incoming = safePatch[urlField];
+                if (isDataUrl(incoming)) {
+                    const assetId = String(safePatch[assetField] || current[assetField] || buildAssetId('friend', safeFriendId, urlField));
+                    const blob = dataUrlToBlob(incoming);
+                    stores[STORES.assets].put({
+                        id: assetId,
+                        blob,
+                        mimeType: blob.type || 'application/octet-stream',
+                        ownerType: 'im_friend',
+                        ownerId: safeFriendId,
+                        field: urlField,
+                        updatedAt: now
+                    });
+                    next[assetField] = assetId;
+                    next[urlField] = null;
+                    refreshAssetIds.push(assetId);
+                } else if (!incoming) {
+                    next[urlField] = null;
+                    next[assetField] = null;
+                } else if (isBlobUrl(incoming) && current[assetField]) {
+                    next[urlField] = null;
+                    next[assetField] = current[assetField];
+                }
+            }
+
+            next.updatedAt = now;
+            next.revision = Math.max(0, Number(current.revision) || 0) + 1;
+            const sanitized = sanitizePersistentValue(next);
+            stores[STORES.imFriends].put(sanitized);
+
+            const checkpointId = `im-friend:${safeFriendId}`;
+            const checkpoint = await requestToPromise(stores[STORES.storageCheckpoints].get(checkpointId));
+            stores[STORES.storageCheckpoints].put({
+                id: checkpointId,
+                schemaVersion: STORAGE_SCHEMA_VERSION,
+                updatedAt: now,
+                checksum: createChecksum(sanitized),
+                current: { revision: next.revision, updatedAt: now, value: sanitized },
+                previous: checkpoint?.current || { revision: Number(current.revision) || 0, updatedAt: Number(current.updatedAt) || 0, value: current }
+            });
+        });
+
+        refreshAssetIds.forEach((assetId) => revokeRuntimeBlobUrl(assetId));
+        storageHealthState.lastCommitAt = now;
+        storageHealthState.lastError = null;
+        notifyStorageSubscribers({ ...storageHealthState, reason: 'imessage-friend-patch', friendId: safeFriendId });
+        return true;
     }
 
     async function deleteFriend(friendId) {
@@ -1457,7 +1913,7 @@
         const nextIds = new Set(getExpectedMomentAssetIds(nextMoment));
         for (const assetId of collectMomentAssetIds(previousMoment)) {
             if (nextIds.has(assetId) || retainedAssetIds.has(assetId)) continue;
-            await deleteAsset(assetId);
+            await markAssetOrphaned(assetId);
         }
     }
 
@@ -1598,26 +2054,42 @@
     }
 
     async function saveMomentsCover(dataUrlOrUrl) {
-        if (!dataUrlOrUrl) {
-            const oldAssetId = await getMeta(META_KEYS.imMomentsCoverAssetId);
-            if (oldAssetId && typeof oldAssetId === 'string') await deleteAsset(oldAssetId);
-            await setMeta(META_KEYS.imMomentsCoverAssetId, null);
-            return null;
-        }
-
-        if (isDataUrl(dataUrlOrUrl)) {
-            const assetId = 'im_moments_cover_me';
-            await saveAssetFromDataUrl(assetId, dataUrlOrUrl, {
-                ownerType: 'im_moments',
-                ownerId: 'me',
-                field: 'momentsCover'
+        const now = Date.now();
+        let storedValue = dataUrlOrUrl || null;
+        if (isDataUrl(dataUrlOrUrl)) await assertLargeAssetCapacity(dataUrlOrUrl);
+        await withStore([STORES.meta, STORES.assets, STORES.storageCheckpoints], 'readwrite', async (stores) => {
+            const previousMeta = await requestToPromise(stores[STORES.meta].get(META_KEYS.imMomentsCoverAssetId));
+            if (isDataUrl(dataUrlOrUrl)) {
+                const assetId = 'im_moments_cover_me';
+                const blob = dataUrlToBlob(dataUrlOrUrl);
+                stores[STORES.assets].put({
+                    id: assetId,
+                    blob,
+                    mimeType: blob.type || 'application/octet-stream',
+                    ownerType: 'im_moments',
+                    ownerId: 'me',
+                    field: 'momentsCover',
+                    updatedAt: now
+                });
+                storedValue = assetId;
+            } else if (dataUrlOrUrl) {
+                storedValue = { externalUrl: dataUrlOrUrl };
+            } else {
+                storedValue = null;
+            }
+            stores[STORES.meta].put({ key: META_KEYS.imMomentsCoverAssetId, value: storedValue });
+            const checkpoint = await requestToPromise(stores[STORES.storageCheckpoints].get('im-moments-cover'));
+            stores[STORES.storageCheckpoints].put({
+                id: 'im-moments-cover',
+                schemaVersion: STORAGE_SCHEMA_VERSION,
+                updatedAt: now,
+                checksum: createChecksum(storedValue),
+                current: { revision: Number(checkpoint?.current?.revision || 0) + 1, updatedAt: now, value: storedValue },
+                previous: checkpoint?.current || { revision: 0, updatedAt: 0, value: previousMeta?.value ?? null }
             });
-            await setMeta(META_KEYS.imMomentsCoverAssetId, assetId);
-            return assetId;
-        }
-
-        await setMeta(META_KEYS.imMomentsCoverAssetId, { externalUrl: dataUrlOrUrl });
-        return dataUrlOrUrl;
+        });
+        if (storedValue === 'im_moments_cover_me') revokeRuntimeBlobUrl(storedValue);
+        return storedValue;
     }
 
     async function loadMomentsCoverUrl() {
@@ -1920,6 +2392,24 @@
             setMeta(META_KEYS.schemaVersion, STORAGE_SCHEMA_VERSION)
         ]);
 
+        if (storageReadyPromise) await storageReadyPromise;
+        await commitDomain('settings', (draft) => ({
+            ...draft,
+            userState: normalized.userState,
+            accounts: normalized.accounts,
+            currentAccountId: normalized.currentAccountId,
+            apiConfig: normalized.apiConfig,
+            apiPresets: normalized.apiPresets,
+            fetchedModels: normalized.fetchedModels,
+            assistiveBallSettings: normalized.assistiveBallSettings,
+            themeState: normalized.themeState,
+            wbGroups: normalized.wbGroups,
+            worldBooks: normalized.worldBooks
+        }), { reason: 'global-settings-save' });
+        await Promise.all(Object.entries(normalized.appState || {}).map(([name, value]) => {
+            return commitDomain(name, value, { reason: `global-app-save:${name}` });
+        }));
+
         return true;
     }
 
@@ -1952,19 +2442,26 @@
             getRecord(STORES.accounts, '__all__')
         ]);
 
+        const durableSettings = readDomain('settings', {});
+        const domainAppState = createDefaultAppState();
+        Object.keys(domainAppState).forEach((name) => {
+            domainAppState[name] = readDomain(name, domainAppState[name]);
+        });
         return {
             ...normalizeGlobalPayload({
-                userState,
-                accounts: accountsRecord && Array.isArray(accountsRecord.value) ? accountsRecord.value : [],
-                currentAccountId,
-                apiConfig,
-                apiPresets,
-                fetchedModels,
-                assistiveBallSettings,
-                themeState,
-                wbGroups,
-                worldBooks,
-                appState
+                userState: durableSettings.userState ?? userState,
+                accounts: Array.isArray(durableSettings.accounts)
+                    ? durableSettings.accounts
+                    : (accountsRecord && Array.isArray(accountsRecord.value) ? accountsRecord.value : []),
+                currentAccountId: durableSettings.currentAccountId ?? currentAccountId,
+                apiConfig: durableSettings.apiConfig ?? apiConfig,
+                apiPresets: durableSettings.apiPresets ?? apiPresets,
+                fetchedModels: durableSettings.fetchedModels ?? fetchedModels,
+                assistiveBallSettings: durableSettings.assistiveBallSettings ?? assistiveBallSettings,
+                themeState: durableSettings.themeState ?? themeState,
+                wbGroups: durableSettings.wbGroups ?? wbGroups,
+                worldBooks: durableSettings.worldBooks ?? worldBooks,
+                appState: domainAppState
             }),
             storageSchemaVersion: Number(storedSchemaVersion) || 0
         };
@@ -2340,6 +2837,16 @@
         }
 
         if (payload.stores && typeof payload.stores === 'object') {
+            const suppliedChecksum = payload.checksum?.value;
+            if (suppliedChecksum) {
+                const actualChecksum = createChecksum({
+                    stores: payload.stores,
+                    localStorage: Array.isArray(payload.localStorage) ? payload.localStorage : []
+                });
+                if (actualChecksum !== suppliedChecksum) {
+                    throw new Error('Backup checksum mismatch.');
+                }
+            }
             const storesData = {};
             Object.values(STORES).forEach((storeName) => {
                 storesData[storeName] = Array.isArray(payload.stores[storeName]) ? payload.stores[storeName] : [];
@@ -2486,8 +2993,6 @@
         }
 
         reportProgress(progressCallback, '恢复本地兼容数据...', 90);
-        restoreManagedLocalStorageSnapshot(snapshot.localStorage);
-        syncCompatibilityLocalStorageFromStores(storesData, snapshot.localStorage);
         reportProgress(progressCallback, '导入完成', 100);
         return true;
     }
@@ -2498,7 +3003,6 @@
 
         reportProgress(progressCallback, '迁移旧格式全局数据...', 18);
         await saveGlobalData(globalData);
-        syncCompatibilityLocalStorageFromGlobalData(globalData);
 
         const imessage = safe.imessage && typeof safe.imessage === 'object' ? safe.imessage : {};
         const friends = Array.isArray(imessage.friends) ? imessage.friends : [];
@@ -2619,6 +3123,256 @@
         };
     }
 
+    async function getStorageHealth() {
+        let usage = 0;
+        let quota = 0;
+        let persisted = false;
+        try {
+            if (navigator.storage?.estimate) {
+                const estimate = await navigator.storage.estimate();
+                usage = Math.max(0, Number(estimate?.usage) || 0);
+                quota = Math.max(0, Number(estimate?.quota) || 0);
+            }
+            if (navigator.storage?.persisted) persisted = !!(await navigator.storage.persisted());
+        } catch (error) {}
+        return {
+            ...cloneDeep(storageHealthState),
+            usage,
+            quota,
+            ratio: quota > 0 ? usage / quota : 0,
+            persisted
+        };
+    }
+
+    async function restorePreviousCheckpoint(domainName) {
+        if (storageReadyPromise) await storageReadyPromise;
+        const checkpoint = await getRecord(STORES.storageCheckpoints, `domain:${String(domainName)}`);
+        if (!checkpoint?.previous?.value) throw new Error('No previous checkpoint is available.');
+        const expectedChecksum = createChecksum(checkpoint.previous.value);
+        if (!expectedChecksum) throw new Error('Previous checkpoint validation failed.');
+        await commitDomain(domainName, checkpoint.previous.value, {
+            critical: true,
+            reason: 'restore-previous-checkpoint'
+        });
+        return true;
+    }
+
+    async function restoreAllPreviousCheckpoints() {
+        if (storageReadyPromise) await storageReadyPromise;
+        const checkpoints = await getAllRecords(STORES.storageCheckpoints);
+        const restorable = checkpoints.filter((item) => item?.id?.startsWith('domain:') && item.previous?.value);
+        if (restorable.length === 0) throw new Error('No previous checkpoints are available.');
+        for (const checkpoint of restorable) {
+            await commitDomain(checkpoint.id.slice('domain:'.length), checkpoint.previous.value, {
+                critical: true,
+                reason: 'restore-all-previous-checkpoints'
+            });
+        }
+        return restorable.length;
+    }
+
+    function parseLegacySnapshotValue(snapshot, key, fallbackValue = null) {
+        const row = (Array.isArray(snapshot) ? snapshot : []).find((item) => item?.key === key);
+        if (!row) return cloneDeep(fallbackValue);
+        try {
+            return JSON.parse(row.value);
+        } catch (error) {
+            return cloneDeep(fallbackValue);
+        }
+    }
+
+    async function initializeUnifiedStorage() {
+        storageHealthState.status = 'initializing';
+        const existingDomains = await getAllRecords(STORES.appDomains);
+
+        if (existingDomains.length === 0) {
+            const [settingRows, appStateRecord, accountsRecord] = await Promise.all([
+                getAllRecords(STORES.settings),
+                getRecord(STORES.settings, 'appState'),
+                getRecord(STORES.accounts, '__all__')
+            ]);
+            const localSnapshot = collectManagedLocalStorageSnapshot();
+            const durableAppState = appStateRecord && appStateRecord.value && typeof appStateRecord.value === 'object'
+                ? appStateRecord.value
+                : null;
+            const fallbackAppState = parseLegacySnapshotValue(localSnapshot, 'u2_appState', {});
+            const appStateSource = durableAppState || fallbackAppState || {};
+            const settingsValue = {};
+            settingRows.forEach((row) => {
+                if (!row || row.key === 'appState') return;
+                settingsValue[row.key] = cloneDeep(row.value);
+            });
+            if (Array.isArray(accountsRecord?.value)) settingsValue.accounts = cloneDeep(accountsRecord.value);
+
+            const legacyValues = {};
+            localSnapshot.forEach((row) => {
+                if (!row?.key || row.key === 'u2_appState') return;
+                legacyValues[row.key] = parseLegacySnapshotValue(localSnapshot, row.key, row.value);
+            });
+
+            const domainValues = {
+                ...Object.fromEntries(Object.entries(appStateSource).map(([name, value]) => [name, cloneDeep(value)])),
+                settings: settingsValue,
+                legacy: legacyValues
+            };
+            const now = Date.now();
+            await withStore([
+                STORES.appDomains,
+                STORES.xPosts,
+                STORES.xThreads,
+                STORES.xDms,
+                STORES.assets,
+                STORES.storageCheckpoints,
+                STORES.meta
+            ], 'readwrite', async (stores) => {
+                for (const [name, rawValue] of Object.entries(domainValues)) {
+                    const value = sanitizePersistentValue(cloneDeep(rawValue));
+                    const persistedValue = name === 'x'
+                        ? persistXAssetsInTransaction(value, stores[STORES.assets])
+                        : value;
+                    const storedValue = name === 'x' ? stripXCollections(persistedValue) : persistedValue;
+                    stores[STORES.appDomains].put({
+                        name,
+                        schemaVersion: STORAGE_SCHEMA_VERSION,
+                        revision: 1,
+                        updatedAt: now,
+                        value: storedValue
+                    });
+                    stores[STORES.storageCheckpoints].put({
+                        id: `domain:${name}`,
+                        schemaVersion: STORAGE_SCHEMA_VERSION,
+                        updatedAt: now,
+                        checksum: createChecksum(persistedValue),
+                        current: { revision: 1, updatedAt: now, value: persistedValue },
+                        previous: null
+                    });
+                    if (name === 'x') {
+                        await replaceCollectionRecords(stores[STORES.xPosts], persistedValue.xGeneratedPosts || [], 'id');
+                        const threadRows = Object.entries(persistedValue.xPostThreads || {}).map(([postId, threadValue]) => ({ postId, value: threadValue }));
+                        await replaceCollectionRecords(stores[STORES.xThreads], threadRows, 'postId');
+                        const dmRows = (persistedValue.xDirectMessages || []).map((item, index) => ({
+                            ...item,
+                            id: String(item?.id ?? item?.charId ?? `x-dm-${index}`),
+                            updatedAt: Number(item?.updatedAt) || now
+                        }));
+                        await replaceCollectionRecords(stores[STORES.xDms], dmRows, 'id');
+                    }
+                }
+                stores[STORES.storageCheckpoints].put({
+                    id: 'migration:legacy-localstorage',
+                    schemaVersion: STORAGE_SCHEMA_VERSION,
+                    updatedAt: now,
+                    checksum: createChecksum(localSnapshot),
+                    current: { revision: 1, updatedAt: now, value: localSnapshot },
+                    previous: null
+                });
+                stores[STORES.meta].put({ key: META_KEYS.schemaVersion, value: STORAGE_SCHEMA_VERSION });
+                stores[STORES.meta].put({ key: 'unified_storage_migrated_at', value: now });
+            });
+        }
+
+        const hydratedDomains = await getAllRecords(STORES.appDomains);
+        for (const record of hydratedDomains) {
+            if (!record?.name) continue;
+            let value = record.name === 'x' ? await hydrateXDomain(record.value) : record.value;
+            if (record.name !== 'x') {
+                const checkpoint = await getRecord(STORES.storageCheckpoints, `domain:${record.name}`);
+                if (checkpoint?.checksum && checkpoint.checksum !== createChecksum(value)) {
+                    if (!checkpoint.previous?.value) {
+                        throw new Error(`Storage checkpoint validation failed for ${record.name}.`);
+                    }
+                    value = cloneDeep(checkpoint.previous.value);
+                    await putRecord(STORES.appDomains, {
+                        name: record.name,
+                        schemaVersion: STORAGE_SCHEMA_VERSION,
+                        revision: Number(checkpoint.previous.revision) || 1,
+                        updatedAt: Number(checkpoint.previous.updatedAt) || Date.now(),
+                        value: sanitizePersistentValue(cloneDeep(value))
+                    });
+                    await putRecord(STORES.storageCheckpoints, {
+                        ...checkpoint,
+                        updatedAt: Date.now(),
+                        checksum: createChecksum(value),
+                        current: cloneDeep(checkpoint.previous),
+                        previous: null,
+                        recoveredAt: Date.now()
+                    });
+                }
+            }
+            domainCache.set(String(record.name), cloneDeep(value));
+        }
+
+        clearManagedLocalStorage();
+
+        storageHealthState.status = 'saved';
+        storageHealthState.migrationVersion = STORAGE_SCHEMA_VERSION;
+        storageHealthState.lastError = null;
+        try {
+            if (navigator.storage?.persist) await navigator.storage.persist();
+        } catch (error) {}
+        notifyStorageSubscribers({ ...storageHealthState });
+        try {
+            window.dispatchEvent(new CustomEvent('u2-storage-ready'));
+        } catch (error) {}
+        return true;
+    }
+
+    const LEGACY_SETTING_KEY_MAP = {
+        u2_userState: 'userState',
+        u2_apiConfig: 'apiConfig',
+        u2_minimaxConfig: 'minimaxConfig',
+        u2_apiPresets: 'apiPresets',
+        u2_fetchedModels: 'fetchedModels',
+        u2_assistiveBallSettings: 'assistiveBallSettings',
+        u2_accounts: 'accounts',
+        u2_currentAccountId: 'currentAccountId',
+        u2_themeState: 'themeState',
+        u2_worldBooks: 'worldBooks',
+        u2_wbGroups: 'wbGroups'
+    };
+
+    function loadLegacyKey(key, fallbackValue = null) {
+        const safeKey = String(key || '');
+        const mappedKey = LEGACY_SETTING_KEY_MAP[safeKey];
+        const settings = readDomain('settings', {});
+        if (mappedKey) {
+            return Object.prototype.hasOwnProperty.call(settings || {}, mappedKey)
+                ? cloneDeep(settings[mappedKey])
+                : cloneDeep(fallbackValue);
+        }
+        const legacy = readDomain('legacy', {});
+        if (Object.prototype.hasOwnProperty.call(legacy || {}, safeKey)) return cloneDeep(legacy[safeKey]);
+        return cloneDeep(fallbackValue);
+    }
+
+    function saveLegacyKey(key, value) {
+        const safeKey = String(key || '');
+        const mappedKey = LEGACY_SETTING_KEY_MAP[safeKey];
+        const domainName = mappedKey ? 'settings' : 'legacy';
+        const propertyName = mappedKey || safeKey;
+        const optimistic = readDomain(domainName, {});
+        optimistic[propertyName] = cloneDeep(value);
+        domainCache.set(domainName, optimistic);
+        return commitDomain(domainName, (draft) => {
+            draft[propertyName] = cloneDeep(value);
+            return draft;
+        }, { reason: `legacy-key:${safeKey}` });
+    }
+
+    function removeLegacyKey(key) {
+        const safeKey = String(key || '');
+        const mappedKey = LEGACY_SETTING_KEY_MAP[safeKey];
+        const domainName = mappedKey ? 'settings' : 'legacy';
+        const propertyName = mappedKey || safeKey;
+        const optimistic = readDomain(domainName, {});
+        delete optimistic[propertyName];
+        domainCache.set(domainName, optimistic);
+        return commitDomain(domainName, (draft) => {
+            delete draft[propertyName];
+            return draft;
+        }, { reason: `legacy-key-remove:${safeKey}` });
+    }
+
     async function clearAllData() {
         try {
             clearRuntimeAssetCache();
@@ -2656,7 +3410,8 @@
                 if (key != null) keys.push(key);
             }
             keys.forEach((key) => {
-                const shouldKeep = PERSISTENT_LOCALSTORAGE_EXCLUDE_PREFIXES.some((prefix) => key.startsWith(prefix));
+                const shouldKeep = PERSISTENT_LOCALSTORAGE_EXACT_EXCLUDES.has(key)
+                    || PERSISTENT_LOCALSTORAGE_EXCLUDE_PREFIXES.some((prefix) => key.startsWith(prefix));
                 if (shouldKeep) return;
                 localStorageRemovedKeys.push(key);
                 localStorage.removeItem(key);
@@ -2730,6 +3485,7 @@
         saveFriend,
         saveFriendMetaOnly,
         saveFriendMeta,
+        patchFriendMeta,
         deleteFriend,
         loadFriends,
         saveFriendMessage,
@@ -2759,5 +3515,53 @@
         deleteLibraryPlaylist,
         loadLibraryDailyStats,
         incrementLibraryDailyStat
+    };
+
+    Object.assign(window.appStorage, {
+        readDomain,
+        commitDomain,
+        commitRecords,
+        flushPendingWrites,
+        getStorageHealth,
+        pruneOrphanedAssets,
+        restorePreviousCheckpoint,
+        restoreAllPreviousCheckpoints,
+        subscribe,
+        loadLegacyKey,
+        saveLegacyKey,
+        removeLegacyKey
+    });
+    Object.defineProperty(window.appStorage, 'ready', {
+        enumerable: true,
+        configurable: false,
+        get() {
+            return storageReadyPromise;
+        }
+    });
+
+    storageReadyPromise = initializeUnifiedStorage().catch((error) => {
+        storageHealthState.status = 'error';
+        storageHealthState.lastError = error?.message || String(error);
+        console.error('[appStorage] unified storage initialization failed', error);
+        notifyStorageSubscribers({ ...storageHealthState });
+        try {
+            const overlay = document.createElement('div');
+            overlay.id = 'u2-storage-fatal';
+            overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#f2f2f7;display:flex;align-items:center;justify-content:center;padding:24px;font-family:system-ui;color:#1c1c1e;';
+            overlay.innerHTML = `<div style="max-width:420px;background:#fff;border-radius:18px;padding:22px;box-shadow:0 18px 50px rgba(0,0,0,.12)"><h2 style="margin:0 0 10px">存储初始化失败</h2><p style="line-height:1.55;margin:0 0 16px">为防止空数据覆盖原数据，应用已停止启动。请重试；若仍失败，请先导出浏览器站点数据。</p><pre style="white-space:pre-wrap;font-size:12px;color:#8e8e93">${String(error?.message || error).replace(/[<>]/g, '')}</pre><button type="button" style="border:0;border-radius:12px;background:#007aff;color:#fff;padding:11px 18px" onclick="location.reload()">重试</button></div>`;
+            document.body.appendChild(overlay);
+        } catch (overlayError) {}
+        throw error;
+    });
+
+    const nativeDocumentAddEventListener = document.addEventListener.bind(document);
+    document.addEventListener = function(type, listener, options) {
+        if (type !== 'DOMContentLoaded' || typeof listener !== 'function') {
+            return nativeDocumentAddEventListener(type, listener, options);
+        }
+        const wrappedListener = function(event) {
+            storageReadyPromise.then(() => listener.call(this, event)).catch(() => {});
+        };
+        return nativeDocumentAddEventListener(type, wrappedListener, options);
     };
 })();

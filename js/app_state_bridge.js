@@ -2,7 +2,6 @@
 // Provides the synchronous getAppState/setAppState API expected by migrated app modules,
 // while keeping the current IndexedDB-backed appStorage layer as the durable store.
 (function () {
-    const APP_STATE_KEY = 'u2_appState';
     const SAVE_DEBOUNCE_MS = 120;
 
     const defaultYoutubeState = {
@@ -283,35 +282,11 @@
     }
 
     function loadLocalAppState() {
-        try {
-            if (window.StorageManager && typeof window.StorageManager.load === 'function') {
-                return window.StorageManager.load(APP_STATE_KEY, null);
-            }
-            const raw = window.localStorage ? window.localStorage.getItem(APP_STATE_KEY) : null;
-            return raw ? JSON.parse(raw) : null;
-        } catch (error) {
-            console.warn('[app_state_bridge] Failed to load local app state:', error);
-            return null;
-        }
+        return null;
     }
 
     function saveLocalAppState() {
-        try {
-            const persistedAppState = stripVolatileBlobUrls(appState);
-            if (window.StorageManager && typeof window.StorageManager.save === 'function') {
-                const saved = window.StorageManager.save(APP_STATE_KEY, persistedAppState);
-                if (saved) hasLocalAppState = true;
-                return !!saved;
-            }
-            if (window.localStorage) {
-                window.localStorage.setItem(APP_STATE_KEY, JSON.stringify(persistedAppState));
-                hasLocalAppState = true;
-                return true;
-            }
-        } catch (error) {
-            console.warn('[app_state_bridge] Failed to save local app state:', error);
-        }
-        return false;
+        return true;
     }
 
     function buildGlobalDataForSave(base = {}) {
@@ -324,6 +299,7 @@
     const initialLocalAppState = loadLocalAppState();
     let hasLocalAppState = !!initialLocalAppState;
     let runtimeDirty = false;
+    const dirtyAppKeys = new Set();
     let appState = normalizeAppState(initialLocalAppState);
     let globalDataCache = null;
     let saveTimer = null;
@@ -334,19 +310,22 @@
     }
 
     async function persistToAppStorage() {
-        if (!window.appStorage || typeof window.appStorage.saveGlobalData !== 'function') {
+        if (!window.appStorage || typeof window.appStorage.commitDomain !== 'function') {
             return false;
         }
 
         try {
-            const base = globalDataCache || (
-                typeof window.appStorage.loadGlobalData === 'function'
-                    ? await window.appStorage.loadGlobalData()
-                    : {}
-            );
-            const nextGlobalData = buildGlobalDataForSave(base);
-            await window.appStorage.saveGlobalData(nextGlobalData);
-            globalDataCache = nextGlobalData;
+            await window.appStorage.ready;
+            const normalized = stripVolatileBlobUrls(normalizeAppState(appState));
+            const keys = dirtyAppKeys.size > 0 ? Array.from(dirtyAppKeys) : Object.keys(normalized);
+            await Promise.all(keys.map((key) => window.appStorage.commitDomain(
+                key,
+                normalized[key],
+                { critical: true, reason: `app-state:${key}` }
+            )));
+            dirtyAppKeys.clear();
+            runtimeDirty = false;
+            globalDataCache = buildGlobalDataForSave(globalDataCache || {});
             return true;
         } catch (error) {
             console.warn('[app_state_bridge] Failed to persist app state:', error);
@@ -355,16 +334,11 @@
     }
 
     function scheduleSave() {
-        const localSaved = saveLocalAppState();
         if (saveTimer) clearTimeout(saveTimer);
         const runPersist = () => {
             saveTimer = null;
             persistToAppStorage();
         };
-        if (!localSaved) {
-            runPersist();
-            return;
-        }
         saveTimer = setTimeout(runPersist, SAVE_DEBOUNCE_MS);
     }
 
@@ -385,6 +359,7 @@
         appState = normalizeAppState(appState);
         syncWindowState();
         runtimeDirty = true;
+        dirtyAppKeys.add(String(appKey));
         if (options.save !== false) scheduleSave();
         return clone(appState[appKey]);
     };
@@ -401,6 +376,7 @@
         appState = normalizeAppState();
         syncWindowState();
         runtimeDirty = true;
+        Object.keys(appState).forEach((key) => dirtyAppKeys.add(key));
         if (options.save !== false) scheduleSave();
         return clone(appState);
     };
@@ -415,20 +391,26 @@
     };
 
     window.loadGlobalData = async function loadGlobalData() {
-        if (window.appStorage && typeof window.appStorage.loadGlobalData === 'function') {
+        if (window.appStorage && typeof window.appStorage.readDomain === 'function') {
             try {
-                const loaded = await window.appStorage.loadGlobalData();
-                globalDataCache = loaded && typeof loaded === 'object' ? loaded : {};
-
-                if (globalDataCache.appState) {
-                    appState = !hasLocalAppState
-                        ? (runtimeDirty
-                            ? mergeDurableBaseWithRuntimeState(appState, globalDataCache.appState)
-                            : normalizeAppState(globalDataCache.appState))
-                        : mergeRecoveredAppState(appState, globalDataCache.appState);
-                    syncWindowState();
-                    saveLocalAppState();
+                await window.appStorage.ready;
+                const defaults = createDefaultAppState();
+                const durableState = {};
+                Object.keys(defaults).forEach((key) => {
+                    durableState[key] = window.appStorage.readDomain(key, defaults[key]);
+                });
+                appState = normalizeAppState(durableState);
+                if (runtimeDirty) {
+                    dirtyAppKeys.forEach((key) => {
+                        appState[key] = clone(window.__u2AppState?.[key] ?? appState[key]);
+                    });
+                    appState = normalizeAppState(appState);
                 }
+                globalDataCache = typeof window.appStorage.loadGlobalData === 'function'
+                    ? await window.appStorage.loadGlobalData()
+                    : {};
+                globalDataCache.appState = clone(appState);
+                syncWindowState();
 
                 return buildGlobalDataForSave(globalDataCache);
             } catch (error) {
