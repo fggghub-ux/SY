@@ -154,10 +154,14 @@
 
     function hasUsefulBstageState(value) {
         if (!isPlainObject(value)) return false;
+        const hasMemberChatHistory = (members) => Array.isArray(members)
+            && members.some((member) => Array.isArray(member?.chatHistory) && member.chatHistory.length > 0);
         const meaningfulArrays = ['teams', 'bstageOrders', 'bstageFanChatHistory', 'chatPhotos'];
         if (meaningfulArrays.some((key) => Array.isArray(value[key]) && value[key].length > 0)) return true;
+        if (Array.isArray(value.teams) && value.teams.some((team) => hasMemberChatHistory(team?.members))) return true;
         const userTeam = value.bstageUserTeamState;
         if (isPlainObject(userTeam)) {
+            if (hasMemberChatHistory(userTeam.members)) return true;
             if (Array.isArray(userTeam.members) && userTeam.members.length > 1) return true;
             if (Array.isArray(userTeam.videos) && userTeam.videos.length > 0) return true;
             if (Array.isArray(userTeam.shopItems) && userTeam.shopItems.length > 0) return true;
@@ -410,8 +414,10 @@
                 appState = normalizeAppState(durableState);
                 if (runtimeDirty) {
                     dirtyAppKeys.forEach((key) => {
+                        if (key === 'bstage') return;
                         appState[key] = clone(window.__u2AppState?.[key] ?? appState[key]);
                     });
+                    appState = mergeDurableBaseWithRuntimeState(window.__u2AppState, appState);
                     appState = normalizeAppState(appState);
                 }
                 globalDataCache = typeof window.appStorage.loadGlobalData === 'function'

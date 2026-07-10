@@ -1599,7 +1599,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return false;
     }
 
-    function loadBstageData() {
+    function loadBstageData(options = {}) {
+        const persistNormalized = options.persistNormalized !== false;
         try {
             const data = typeof window.getAppState === 'function'
                 ? window.getAppState('bstage')
@@ -1635,14 +1636,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (Number.isFinite(Number(window.__bstageGlobalState.updatedAt))) {
                 bstageStateUpdatedAt = Number(window.__bstageGlobalState.updatedAt) || 0;
             }
-            if (normalizeLoadedBstageData()) saveBstageData();
+            if (persistNormalized && normalizeLoadedBstageData()) saveBstageData();
         } catch (e) {
             console.error('Bstage data load failed:', e);
         }
     }
 
     // Load data on init
-    loadBstageData();
+    loadBstageData({ persistNormalized: false });
 
     // Hook window functions to save data automatically
     const originalToast = window.showToast;
@@ -5738,11 +5739,16 @@ ${history}
 
     function getBstageDataSignature() {
         const userTeam = getBstageUserTeam();
+        const getMemberChatHistoryCounts = (members) => Array.isArray(members)
+            ? members.map(member => Array.isArray(member?.chatHistory) ? member.chatHistory.length : 0)
+            : [];
         return JSON.stringify({
             updatedAt: bstageStateUpdatedAt,
             teams: teams.map(team => team && team.id),
             teamMemberCounts: teams.map(team => Array.isArray(team && team.members) ? team.members.length : 0),
+            teamChatHistoryCounts: teams.map(team => getMemberChatHistoryCounts(team?.members)),
             userTeamMembers: Array.isArray(userTeam.members) ? userTeam.members.length : 0,
+            userTeamChatHistoryCounts: getMemberChatHistoryCounts(userTeam.members),
             fanHistoryCount: Array.isArray(bstageFanChatHistory) ? bstageFanChatHistory.length : 0
         });
     }
@@ -5763,7 +5769,7 @@ ${history}
     if (window.globalDataReadyPromise && typeof window.globalDataReadyPromise.then === 'function') {
         const beforeGlobalDataReady = getBstageDataSignature();
         window.bstageDataReadyPromise = window.globalDataReadyPromise.then(() => {
-            loadBstageData();
+            loadBstageData({ persistNormalized: true });
             startFanSubscriberGrowth();
             const afterGlobalDataReady = getBstageDataSignature();
             if (afterGlobalDataReady !== beforeGlobalDataReady) {

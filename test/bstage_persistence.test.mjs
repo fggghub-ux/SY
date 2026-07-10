@@ -8,11 +8,18 @@ const [bstageSource, indexSource] = await Promise.all([
 ]);
 
 test('b.stage waits for durable state before initializing subscriber growth', () => {
-    assert.match(bstageSource, /\/\/ Load data on init\s*loadBstageData\(\);\s*\/\/ Hook window functions/);
-    assert.match(bstageSource, /window\.bstageDataReadyPromise\s*=\s*window\.globalDataReadyPromise\.then\(\(\) => \{\s*loadBstageData\(\);\s*startFanSubscriberGrowth\(\);/);
+    assert.match(bstageSource, /\/\/ Load data on init\s*loadBstageData\(\{ persistNormalized: false \}\);\s*\/\/ Hook window functions/);
+    assert.match(bstageSource, /window\.bstageDataReadyPromise\s*=\s*window\.globalDataReadyPromise\.then\(\(\) => \{\s*loadBstageData\(\{ persistNormalized: true \}\);\s*startFanSubscriberGrowth\(\);/);
+    assert.match(bstageSource, /if \(persistNormalized && normalizeLoadedBstageData\(\)\) saveBstageData\(\);/);
     assert.match(bstageSource, /window\.addEventListener\('pagehide', flushBstageDataNow\)/);
     assert.match(bstageSource, /if \(document\.visibilityState === 'hidden'\) flushBstageDataNow\(\)/);
-    assert.match(indexSource, /js\/bstage\.js\?v=20260710-storage-ready-v2/);
+    assert.match(indexSource, /js\/bstage\.js\?v=20260710-bstage-chat-recovery-v3/);
+    assert.match(indexSource, /js\/app_state_bridge\.js\?v=20260710-bstage-chat-recovery-v1/);
+});
+
+test('b.stage recovery signature includes member chat history changes', () => {
+    assert.match(bstageSource, /teamChatHistoryCounts: teams\.map\(team => getMemberChatHistoryCounts\(team\?\.members\)\)/);
+    assert.match(bstageSource, /userTeamChatHistoryCounts: getMemberChatHistoryCounts\(userTeam\.members\)/);
 });
 
 test('b.stage char chat persists a generated batch before replaying message bubbles', () => {
