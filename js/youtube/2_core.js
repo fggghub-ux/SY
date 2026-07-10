@@ -1737,3 +1737,28 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
             }
         });
     }
+
+    function refreshYoutubeUiAfterHydration() {
+        if (!ytView || !ytView.classList.contains('active')) return;
+        syncYtProfile();
+        renderSubscriptions();
+        renderVideos();
+
+        const activeNavItem = document.querySelector('.yt-nav-item.active');
+        if (activeNavItem?.getAttribute('data-target') === 'yt-messages-tab') {
+            renderMessagesList();
+        }
+    }
+
+    if (window.globalDataReadyPromise && typeof window.globalDataReadyPromise.then === 'function') {
+        window.youtubeDataReadyPromise = window.globalDataReadyPromise.then(() => {
+            loadYoutubeData();
+            refreshYoutubeUiAfterHydration();
+            return true;
+        }).catch((error) => {
+            console.warn('YouTube global data recovery failed:', error);
+            return false;
+        });
+    } else {
+        window.youtubeDataReadyPromise = Promise.resolve(true);
+    }

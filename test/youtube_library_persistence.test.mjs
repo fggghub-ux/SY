@@ -2,12 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 
-const [youtubeCommunitySource, librarySource, indexSource, libraryCssSource] = await Promise.all([
+const [youtubeCoreSource, youtubeCommunitySource, librarySource, indexSource, libraryCssSource] = await Promise.all([
+    fs.readFile(new URL('../js/youtube/2_core.js', import.meta.url), 'utf8'),
     fs.readFile(new URL('../js/youtube/6_community.js', import.meta.url), 'utf8'),
     fs.readFile(new URL('../js/library.js', import.meta.url), 'utf8'),
     fs.readFile(new URL('../index.html', import.meta.url), 'utf8'),
     fs.readFile(new URL('../css/library.css', import.meta.url), 'utf8')
 ]);
+
+test('YouTube state is rehydrated after IndexedDB-backed global data becomes ready', () => {
+    assert.match(youtubeCoreSource, /window\.globalDataReadyPromise\.then\(\(\) => \{/);
+    assert.match(youtubeCoreSource, /loadYoutubeData\(\);\s*refreshYoutubeUiAfterHydration\(\);/);
+    assert.match(youtubeCoreSource, /window\.youtubeDataReadyPromise\s*=/);
+    assert.match(indexSource, /js\/youtube\/2_core\.js\?v=20260710-storage-ready-v1/);
+});
 
 test('YouTube message API generation is persisted before UI replay', () => {
     assert.match(youtubeCommunitySource, /const YT_CHAT_GENERATION_STALE_MS = 2 \* 60 \* 1000/);
