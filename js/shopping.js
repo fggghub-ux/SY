@@ -1721,6 +1721,7 @@
     }
 
     function initShoppingApp() {
+        if (window.shoppingApp) return window.shoppingApp;
         window.shoppingApp = new ShoppingApp();
         const appBtn = document.getElementById('app-shopping-btn');
         if (appBtn) {
@@ -1730,11 +1731,32 @@
                 window.shoppingApp?.open();
             });
         }
+        return window.shoppingApp;
+    }
+
+    function initShoppingAppAfterStorageReady() {
+        if (window.shoppingDataReadyPromise) return window.shoppingDataReadyPromise;
+        const initialize = () => {
+            initShoppingApp();
+            return true;
+        };
+
+        if (window.globalDataReadyPromise && typeof window.globalDataReadyPromise.then === 'function') {
+            window.shoppingDataReadyPromise = window.globalDataReadyPromise.then(initialize).catch((error) => {
+                console.warn('Shopping global data recovery failed:', error);
+                initialize();
+                return false;
+            });
+        } else {
+            initialize();
+            window.shoppingDataReadyPromise = Promise.resolve(true);
+        }
+        return window.shoppingDataReadyPromise;
     }
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initShoppingApp);
+        document.addEventListener('DOMContentLoaded', initShoppingAppAfterStorageReady);
     } else {
-        initShoppingApp();
+        initShoppingAppAfterStorageReady();
     }
 })();

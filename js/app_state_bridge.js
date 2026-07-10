@@ -65,6 +65,14 @@
                 activeMapId: null,
                 friendPositionsStore: {}
             },
+            netflix: {
+                works: [],
+                boundWorldBookIds: [],
+                homeCatalog: null,
+                playbackCatalog: {},
+                playbackCustomCss: '',
+                presetState: null
+            },
             desktop: {},
             bstage: {},
             x: {
@@ -267,6 +275,7 @@
                 ...defaults.maps,
                 ...(isPlainObject(safe.maps) ? safe.maps : {})
             },
+            netflix: isPlainObject(safe.netflix) ? safe.netflix : defaults.netflix,
             desktop: isPlainObject(safe.desktop) ? safe.desktop : defaults.desktop,
             bstage: isPlainObject(safe.bstage) ? safe.bstage : defaults.bstage,
             x: normalizedX,

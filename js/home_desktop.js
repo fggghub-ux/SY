@@ -88,13 +88,32 @@
         desktopState = normalizeDesktopState(loadDesktopState(), buildDefaultDesktopState());
         const shouldSaveNormalizedState = desktopStateNeedsSave;
         renderDesktop();
-        if (shouldSaveNormalizedState) saveDesktopState({ silent: true });
         bindChrome();
+
+        if (window.globalDataReadyPromise && typeof window.globalDataReadyPromise.then === 'function') {
+            window.desktopDataReadyPromise = window.globalDataReadyPromise.then(() => {
+                refreshDesktopStateAfterHydration();
+                return true;
+            }).catch((error) => {
+                console.warn('[home_desktop] Global data recovery failed.', error);
+                return false;
+            });
+        } else {
+            if (shouldSaveNormalizedState) saveDesktopState({ silent: true });
+            window.desktopDataReadyPromise = Promise.resolve(true);
+        }
 
         window.openHomeWidgetEditor = openHomeWidgetEditor;
         window.openHomeWidgetPanelFromSettings = openHomeWidgetPanelFromSettings;
         window.updateHomeWidgetConfigFromPanel = updateHomeWidgetConfigFromPanel;
         window.renderHomeDesktop = renderDesktop;
+    }
+
+    function refreshDesktopStateAfterHydration() {
+        desktopState = normalizeDesktopState(loadDesktopState(), buildDefaultDesktopState());
+        const shouldSaveNormalizedState = desktopStateNeedsSave;
+        renderDesktop();
+        if (shouldSaveNormalizedState) saveDesktopState({ silent: true });
     }
 
     function ensureChrome() {

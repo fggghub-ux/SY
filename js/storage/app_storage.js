@@ -2570,6 +2570,14 @@
                 activeMapId: null,
                 friendPositionsStore: {}
             },
+            netflix: {
+                works: [],
+                boundWorldBookIds: [],
+                homeCatalog: null,
+                playbackCatalog: {},
+                playbackCustomCss: '',
+                presetState: null
+            },
             desktop: {},
             bstage: {},
             x: {
@@ -2627,6 +2635,7 @@
                 ...defaults.maps,
                 ...(safeState.maps && typeof safeState.maps === 'object' ? safeState.maps : {})
             },
+            netflix: safeState.netflix && typeof safeState.netflix === 'object' ? safeState.netflix : defaults.netflix,
             desktop: safeState.desktop && typeof safeState.desktop === 'object' ? safeState.desktop : defaults.desktop,
             bstage: safeState.bstage && typeof safeState.bstage === 'object' ? safeState.bstage : defaults.bstage,
             x: {
@@ -3513,6 +3522,7 @@
             group.bytes += bytes;
             groups[groupName] = group;
         }
+        const logicalGroups = cloneDeep(groups);
         let originUsage = 0;
         let quota = 0;
         let usageDetails = {};
@@ -3539,6 +3549,7 @@
         return {
             stores,
             groups,
+            logicalGroups,
             indexedDbBytes,
             logicalBytes: indexedDbBytes,
             indexedDbReportedBytes,

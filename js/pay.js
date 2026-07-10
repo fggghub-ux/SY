@@ -311,6 +311,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function refreshPayStateAfterHydration() {
+        applyPaySnapshot(getPayStoreSnapshot());
+        renderPayUI();
+    }
+
+    if (window.globalDataReadyPromise && typeof window.globalDataReadyPromise.then === 'function') {
+        window.payDataReadyPromise = window.globalDataReadyPromise.then(() => {
+            refreshPayStateAfterHydration();
+            return true;
+        }).catch((error) => {
+            console.warn('Pay global data recovery failed:', error);
+            return false;
+        });
+    } else {
+        window.payDataReadyPromise = Promise.resolve(true);
+    }
+
     // Family Card API
     window.addOrUpdateFamilyCard = function(friendId, friendName, amount) {
         const cardId = 'family_' + friendId;

@@ -1208,10 +1208,11 @@ coverUrl 使用外部图片链接，优先使用 https://picsum.photos/seed/英�
     loadNetflixState() {
         let rawState = null;
         try {
-            if (typeof window.getAppState === 'function') {
+            const hasNetflixDomain = this.hasNetflixDomain();
+            if (hasNetflixDomain && typeof window.getAppState === 'function') {
                 rawState = window.getAppState('netflix') || null;
             }
-            if (!rawState && window.StorageManager && typeof window.StorageManager.load === 'function') {
+            if (!hasNetflixDomain && window.StorageManager && typeof window.StorageManager.load === 'function') {
                 rawState = {
                     works: window.StorageManager.load('u2_netflixWorks', []),
                     boundWorldBookIds: window.StorageManager.load('u2_netflixBoundWorldBookIds', []),
@@ -1220,10 +1221,32 @@ coverUrl 使用外部图片链接，优先使用 https://picsum.photos/seed/英�
                     playbackCustomCss: window.StorageManager.load('u2_netflixPlaybackCustomCss', '')
                 };
             }
+            if (!rawState && typeof window.getAppState === 'function') {
+                rawState = window.getAppState('netflix') || null;
+            }
         } catch (error) {
             console.warn('Failed to load Netflix state:', error);
         }
         return this.normalizeNetflixState(rawState);
+    }
+
+    hasNetflixDomain() {
+        return typeof window.appStorage?.readDomain === 'function'
+            && window.appStorage.readDomain('netflix', null) !== null;
+    }
+
+    refreshFromPersistedState() {
+        const hadNetflixDomain = this.hasNetflixDomain();
+        this.netflixState = this.loadNetflixState();
+        this.presetState = this.loadPresetState();
+        if (!hadNetflixDomain) {
+            this.saveNetflixState();
+            this.savePresetState();
+        }
+        this.applyCustomCss();
+        this.renderUserProfile();
+        this.renderHomeCatalog();
+        this.renderWorks();
     }
 
     saveNetflixState() {
@@ -3457,11 +3480,15 @@ ${direction || '无'}
     loadPresetState() {
         let rawState = null;
         try {
-            if (typeof window.getAppState === 'function') {
+            const hasNetflixDomain = this.hasNetflixDomain();
+            if (hasNetflixDomain && typeof window.getAppState === 'function') {
                 rawState = window.getAppState('netflix')?.presetState || null;
             }
-            if (!rawState && window.StorageManager && typeof window.StorageManager.load === 'function') {
+            if (!hasNetflixDomain && window.StorageManager && typeof window.StorageManager.load === 'function') {
                 rawState = window.StorageManager.load('u2_netflixPresetState', null);
+            }
+            if (!rawState && !hasNetflixDomain && typeof window.getAppState === 'function') {
+                rawState = window.getAppState('netflix')?.presetState || null;
             }
         } catch (error) {
             console.warn('Failed to load Netflix preset state:', error);
@@ -3696,6 +3723,17 @@ ${direction || '无'}
 function initializeNetflixApp() {
     try {
         window.netflixApp = new NetflixApp();
+        if (window.globalDataReadyPromise && typeof window.globalDataReadyPromise.then === 'function') {
+            window.netflixDataReadyPromise = window.globalDataReadyPromise.then(() => {
+                window.netflixApp?.refreshFromPersistedState();
+                return true;
+            }).catch((error) => {
+                console.warn('Netflix global data recovery failed:', error);
+                return false;
+            });
+        } else {
+            window.netflixDataReadyPromise = Promise.resolve(true);
+        }
     } catch (error) {
         document.documentElement.dataset.netflixInitError = error?.stack || error?.message || String(error);
         console.error('Netflix app initialization failed:', error);

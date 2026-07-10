@@ -175,12 +175,30 @@ window.tkSaveChar = function(charData) {
 window.tkPersistState = persistTkState;
 window.tkLoadStateFromStore = function() {
     const nextState = loadTkStateFromStore();
-    Object.assign(tkState.profile, nextState.profile);
-    tkState.chars = nextState.chars;
-    tkState.videos = nextState.videos;
-    tkState.dms = nextState.dms;
+    Object.assign(tkState, nextState);
     return tkState;
 };
+
+function refreshTkUiAfterHydration() {
+    const tkView = document.getElementById('tiktok-view');
+    if (!tkView || !tkView.classList.contains('active')) return;
+    if (window.tkRenderHome) window.tkRenderHome();
+    if (window.tkRenderChat) window.tkRenderChat();
+    if (window.tkRenderProfile) window.tkRenderProfile();
+}
+
+if (window.globalDataReadyPromise && typeof window.globalDataReadyPromise.then === 'function') {
+    window.tkDataReadyPromise = window.globalDataReadyPromise.then(() => {
+        window.tkLoadStateFromStore();
+        refreshTkUiAfterHydration();
+        return true;
+    }).catch((error) => {
+        console.warn('TikTok global data recovery failed:', error);
+        return false;
+    });
+} else {
+    window.tkDataReadyPromise = Promise.resolve(true);
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     // UI Elements

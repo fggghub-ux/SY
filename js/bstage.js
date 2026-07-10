@@ -1633,7 +1633,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Load data on init
     loadBstageData();
-    startFanSubscriberGrowth();
 
     // Hook window functions to save data automatically
     const originalToast = window.showToast;
@@ -5769,14 +5768,21 @@ ${history}
     renderBstageStartupView();
     if (window.globalDataReadyPromise && typeof window.globalDataReadyPromise.then === 'function') {
         const beforeGlobalDataReady = getBstageDataSignature();
-        window.globalDataReadyPromise.then(() => {
+        window.bstageDataReadyPromise = window.globalDataReadyPromise.then(() => {
             loadBstageData();
+            startFanSubscriberGrowth();
             const afterGlobalDataReady = getBstageDataSignature();
             if (afterGlobalDataReady !== beforeGlobalDataReady) {
                 renderBstageStartupView();
             }
+            return true;
         }).catch(error => {
             console.warn('Bstage global data recovery failed:', error);
+            startFanSubscriberGrowth();
+            return false;
         });
+    } else {
+        startFanSubscriberGrowth();
+        window.bstageDataReadyPromise = Promise.resolve(true);
     }
 });

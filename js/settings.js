@@ -3479,7 +3479,6 @@
             const storageHealthDot = document.getElementById('storage-health-dot');
             const storageHealthStatus = document.getElementById('storage-health-status');
             const storageHealthPersistence = document.getElementById('storage-health-persistence');
-            const storageHealthUsage = document.getElementById('storage-health-usage');
             const storageHealthLastSave = document.getElementById('storage-health-last-save');
             const storageHealthWarning = document.getElementById('storage-health-warning');
             const storageHealthBreakdown = document.getElementById('storage-health-breakdown');
@@ -3542,22 +3541,17 @@
                 if (storageHealthPersistence) {
                     storageHealthPersistence.textContent = `有效数据：${formatBytesForUi(health.breakdown?.logicalBytes)} · 持久存储：${health.persisted ? '已启用' : '浏览器未授予'}`;
                 }
-                if (storageHealthUsage) {
-                    storageHealthUsage.textContent = `站点总占用：${formatBytesForUi(health.usage)} / ${formatBytesForUi(health.quota)}`;
-                }
                 if (storageHealthLastSave) {
                     storageHealthLastSave.textContent = `最后保存：${formatDateForUi(health.lastCommitAt)}`;
                 }
                 if (storageHealthWarning) {
                     let warning = health.lastError ? `错误：${health.lastError}` : '';
-                    if (!warning && health.ratio >= 0.9) warning = '空间已超过 90%，已停止新增大图片；请立即导出备份。';
-                    else if (!warning && health.ratio >= 0.8) warning = '空间已超过 80%，建议尽快导出完整备份。';
                     storageHealthWarning.textContent = warning;
                     storageHealthWarning.hidden = !warning;
                 }
                 if (storageHealthBreakdown) {
                     storageHealthBreakdown.replaceChildren();
-                    const groups = Object.entries(health.breakdown?.groups || {})
+                    const groups = Object.entries(health.breakdown?.logicalGroups || health.breakdown?.groups || {})
                         .filter(([, value]) => Number(value?.bytes) > 0)
                         .sort((a, b) => Number(b[1]?.bytes || 0) - Number(a[1]?.bytes || 0));
                     groups.forEach(([name, value]) => {
