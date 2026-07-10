@@ -3478,6 +3478,7 @@
             const storageHealthWarning = document.getElementById('storage-health-warning');
             const storageHealthBreakdown = document.getElementById('storage-health-breakdown');
             const storageHealthCompaction = document.getElementById('storage-health-compaction');
+            const storageCleanCacheBtn = document.getElementById('storage-clean-cache-btn');
             const storageRetryBtn = document.getElementById('storage-retry-btn');
 
             function stopLegacy(e) {
@@ -3564,12 +3565,36 @@
                     });
                 }
                 if (storageHealthCompaction) {
+                    const cleaned = health.lastCacheCleanup;
                     const compacted = health.lastCompaction;
-                    storageHealthCompaction.textContent = compacted?.compactedAt
-                        ? `最近自动优化：${formatDateForUi(compacted.compactedAt)}，预计释放 ${formatBytesForUi(compacted.estimatedBytesFreed)}`
-                        : '尚未执行存储优化';
+                    storageHealthCompaction.textContent = cleaned?.clearedAt
+                        ? `最近手动清理：${formatDateForUi(cleaned.clearedAt)}，预计释放 ${formatBytesForUi(cleaned.estimatedBytesFreed)}`
+                        : compacted?.compactedAt
+                            ? `最近自动优化：${formatDateForUi(compacted.compactedAt)}，预计释放 ${formatBytesForUi(compacted.estimatedBytesFreed)}`
+                            : '尚未执行存储优化';
                 }
             }
+
+            storageCleanCacheBtn?.addEventListener('click', async () => {
+                if (!confirm('只会清理可重新下载的页面缓存、已验证的重复数据和超过七天的无引用资源，不会删除聊天、帖子、资料或仍在使用的图片。继续清理吗？')) return;
+                setBusy(storageCleanCacheBtn, true);
+                showOperation('正在安全清理缓存...');
+                try {
+                    const result = await window.appStorage.clearSafeCache({ progressCallback: updateOperation });
+                    hideOperation();
+                    const released = formatBytesForUi(result.estimatedBytesFreed);
+                    showToast(result.cacheDeleteFailures > 0
+                        ? `部分缓存未能清理，预计已释放 ${released}`
+                        : `缓存清理完成，预计释放 ${released}`);
+                } catch (error) {
+                    console.error('Cache cleanup failed:', error);
+                    hideOperation();
+                    showToast('缓存清理中止，用户数据未被删除');
+                } finally {
+                    setBusy(storageCleanCacheBtn, false);
+                    await refreshStorageHealth();
+                }
+            });
 
             storageRetryBtn?.addEventListener('click', async () => {
                 storageRetryBtn.disabled = true;

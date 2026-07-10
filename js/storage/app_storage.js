@@ -68,7 +68,8 @@
         lastCommitAt: 0,
         lastError: null,
         migrationVersion: 0,
-        lastCompaction: null
+        lastCompaction: null,
+        lastCacheCleanup: null
     };
     let storageReadyPromise = null;
 
@@ -3160,14 +3161,18 @@
         }
         let originUsage = 0;
         let quota = 0;
+        let usageDetails = {};
         try {
             const estimate = navigator.storage?.estimate ? await navigator.storage.estimate() : null;
             originUsage = Math.max(0, Number(estimate?.usage) || 0);
             quota = Math.max(0, Number(estimate?.quota) || 0);
+            usageDetails = estimate?.usageDetails && typeof estimate.usageDetails === 'object'
+                ? Object.fromEntries(Object.entries(estimate.usageDetails).map(([key, value]) => [key, Math.max(0, Number(value) || 0)]))
+                : {};
         } catch (error) {}
         const otherBytes = Math.max(0, originUsage - indexedDbBytes);
         if (otherBytes > 0) groups['缓存与其他'] = { count: 0, bytes: otherBytes };
-        return { stores, groups, indexedDbBytes, originUsage, quota, otherBytes, measuredAt: Date.now() };
+        return { stores, groups, indexedDbBytes, originUsage, quota, usageDetails, otherBytes, measuredAt: Date.now() };
     }
 
     async function compactStorage(options = {}) {
@@ -3331,6 +3336,66 @@
         return cloneDeep(report);
     }
 
+    async function clearSafeCache(options = {}) {
+        if (!options.skipReady && storageReadyPromise) await storageReadyPromise;
+        const progressCallback = typeof options.progressCallback === 'function' ? options.progressCallback : null;
+        storageHealthState.status = 'saving';
+        storageHealthState.lastError = null;
+        notifyStorageSubscribers({ ...storageHealthState, reason: 'cache-cleanup-start' });
+
+        try {
+            reportProgress(progressCallback, '正在完成待保存数据...', 10);
+            const flushed = await flushPendingWrites();
+            if (!flushed) throw new Error('Pending writes could not be completed before cache cleanup.');
+
+            const before = await getStorageBreakdown({ skipReady: true });
+            reportProgress(progressCallback, '正在校验并清理重复数据...', 35);
+            const compaction = await compactStorage({ skipReady: true, force: true });
+
+            reportProgress(progressCallback, '正在清理可重新下载的页面缓存...', 72);
+            const cacheResults = await clearBrowserCaches();
+            const cachesDeleted = cacheResults.filter((item) => item?.deleted).length;
+            const cacheDeleteFailures = cacheResults.filter((item) => !item?.deleted).length;
+
+            reportProgress(progressCallback, '正在重新统计空间...', 90);
+            const after = await getStorageBreakdown({ skipReady: true });
+            const cacheBytesBefore = Math.max(0, Number(before.usageDetails?.caches) || 0);
+            const cacheBytesAfter = Math.max(0, Number(after.usageDetails?.caches) || 0);
+            const browserCacheBytesFreed = cacheResults.length > 0 && cacheDeleteFailures === 0
+                ? Math.max(cacheBytesBefore, cacheBytesBefore - cacheBytesAfter)
+                : Math.max(0, cacheBytesBefore - cacheBytesAfter);
+            const estimateDelta = Math.max(0, before.originUsage - after.originUsage);
+            const report = {
+                clearedAt: Date.now(),
+                cacheEntriesFound: cacheResults.length,
+                cachesDeleted,
+                cacheDeleteFailures,
+                checkpointRecordsDeleted: Number(compaction?.checkpointRecordsDeleted) || 0,
+                orphanAssetsRemoved: Number(compaction?.orphanAssetsRemoved) || 0,
+                estimatedBytesFreed: Math.max(
+                    estimateDelta,
+                    (Number(compaction?.estimatedBytesFreed) || 0) + browserCacheBytesFreed
+                ),
+                beforeUsage: before.originUsage,
+                afterUsage: after.originUsage
+            };
+            await setMeta('storage_last_cache_cleanup', report);
+            storageHealthState.status = cacheDeleteFailures > 0 ? 'error' : 'saved';
+            storageHealthState.lastError = cacheDeleteFailures > 0
+                ? `${cacheDeleteFailures} browser cache item(s) could not be deleted.`
+                : null;
+            storageHealthState.lastCacheCleanup = cloneDeep(report);
+            notifyStorageSubscribers({ ...storageHealthState, reason: 'cache-cleanup-complete' });
+            reportProgress(progressCallback, '缓存清理完成', 100);
+            return cloneDeep(report);
+        } catch (error) {
+            storageHealthState.status = 'error';
+            storageHealthState.lastError = error?.message || String(error);
+            notifyStorageSubscribers({ ...storageHealthState, reason: 'cache-cleanup-error' });
+            throw error;
+        }
+    }
+
     function parseLegacySnapshotValue(snapshot, key, fallbackValue = null) {
         const row = (Array.isArray(snapshot) ? snapshot : []).find((item) => item?.key === key);
         if (!row) return cloneDeep(fallbackValue);
@@ -3415,6 +3480,7 @@
         }
 
         storageHealthState.lastCompaction = await compactStorage({ skipReady: true });
+        storageHealthState.lastCacheCleanup = await getMeta('storage_last_cache_cleanup');
 
         const hydratedDomains = await getAllRecords(STORES.appDomains);
         for (const record of hydratedDomains) {
@@ -3646,6 +3712,7 @@
         getStorageHealth,
         getStorageBreakdown,
         compactStorage,
+        clearSafeCache,
         pruneOrphanedAssets,
         subscribe,
         loadLegacyKey,

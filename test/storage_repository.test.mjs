@@ -230,6 +230,45 @@ test('normal domain, X and iMessage writes no longer create full local-history c
     assert.deepEqual(checkpoints, []);
 });
 
+test('manual cache cleanup removes only rebuildable caches and expired unreferenced assets', async () => {
+    const deletedCacheNames = [];
+    globalThis.caches = {
+        async keys() { return ['app-shell-v1', 'image-cache-v1']; },
+        async delete(name) {
+            deletedCacheNames.push(name);
+            return true;
+        }
+    };
+    await window.appStorage.withStore(
+        [window.appStorage.STORES.assets],
+        'readwrite',
+        (stores) => stores[window.appStorage.STORES.assets].put({
+            id: 'expired-unreferenced-asset',
+            blob: new Blob(['cache']),
+            orphanedAt: Date.now() - (8 * 24 * 60 * 60 * 1000)
+        })
+    );
+
+    const report = await window.appStorage.clearSafeCache();
+    const [orphan, friends, xState, health] = await Promise.all([
+        window.appStorage.withStore([window.appStorage.STORES.assets], 'readonly', (stores) =>
+            window.appStorage.requestToPromise(stores[window.appStorage.STORES.assets].get('expired-unreferenced-asset'))
+        ),
+        window.appStorage.loadFriends(),
+        Promise.resolve(window.appStorage.readDomain('x', {})),
+        window.appStorage.getStorageHealth()
+    ]);
+
+    assert.deepEqual(deletedCacheNames, ['app-shell-v1', 'image-cache-v1']);
+    assert.equal(report.cachesDeleted, 2);
+    assert.equal(report.orphanAssetsRemoved, 1);
+    assert.equal(orphan, undefined);
+    assert.ok(friends.some((friend) => friend.id === 'friend-1'));
+    assert.ok(xState.xGeneratedPosts.some((post) => post.id === 'user-post'));
+    assert.equal(health.lastCacheCleanup.clearedAt, report.clearedAt);
+    delete globalThis.caches;
+});
+
 test('compaction is idempotent and aborts before cleanup when a missing domain cannot be recovered', async () => {
     const first = await window.appStorage.compactStorage();
     const second = await window.appStorage.compactStorage();
