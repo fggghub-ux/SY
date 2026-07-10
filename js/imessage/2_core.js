@@ -537,7 +537,7 @@ window.imApp.normalizeFriendData = function(friend) {
             }))
             : defaultMemory.shortTermEntries,
         groupChatContexts: window.imDataUtils?.normalizeGroupChatContexts
-            ? window.imDataUtils.normalizeGroupChatContexts(memory.groupChatContexts, 5)
+            ? window.imDataUtils.normalizeGroupChatContexts(memory.groupChatContexts)
             : defaultMemory.groupChatContexts,
         longTermEntries: Array.isArray(memory.longTermEntries)
             ? memory.longTermEntries.map((entry, index) => ({
@@ -629,21 +629,23 @@ window.imApp.getGroupChatMemoryCandidates = function(friend) {
 
     return (window.imData?.friends || []).filter((group) => {
         if (!group || group.type !== 'group' || !Array.isArray(group.members)) return false;
-        if (window.imChat?.getGroupMemberFriends) {
-            return window.imChat.getGroupMemberFriends(group)
-                .some(member => String(member?.id) === String(normalizedFriend.id));
-        }
-        return group.members.some(memberRef => (
+        const isDirectMember = group.members.some(memberRef => (
             String(memberRef) === String(normalizedFriend.id)
             || String(memberRef) === String(normalizedFriend.nickname)
+            || String(memberRef) === String(normalizedFriend.realName)
         ));
+        const isResolvedMember = window.imChat?.getGroupMemberFriends
+            ? window.imChat.getGroupMemberFriends(group)
+                .some(member => String(member?.id) === String(normalizedFriend.id))
+            : false;
+        return isDirectMember || isResolvedMember;
     });
 };
 
 window.imApp.getEligibleGroupChatMemoryContexts = function(friend) {
     const normalizedFriend = window.imApp.normalizeFriendData(friend || {});
     const contexts = window.imDataUtils?.normalizeGroupChatContexts
-        ? window.imDataUtils.normalizeGroupChatContexts(normalizedFriend.memory?.groupChatContexts, 5)
+        ? window.imDataUtils.normalizeGroupChatContexts(normalizedFriend.memory?.groupChatContexts)
         : [];
     const groupsById = new Map(window.imApp.getGroupChatMemoryCandidates(normalizedFriend)
         .map(group => [String(group.id), group]));
@@ -651,6 +653,18 @@ window.imApp.getEligibleGroupChatMemoryContexts = function(friend) {
     return contexts
         .map(context => ({ ...context, group: groupsById.get(String(context.groupId)) || null }))
         .filter(context => context.group);
+};
+
+window.imApp.loadEligibleGroupChatMemoryContexts = async function(friend) {
+    const initialContexts = window.imApp.getEligibleGroupChatMemoryContexts(friend);
+    if (initialContexts.length === 0) return [];
+
+    if (window.imApp.ensureFriendMessagesLoaded) {
+        await Promise.all(initialContexts.map(({ group }) => window.imApp.ensureFriendMessagesLoaded(group)));
+    }
+
+    const liveFriend = window.imApp.getFriendById(friend) || friend;
+    return window.imApp.getEligibleGroupChatMemoryContexts(liveFriend);
 };
 
 window.imApp.isRecallableUserMessage = function(message) {

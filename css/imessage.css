@@ -7094,7 +7094,7 @@ input:checked + .slider:before {
 .chat-memory-modal-overlay {
     position: absolute;
     inset: 0;
-    z-index: 7;
+    z-index: 1100;
     display: none;
     align-items: center;
     justify-content: center;
@@ -7335,7 +7335,7 @@ input:checked + .slider:before {
     font-size: 11px;
 }
 
-.chat-memory-group-context-round-input {
+.chat-memory-group-context-limit-input {
     width: 44px;
     padding: 4px 2px;
     border: 1px solid #e5e5ea;

@@ -925,14 +925,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const groupContextCandidates = window.imApp.getEligibleGroupChatMemoryContexts
             ? window.imApp.getEligibleGroupChatMemoryContexts(normalizedFriend)
             : [];
-        groupContextCandidates.forEach(({ group, roundLimit }) => {
-            const stats = getGroupChatMemoryRoundStats(group, roundLimit);
+        groupContextCandidates.forEach(({ group, messageLimit }) => {
+            const groupMemory = getGroupChatMemoryMessages(group, messageLimit);
             systemContextLen += (group.nickname || group.realName || '').length + 280;
-            systemContextLen += stats.selectedMessages
-                ? stats.selectedMessages.reduce((sum, message) => (
+            systemContextLen += groupMemory.selectedMessages.reduce((sum, message) => (
                     sum + String(message?.content || message?.text || message?.transcript || message?.description || '').length
-                ), 0)
-                : 0;
+                ), 0);
         });
         if (Array.isArray(memory.relationships)) {
             systemContextLen += memory.relationships.reduce((sum, r) => sum + (r.relation || '').length, 0);
@@ -997,7 +995,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function ensureChatMemoryModalUi() {
         const memoryPanel = document.getElementById('chat-settings-memory-panel');
-        if (!memoryPanel) return null;
+        const modalRoot = chatSettingsSheet || memoryPanel;
+        if (!modalRoot) return null;
 
         let overlay = document.getElementById('chat-memory-modal-overlay');
         if (!overlay) {
@@ -1016,7 +1015,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div id="chat-memory-modal-content" class="chat-memory-modal-content"></div>
                 </div>
             `;
-            memoryPanel.appendChild(overlay);
+            modalRoot.appendChild(overlay);
 
             overlay.addEventListener('click', (e) => {
                 if (e.target === overlay) {
@@ -1273,15 +1272,20 @@ document.addEventListener('DOMContentLoaded', () => {
     function getGroupChatMemoryContexts(friend) {
         const memory = window.imApp.normalizeFriendData(friend || {}).memory || {};
         return window.imDataUtils?.normalizeGroupChatContexts
-            ? window.imDataUtils.normalizeGroupChatContexts(memory.groupChatContexts, 5)
+            ? window.imDataUtils.normalizeGroupChatContexts(memory.groupChatContexts)
             : [];
     }
 
-    function getGroupChatMemoryRoundStats(group, roundLimit) {
+    function getGroupChatMemoryMessages(group, messageLimit = 30) {
         const messages = Array.isArray(group?.messages) ? group.messages : [];
-        return window.imDataUtils?.getRecentUserRounds
-            ? window.imDataUtils.getRecentUserRounds(messages, roundLimit)
-            : { selectedRounds: 0, selectedMessageCount: 0 };
+        return window.imDataUtils?.getRecentPublicGroupMessages
+            ? window.imDataUtils.getRecentPublicGroupMessages(messages, messageLimit)
+            : {
+                selectedMessages: messages.filter((message) => (
+                    message?.noticeKind !== 'group_private_to_user'
+                    && message?.noticeKind !== 'group_friend_private_chat'
+                )).slice(-messageLimit)
+            };
     }
 
     async function saveGroupChatMemoryContexts(friend, contexts) {
@@ -1291,14 +1295,19 @@ document.addEventListener('DOMContentLoaded', () => {
             : [];
         const candidateIds = new Set(candidates.map(group => String(group.id)));
         const normalizedContexts = (window.imDataUtils?.normalizeGroupChatContexts
-            ? window.imDataUtils.normalizeGroupChatContexts(contexts, 5)
+            ? window.imDataUtils.normalizeGroupChatContexts(contexts)
             : [])
             .filter(context => candidateIds.has(String(context.groupId)));
 
         const saved = await commitNamedFriendChange(friend, (targetFriend) => {
             targetFriend.memory = targetFriend.memory || window.imApp.createDefaultMemory();
             targetFriend.memory.groupChatContexts = normalizedContexts;
-        }, { silent: true });
+        }, {
+            silent: true,
+            metaOnly: false,
+            includeMessages: false,
+            syncActive: true
+        });
 
         if (saved && window.imData.currentSettingsFriend
             && String(window.imData.currentSettingsFriend.id) === String(friend.id)) {
@@ -1306,73 +1315,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (latest) window.imData.currentSettingsFriend = latest;
         }
         return saved;
-    }
-
-    async function renderGroupChatMemoryList(friend) {
-        const list = document.getElementById('chat-memory-group-context-list');
-        if (!list || !friend) return;
-
-        const eligibleContexts = window.imApp.getEligibleGroupChatMemoryContexts
-            ? window.imApp.getEligibleGroupChatMemoryContexts(friend)
-            : [];
-        await Promise.all(eligibleContexts.map(({ group }) => (
-            window.imApp.ensureFriendMessagesLoaded
-                ? window.imApp.ensureFriendMessagesLoaded(group)
-                : Promise.resolve()
-        )));
-
-        const currentFriend = window.imApp.getFriendById(friend.id) || friend;
-        const contexts = getGroupChatMemoryContexts(currentFriend);
-        const groupsById = new Map((window.imApp.getGroupChatMemoryCandidates?.(currentFriend) || [])
-            .map(group => [String(group.id), group]));
-        const visibleContexts = contexts
-            .map(context => ({ ...context, group: groupsById.get(String(context.groupId)) || null }))
-            .filter(context => context.group);
-
-        list.innerHTML = visibleContexts.map(({ group, groupId, roundLimit }) => {
-            const stats = getGroupChatMemoryRoundStats(group, roundLimit);
-            const groupName = group.nickname || group.realName || '未命名群聊';
-            return `
-                <div class="chat-memory-group-context-item" data-group-id="${escapeGroupChatMemoryHtml(groupId)}">
-                    <div class="chat-memory-group-context-icon"><i class="fas fa-users"></i></div>
-                    <div class="chat-memory-group-context-main">
-                        <div class="chat-memory-group-context-name">${escapeGroupChatMemoryHtml(groupName)}</div>
-                        <div class="chat-memory-group-context-meta">读取 ${stats.selectedRounds}/${roundLimit} 轮，共 ${stats.selectedMessageCount} 条</div>
-                    </div>
-                    <input class="chat-memory-group-context-round-input" type="number" min="1" max="999" value="${roundLimit}" aria-label="读取轮数">
-                    <button type="button" class="chat-memory-group-context-remove" aria-label="移除群聊记忆" title="移除群聊记忆"><i class="fas fa-trash-alt"></i></button>
-                </div>
-            `;
-        }).join('');
-
-        list.querySelectorAll('.chat-memory-group-context-round-input').forEach((input) => {
-            input.addEventListener('change', async () => {
-                const item = input.closest('[data-group-id]');
-                const groupId = item?.getAttribute('data-group-id') || '';
-                const nextContexts = getGroupChatMemoryContexts(currentFriend).map((context) => (
-                    String(context.groupId) === String(groupId)
-                        ? { ...context, roundLimit: input.value }
-                        : context
-                ));
-                const saved = await saveGroupChatMemoryContexts(currentFriend, nextContexts);
-                if (!saved && window.showToast) window.showToast('群聊记忆保存失败');
-                await renderGroupChatMemoryList(currentFriend);
-                renderChatMemoryOverviewStats(window.imApp.getFriendById(currentFriend.id) || currentFriend);
-            });
-        });
-
-        list.querySelectorAll('.chat-memory-group-context-remove').forEach((button) => {
-            button.addEventListener('click', async () => {
-                const item = button.closest('[data-group-id]');
-                const groupId = item?.getAttribute('data-group-id') || '';
-                const nextContexts = getGroupChatMemoryContexts(currentFriend)
-                    .filter(context => String(context.groupId) !== String(groupId));
-                const saved = await saveGroupChatMemoryContexts(currentFriend, nextContexts);
-                if (!saved && window.showToast) window.showToast('群聊记忆保存失败');
-                await renderGroupChatMemoryList(currentFriend);
-                renderChatMemoryOverviewStats(window.imApp.getFriendById(currentFriend.id) || currentFriend);
-            });
-        });
     }
 
     function showGroupChatMemoryPicker(friend) {
@@ -1387,7 +1329,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         ui.labelEl.textContent = '角色记忆';
         ui.titleEl.textContent = '群聊记忆';
-        ui.subtitleEl.textContent = '单聊时会读取角色所在群聊的公开聊天记录。';
+        ui.subtitleEl.textContent = '单聊时会读取角色所在群聊最新公开聊天记录。';
         ui.subtitleEl.style.display = 'block';
 
         const renderPicker = () => {
@@ -1412,17 +1354,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="chat-memory-group-picker-list">
                     ${selectedGroups.length > 0 ? selectedGroups.map((group) => {
                         const groupId = String(group.id);
-                        const context = draftContexts.get(groupId) || { groupId, roundLimit: 5 };
-                        const stats = getGroupChatMemoryRoundStats(group, context.roundLimit);
+                        const context = draftContexts.get(groupId) || { groupId, messageLimit: 30 };
                         const groupName = group.nickname || group.realName || '未命名群聊';
                         return `
                             <div class="chat-memory-group-context-item" data-selected-group-id="${escapeGroupChatMemoryHtml(groupId)}">
                                 <div class="chat-memory-group-context-icon"><i class="fas fa-users"></i></div>
                                 <div class="chat-memory-group-context-main">
                                     <div class="chat-memory-group-context-name">${escapeGroupChatMemoryHtml(groupName)}</div>
-                                    <div class="chat-memory-group-context-meta">读取 ${stats.selectedRounds}/${context.roundLimit} 轮，共 ${stats.selectedMessageCount} 条</div>
+                                    <div class="chat-memory-group-context-meta">读取最近 ${context.messageLimit} 条公开消息</div>
                                 </div>
-                                <input class="chat-memory-group-context-round-input" type="number" min="1" max="999" value="${context.roundLimit}" aria-label="读取轮数">
+                                <input class="chat-memory-group-context-limit-input" type="number" min="1" max="999" value="${context.messageLimit}" aria-label="读取消息条数">
                                 <button type="button" class="chat-memory-group-context-remove" aria-label="移除群聊记忆" title="移除群聊记忆"><i class="fas fa-trash-alt"></i></button>
                             </div>
                         `;
@@ -1436,19 +1377,41 @@ document.addEventListener('DOMContentLoaded', () => {
                 groupSelect.addEventListener('change', () => {
                     const groupId = groupSelect.value;
                     if (!groupId) return;
-                    draftContexts.set(groupId, { groupId, roundLimit: 5 });
+                    groupSelect.disabled = true;
+                    const liveGroup = window.imApp.getFriendById(groupId)
+                        || candidates.find(group => String(group.id) === String(groupId));
+                    if (!liveGroup) {
+                        renderPicker();
+                        return;
+                    }
+                    draftContexts.set(groupId, { groupId, messageLimit: 30 });
                     renderPicker();
                 });
             }
 
-            ui.contentEl.querySelectorAll('.chat-memory-group-context-round-input').forEach((input) => {
-                input.addEventListener('change', () => {
+            ui.contentEl.querySelectorAll('.chat-memory-group-context-limit-input').forEach((input) => {
+                const updateMessageLimit = (normalizeValue = false) => {
                     const item = input.closest('[data-selected-group-id]');
                     const groupId = item?.getAttribute('data-selected-group-id') || '';
                     const context = draftContexts.get(groupId);
-                    if (context) context.roundLimit = input.value;
-                    renderPicker();
-                });
+                    const numericValue = Number(input.value);
+                    if (!context) return;
+                    if (normalizeValue) {
+                        context.messageLimit = window.imDataUtils?.normalizeMessageLimit
+                            ? window.imDataUtils.normalizeMessageLimit(numericValue, 30)
+                            : Math.min(999, Math.max(1, Math.round(numericValue) || 30));
+                    } else if (Number.isFinite(numericValue) && numericValue >= 1) {
+                        context.messageLimit = numericValue;
+                    } else {
+                        return;
+                    }
+                    if (normalizeValue) input.value = context.messageLimit;
+
+                    const meta = item?.querySelector('.chat-memory-group-context-meta');
+                    if (meta) meta.textContent = `读取最近 ${context.messageLimit} 条公开消息`;
+                };
+                input.addEventListener('input', () => updateMessageLimit(false));
+                input.addEventListener('change', () => updateMessageLimit(true));
             });
 
             ui.contentEl.querySelectorAll('.chat-memory-group-context-remove').forEach((button) => {
@@ -1474,11 +1437,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
 
-        void Promise.all(candidates.map(group => (
-            window.imApp.ensureFriendMessagesLoaded
-                ? window.imApp.ensureFriendMessagesLoaded(group)
-                : Promise.resolve()
-        ))).then(renderPicker);
         renderPicker();
         ui.overlay.style.display = 'flex';
         requestAnimationFrame(() => ui.overlay.classList.add('active'));

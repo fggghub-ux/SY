@@ -15,7 +15,11 @@
             : fallback;
     }
 
-    function normalizeGroupChatContexts(contexts, fallbackRoundLimit = 5) {
+    function normalizeMessageLimit(value, fallback = 30) {
+        return normalizeRoundLimit(value, fallback);
+    }
+
+    function normalizeGroupChatContexts(contexts, fallbackMessageLimit = 30) {
         const seenGroupIds = new Set();
         return (Array.isArray(contexts) ? contexts : [])
             .map((context) => {
@@ -25,10 +29,27 @@
                 seenGroupIds.add(groupId);
                 return {
                     groupId,
-                    roundLimit: normalizeRoundLimit(context.roundLimit, fallbackRoundLimit)
+                    messageLimit: normalizeMessageLimit(context.messageLimit, fallbackMessageLimit)
                 };
             })
             .filter(Boolean);
+    }
+
+    function getRecentPublicGroupMessages(messages, messageLimit = 30) {
+        const safeMessages = Array.isArray(messages) ? messages : [];
+        const limit = normalizeMessageLimit(messageLimit, 30);
+        const publicMessages = safeMessages.filter((message) => (
+            message?.noticeKind !== 'group_private_to_user'
+            && message?.noticeKind !== 'group_friend_private_chat'
+        ));
+        const selectedMessages = publicMessages.slice(-limit);
+
+        return {
+            messageLimit: limit,
+            availableMessageCount: publicMessages.length,
+            selectedMessageCount: selectedMessages.length,
+            selectedMessages
+        };
     }
 
     function getRecentUserRounds(messages, roundLimit = 5) {
@@ -209,7 +230,9 @@
 
     return {
         normalizeRoundLimit,
+        normalizeMessageLimit,
         normalizeGroupChatContexts,
+        getRecentPublicGroupMessages,
         getRecentUserRounds,
         normalizeScheduleEvent,
         normalizeSchedule,

@@ -46,43 +46,34 @@ test('summary batch respects an existing message boundary and ignores assistant-
     assert.equal(batch.endIndex, messages.length);
 });
 
-test('group chat memory keeps the latest complete user-started rounds and reports messages', () => {
-    const messages = [
-        { role: 'user', content: 'u1' },
-        { role: 'assistant', content: 'a1-1' },
-        { role: 'assistant', content: 'a1-2' },
-        { role: 'user', content: 'u2' },
-        { role: 'assistant', content: 'a2-1' },
-        { role: 'user', content: 'u3' },
-        { role: 'assistant', content: 'a3-1' },
-        { role: 'assistant', content: 'a3-2' }
-    ];
+test('group chat memory keeps the latest 30 public messages and excludes private notices', () => {
+    const messages = Array.from({ length: 35 }, (_, index) => ({
+        role: index % 2 === 0 ? 'user' : 'assistant',
+        content: `public-${index + 1}`
+    }));
+    messages.splice(10, 0, { role: 'system', noticeKind: 'group_private_to_user', content: 'private to user' });
+    messages.splice(20, 0, { role: 'system', noticeKind: 'group_friend_private_chat', content: 'private friend chat' });
 
-    const recent = utils.getRecentUserRounds(messages, 2);
-    assert.equal(recent.availableRounds, 3);
-    assert.equal(recent.selectedRounds, 2);
-    assert.equal(recent.selectedMessageCount, 5);
-    assert.deepEqual(recent.selectedMessages.map(message => message.content), ['u2', 'a2-1', 'u3', 'a3-1', 'a3-2']);
-
-    const allAvailable = utils.getRecentUserRounds(messages, 9);
-    assert.equal(allAvailable.selectedRounds, 3);
-    assert.equal(allAvailable.selectedMessageCount, messages.length);
-
-    const assistantOnly = utils.getRecentUserRounds([{ role: 'assistant', content: 'proactive' }], 5);
-    assert.equal(assistantOnly.selectedRounds, 0);
-    assert.equal(assistantOnly.selectedMessageCount, 0);
+    const recent = utils.getRecentPublicGroupMessages(messages);
+    assert.equal(recent.messageLimit, 30);
+    assert.equal(recent.availableMessageCount, 35);
+    assert.equal(recent.selectedMessageCount, 30);
+    assert.deepEqual(recent.selectedMessages.map(message => message.content), Array.from(
+        { length: 30 },
+        (_, index) => `public-${index + 6}`
+    ));
 });
 
-test('normalizes group chat memory contexts with default round limits and unique group IDs', () => {
+test('normalizes group chat memory contexts as unique group IDs', () => {
     assert.deepEqual(utils.normalizeGroupChatContexts([
-        { groupId: 'group-a' },
-        { groupId: 'group-a', roundLimit: 20 },
+        { groupId: 'group-a', roundLimit: 5 },
+        { groupId: 'group-a', messageLimit: 20 },
         { groupId: 7, roundLimit: 0 },
         { groupId: '', roundLimit: 8 },
         null
     ]), [
-        { groupId: 'group-a', roundLimit: 5 },
-        { groupId: '7', roundLimit: 5 }
+        { groupId: 'group-a', messageLimit: 30 },
+        { groupId: '7', messageLimit: 30 }
     ]);
 });
 
@@ -168,14 +159,33 @@ test('ships the full-screen sticker manager, manifest upload, and protected mome
     assert.match(html, /id="chat-memory-group-context-btn"/);
 });
 
-test('injects group chat memory only into character single-chat prompts', async () => {
-    const source = await fs.readFile(new URL('../js/imessage/4_chat_ai.js', import.meta.url), 'utf8');
-    const settingsSource = await fs.readFile(new URL('../js/imessage/5_settings.js', import.meta.url), 'utf8');
+test('injects loaded group chat memory only into character single-chat prompts', async () => {
+    const [source, settingsSource, coreSource, cssSource] = await Promise.all([
+        fs.readFile(new URL('../js/imessage/4_chat_ai.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/5_settings.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/2_core.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../css/imessage.css', import.meta.url), 'utf8')
+    ]);
     assert.match(source, /async function buildGroupChatMemoryContext\(currentFriend\)/);
     assert.match(source, /if \(currentFriend\.type === 'group'\) return ''/);
+    assert.match(source, /await window\.imApp\.loadEligibleGroupChatMemoryContexts\(currentFriend\)/);
+    assert.match(source, /getRecentPublicGroupMessages\(group\.messages, messageLimit\)/);
+    assert.doesNotMatch(source, /getRecentUserRounds\(group\.messages, roundLimit\)/);
     assert.match(source, /<group_chat_memories>/);
     assert.match(source, /<member_identity>/);
     assert.match(source, /group_private_to_user/);
+    assert.match(source, /if \(groupChatMemoryContext && friend\.type !== 'group'\)/);
+    assert.match(source, /role: 'system',\s*content: groupChatMemoryContext/);
     assert.match(settingsSource, /<select class="chat-memory-group-picker-select"/);
     assert.doesNotMatch(settingsSource, /id="chat-memory-group-context-list"/);
+    assert.match(settingsSource, /const modalRoot = chatSettingsSheet \|\| memoryPanel/);
+    assert.match(settingsSource, /modalRoot\.appendChild\(overlay\)/);
+    assert.match(settingsSource, /messageLimit: 30/);
+    assert.match(settingsSource, /chat-memory-group-context-limit-input/);
+    assert.match(settingsSource, /normalizeMessageLimit\(numericValue, 30\)/);
+    assert.match(settingsSource, /metaOnly: false,\s*includeMessages: false,\s*syncActive: true/);
+    assert.match(coreSource, /loadEligibleGroupChatMemoryContexts = async function/);
+    assert.match(coreSource, /isDirectMember \|\| isResolvedMember/);
+    assert.match(coreSource, /normalizeGroupChatContexts\(memory\.groupChatContexts\)/);
+    assert.match(cssSource, /\.chat-memory-modal-overlay\s*\{[\s\S]*?z-index: 1100/);
 });

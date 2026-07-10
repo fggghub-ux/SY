@@ -1758,29 +1758,17 @@ ${latestMessages || 'None'}
 
         async function buildGroupChatMemoryContext(currentFriend) {
             if (currentFriend.type === 'group') return '';
-            const eligibleContexts = window.imApp.getEligibleGroupChatMemoryContexts
-                ? window.imApp.getEligibleGroupChatMemoryContexts(currentFriend)
+            const freshContexts = window.imApp.loadEligibleGroupChatMemoryContexts
+                ? await window.imApp.loadEligibleGroupChatMemoryContexts(currentFriend)
                 : [];
-            if (eligibleContexts.length === 0) return '';
-
-            if (window.imApp.ensureFriendMessagesLoaded) {
-                await Promise.all(eligibleContexts.map(({ group }) => window.imApp.ensureFriendMessagesLoaded(group)));
-            }
-
-            const freshContexts = window.imApp.getEligibleGroupChatMemoryContexts
-                ? window.imApp.getEligibleGroupChatMemoryContexts(currentFriend)
-                : [];
+            if (freshContexts.length === 0) return '';
             const userName = currentUserState.name || 'User';
             const charName = currentFriend.nickname || currentFriend.realName || 'Char';
-            const blocks = freshContexts.map(({ group, roundLimit }) => {
-                const roundData = window.imDataUtils?.getRecentUserRounds
-                    ? window.imDataUtils.getRecentUserRounds(group.messages, roundLimit)
-                    : { selectedMessages: [], selectedRounds: 0, selectedMessageCount: 0 };
-                const publicMessages = roundData.selectedMessages.filter((message) => (
-                    message?.noticeKind !== 'group_private_to_user'
-                    && message?.noticeKind !== 'group_friend_private_chat'
-                ));
-                const formattedMessages = publicMessages.map((message) => {
+            const blocks = freshContexts.map(({ group, messageLimit }) => {
+                const groupMemory = window.imDataUtils?.getRecentPublicGroupMessages
+                    ? window.imDataUtils.getRecentPublicGroupMessages(group.messages, messageLimit)
+                    : { selectedMessages: [] };
+                const formattedMessages = groupMemory.selectedMessages.map((message) => {
                     const formatted = window.imApp.formatMessageForApiContext(message, group, { userName });
                     if (!formatted?.content) return '';
                     const timePrefix = message.timestamp ? `${formatPromptTime(message.timestamp)} ` : '';
@@ -1788,7 +1776,7 @@ ${latestMessages || 'None'}
                 }).filter(Boolean);
                 const groupName = group.nickname || group.realName || '未命名群聊';
 
-                return `<group_chat_memory>\n<group_name>${groupName}</group_name>\n<member_identity>${charName} 是这个群聊的成员。</member_identity>\n<scope>以下是该群聊的公开聊天记录，共读取 ${roundData.selectedRounds}/${roundLimit} 轮、${formattedMessages.length} 条。它不是当前单聊的消息，也不包含任何成员私聊正文。</scope>\n<rules>\n- 只将这些内容作为 ${charName} 所在群聊的共同公开背景，不要编造未提供的群消息。\n- 不要把任何群成员的私密想法、私聊经历或未在群内公开的信息当成群内事实。\n- 你可以自然地知晓自己在群内亲历的公开事件，但不要假装正在当前群聊中回复。\n</rules>\n<messages>\n${formattedMessages.length > 0 ? formattedMessages.join('\n') : '暂无可读取的公开群聊记录。'}\n</messages>\n</group_chat_memory>`;
+                return `<group_chat_memory>\n<group_name>${groupName}</group_name>\n<member_identity>${charName} 是这个群聊的成员。</member_identity>\n<scope>以下是该群聊最新至多 ${messageLimit} 条公开聊天记录。它不是当前单聊的消息，也不包含任何成员私聊正文。</scope>\n<rules>\n- 只将这些内容作为 ${charName} 所在群聊的共同公开背景，不要编造未提供的群消息。\n- 不要把任何群成员的私密想法、私聊经历或未在群内公开的信息当成群内事实。\n- 你可以自然地知晓自己在群内亲历的公开事件，但不要假装正在当前群聊中回复。\n</rules>\n<messages>\n${formattedMessages.length > 0 ? formattedMessages.join('\n') : '暂无可读取的公开群聊记录。'}\n</messages>\n</group_chat_memory>`;
             });
 
             return blocks.length > 0
@@ -1860,7 +1848,6 @@ ${latestMessages || 'None'}
             longTermXml,
             friend.memory.context?.notes ? `<extra_context_notes>\n${friend.memory.context.notes}\n</extra_context_notes>` : '',
             buildShortTermMemoryContext(friend),
-            groupChatMemoryContext,
             scheduleSection,
             `<relationship_network>\n${relationshipText}\n</relationship_network>`,
             window.imApp.buildLinkedAccountMemoryContext
@@ -2304,6 +2291,12 @@ Never truncate OUTPUT(x)
 </GEMINI_OVERRIDE_CORE>`;
 
         const messages = [{ role: 'system', content: systemPrompt }];
+        if (groupChatMemoryContext && friend.type !== 'group') {
+            messages.push({
+                role: 'system',
+                content: groupChatMemoryContext
+            });
+        }
         if (window.imApp.buildApiContextMessages) {
             const contextMessages = window.imApp.buildApiContextMessages(friend, {
                 userName: currentUserState.name || 'User'
