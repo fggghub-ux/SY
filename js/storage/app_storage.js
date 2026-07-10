@@ -6,11 +6,14 @@
 
 (function() {
     const DB_NAME = 'iiso_app_storage';
-    const DB_VERSION = 5;
-    const STORAGE_SCHEMA_VERSION = 7;
+    const OPTIMIZATION_SHADOW_DB_NAME = 'iiso_app_storage_optimization_shadow_v8';
+    const DB_VERSION = 6;
+    const STORAGE_SCHEMA_VERSION = 8;
     const BACKUP_APP_NAME = 'u2phone';
-    const PERSISTENT_LOCALSTORAGE_EXCLUDE_PREFIXES = ['iiso_auth_'];
-    const PERSISTENT_LOCALSTORAGE_EXACT_EXCLUDES = new Set(['u2_mockAuthSession']);
+    const AUTH_SESSION_ID = 'current';
+    const LEGACY_AUTH_SESSION_KEY = 'u2_mockAuthSession';
+    const PERSISTENT_LOCALSTORAGE_EXCLUDE_PREFIXES = [];
+    const PERSISTENT_LOCALSTORAGE_EXACT_EXCLUDES = new Set();
     const MANAGED_LOCALSTORAGE_EXACT_KEYS = new Set([
         'app_global_data',
         'ios_emulator_global_data',
@@ -20,9 +23,10 @@
         'shopping_comments',
         'shopping_qa',
         'shopping_orders',
-        'shopping_cart'
+        'shopping_cart',
+        LEGACY_AUTH_SESSION_KEY
     ]);
-    const MANAGED_LOCALSTORAGE_PREFIXES = ['u2_', 'shopping_'];
+    const MANAGED_LOCALSTORAGE_PREFIXES = ['u2_', 'shopping_', 'iiso_auth_'];
 
     const STORES = {
         meta: 'meta',
@@ -32,7 +36,9 @@
         theme: 'theme',
         worldbooks: 'worldbooks',
         assets: 'assets',
+        authSessions: 'auth_sessions',
         imFriends: 'im_friends',
+        imChatSummaries: 'im_chat_summaries',
         imMessages: 'im_messages',
         imMoments: 'im_moments',
         imMomentMessages: 'im_moment_messages',
@@ -47,6 +53,7 @@
         xDms: 'x_dms',
         storageCheckpoints: 'storage_checkpoints'
     };
+    const BACKUP_STORES = Object.values(STORES).filter((storeName) => storeName !== STORES.authSessions);
 
     const META_KEYS = {
         schemaVersion: 'schema_version',
@@ -142,15 +149,6 @@
         return MANAGED_LOCALSTORAGE_PREFIXES.some((prefix) => safeKey.startsWith(prefix));
     }
 
-    function setLocalStorageRaw(key, value) {
-        if (!key || isExcludedLocalStorageKey(key)) return;
-        localStorage.setItem(String(key), String(value ?? ''));
-    }
-
-    function setLocalStorageJson(key, value) {
-        setLocalStorageRaw(key, JSON.stringify(sanitizePersistentValue(value)));
-    }
-
     function collectManagedLocalStorageSnapshot() {
         const rows = [];
         if (!window.localStorage) return rows;
@@ -169,47 +167,6 @@
         });
 
         return rows;
-    }
-
-    function clearManagedLocalStorage() {
-        if (!window.localStorage) return [];
-        const removedKeys = [];
-        const keys = [];
-
-        for (let i = 0; i < localStorage.length; i += 1) {
-            const key = localStorage.key(i);
-            if (isManagedLocalStorageKey(key)) keys.push(key);
-        }
-
-        keys.forEach((key) => {
-            localStorage.removeItem(key);
-            removedKeys.push(key);
-        });
-
-        return removedKeys;
-    }
-
-    function restoreManagedLocalStorageSnapshot(snapshot = []) {
-        if (!window.localStorage) return 0;
-        const rows = Array.isArray(snapshot) ? snapshot : [];
-        let restored = 0;
-
-        rows.forEach((row) => {
-            if (!row || !isManagedLocalStorageKey(row.key)) return;
-            const rawValue = String(row.value ?? '');
-            let restoredValue = rawValue;
-
-            try {
-                restoredValue = JSON.stringify(sanitizePersistentValue(JSON.parse(rawValue)));
-            } catch (error) {
-                restoredValue = isBlobUrl(rawValue) ? '' : rawValue;
-            }
-
-            setLocalStorageRaw(row.key, restoredValue);
-            restored += 1;
-        });
-
-        return restored;
     }
 
     function getLocalStorageSnapshotValue(snapshot = [], key) {
@@ -233,6 +190,123 @@
 
     function hasLocalStorageSnapshotKey(snapshot = [], key) {
         return Array.isArray(snapshot) && snapshot.some((item) => item && item.key === key);
+    }
+
+    function parseLegacyRawValue(rawValue) {
+        if (rawValue === undefined || rawValue === null) return undefined;
+        try {
+            return sanitizePersistentValue(JSON.parse(String(rawValue)));
+        } catch (error) {
+            return isBlobUrl(String(rawValue)) ? '' : String(rawValue);
+        }
+    }
+
+    async function migrateManagedLocalStorageSnapshot(snapshot = []) {
+        const rows = Array.isArray(snapshot) ? snapshot.filter((row) => row?.key) : [];
+        if (rows.length === 0) return { migratedKeys: [], authMigrated: false };
+
+        const settingsMap = {
+            u2_userState: 'userState',
+            u2_apiConfig: 'apiConfig',
+            u2_minimaxConfig: 'minimaxConfig',
+            u2_apiPresets: 'apiPresets',
+            u2_fetchedModels: 'fetchedModels',
+            u2_assistiveBallSettings: 'assistiveBallSettings',
+            u2_accounts: 'accounts',
+            u2_currentAccountId: 'currentAccountId',
+            u2_themeState: 'themeState',
+            u2_worldBooks: 'worldBooks',
+            u2_wbGroups: 'wbGroups'
+        };
+        const authRow = rows.find((row) => row.key === LEGACY_AUTH_SESSION_KEY);
+        const authValue = authRow ? parseLegacyRawValue(authRow.value) : undefined;
+        const existingAuth = await getRecord(STORES.authSessions, AUTH_SESSION_ID);
+        let authMigrated = false;
+
+        await withStore([STORES.appDomains, STORES.authSessions, STORES.meta], 'readwrite', async (stores) => {
+            const domainStore = stores[STORES.appDomains];
+            const settingsRecord = await requestToPromise(domainStore.get('settings'));
+            const legacyRecord = await requestToPromise(domainStore.get('legacy'));
+            const settings = settingsRecord?.value && typeof settingsRecord.value === 'object'
+                ? cloneDeep(settingsRecord.value)
+                : {};
+            const legacy = legacyRecord?.value && typeof legacyRecord.value === 'object'
+                ? cloneDeep(legacyRecord.value)
+                : {};
+            let settingsChanged = false;
+            let legacyChanged = false;
+
+            for (const row of rows) {
+                if (row.key === LEGACY_AUTH_SESSION_KEY || row.key === 'u2_appState') continue;
+                const value = parseLegacyRawValue(row.value);
+                const settingKey = settingsMap[row.key];
+                if (settingKey) {
+                    if (!Object.prototype.hasOwnProperty.call(settings, settingKey) && value !== undefined) {
+                        settings[settingKey] = value;
+                        settingsChanged = true;
+                    }
+                } else if (!Object.prototype.hasOwnProperty.call(legacy, row.key) && value !== undefined) {
+                    legacy[row.key] = value;
+                    legacyChanged = true;
+                }
+            }
+
+            const oldAppState = parseLocalStorageSnapshotJson(rows, 'u2_appState');
+            if (oldAppState && typeof oldAppState === 'object') {
+                for (const [name, value] of Object.entries(oldAppState)) {
+                    if (!name || !value || typeof value !== 'object') continue;
+                    const existing = await requestToPromise(domainStore.get(name));
+                    if (!existing) {
+                        domainStore.put({
+                            name,
+                            schemaVersion: STORAGE_SCHEMA_VERSION,
+                            revision: 1,
+                            updatedAt: Date.now(),
+                            value: sanitizePersistentValue(cloneDeep(value))
+                        });
+                    }
+                }
+            }
+
+            const now = Date.now();
+            if (settingsChanged || !settingsRecord) {
+                domainStore.put({
+                    name: 'settings',
+                    schemaVersion: STORAGE_SCHEMA_VERSION,
+                    revision: Math.max(0, Number(settingsRecord?.revision) || 0) + 1,
+                    updatedAt: now,
+                    value: sanitizePersistentValue(settings)
+                });
+            }
+            if (legacyChanged || !legacyRecord) {
+                domainStore.put({
+                    name: 'legacy',
+                    schemaVersion: STORAGE_SCHEMA_VERSION,
+                    revision: Math.max(0, Number(legacyRecord?.revision) || 0) + 1,
+                    updatedAt: now,
+                    value: sanitizePersistentValue(legacy)
+                });
+            }
+            if (!existingAuth && authValue && typeof authValue === 'object') {
+                stores[STORES.authSessions].put({ id: AUTH_SESSION_ID, session: authValue, updatedAt: now });
+                authMigrated = true;
+            }
+            stores[STORES.meta].put({ key: 'localstorage_migrated_v8', value: { migratedAt: now, keys: rows.map((row) => row.key) } });
+        });
+
+        if (authMigrated) {
+            const verified = await getRecord(STORES.authSessions, AUTH_SESSION_ID);
+            if (!verified?.session) throw new Error('Auth session migration verification failed.');
+        }
+
+        const migratedKeys = [];
+        rows.forEach((row) => {
+            try {
+                localStorage.removeItem(row.key);
+                migratedKeys.push(row.key);
+            } catch (error) {}
+        });
+        return { migratedKeys, authMigrated };
     }
 
     function upsertBackupSettingRecord(storesData, key, value) {
@@ -395,6 +469,37 @@
         return new Blob([bytes], { type: mimeType });
     }
 
+    async function hashBlobSha256(blob) {
+        if (!blob || !globalThis.crypto?.subtle) return '';
+        const buffer = await blob.arrayBuffer();
+        const digest = await globalThis.crypto.subtle.digest('SHA-256', buffer);
+        return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function saveContentAddressedAsset(dataUrl, extra = {}) {
+        if (!isDataUrl(dataUrl)) return null;
+        await assertLargeAssetCapacity(dataUrl);
+        const blob = dataUrlToBlob(dataUrl);
+        const digest = await hashBlobSha256(blob);
+        const fallbackId = String(extra.fallbackId || `asset_${Date.now()}_${Math.random().toString(36).slice(2)}`);
+        const assetId = digest ? `sha256_${digest}` : fallbackId;
+        await withStore([STORES.assets], 'readwrite', async (stores) => {
+            const existing = await requestToPromise(stores[STORES.assets].get(assetId));
+            if (existing?.blob && Number(existing.blob.size) === Number(blob.size)) return;
+            stores[STORES.assets].put({
+                id: assetId,
+                blob,
+                sha256: digest || null,
+                mimeType: blob.type || extra.mimeType || 'application/octet-stream',
+                createdAt: Number(existing?.createdAt) || Date.now(),
+                updatedAt: Date.now(),
+                ...extra,
+                fallbackId: undefined
+            });
+        });
+        return assetId;
+    }
+
     function blobToDataUrl(blob) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -486,14 +591,14 @@
         }
     }
 
-    function createDbConnection() {
+    function createDbConnection(databaseName = DB_NAME) {
         return new Promise((resolve, reject) => {
             if (!window.indexedDB) {
                 reject(new Error('IndexedDB is not supported in this browser.'));
                 return;
             }
 
-            const request = window.indexedDB.open(DB_NAME, DB_VERSION);
+            const request = window.indexedDB.open(databaseName, DB_VERSION);
 
             request.onerror = () => {
                 dbPromise = null;
@@ -531,8 +636,16 @@
                     db.createObjectStore(STORES.assets, { keyPath: 'id' });
                 }
 
+                if (!db.objectStoreNames.contains(STORES.authSessions)) {
+                    db.createObjectStore(STORES.authSessions, { keyPath: 'id' });
+                }
+
                 if (!db.objectStoreNames.contains(STORES.imFriends)) {
                     db.createObjectStore(STORES.imFriends, { keyPath: 'id' });
+                }
+
+                if (!db.objectStoreNames.contains(STORES.imChatSummaries)) {
+                    db.createObjectStore(STORES.imChatSummaries, { keyPath: 'friendId' });
                 }
 
                 if (!db.objectStoreNames.contains(STORES.imMessages)) {
@@ -699,6 +812,107 @@
         return withStore([storeName], 'readonly', async (stores) => {
             const rows = await requestToPromise(stores[storeName].getAll());
             return Array.isArray(rows) ? rows : [];
+        });
+    }
+
+    async function openExistingShadowDatabase() {
+        if (!window.indexedDB) return null;
+        if (typeof window.indexedDB.databases === 'function') {
+            try {
+                const databases = await window.indexedDB.databases();
+                if (!databases.some((item) => item?.name === OPTIMIZATION_SHADOW_DB_NAME)) return null;
+            } catch (error) {}
+        }
+        const db = await createDbConnection(OPTIMIZATION_SHADOW_DB_NAME);
+        const marker = await new Promise((resolve, reject) => {
+            const request = db.transaction(STORES.meta, 'readonly').objectStore(STORES.meta).get('optimization_shadow_ready');
+            request.onsuccess = () => resolve(request.result?.value || null);
+            request.onerror = () => reject(request.error);
+        });
+        if (!marker) {
+            db.close();
+            await deleteDatabaseSafe(OPTIMIZATION_SHADOW_DB_NAME);
+            return null;
+        }
+        return { db, marker };
+    }
+
+    async function getAllFromConnection(db, storeName) {
+        return new Promise((resolve, reject) => {
+            const request = db.transaction(storeName, 'readonly').objectStore(storeName).getAll();
+            request.onsuccess = () => resolve(Array.isArray(request.result) ? request.result : []);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async function buildStoreSignature(storeName, rows) {
+        let checksumRows = rows;
+        if (storeName === STORES.assets) {
+            checksumRows = [];
+            for (const row of rows) {
+                const blob = row?.blob;
+                checksumRows.push({
+                    ...row,
+                    blob: blob ? {
+                        size: Number(blob.size) || 0,
+                        type: blob.type || '',
+                        sha256: row.sha256 || await hashBlobSha256(blob)
+                    } : null
+                });
+            }
+        }
+        return {
+            count: rows.length,
+            bytes: rows.reduce((sum, row) => sum + measureRecordBytes(row), 0),
+            checksum: createChecksum(checksumRows)
+        };
+    }
+
+    async function replaceConnectionStore(db, storeName, rows) {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(storeName, 'readwrite');
+            const store = transaction.objectStore(storeName);
+            store.clear();
+            rows.forEach((row) => store.put(row));
+            transaction.oncomplete = () => resolve(true);
+            transaction.onerror = () => reject(transaction.error);
+            transaction.onabort = () => reject(transaction.error || new Error(`Copy aborted for ${storeName}`));
+        });
+    }
+
+    async function copyDatabaseContents(sourceDb, targetDb, progressCallback, progressStart = 0, progressSpan = 100) {
+        const signatures = {};
+        const storeNames = Object.values(STORES);
+        for (let index = 0; index < storeNames.length; index += 1) {
+            const storeName = storeNames[index];
+            const rows = await getAllFromConnection(sourceDb, storeName);
+            const filteredRows = storeName === STORES.meta
+                ? rows.filter((row) => row?.key !== 'optimization_shadow_ready' && row?.key !== 'optimization_restore_complete')
+                : rows;
+            const expected = await buildStoreSignature(storeName, filteredRows);
+            await replaceConnectionStore(targetDb, storeName, filteredRows);
+            const copiedRows = await getAllFromConnection(targetDb, storeName);
+            const actual = await buildStoreSignature(storeName, copiedRows);
+            if (expected.count !== actual.count || expected.bytes !== actual.bytes || expected.checksum !== actual.checksum) {
+                throw new Error(`Storage verification failed for ${storeName}.`);
+            }
+            signatures[storeName] = actual;
+            reportProgress(
+                progressCallback,
+                `校验 ${storeName} (${actual.count})...`,
+                progressStart + ((index + 1) / storeNames.length) * progressSpan
+            );
+        }
+        return signatures;
+    }
+
+    async function setConnectionMeta(db, key, value) {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(STORES.meta, 'readwrite');
+            transaction.objectStore(STORES.meta).put({ key, value });
+            transaction.oncomplete = () => resolve(true);
+            transaction.onerror = () => reject(transaction.error);
+            transaction.onabort = () => reject(transaction.error || new Error(`Meta write aborted for ${key}`));
         });
     }
 
@@ -1100,6 +1314,32 @@
         return putRecord(STORES.settings, { key, value: sanitizePersistentValue(cloneDeep(value)) });
     }
 
+    async function getAuthSession() {
+        const record = await getRecord(STORES.authSessions, AUTH_SESSION_ID);
+        return record?.session && typeof record.session === 'object'
+            ? cloneDeep(record.session)
+            : null;
+    }
+
+    async function setAuthSession(session) {
+        if (!session || typeof session !== 'object') {
+            await deleteRecord(STORES.authSessions, AUTH_SESSION_ID);
+            return null;
+        }
+        const safeSession = sanitizePersistentValue(cloneDeep(session));
+        await putRecord(STORES.authSessions, {
+            id: AUTH_SESSION_ID,
+            session: safeSession,
+            updatedAt: Date.now()
+        });
+        return cloneDeep(safeSession);
+    }
+
+    async function clearAuthSession() {
+        await deleteRecord(STORES.authSessions, AUTH_SESSION_ID);
+        return true;
+    }
+
     async function assertLargeAssetCapacity(dataUrl) {
         if (typeof dataUrl !== 'string' || dataUrl.length < 350000 || !navigator.storage?.estimate) return;
         const estimate = await navigator.storage.estimate();
@@ -1228,11 +1468,13 @@
             actorRole: safe.actorRole === 'user' || safe.actorRole === 'assistant' ? safe.actorRole : '',
             actorName: typeof safe.actorName === 'string' ? safe.actorName : '',
             content: typeof safe.content === 'string' ? safe.content : '',
+            contentAssetId: typeof safe.contentAssetId === 'string' ? safe.contentAssetId : '',
             text: typeof safe.text === 'string' ? safe.text : '',
             transcript: typeof safe.transcript === 'string' ? safe.transcript : '',
             stickerCategory: typeof safe.stickerCategory === 'string' ? safe.stickerCategory : '',
             stickerName: typeof safe.stickerName === 'string' ? safe.stickerName : '',
             stickerUrl: typeof safe.stickerUrl === 'string' ? safe.stickerUrl : '',
+            stickerAssetId: typeof safe.stickerAssetId === 'string' ? safe.stickerAssetId : '',
             translation: typeof safe.translation === 'string' ? safe.translation : '',
             showTranslation: !!safe.showTranslation,
             replyTo: safe.replyTo || null,
@@ -1247,6 +1489,7 @@
             speaker: safe.speaker,
             senderName: safe.senderName,
             senderAvatarUrl: safe.senderAvatarUrl,
+            senderAvatarAssetId: typeof safe.senderAvatarAssetId === 'string' ? safe.senderAvatarAssetId : '',
             packetMsg: safe.packetMsg,
             claims: safe.claims,
             packetCount: safe.packetCount,
@@ -1295,11 +1538,13 @@
                 : inferredRecallActorRole,
             actorName: row.actorName || '',
             content: row.content,
+            contentAssetId: row.contentAssetId || '',
             text: row.text,
             transcript: row.transcript,
             stickerCategory: row.stickerCategory,
             stickerName: row.stickerName,
             stickerUrl: row.stickerUrl,
+            stickerAssetId: row.stickerAssetId || '',
             translation: row.translation,
             showTranslation: row.showTranslation,
             replyTo: row.replyTo,
@@ -1314,6 +1559,7 @@
             speaker: row.speaker,
             senderName: row.senderName,
             senderAvatarUrl: row.senderAvatarUrl,
+            senderAvatarAssetId: row.senderAvatarAssetId || '',
             packetMsg: row.packetMsg,
             claims: row.claims,
             packetCount: row.packetCount,
@@ -1349,6 +1595,41 @@
         };
     }
 
+    const MESSAGE_ASSET_FIELDS = [
+        ['content', 'contentAssetId'],
+        ['stickerUrl', 'stickerAssetId'],
+        ['senderAvatarUrl', 'senderAvatarAssetId']
+    ];
+
+    async function prepareMessageForStorage(friendId, message, index = 0) {
+        const next = cloneDeep(message || {});
+        const messageId = String(next.id || `${friendId}_msg_${next.timestamp || Date.now()}_${index}`);
+        next.id = messageId;
+        for (const [urlField, assetField] of MESSAGE_ASSET_FIELDS) {
+            const value = next[urlField];
+            if (isDataUrl(value)) {
+                next[assetField] = await saveContentAddressedAsset(value, {
+                    fallbackId: buildAssetId('im_message', messageId, urlField),
+                    ownerType: 'im_message',
+                    ownerId: messageId,
+                    field: urlField
+                });
+                next[urlField] = '';
+            } else if (next[assetField] && isBlobUrl(value)) {
+                next[urlField] = '';
+            }
+        }
+        return next;
+    }
+
+    async function hydrateMessageAssets(message) {
+        const next = { ...(message || {}) };
+        for (const [urlField, assetField] of MESSAGE_ASSET_FIELDS) {
+            if (next[assetField] && !next[urlField]) next[urlField] = await getAssetUrl(next[assetField]);
+        }
+        return next;
+    }
+
     function buildAssetId(prefix, ownerId, fieldName) {
         return `${prefix}_${String(ownerId)}_${String(fieldName)}`;
     }
@@ -1361,13 +1642,13 @@
 
     async function persistFriendAssets(friend) {
         if (!friend) return friend;
-        const result = { ...friend };
+        const result = cloneDeep(friend);
 
         for (const [urlField, assetField] of FRIEND_ASSET_FIELDS) {
             const currentValue = result[urlField];
             if (isDataUrl(currentValue)) {
-                const assetId = result[assetField] || buildAssetId('friend', result.id, urlField);
-                await saveAssetFromDataUrl(assetId, currentValue, {
+                const assetId = await saveContentAddressedAsset(currentValue, {
+                    fallbackId: result[assetField] || buildAssetId('friend', result.id, urlField),
                     ownerType: 'im_friend',
                     ownerId: String(result.id),
                     field: urlField
@@ -1382,12 +1663,30 @@
             }
         }
 
+        if (Array.isArray(result.members)) {
+            for (let index = 0; index < result.members.length; index += 1) {
+                const member = result.members[index];
+                if (!member || typeof member !== 'object') continue;
+                if (isDataUrl(member.avatarUrl)) {
+                    member.avatarAssetId = await saveContentAddressedAsset(member.avatarUrl, {
+                        fallbackId: buildAssetId('friend_member', result.id, member.id ?? index),
+                        ownerType: 'im_group_member',
+                        ownerId: String(member.id ?? index),
+                        field: 'avatarUrl'
+                    });
+                    member.avatarUrl = null;
+                } else if (member.avatarAssetId && isBlobUrl(member.avatarUrl)) {
+                    member.avatarUrl = null;
+                }
+            }
+        }
+
         return result;
     }
 
     async function hydrateFriendAssets(friend) {
         if (!friend) return friend;
-        const result = { ...friend };
+        const result = cloneDeep(friend);
         const mappings = [
             ['avatarAssetId', 'avatarUrl'],
             ['chatBgAssetId', 'chatBg'],
@@ -1400,29 +1699,40 @@
             }
         }
 
+        if (Array.isArray(result.members)) {
+            for (const member of result.members) {
+                if (member?.avatarAssetId && !member.avatarUrl) member.avatarUrl = await getAssetUrl(member.avatarAssetId);
+            }
+        }
+
         return result;
     }
 
     function collectFriendAssetIds(friend) {
         if (!friend) return [];
-        return Array.from(new Set(
-            FRIEND_ASSET_FIELDS
-                .map(([, assetField]) => friend[assetField] ? String(friend[assetField]) : null)
-                .filter(Boolean)
-        ));
+        const ids = FRIEND_ASSET_FIELDS
+            .map(([, assetField]) => friend[assetField] ? String(friend[assetField]) : null)
+            .filter(Boolean);
+        (Array.isArray(friend.members) ? friend.members : []).forEach((member) => {
+            if (member?.avatarAssetId) ids.push(String(member.avatarAssetId));
+        });
+        return Array.from(new Set(ids));
     }
 
     function getExpectedFriendAssetIds(friend) {
         if (!friend || friend.id == null) return [];
-        return Array.from(new Set(
-            FRIEND_ASSET_FIELDS
-                .map(([urlField, assetField]) => {
-                    if (friend[assetField]) return String(friend[assetField]);
-                    if (isDataUrl(friend[urlField])) return buildAssetId('friend', friend.id, urlField);
-                    return null;
-                })
-                .filter(Boolean)
-        ));
+        const ids = FRIEND_ASSET_FIELDS
+            .map(([urlField, assetField]) => {
+                if (friend[assetField]) return String(friend[assetField]);
+                if (isDataUrl(friend[urlField])) return buildAssetId('friend', friend.id, urlField);
+                return null;
+            })
+            .filter(Boolean);
+        (Array.isArray(friend.members) ? friend.members : []).forEach((member, index) => {
+            if (member?.avatarAssetId) ids.push(String(member.avatarAssetId));
+            else if (isDataUrl(member?.avatarUrl)) ids.push(buildAssetId('friend_member', friend.id, member.id ?? index));
+        });
+        return Array.from(new Set(ids));
     }
 
     async function getFriendMetaById(friendId) {
@@ -1509,6 +1819,23 @@
         };
     }
 
+    function normalizeChatSummary(friendId, source = {}) {
+        return {
+            friendId: String(friendId),
+            lastMessagePreview: typeof source.lastMessagePreview === 'string' ? source.lastMessagePreview : '',
+            lastMessageTimestamp: Math.max(0, Number(source.lastMessageTimestamp) || 0),
+            messageCount: Math.max(0, Number(source.messageCount) || 0),
+            unreadCount: Math.max(0, Number(source.unreadCount) || 0),
+            updatedAt: Date.now()
+        };
+    }
+
+    async function saveChatSummary(friendId, source = {}) {
+        const record = normalizeChatSummary(friendId, source);
+        await putRecord(STORES.imChatSummaries, record);
+        return record;
+    }
+
     async function saveFriendMeta(friend, options = {}) {
         if (!friend || friend.id == null) return false;
 
@@ -1524,22 +1851,54 @@
 
         meta.id = String(meta.id);
         meta.updatedAt = Date.now();
-        meta.lastMessagePreview = messageSummary.lastMessagePreview;
-        meta.lastMessageTimestamp = messageSummary.lastMessageTimestamp;
-        meta.messageCount = messageSummary.messageCount;
-        meta.unreadCount = Math.max(0, Number(prepared.unreadCount) || 0);
+        const summary = normalizeChatSummary(meta.id, {
+            ...messageSummary,
+            unreadCount: prepared.unreadCount
+        });
+        delete meta.lastMessagePreview;
+        delete meta.lastMessageTimestamp;
+        delete meta.messageCount;
+        delete meta.unreadCount;
 
-        return putRecord(STORES.imFriends, sanitizePersistentValue(meta));
+        await withStore([STORES.imFriends, STORES.imChatSummaries], 'readwrite', (stores) => {
+            stores[STORES.imFriends].put(sanitizePersistentValue(meta));
+            stores[STORES.imChatSummaries].put(summary);
+        });
+        return true;
     }
 
     async function saveFriendMessage(friendId, message, order = 0) {
         const safeFriendId = String(friendId);
+        const preparedMessage = await prepareMessageForStorage(safeFriendId, message, order);
         const normalized = normalizeMessageRecord(safeFriendId, {
-            ...(message || {}),
+            ...preparedMessage,
             __messageOrder: resolveMessageOrder(message, order)
         }, order);
 
         await putRecord(STORES.imMessages, normalized);
+        return normalized;
+    }
+
+    async function commitFriendMessage(friend, message, order = 0) {
+        if (!friend || friend.id == null) throw new Error('Friend is required for atomic message commit.');
+        const safeFriendId = String(friend.id);
+        const preparedMessage = await prepareMessageForStorage(safeFriendId, message, order);
+        const normalized = normalizeMessageRecord(safeFriendId, {
+            ...preparedMessage,
+            __messageOrder: resolveMessageOrder(message, order)
+        }, order);
+        const messageSummary = await buildFriendMessageSummary(friend.messages || []);
+        const summary = normalizeChatSummary(safeFriendId, {
+            ...messageSummary,
+            unreadCount: friend.unreadCount
+        });
+        await runWithQuotaRetry(() => withStore([STORES.imMessages, STORES.imChatSummaries], 'readwrite', (stores) => {
+            stores[STORES.imMessages].put(normalized);
+            stores[STORES.imChatSummaries].put(summary);
+        }));
+        storageHealthState.lastCommitAt = Date.now();
+        storageHealthState.lastError = null;
+        notifyStorageSubscribers({ ...storageHealthState, reason: 'imessage-message-commit', friendId: safeFriendId });
         return normalized;
     }
 
@@ -1562,13 +1921,15 @@
     async function saveFriendMessages(friendId, messages) {
         const safeFriendId = String(friendId);
         const list = Array.isArray(messages) ? messages : [];
-        const normalizedList = list.map((msg, idx) => normalizeMessageRecord(safeFriendId, msg, idx));
+        const preparedList = await Promise.all(list.map((msg, idx) => prepareMessageForStorage(safeFriendId, msg, idx)));
+        const normalizedList = preparedList.map((msg, idx) => normalizeMessageRecord(safeFriendId, msg, idx));
         const nextMessageIds = new Set(normalizedList.map((msg) => String(msg.id)));
 
-        return withStore([STORES.imMessages], 'readwrite', async (stores) => {
+        return withStore([STORES.imMessages, STORES.imChatSummaries], 'readwrite', async (stores) => {
             const index = stores[STORES.imMessages].index('friendId');
             const range = IDBKeyRange.only(safeFriendId);
             const existingKeys = await requestToPromise(index.getAllKeys(range));
+            const existingSummary = await requestToPromise(stores[STORES.imChatSummaries].get(safeFriendId));
 
             existingKeys.forEach((messageId) => {
                 if (!nextMessageIds.has(String(messageId))) {
@@ -1577,6 +1938,11 @@
             });
 
             normalizedList.forEach((msg) => stores[STORES.imMessages].put(msg));
+            const messageSummary = await buildFriendMessageSummary(normalizedList);
+            stores[STORES.imChatSummaries].put(normalizeChatSummary(safeFriendId, {
+                ...messageSummary,
+                unreadCount: existingSummary?.unreadCount
+            }));
         });
     }
 
@@ -1610,15 +1976,30 @@
         const safePatch = patch && typeof patch === 'object' ? cloneDeep(patch) : {};
         delete safePatch.id;
         delete safePatch.messages;
+        const summaryPatch = {};
+        ['lastMessagePreview', 'lastMessageTimestamp', 'messageCount', 'unreadCount'].forEach((key) => {
+            if (Object.prototype.hasOwnProperty.call(safePatch, key)) summaryPatch[key] = safePatch[key];
+            delete safePatch[key];
+        });
         const now = Date.now();
         const refreshAssetIds = [];
-        for (const [urlField] of FRIEND_ASSET_FIELDS) {
-            if (isDataUrl(safePatch[urlField])) await assertLargeAssetCapacity(safePatch[urlField]);
+        for (const [urlField, assetField] of FRIEND_ASSET_FIELDS) {
+            if (!isDataUrl(safePatch[urlField])) continue;
+            const assetId = await saveContentAddressedAsset(safePatch[urlField], {
+                fallbackId: safePatch[assetField] || buildAssetId('friend', safeFriendId, urlField),
+                ownerType: 'im_friend',
+                ownerId: safeFriendId,
+                field: urlField
+            });
+            safePatch[assetField] = assetId;
+            safePatch[urlField] = null;
+            refreshAssetIds.push(assetId);
         }
 
-        await withStore([STORES.imFriends, STORES.assets], 'readwrite', async (stores) => {
+        await withStore([STORES.imFriends, STORES.imChatSummaries, STORES.assets], 'readwrite', async (stores) => {
             const current = await requestToPromise(stores[STORES.imFriends].get(safeFriendId));
             if (!current) throw new Error(`Friend ${safeFriendId} does not exist.`);
+            const currentSummary = await requestToPromise(stores[STORES.imChatSummaries].get(safeFriendId));
             const next = { ...current, ...safePatch, id: safeFriendId };
 
             for (const [urlField, assetField] of FRIEND_ASSET_FIELDS) {
@@ -1639,6 +2020,9 @@
                     next[assetField] = assetId;
                     next[urlField] = null;
                     refreshAssetIds.push(assetId);
+                } else if (!incoming && safePatch[assetField]) {
+                    next[urlField] = null;
+                    next[assetField] = safePatch[assetField];
                 } else if (!incoming) {
                     next[urlField] = null;
                     next[assetField] = null;
@@ -1652,7 +2036,12 @@
             next.revision = Math.max(0, Number(current.revision) || 0) + 1;
             const sanitized = sanitizePersistentValue(next);
             stores[STORES.imFriends].put(sanitized);
-
+            if (Object.keys(summaryPatch).length > 0) {
+                stores[STORES.imChatSummaries].put(normalizeChatSummary(safeFriendId, {
+                    ...(currentSummary || {}),
+                    ...summaryPatch
+                }));
+            }
         });
 
         refreshAssetIds.forEach((assetId) => revokeRuntimeBlobUrl(assetId));
@@ -1666,7 +2055,10 @@
         if (friendId == null) return false;
         const previousFriend = await getFriendMetaById(friendId);
         await saveFriendMessages(friendId, []);
-        await deleteFriendMetaById(friendId);
+        await withStore([STORES.imFriends, STORES.imChatSummaries], 'readwrite', (stores) => {
+            stores[STORES.imFriends].delete(String(friendId));
+            stores[STORES.imChatSummaries].delete(String(friendId));
+        });
         await cleanupRemovedFriendAssets(previousFriend, null);
         return true;
     }
@@ -1683,18 +2075,19 @@
                     [safeFriendId, Number.MAX_SAFE_INTEGER]
                 );
                 const orderedRows = await requestToPromise(orderIndex.getAll(orderRange));
-                return orderedRows.map(denormalizeMessageRecord);
+                return Promise.all(orderedRows.map((row) => hydrateMessageAssets(denormalizeMessageRecord(row))));
             }
 
             const timeIndex = messageStore.index('friendId_timestamp');
             const timeRange = IDBKeyRange.bound([safeFriendId, 0], [safeFriendId, Number.MAX_SAFE_INTEGER]);
             const rows = await requestToPromise(timeIndex.getAll(timeRange));
-            return rows
+            const ordered = rows
                 .sort((a, b) => {
                     if ((a.timestamp || 0) !== (b.timestamp || 0)) return (a.timestamp || 0) - (b.timestamp || 0);
                     return (a.order || 0) - (b.order || 0);
                 })
                 .map(denormalizeMessageRecord);
+            return Promise.all(ordered.map((message) => hydrateMessageAssets(message)));
         });
     }
 
@@ -1729,16 +2122,21 @@
     }
 
     async function loadFriends() {
-        const allFriends = await getAllRecords(STORES.imFriends);
+        const [allFriends, summaries] = await Promise.all([
+            getAllRecords(STORES.imFriends),
+            getAllRecords(STORES.imChatSummaries)
+        ]);
+        const summariesByFriendId = new Map(summaries.map((item) => [String(item.friendId), item]));
         const hydrated = await Promise.all(
             allFriends.map(async (friend) => {
                 const next = await hydrateFriendAssets(friend);
+                const summary = summariesByFriendId.get(String(friend.id)) || friend;
                 next.messages = [];
                 next.messagesLoaded = false;
-                next.lastMessagePreview = typeof next.lastMessagePreview === 'string' ? next.lastMessagePreview : '';
-                next.lastMessageTimestamp = Number(next.lastMessageTimestamp) || 0;
-                next.messageCount = Number(next.messageCount) || 0;
-                next.unreadCount = Math.max(0, Number(next.unreadCount) || 0);
+                next.lastMessagePreview = typeof summary.lastMessagePreview === 'string' ? summary.lastMessagePreview : '';
+                next.lastMessageTimestamp = Number(summary.lastMessageTimestamp) || 0;
+                next.messageCount = Number(summary.messageCount) || 0;
+                next.unreadCount = Math.max(0, Number(summary.unreadCount) || 0);
                 return next;
             })
         );
@@ -1999,10 +2397,28 @@
         const safeStickers = Array.isArray(stickers)
             ? stickers.filter((category) => category && category.categoryName != null)
             : [];
-        const normalizedStickers = safeStickers.map((category) => ({
-            ...category,
-            categoryName: String(category.categoryName)
-        }));
+        const normalizedStickers = [];
+        for (const category of safeStickers) {
+            const nextCategory = cloneDeep(category);
+            nextCategory.categoryName = String(category.categoryName);
+            const items = Array.isArray(nextCategory.items) ? nextCategory.items : [];
+            for (let index = 0; index < items.length; index += 1) {
+                const sticker = items[index];
+                if (!sticker || typeof sticker !== 'object') continue;
+                if (isDataUrl(sticker.url)) {
+                    sticker.assetId = await saveContentAddressedAsset(sticker.url, {
+                        fallbackId: buildAssetId('sticker', nextCategory.categoryName, sticker.name ?? index),
+                        ownerType: 'im_sticker',
+                        ownerId: nextCategory.categoryName,
+                        field: String(sticker.name ?? index)
+                    });
+                    sticker.url = null;
+                } else if (sticker.assetId && isBlobUrl(sticker.url)) {
+                    sticker.url = null;
+                }
+            }
+            normalizedStickers.push(nextCategory);
+        }
         const nextIds = new Set(normalizedStickers.map((category) => category.categoryName));
 
         return withStore([STORES.imStickers], 'readwrite', async (stores) => {
@@ -2020,7 +2436,13 @@
     }
 
     async function loadStickers() {
-        return getAllRecords(STORES.imStickers);
+        const categories = await getAllRecords(STORES.imStickers);
+        for (const category of categories) {
+            for (const sticker of (Array.isArray(category?.items) ? category.items : [])) {
+                if (sticker?.assetId && !sticker.url) sticker.url = await getAssetUrl(sticker.assetId);
+            }
+        }
+        return categories;
     }
 
     async function saveMomentsCover(dataUrlOrUrl) {
@@ -2432,7 +2854,7 @@
         const chunks = [];
         chunks.push(`{"version": ${STORAGE_SCHEMA_VERSION}, "exportedAt": ${Date.now()}, "stores": {`);
 
-        const storeNames = Object.values(STORES);
+        const storeNames = BACKUP_STORES;
         const totalStores = storeNames.length;
         
         for (let i = 0; i < totalStores; i++) {
@@ -2494,7 +2916,6 @@
             const storesData = payload.stores || {};
             if (progressCallback) progressCallback({ message: '开始恢复数据...', progress: 10 });
             
-            let globalDataForLocalStorage = {};
             const storeNames = Object.keys(storesData);
             const totalStores = storeNames.length;
             
@@ -2522,80 +2943,12 @@
                     });
                 });
                 
-                if (storeName === STORES.settings) {
-                    records.forEach(record => {
-                        if (record && record.key) {
-                            globalDataForLocalStorage[record.key] = record.value;
-                        }
-                    });
-                }
             }
-            
-            if (progressCallback) progressCallback({ message: '同步本地缓存...', progress: 95 });
-
-            try {
-                const lsKeys = {
-                    'userState': 'u2_userState',
-                    'apiConfig': 'u2_apiConfig',
-                    'minimaxConfig': 'u2_minimaxConfig',
-                    'apiPresets': 'u2_apiPresets',
-                    'fetchedModels': 'u2_fetchedModels',
-                    'assistiveBallSettings': 'u2_assistiveBallSettings',
-                    'themeState': 'u2_themeState',
-                    'currentAccountId': 'u2_currentAccountId'
-                };
-                for (const [memKey, lsKey] of Object.entries(lsKeys)) {
-                    if (globalDataForLocalStorage[memKey] !== undefined) {
-                        if (window.StorageManager && typeof window.StorageManager.save === 'function') {
-                            StorageManager.save(lsKey, globalDataForLocalStorage[memKey]);
-                        } else {
-                            localStorage.setItem(lsKey, JSON.stringify(globalDataForLocalStorage[memKey]));
-                        }
-                    }
-                }
-                if (storesData[STORES.accounts]) {
-                    const accountsRecord = storesData[STORES.accounts].find(r => r.id === '__all__');
-                    if (accountsRecord && accountsRecord.value) {
-                        if (window.StorageManager && typeof window.StorageManager.save === 'function') {
-                            StorageManager.save('u2_accounts', accountsRecord.value);
-                        } else {
-                            localStorage.setItem('u2_accounts', JSON.stringify(accountsRecord.value));
-                        }
-                    }
-                }
-            } catch (e) {
-                console.warn('Failed to sync imported data to localStorage:', e);
-            }
+            if (progressCallback) progressCallback({ message: '校验 IndexedDB 数据...', progress: 95 });
         } else {
             const safe = payload && typeof payload === 'object' ? payload : {};
             const globalData = safe.globalData || {};
             await saveGlobalData(globalData);
-
-            try {
-                if (window.StorageManager && typeof window.StorageManager.save === 'function') {
-                    if (globalData.userState) StorageManager.save('u2_userState', globalData.userState);
-                    if (globalData.apiConfig) StorageManager.save('u2_apiConfig', globalData.apiConfig);
-                    if (globalData.minimaxConfig) StorageManager.save('u2_minimaxConfig', globalData.minimaxConfig);
-                    if (globalData.apiPresets) StorageManager.save('u2_apiPresets', globalData.apiPresets);
-                    if (globalData.fetchedModels) StorageManager.save('u2_fetchedModels', globalData.fetchedModels);
-                    if (globalData.assistiveBallSettings) StorageManager.save('u2_assistiveBallSettings', globalData.assistiveBallSettings);
-                    if (globalData.accounts) StorageManager.save('u2_accounts', globalData.accounts);
-                    if (globalData.currentAccountId !== undefined) StorageManager.save('u2_currentAccountId', globalData.currentAccountId);
-                    if (globalData.themeState) StorageManager.save('u2_themeState', globalData.themeState);
-                } else {
-                    if (globalData.userState) localStorage.setItem('u2_userState', JSON.stringify(globalData.userState));
-                    if (globalData.apiConfig) localStorage.setItem('u2_apiConfig', JSON.stringify(globalData.apiConfig));
-                    if (globalData.minimaxConfig) localStorage.setItem('u2_minimaxConfig', JSON.stringify(globalData.minimaxConfig));
-                    if (globalData.apiPresets) localStorage.setItem('u2_apiPresets', JSON.stringify(globalData.apiPresets));
-                    if (globalData.fetchedModels) localStorage.setItem('u2_fetchedModels', JSON.stringify(globalData.fetchedModels));
-                    if (globalData.assistiveBallSettings) localStorage.setItem('u2_assistiveBallSettings', JSON.stringify(globalData.assistiveBallSettings));
-                    if (globalData.accounts) localStorage.setItem('u2_accounts', JSON.stringify(globalData.accounts));
-                    if (globalData.currentAccountId !== undefined) localStorage.setItem('u2_currentAccountId', JSON.stringify(globalData.currentAccountId));
-                    if (globalData.themeState) localStorage.setItem('u2_themeState', JSON.stringify(globalData.themeState));
-                }
-            } catch (e) {
-                console.warn('Failed to sync imported data to localStorage:', e);
-            }
 
             const imessage = safe.imessage && typeof safe.imessage === 'object' ? safe.imessage : {};
             const friends = Array.isArray(imessage.friends) ? imessage.friends : [];
@@ -2695,7 +3048,7 @@
         let recordCount = 0;
         let assetCount = 0;
 
-        Object.values(STORES).forEach((storeName) => {
+        BACKUP_STORES.forEach((storeName) => {
             const count = Array.isArray(storesData[storeName]) ? storesData[storeName].length : 0;
             storeStats[storeName] = count;
             recordCount += count;
@@ -2707,7 +3060,7 @@
 
         return {
             stores: storeStats,
-            storeCount: Object.values(STORES).length,
+            storeCount: BACKUP_STORES.length,
             recordCount,
             assetCount,
             localStorageKeyCount: Array.isArray(localStorageSnapshot) ? localStorageSnapshot.length : 0,
@@ -2719,7 +3072,7 @@
         reportProgress(progressCallback, '准备导出数据...', 0);
 
         const storesData = {};
-        const storeNames = Object.values(STORES);
+        const storeNames = BACKUP_STORES;
 
         for (let i = 0; i < storeNames.length; i += 1) {
             const storeName = storeNames[i];
@@ -2740,9 +3093,8 @@
             storesData[storeName] = serializedRecords;
         }
 
-        reportProgress(progressCallback, '读取本地兼容数据...', 86);
-        const localStorageSnapshot = collectManagedLocalStorageSnapshot();
-        mergeLocalStorageCompatibilityIntoStores(storesData, localStorageSnapshot);
+        reportProgress(progressCallback, '校验 IndexedDB 数据...', 86);
+        const localStorageSnapshot = [];
         const checksumSource = {
             stores: storesData,
             localStorage: localStorageSnapshot
@@ -2807,7 +3159,7 @@
                 }
             }
             const storesData = {};
-            Object.values(STORES).forEach((storeName) => {
+            BACKUP_STORES.forEach((storeName) => {
                 storesData[storeName] = Array.isArray(payload.stores[storeName]) ? payload.stores[storeName] : [];
             });
 
@@ -2853,17 +3205,12 @@
         try {
             clearRuntimeAssetCache();
         } catch (e) {}
-
-        const localStorageRemovedKeys = clearManagedLocalStorage();
-
-        try {
-            sessionStorage.clear();
-        } catch (e) {}
-
+        const authSession = await getAuthSession();
         const databaseDeleted = await clearAllData();
+        if (authSession) await setAuthSession(authSession);
         return {
             databaseDeleted,
-            localStorageRemovedKeys
+            authSessionPreserved: !!authSession
         };
     }
 
@@ -2929,7 +3276,7 @@
 
     async function restoreBackupSnapshot(snapshot = {}, progressCallback) {
         const storesData = snapshot.stores || {};
-        const storeNames = Object.values(STORES);
+        const storeNames = BACKUP_STORES;
 
         reportProgress(progressCallback, '清理旧数据...', 0);
         await clearManagedPersistence();
@@ -2951,7 +3298,12 @@
             });
         }
 
-        reportProgress(progressCallback, '恢复本地兼容数据...', 90);
+        const legacyRows = (Array.isArray(snapshot.localStorage) ? snapshot.localStorage : [])
+            .filter((row) => row?.key && row.key !== LEGACY_AUTH_SESSION_KEY);
+        if (legacyRows.length > 0) {
+            reportProgress(progressCallback, '迁移旧版兼容数据...', 90);
+            await migrateManagedLocalStorageSnapshot(legacyRows);
+        }
         reportProgress(progressCallback, '导入完成', 100);
         return true;
     }
@@ -3127,7 +3479,9 @@
         theme: '应用状态',
         worldbooks: '应用状态',
         meta: '应用状态',
+        authSessions: '认证会话',
         imFriends: 'iMessage',
+        imChatSummaries: 'iMessage',
         imMessages: 'iMessage',
         imMoments: 'iMessage',
         imMomentMessages: 'iMessage',
@@ -3170,25 +3524,86 @@
                 ? Object.fromEntries(Object.entries(estimate.usageDetails).map(([key, value]) => [key, Math.max(0, Number(value) || 0)]))
                 : {};
         } catch (error) {}
-        const otherBytes = Math.max(0, originUsage - indexedDbBytes);
-        if (otherBytes > 0) groups['缓存与其他'] = { count: 0, bytes: otherBytes };
-        return { stores, groups, indexedDbBytes, originUsage, quota, usageDetails, otherBytes, measuredAt: Date.now() };
+        const readUsageDetail = (...keys) => keys.reduce((value, key) => value || Math.max(0, Number(usageDetails[key]) || 0), 0);
+        const indexedDbReportedBytes = readUsageDetail('indexedDB', 'indexeddb');
+        const cacheBytes = readUsageDetail('caches', 'cacheStorage', 'cache_storage');
+        const serviceWorkerBytes = readUsageDetail('serviceWorkerRegistrations', 'service_workers');
+        const databaseOverheadBytes = indexedDbReportedBytes > 0
+            ? Math.max(0, indexedDbReportedBytes - indexedDbBytes)
+            : 0;
+        const classifiedBytes = indexedDbReportedBytes + cacheBytes + serviceWorkerBytes;
+        const browserOtherBytes = Math.max(0, originUsage - (classifiedBytes || indexedDbBytes));
+        if (databaseOverheadBytes > 0) groups['IndexedDB 数据库开销'] = { count: 0, bytes: databaseOverheadBytes };
+        if (cacheBytes > 0) groups['页面缓存'] = { count: 0, bytes: cacheBytes };
+        if (browserOtherBytes > 0) groups[indexedDbReportedBytes > 0 ? '浏览器其他占用' : '浏览器未分类占用（估算）'] = { count: 0, bytes: browserOtherBytes };
+        return {
+            stores,
+            groups,
+            indexedDbBytes,
+            logicalBytes: indexedDbBytes,
+            indexedDbReportedBytes,
+            databaseOverheadBytes,
+            cacheBytes,
+            browserOtherBytes,
+            originUsage,
+            quota,
+            usageDetails,
+            classificationExact: indexedDbReportedBytes > 0 || cacheBytes > 0,
+            otherBytes: browserOtherBytes,
+            measuredAt: Date.now()
+        };
+    }
+
+    async function deduplicateStoredImessageAssets() {
+        const [friendRows, messageRows, stickerRows] = await Promise.all([
+            getAllRecords(STORES.imFriends),
+            getAllRecords(STORES.imMessages),
+            getAllRecords(STORES.imStickers)
+        ]);
+        let recordsConverted = 0;
+        for (const friend of friendRows) {
+            const hasEmbedded = FRIEND_ASSET_FIELDS.some(([urlField]) => isDataUrl(friend?.[urlField]))
+                || (Array.isArray(friend?.members) && friend.members.some((member) => isDataUrl(member?.avatarUrl)));
+            if (!hasEmbedded) continue;
+            const prepared = await persistFriendAssets(friend);
+            await putRecord(STORES.imFriends, sanitizePersistentValue(prepared));
+            recordsConverted += 1;
+        }
+        for (let index = 0; index < messageRows.length; index += 1) {
+            const message = messageRows[index];
+            if (!MESSAGE_ASSET_FIELDS.some(([urlField]) => isDataUrl(message?.[urlField]))) continue;
+            const prepared = await prepareMessageForStorage(message.friendId, message, message.order ?? index);
+            await putRecord(STORES.imMessages, normalizeMessageRecord(message.friendId, prepared, message.order ?? index));
+            recordsConverted += 1;
+        }
+        const hasEmbeddedStickers = stickerRows.some((category) =>
+            (Array.isArray(category?.items) ? category.items : []).some((sticker) => isDataUrl(sticker?.url))
+        );
+        if (hasEmbeddedStickers) {
+            await saveStickers(stickerRows);
+            recordsConverted += stickerRows.length;
+        }
+        return recordsConverted;
     }
 
     async function compactStorage(options = {}) {
         if (!options.skipReady && storageReadyPromise) await storageReadyPromise;
-        const existingReport = await getMeta('storage_compacted_v7');
+        const existingReport = await getMeta('storage_compacted_v8');
         if (existingReport && !options.force) {
             storageHealthState.lastCompaction = cloneDeep(existingReport);
             return cloneDeep(existingReport);
         }
 
         const before = await getStorageBreakdown({ skipReady: true });
-        const [checkpoints, domains, friends, messages, xPosts, xThreads, xDms, oldAppStateRecord, momentsCoverMeta] = await Promise.all([
+        const [checkpoints, domains, friends, summaries, messages, moments, momentMessages, stickers, xPosts, xThreads, xDms, oldAppStateRecord, momentsCoverMeta] = await Promise.all([
             getAllRecords(STORES.storageCheckpoints),
             getAllRecords(STORES.appDomains),
             getAllRecords(STORES.imFriends),
+            getAllRecords(STORES.imChatSummaries),
             getAllRecords(STORES.imMessages),
+            getAllRecords(STORES.imMoments),
+            getAllRecords(STORES.imMomentMessages),
+            getAllRecords(STORES.imStickers),
             getAllRecords(STORES.xPosts),
             getAllRecords(STORES.xThreads),
             getAllRecords(STORES.xDms),
@@ -3198,13 +3613,20 @@
 
         const domainNames = new Set(domains.map((row) => String(row?.name || '')).filter(Boolean));
         const friendIds = new Set(friends.map((row) => String(row?.id || '')).filter(Boolean));
+        const summaryIds = new Set(summaries.map((row) => String(row?.friendId || '')).filter(Boolean));
         const messageIds = new Set(messages.map((row) => String(row?.id || '')).filter(Boolean));
+        const momentIds = new Set(moments.map((row) => String(row?.id || '')).filter(Boolean));
+        const momentMessageIds = new Set(momentMessages.map((row) => String(row?.id || '')).filter(Boolean));
+        const stickerIds = new Set(stickers.map((row) => String(row?.categoryName || '')).filter(Boolean));
         const xPostIds = new Set(xPosts.map((row) => String(row?.id || '')).filter(Boolean));
         const xThreadIds = new Set(xThreads.map((row) => String(row?.postId || '')).filter(Boolean));
         const xDmIds = new Set(xDms.map((row) => String(row?.id || '')).filter(Boolean));
         const recoveredDomains = [];
         const recoveredFriends = [];
         const recoveredMessages = [];
+        const recoveredMoments = [];
+        const recoveredMomentMessages = [];
+        const recoveredStickers = [];
         let coverRecoveryValue;
 
         const domainCheckpoints = new Map();
@@ -3231,6 +3653,52 @@
         const oldAppState = oldAppStateRecord?.value && typeof oldAppStateRecord.value === 'object'
             ? oldAppStateRecord.value
             : {};
+        const currentImessageDomain = domains.find((row) => row?.name === 'imessage');
+        const legacyImessageValues = [oldAppState.imessage, currentImessageDomain?.value]
+            .filter((value) => value && typeof value === 'object');
+        legacyImessageValues.forEach((legacyImessage) => {
+            const legacyFriends = Array.isArray(legacyImessage.friends) ? legacyImessage.friends : [];
+            legacyFriends.forEach((friend) => {
+                if (!friend || friend.id == null) return;
+                const friendId = String(friend.id);
+                if (!friendIds.has(friendId)) {
+                    const friendMeta = sanitizePersistentValue(cloneDeep(friend));
+                    delete friendMeta.messages;
+                    recoveredFriends.push({ ...friendMeta, id: friendId });
+                    friendIds.add(friendId);
+                }
+                (Array.isArray(friend.messages) ? friend.messages : []).forEach((message, index) => {
+                    if (!message) return;
+                    const normalized = normalizeMessageRecord(friendId, message, index);
+                    if (messageIds.has(String(normalized.id))) return;
+                    recoveredMessages.push(normalized);
+                    messageIds.add(String(normalized.id));
+                });
+            });
+            (Array.isArray(legacyImessage.messages) ? legacyImessage.messages : []).forEach((message, index) => {
+                if (!message) return;
+                const friendId = String(message.friendId ?? message.chatId ?? 'legacy');
+                const normalized = normalizeMessageRecord(friendId, message, index);
+                if (messageIds.has(String(normalized.id))) return;
+                recoveredMessages.push(normalized);
+                messageIds.add(String(normalized.id));
+            });
+            (Array.isArray(legacyImessage.moments) ? legacyImessage.moments : []).forEach((moment) => {
+                if (!moment || moment.id == null || momentIds.has(String(moment.id))) return;
+                recoveredMoments.push(sanitizePersistentValue(cloneDeep(moment)));
+                momentIds.add(String(moment.id));
+            });
+            (Array.isArray(legacyImessage.momentMessages) ? legacyImessage.momentMessages : []).forEach((message) => {
+                if (!message || message.id == null || momentMessageIds.has(String(message.id))) return;
+                recoveredMomentMessages.push(sanitizePersistentValue(cloneDeep(message)));
+                momentMessageIds.add(String(message.id));
+            });
+            (Array.isArray(legacyImessage.stickers) ? legacyImessage.stickers : []).forEach((category) => {
+                if (!category || category.categoryName == null || stickerIds.has(String(category.categoryName))) return;
+                recoveredStickers.push(sanitizePersistentValue(cloneDeep(category)));
+                stickerIds.add(String(category.categoryName));
+            });
+        });
         const allDomainNames = new Set([...Object.keys(oldAppState), ...domainCheckpoints.keys()]);
         allDomainNames.forEach((name) => {
             if (domainNames.has(name)) return;
@@ -3238,7 +3706,12 @@
             if (!value || typeof value !== 'object') {
                 throw new Error(`Cannot safely recover missing domain ${name}.`);
             }
-            recoveredDomains.push({ name, value: cloneDeep(value) });
+            recoveredDomains.push({
+                name,
+                value: name === 'imessage'
+                    ? { uiState: cloneDeep(value.uiState && typeof value.uiState === 'object' ? value.uiState : {}) }
+                    : cloneDeep(value)
+            });
         });
 
         const xDomainValue = domains.find((row) => row?.name === 'x')?.value || {};
@@ -3251,11 +3724,36 @@
             xDirectMessages: Array.isArray(xRecoveryValue.xDirectMessages) ? xRecoveryValue.xDirectMessages : []
         };
 
+        const summaryRecords = [];
+        const allMessageRows = [...messages, ...recoveredMessages];
+        for (const friend of [...friends, ...recoveredFriends]) {
+            const friendId = String(friend?.id || '');
+            if (!friendId || summaryIds.has(friendId)) continue;
+            const friendMessages = allMessageRows
+                .filter((message) => String(message?.friendId || '') === friendId)
+                .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+            const derived = friendMessages.length > 0
+                ? await buildFriendMessageSummary(friendMessages)
+                : {
+                    lastMessagePreview: friend.lastMessagePreview || '',
+                    lastMessageTimestamp: Number(friend.lastMessageTimestamp) || 0,
+                    messageCount: Number(friend.messageCount) || 0
+                };
+            summaryRecords.push(normalizeChatSummary(friendId, {
+                ...derived,
+                unreadCount: friend.unreadCount
+            }));
+        }
+
         const now = Date.now();
         await withStore([
             STORES.appDomains,
             STORES.imFriends,
+            STORES.imChatSummaries,
             STORES.imMessages,
+            STORES.imMoments,
+            STORES.imMomentMessages,
+            STORES.imStickers,
             STORES.xPosts,
             STORES.xThreads,
             STORES.xDms,
@@ -3274,8 +3772,33 @@
                     value: name === 'x' ? stripXCollections(persistedValue) : persistedValue
                 });
             });
-            recoveredFriends.forEach((friend) => stores[STORES.imFriends].put(friend));
+            [...friends, ...recoveredFriends].forEach((friend) => {
+                const nextFriend = sanitizePersistentValue(cloneDeep(friend));
+                delete nextFriend.messages;
+                delete nextFriend.lastMessagePreview;
+                delete nextFriend.lastMessageTimestamp;
+                delete nextFriend.messageCount;
+                delete nextFriend.unreadCount;
+                stores[STORES.imFriends].put(nextFriend);
+            });
+            summaryRecords.forEach((summary) => stores[STORES.imChatSummaries].put(summary));
             recoveredMessages.forEach((message) => stores[STORES.imMessages].put(message));
+            recoveredMoments.forEach((moment) => stores[STORES.imMoments].put(moment));
+            recoveredMomentMessages.forEach((message) => stores[STORES.imMomentMessages].put(message));
+            recoveredStickers.forEach((category) => stores[STORES.imStickers].put(category));
+            if (currentImessageDomain) {
+                stores[STORES.appDomains].put({
+                    ...currentImessageDomain,
+                    schemaVersion: STORAGE_SCHEMA_VERSION,
+                    revision: Math.max(0, Number(currentImessageDomain.revision) || 0) + 1,
+                    updatedAt: now,
+                    value: {
+                        uiState: cloneDeep(currentImessageDomain.value?.uiState && typeof currentImessageDomain.value.uiState === 'object'
+                            ? currentImessageDomain.value.uiState
+                            : {})
+                    }
+                });
+            }
             if (coverRecoveryValue !== undefined) {
                 stores[STORES.meta].put({ key: META_KEYS.imMomentsCoverAssetId, value: coverRecoveryValue });
             }
@@ -3292,6 +3815,13 @@
                 if (!xDmIds.has(id)) stores[STORES.xDms].put({ ...sanitizePersistentValue(dm), id, updatedAt: Number(dm?.updatedAt) || now });
             });
         });
+        if (currentImessageDomain) {
+            domainCache.set('imessage', {
+                uiState: cloneDeep(currentImessageDomain.value?.uiState && typeof currentImessageDomain.value.uiState === 'object'
+                    ? currentImessageDomain.value.uiState
+                    : {})
+            });
+        }
 
         const [verifiedDomains, verifiedMessages, verifiedXPosts] = await Promise.all([
             getAllRecords(STORES.appDomains),
@@ -3307,13 +3837,21 @@
             throw new Error('X post recovery verification failed.');
         }
 
+        const cleanedImessageDomainBytes = currentImessageDomain
+            ? measureRecordBytes({ value: { uiState: currentImessageDomain.value?.uiState || {} } })
+            : 0;
+        const legacyImessageBytes = currentImessageDomain
+            ? Math.max(0, measureRecordBytes(currentImessageDomain) - cleanedImessageDomainBytes)
+            : 0;
         const redundantBytes = checkpoints.reduce((sum, row) => sum + measureRecordBytes(row), 0)
-            + (oldAppStateRecord ? measureRecordBytes(oldAppStateRecord) : 0);
+            + (oldAppStateRecord ? measureRecordBytes(oldAppStateRecord) : 0)
+            + legacyImessageBytes;
         await withStore([STORES.storageCheckpoints, STORES.settings, STORES.meta], 'readwrite', (stores) => {
             stores[STORES.storageCheckpoints].clear();
             stores[STORES.settings].delete('appState');
             stores[STORES.meta].put({ key: META_KEYS.schemaVersion, value: STORAGE_SCHEMA_VERSION });
         });
+        const mediaRecordsDeduplicated = await deduplicateStoredImessageAssets();
         const orphanAssetsRemoved = await pruneOrphanedAssets();
         const after = await getStorageBreakdown({ skipReady: true });
         const report = {
@@ -3324,13 +3862,18 @@
             domainsRecovered: recoveredDomains.length,
             friendsRecovered: recoveredFriends.length,
             messagesRecovered: recoveredMessages.length,
+            momentsRecovered: recoveredMoments.length,
+            stickersRecovered: recoveredStickers.length,
+            summariesCreated: summaryRecords.length,
+            legacyImessageBytesRemoved: legacyImessageBytes,
+            mediaRecordsDeduplicated,
             xPostsRecovered: Math.max(0, verifiedXPosts.length - xPosts.length),
             orphanAssetsRemoved,
             estimatedBytesFreed: Math.max(redundantBytes, before.indexedDbBytes - after.indexedDbBytes),
             beforeIndexedDbBytes: before.indexedDbBytes,
             afterIndexedDbBytes: after.indexedDbBytes
         };
-        await setMeta('storage_compacted_v7', report);
+        await setMeta('storage_compacted_v8', report);
         await setMeta('storage_last_compaction', report);
         storageHealthState.lastCompaction = cloneDeep(report);
         return cloneDeep(report);
@@ -3396,6 +3939,91 @@
         }
     }
 
+    async function optimizeStorage(options = {}) {
+        if (!options.skipReady && storageReadyPromise) await storageReadyPromise;
+        const progressCallback = typeof options.progressCallback === 'function' ? options.progressCallback : null;
+        storageHealthState.status = 'saving';
+        storageHealthState.lastError = null;
+        notifyStorageSubscribers({ ...storageHealthState, reason: 'storage-optimization-start' });
+        let shadowDb = null;
+        try {
+            reportProgress(progressCallback, '正在完成待保存数据...', 4);
+            if (!await flushPendingWrites()) throw new Error('Pending writes could not be completed before optimization.');
+            await compactStorage({ skipReady: true, force: true });
+            const before = await getStorageBreakdown({ skipReady: true });
+            const availableBytes = before.quota > 0 ? Math.max(0, before.quota - before.originUsage) : Number.POSITIVE_INFINITY;
+            const requiredBytes = Math.max(8 * 1024 * 1024, Math.ceil(before.logicalBytes * 1.15));
+            if (availableBytes < requiredBytes) {
+                throw new DOMException(
+                    `Safe optimization needs about ${formatBytes(requiredBytes)} of free temporary space.`,
+                    'QuotaExceededError'
+                );
+            }
+
+            await deleteDatabaseSafe(OPTIMIZATION_SHADOW_DB_NAME);
+            shadowDb = await createDbConnection(OPTIMIZATION_SHADOW_DB_NAME);
+            const mainDb = await openDb();
+            const optimizationId = `opt_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+            reportProgress(progressCallback, '正在创建安全影子数据库...', 10);
+            const signatures = await copyDatabaseContents(mainDb, shadowDb, progressCallback, 10, 42);
+            await setConnectionMeta(shadowDb, 'optimization_shadow_ready', {
+                optimizationId,
+                createdAt: Date.now(),
+                signatures
+            });
+
+            try {
+                mainDb.close();
+            } catch (error) {}
+            dbPromise = null;
+            reportProgress(progressCallback, '正在重建主数据库...', 56);
+            const deleted = await deleteDatabaseSafe(DB_NAME);
+            if (!deleted.deleted) {
+                throw new Error(deleted.reason === 'blocked'
+                    ? '数据库正被其他页面占用，请关闭本项目的其他标签页后重试。'
+                    : `Main database could not be rebuilt: ${deleted.reason}`);
+            }
+
+            const rebuiltDb = await openDb();
+            await copyDatabaseContents(shadowDb, rebuiltDb, progressCallback, 58, 36);
+            await setConnectionMeta(rebuiltDb, 'optimization_restore_complete', {
+                optimizationId,
+                restoredAt: Date.now()
+            });
+            shadowDb.close();
+            shadowDb = null;
+            await deleteDatabaseSafe(OPTIMIZATION_SHADOW_DB_NAME);
+            const after = await getStorageBreakdown({ skipReady: true });
+            const report = {
+                optimizedAt: Date.now(),
+                compactedAt: Date.now(),
+                optimizationId,
+                logicalBytesBefore: before.logicalBytes,
+                logicalBytesAfter: after.logicalBytes,
+                browserUsageBefore: before.originUsage,
+                browserUsageAfter: after.originUsage,
+                estimatedBytesFreed: Math.max(0, before.originUsage - after.originUsage),
+                databaseOverheadBefore: before.databaseOverheadBytes,
+                databaseOverheadAfter: after.databaseOverheadBytes,
+                verifiedStores: Object.keys(signatures).length
+            };
+            await setMeta('storage_last_optimization', report);
+            storageHealthState.status = 'saved';
+            storageHealthState.lastCompaction = cloneDeep(report);
+            notifyStorageSubscribers({ ...storageHealthState, reason: 'storage-optimization-complete' });
+            reportProgress(progressCallback, '存储优化完成', 100);
+            return cloneDeep(report);
+        } catch (error) {
+            try {
+                if (shadowDb) shadowDb.close();
+            } catch (closeError) {}
+            storageHealthState.status = 'error';
+            storageHealthState.lastError = error?.message || String(error);
+            notifyStorageSubscribers({ ...storageHealthState, reason: 'storage-optimization-error' });
+            throw error;
+        }
+    }
+
     function parseLegacySnapshotValue(snapshot, key, fallbackValue = null) {
         const row = (Array.isArray(snapshot) ? snapshot : []).find((item) => item?.key === key);
         if (!row) return cloneDeep(fallbackValue);
@@ -3406,8 +4034,31 @@
         }
     }
 
+    async function recoverOptimizationShadowIfNeeded() {
+        const shadow = await openExistingShadowDatabase();
+        if (!shadow) return false;
+        const mainDb = await openDb();
+        const currentMarker = await new Promise((resolve, reject) => {
+            const request = mainDb.transaction(STORES.meta, 'readonly').objectStore(STORES.meta).get('optimization_restore_complete');
+            request.onsuccess = () => resolve(request.result?.value || null);
+            request.onerror = () => reject(request.error);
+        });
+        if (!currentMarker || currentMarker.optimizationId !== shadow.marker.optimizationId) {
+            await copyDatabaseContents(shadow.db, mainDb, null);
+            await setConnectionMeta(mainDb, 'optimization_restore_complete', {
+                optimizationId: shadow.marker.optimizationId,
+                restoredAt: Date.now()
+            });
+        }
+        shadow.db.close();
+        await deleteDatabaseSafe(OPTIMIZATION_SHADOW_DB_NAME);
+        return true;
+    }
+
     async function initializeUnifiedStorage() {
         storageHealthState.status = 'initializing';
+        await recoverOptimizationShadowIfNeeded();
+        const localSnapshot = collectManagedLocalStorageSnapshot();
         const existingDomains = await getAllRecords(STORES.appDomains);
 
         if (existingDomains.length === 0) {
@@ -3416,7 +4067,6 @@
                 getRecord(STORES.settings, 'appState'),
                 getRecord(STORES.accounts, '__all__')
             ]);
-            const localSnapshot = collectManagedLocalStorageSnapshot();
             const durableAppState = appStateRecord && appStateRecord.value && typeof appStateRecord.value === 'object'
                 ? appStateRecord.value
                 : null;
@@ -3431,7 +4081,7 @@
 
             const legacyValues = {};
             localSnapshot.forEach((row) => {
-                if (!row?.key || row.key === 'u2_appState') return;
+                if (!row?.key || row.key === 'u2_appState' || row.key === LEGACY_AUTH_SESSION_KEY) return;
                 legacyValues[row.key] = parseLegacySnapshotValue(localSnapshot, row.key, row.value);
             });
 
@@ -3479,6 +4129,7 @@
             });
         }
 
+        await migrateManagedLocalStorageSnapshot(localSnapshot);
         storageHealthState.lastCompaction = await compactStorage({ skipReady: true });
         storageHealthState.lastCacheCleanup = await getMeta('storage_last_cache_cleanup');
 
@@ -3488,8 +4139,6 @@
             const value = record.name === 'x' ? await hydrateXDomain(record.value) : record.value;
             domainCache.set(String(record.name), cloneDeep(value));
         }
-
-        clearManagedLocalStorage();
 
         storageHealthState.status = 'saved';
         storageHealthState.migrationVersion = STORAGE_SCHEMA_VERSION;
@@ -3576,6 +4225,7 @@
     }
 
     async function clearAllPersistentData() {
+        const authSession = await getAuthSession();
         try {
             clearRuntimeAssetCache();
         } catch (e) {}
@@ -3586,30 +4236,7 @@
         } catch (e) {}
         dbPromise = null;
 
-        const localStorageRemovedKeys = [];
-        let localStorageCleared = false;
         let sessionStorageCleared = false;
-
-        try {
-            const keys = [];
-            for (let i = 0; i < localStorage.length; i += 1) {
-                const key = localStorage.key(i);
-                if (key != null) keys.push(key);
-            }
-            keys.forEach((key) => {
-                const shouldKeep = PERSISTENT_LOCALSTORAGE_EXACT_EXCLUDES.has(key)
-                    || PERSISTENT_LOCALSTORAGE_EXCLUDE_PREFIXES.some((prefix) => key.startsWith(prefix));
-                if (shouldKeep) return;
-                localStorageRemovedKeys.push(key);
-                localStorage.removeItem(key);
-            });
-            localStorageCleared = true;
-        } catch (error) {
-            try {
-                localStorage.removeItem('ios_emulator_global_data');
-                localStorageRemovedKeys.push('ios_emulator_global_data');
-            } catch (e) {}
-        }
 
         try {
             sessionStorage.clear();
@@ -3622,12 +4249,14 @@
             clearBrowserCaches(),
             unregisterServiceWorkers()
         ]);
+        if (authSession) await setAuthSession(authSession);
 
         return {
             runtimeCacheCleared: true,
-            localStorageCleared,
-            localStorageRemovedKeys,
+            localStorageCleared: false,
+            localStorageRemovedKeys: [],
             sessionStorageCleared,
+            authSessionPreserved: !!authSession,
             databases: [currentDbResult, legacyDbResult],
             caches: cacheResults,
             serviceWorkers: swResults
@@ -3655,6 +4284,9 @@
         setMeta,
         getSetting,
         setSetting,
+        getAuthSession,
+        setAuthSession,
+        clearAuthSession,
         saveGlobalData,
         loadGlobalData,
         collectBackupSnapshot,
@@ -3676,6 +4308,8 @@
         deleteFriend,
         loadFriends,
         saveFriendMessage,
+        commitFriendMessage,
+        saveChatSummary,
         deleteFriendMessage,
         deleteFriendMessages,
         saveFriendMessages,
@@ -3713,6 +4347,7 @@
         getStorageBreakdown,
         compactStorage,
         clearSafeCache,
+        optimizeStorage,
         pruneOrphanedAssets,
         subscribe,
         loadLegacyKey,

@@ -473,14 +473,20 @@
 
         const authSignOutBtn = document.getElementById('u2-auth-sign-out-btn');
         if (authSignOutBtn) {
-            authSignOutBtn.addEventListener('click', () => {
+            authSignOutBtn.addEventListener('click', async () => {
                 if (window.u2Auth && typeof window.u2Auth.logout === 'function') {
-                    closeView(dataManagementSheet);
-                    closeView(UI.views.edit);
-                    closeView(UI.views.settings);
-                    window.u2Auth.logout();
-                    if (typeof window.showToast === 'function') {
-                        window.showToast('Signed out');
+                    authSignOutBtn.disabled = true;
+                    try {
+                        await window.u2Auth.logout();
+                        closeView(dataManagementSheet);
+                        closeView(UI.views.edit);
+                        closeView(UI.views.settings);
+                        if (typeof window.showToast === 'function') window.showToast('Signed out');
+                    } catch (error) {
+                        console.error('Failed to sign out:', error);
+                        if (typeof window.showToast === 'function') window.showToast('退出登录失败');
+                    } finally {
+                        authSignOutBtn.disabled = false;
                     }
                 }
             });
@@ -3534,10 +3540,10 @@
                     storageHealthDot.classList.toggle('is-error', health.status === 'error');
                 }
                 if (storageHealthPersistence) {
-                    storageHealthPersistence.textContent = `持久存储：${health.persisted ? '已启用' : '浏览器未授予'}`;
+                    storageHealthPersistence.textContent = `有效数据：${formatBytesForUi(health.breakdown?.logicalBytes)} · 持久存储：${health.persisted ? '已启用' : '浏览器未授予'}`;
                 }
                 if (storageHealthUsage) {
-                    storageHealthUsage.textContent = `空间占用：${formatBytesForUi(health.usage)} / ${formatBytesForUi(health.quota)}`;
+                    storageHealthUsage.textContent = `站点总占用：${formatBytesForUi(health.usage)} / ${formatBytesForUi(health.quota)}`;
                 }
                 if (storageHealthLastSave) {
                     storageHealthLastSave.textContent = `最后保存：${formatDateForUi(health.lastCommitAt)}`;
@@ -3576,20 +3582,18 @@
             }
 
             storageCleanCacheBtn?.addEventListener('click', async () => {
-                if (!confirm('只会清理可重新下载的页面缓存、已验证的重复数据和超过七天的无引用资源，不会删除聊天、帖子、资料或仍在使用的图片。继续清理吗？')) return;
+                if (!confirm('将先创建并校验安全影子数据库，再无损去重资源并重建主数据库。不会删除聊天、帖子、资料、登录状态或仍在使用的图片。优化期间请勿关闭页面，继续吗？')) return;
                 setBusy(storageCleanCacheBtn, true);
-                showOperation('正在安全清理缓存...');
+                showOperation('正在安全优化存储...');
                 try {
-                    const result = await window.appStorage.clearSafeCache({ progressCallback: updateOperation });
+                    const result = await window.appStorage.optimizeStorage({ progressCallback: updateOperation });
                     hideOperation();
                     const released = formatBytesForUi(result.estimatedBytesFreed);
-                    showToast(result.cacheDeleteFailures > 0
-                        ? `部分缓存未能清理，预计已释放 ${released}`
-                        : `缓存清理完成，预计释放 ${released}`);
+                    showToast(`存储优化完成，浏览器报告已释放 ${released}`);
                 } catch (error) {
-                    console.error('Cache cleanup failed:', error);
+                    console.error('Storage optimization failed:', error);
                     hideOperation();
-                    showToast('缓存清理中止，用户数据未被删除');
+                    showToast(error?.message || '存储优化中止，原数据仍被保留');
                 } finally {
                     setBusy(storageCleanCacheBtn, false);
                     await refreshStorageHealth();
@@ -3607,8 +3611,17 @@
                 }
             });
 
-            window.appStorage?.subscribe?.(() => refreshStorageHealth());
-            refreshStorageHealth();
+            let storageRefreshTimer = null;
+            const isDataManagementOpen = () => !!dataManagementSheet && (
+                dataManagementSheet.classList.contains('active') ||
+                dataManagementSheet.style.display === 'flex'
+            );
+            window.appStorage?.subscribe?.(() => {
+                if (!isDataManagementOpen()) return;
+                clearTimeout(storageRefreshTimer);
+                storageRefreshTimer = setTimeout(() => refreshStorageHealth(), 180);
+            });
+            dataManagementBtn?.addEventListener('click', () => setTimeout(() => refreshStorageHealth(), 0));
 
             function showOperation(text) {
                 if (!overlay) {

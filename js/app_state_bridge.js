@@ -271,8 +271,6 @@
             bstage: isPlainObject(safe.bstage) ? safe.bstage : defaults.bstage,
             x: normalizedX,
             imessage: {
-                ...defaults.imessage,
-                ...(isPlainObject(safe.imessage) ? safe.imessage : {}),
                 uiState: {
                     ...defaults.imessage.uiState,
                     ...(isPlainObject(safe.imessage?.uiState) ? safe.imessage.uiState : {})
@@ -313,6 +311,7 @@
         if (!window.appStorage || typeof window.appStorage.commitDomain !== 'function') {
             return false;
         }
+        if (!runtimeDirty && dirtyAppKeys.size === 0) return true;
 
         try {
             await window.appStorage.ready;

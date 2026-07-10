@@ -135,15 +135,16 @@ await import(`../js/storage/app_storage.js?storage-test=${Date.now()}`);
 await window.appStorage.ready;
 await import(`../storage.js?storage-test=${Date.now()}`);
 
-test('migration uses IndexedDB app state and preserves only the login localStorage key', () => {
+test('migration moves app state and login session into IndexedDB and clears localStorage', async () => {
     const xState = window.appStorage.readDomain('x', {});
     assert.equal(xState.xData.name, 'Durable User');
     assert.deepEqual(xState.xGeneratedPosts.map((post) => post.id), ['durable-post']);
     assert.equal(localStorage.getItem('u2_appState'), null);
-    assert.notEqual(localStorage.getItem('u2_mockAuthSession'), null);
+    assert.equal(localStorage.getItem('u2_mockAuthSession'), null);
+    assert.deepEqual(await window.appStorage.getAuthSession(), { loggedIn: true });
 });
 
-test('v7 startup compaction restores missing main records before deleting inflated v6 copies', async () => {
+test('v8 startup compaction restores missing main records before deleting inflated copies', async () => {
     const [checkpoints, oldAppState, messages, health] = await Promise.all([
         window.appStorage.withStore([window.appStorage.STORES.storageCheckpoints], 'readonly', (stores) =>
             window.appStorage.requestToPromise(stores[window.appStorage.STORES.storageCheckpoints].getAll())
@@ -155,7 +156,7 @@ test('v7 startup compaction restores missing main records before deleting inflat
     assert.deepEqual(checkpoints, []);
     assert.equal(oldAppState, null);
     assert.ok(messages.some((message) => message.id === 'seed-message'));
-    assert.equal(health.lastCompaction.schemaVersion, 7);
+    assert.equal(health.lastCompaction.schemaVersion, 8);
     assert.equal(health.lastCompaction.messagesRecovered, 1);
     assert.ok(health.lastCompaction.checkpointRecordsDeleted >= 3);
 });
@@ -213,10 +214,129 @@ test('iMessage field patches preserve persona and moments-cover assets across co
         window.appStorage.patchFriendMeta('friend-1', { persona: 'updated persona' }),
         window.appStorage.patchFriendMeta('friend-1', { momentsCover: dataUrl })
     ]);
-    const [friend] = await window.appStorage.loadFriends();
+    const friend = (await window.appStorage.loadFriends()).find((item) => item.id === 'friend-1');
     assert.equal(friend.persona, 'updated persona');
-    assert.equal(friend.momentsCoverAssetId, 'friend_friend-1_momentsCover');
+    assert.match(friend.momentsCoverAssetId, /^sha256_[a-f0-9]{64}$/);
     assert.ok(String(friend.momentsCover).startsWith('blob:'));
+});
+
+test('plain-text message commits update only message and compact summary records', async () => {
+    const friend = {
+        id: 'atomic-friend',
+        nickname: 'Atomic Friend',
+        persona: 'must stay untouched',
+        messages: [],
+        messagesLoaded: true,
+        unreadCount: 0
+    };
+    await window.appStorage.saveFriend(friend);
+    const beforeMeta = await window.appStorage.withStore(
+        [window.appStorage.STORES.imFriends],
+        'readonly',
+        (stores) => window.appStorage.requestToPromise(stores[window.appStorage.STORES.imFriends].get(friend.id))
+    );
+    const first = { id: 'atomic-message-1', role: 'user', content: 'hello', timestamp: 100 };
+    friend.messages.push(first);
+    await window.appStorage.commitFriendMessage(friend, first, 0);
+    const second = { id: 'atomic-message-2', role: 'assistant', content: 'world', timestamp: 200 };
+    friend.messages.push(second);
+    await window.appStorage.commitFriendMessage(friend, second, 1);
+    const [afterMeta, summary, messages] = await Promise.all([
+        window.appStorage.withStore([window.appStorage.STORES.imFriends], 'readonly', (stores) =>
+            window.appStorage.requestToPromise(stores[window.appStorage.STORES.imFriends].get(friend.id))
+        ),
+        window.appStorage.withStore([window.appStorage.STORES.imChatSummaries], 'readonly', (stores) =>
+            window.appStorage.requestToPromise(stores[window.appStorage.STORES.imChatSummaries].get(friend.id))
+        ),
+        window.appStorage.loadMessagesByFriendId(friend.id)
+    ]);
+    assert.deepEqual(afterMeta, beforeMeta);
+    assert.equal(summary.messageCount, 2);
+    assert.equal(summary.lastMessagePreview, 'world');
+    assert.deepEqual(messages.map((message) => message.id), ['atomic-message-1', 'atomic-message-2']);
+});
+
+test('identical embedded chat images share one lossless content-addressed asset', async () => {
+    const dataUrl = 'data:image/png;base64,iVBORw0KGgo=';
+    const friend = { id: 'media-friend', messages: [], messagesLoaded: true, unreadCount: 0 };
+    await window.appStorage.saveFriend(friend);
+    const first = { id: 'media-1', role: 'user', type: 'image', content: dataUrl, timestamp: 1 };
+    friend.messages.push(first);
+    await window.appStorage.commitFriendMessage(friend, first, 0);
+    const second = { id: 'media-2', role: 'user', type: 'image', content: dataUrl, timestamp: 2 };
+    friend.messages.push(second);
+    await window.appStorage.commitFriendMessage(friend, second, 1);
+    const stored = await window.appStorage.withStore(
+        [window.appStorage.STORES.imMessages, window.appStorage.STORES.assets],
+        'readonly',
+        async (stores) => ({
+            messages: await window.appStorage.requestToPromise(stores[window.appStorage.STORES.imMessages].getAll()),
+            assets: await window.appStorage.requestToPromise(stores[window.appStorage.STORES.assets].getAll())
+        })
+    );
+    const mediaRows = stored.messages.filter((message) => message.friendId === friend.id);
+    assert.equal(mediaRows.length, 2);
+    assert.equal(mediaRows[0].contentAssetId, mediaRows[1].contentAssetId);
+    assert.match(mediaRows[0].contentAssetId, /^sha256_[a-f0-9]{64}$/);
+    assert.equal(stored.assets.filter((asset) => asset.id === mediaRows[0].contentAssetId).length, 1);
+});
+
+test('v8 backup excludes auth sessions and no longer emits localStorage data', async () => {
+    const snapshot = await window.appStorage.collectBackupSnapshot();
+    assert.equal(Object.hasOwn(snapshot.stores, window.appStorage.STORES.authSessions), false);
+    assert.deepEqual(snapshot.localStorage, []);
+});
+
+test('legacy iMessage domain collections are recovered once and removed from the app domain', async () => {
+    await window.appStorage.commitDomain('imessage', {
+        uiState: { cssPresets: ['kept'] },
+        friends: [{ id: 'legacy-domain-friend', nickname: 'Recovered', messages: [{ id: 'legacy-domain-message', content: 'kept', timestamp: 1 }] }]
+    });
+    await window.appStorage.compactStorage({ force: true });
+    const domain = window.appStorage.readDomain('imessage', {});
+    const messages = await window.appStorage.loadMessagesByFriendId('legacy-domain-friend');
+    assert.deepEqual(domain, { uiState: { cssPresets: ['kept'] } });
+    assert.ok(messages.some((message) => message.id === 'legacy-domain-message'));
+});
+
+test('storage breakdown never labels unclassified IndexedDB usage as cache', async () => {
+    const breakdown = await window.appStorage.getStorageBreakdown();
+    assert.equal(Object.hasOwn(breakdown.groups, '缓存与其他'), false);
+    assert.equal(breakdown.logicalBytes, breakdown.indexedDbBytes);
+});
+
+test('verified shadow-database optimization preserves auth and user records', async () => {
+    const report = await window.appStorage.optimizeStorage();
+    const [auth, messages] = await Promise.all([
+        window.appStorage.getAuthSession(),
+        window.appStorage.loadMessagesByFriendId('atomic-friend')
+    ]);
+    assert.ok(report.verifiedStores >= 1);
+    assert.deepEqual(auth, { loggedIn: true });
+    assert.deepEqual(messages.map((message) => message.id), ['atomic-message-1', 'atomic-message-2']);
+});
+
+test('safe optimization aborts before rebuild when temporary quota is insufficient', async () => {
+    const originalEstimate = navigator.storage.estimate;
+    navigator.storage.estimate = async () => ({ usage: 1024, quota: 1024 });
+    await assert.rejects(() => window.appStorage.optimizeStorage(), /temporary space|QuotaExceededError/i);
+    navigator.storage.estimate = originalEstimate;
+    const messages = await window.appStorage.loadMessagesByFriendId('atomic-friend');
+    assert.deepEqual(messages.map((message) => message.id), ['atomic-message-1', 'atomic-message-2']);
+});
+
+test('storage usage details expose only real Cache Storage bytes as page cache', async () => {
+    const originalEstimate = navigator.storage.estimate;
+    navigator.storage.estimate = async () => ({
+        usage: 10 * 1024 * 1024,
+        quota: 100 * 1024 * 1024,
+        usageDetails: { indexedDB: 8 * 1024 * 1024, caches: 512 * 1024 }
+    });
+    const breakdown = await window.appStorage.getStorageBreakdown();
+    navigator.storage.estimate = originalEstimate;
+    assert.equal(breakdown.cacheBytes, 512 * 1024);
+    assert.equal(breakdown.groups['页面缓存'].bytes, 512 * 1024);
+    assert.equal(Object.hasOwn(breakdown.groups, '缓存与其他'), false);
 });
 
 test('normal domain, X and iMessage writes no longer create full local-history checkpoints', async () => {

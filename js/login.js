@@ -1,6 +1,12 @@
 (function() {
-    const SESSION_KEY = 'u2_mockAuthSession';
     let cachedDom = null;
+    let cachedSession = null;
+    let authReadyResolve;
+    let authReadyReject;
+    const authReady = new Promise((resolve, reject) => {
+        authReadyResolve = resolve;
+        authReadyReject = reject;
+    });
 
     function clonePlainData(value) {
         if (!value || typeof value !== 'object') return value;
@@ -8,34 +14,39 @@
         return JSON.parse(JSON.stringify(value));
     }
 
-    function safeLoadSession() {
+    async function safeLoadSession() {
         try {
-            const raw = window.localStorage ? window.localStorage.getItem(SESSION_KEY) : null;
-            if (!raw) return null;
-            const parsed = JSON.parse(raw);
-            if (!parsed || typeof parsed !== 'object' || !parsed.account) return null;
-            return parsed;
+            if (!window.appStorage?.getAuthSession) return null;
+            await window.appStorage.ready;
+            const session = await window.appStorage.getAuthSession();
+            return session && typeof session === 'object' && session.account ? session : null;
         } catch (error) {
             console.warn('[u2Auth] Failed to load session:', error);
             return null;
         }
     }
 
-    function safeSaveSession(session) {
+    async function safeSaveSession(session) {
         try {
-            if (window.localStorage) {
-                window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-            }
+            if (!window.appStorage?.setAuthSession) throw new Error('IndexedDB auth storage unavailable');
+            await window.appStorage.ready;
+            cachedSession = await window.appStorage.setAuthSession(session);
+            return cachedSession;
         } catch (error) {
             console.warn('[u2Auth] Failed to save session:', error);
+            throw error;
         }
     }
 
-    function safeRemoveSession() {
+    async function safeRemoveSession() {
         try {
-            if (window.localStorage) window.localStorage.removeItem(SESSION_KEY);
+            if (!window.appStorage?.clearAuthSession) throw new Error('IndexedDB auth storage unavailable');
+            await window.appStorage.ready;
+            await window.appStorage.clearAuthSession();
+            cachedSession = null;
         } catch (error) {
             console.warn('[u2Auth] Failed to remove session:', error);
+            throw error;
         }
     }
 
@@ -82,14 +93,14 @@
     }
 
     function getSession() {
-        return safeLoadSession();
+        return cachedSession ? clonePlainData(cachedSession) : null;
     }
 
     function isLoggedIn() {
         return !!getSession();
     }
 
-    function login(credentials = {}) {
+    async function login(credentials = {}) {
         const account = String(credentials.account || '').trim();
         const password = String(credentials.password || '');
         if (!account || !password) {
@@ -104,7 +115,7 @@
             displayName: resolveDisplayName(account),
             loginAt: Date.now()
         };
-        safeSaveSession(session);
+        await safeSaveSession(session);
         hideLoginScreen();
         emitAuthChanged(session);
         return {
@@ -113,8 +124,8 @@
         };
     }
 
-    function logout() {
-        safeRemoveSession();
+    async function logout() {
+        await safeRemoveSession();
         showLoginScreen({ focus: true });
         emitAuthChanged(null);
         return true;
@@ -153,7 +164,7 @@
         dom.passwordField?.classList.toggle('is-invalid', !!passwordMissing);
     }
 
-    function handleSubmit(event) {
+    async function handleSubmit(event) {
         event.preventDefault();
         const dom = cachedDom || collectDom();
         const account = dom.accountInput ? dom.accountInput.value.trim() : '';
@@ -170,7 +181,13 @@
         }
 
         clearInvalidState();
-        const result = login({ account, password });
+        let result;
+        try {
+            result = await login({ account, password });
+        } catch (error) {
+            setError('Unable to save login session / 无法保存登录状态');
+            return;
+        }
         if (!result.ok) {
             setError(result.error || 'Unable to sign in.');
             return;
@@ -208,7 +225,7 @@
         });
     }
 
-    function initLoginScreen() {
+    async function initLoginScreen() {
         const dom = collectDom();
         if (!dom.screen || !dom.form) return;
 
@@ -216,6 +233,8 @@
         bindPasswordToggle();
         bindInputReset();
 
+        cachedSession = await safeLoadSession();
+        authReadyResolve(true);
         const session = getSession();
         if (session) {
             hideLoginScreen();
@@ -228,6 +247,7 @@
     }
 
     window.u2Auth = {
+        ready: authReady,
         login,
         logout,
         getSession,
@@ -237,8 +257,8 @@
     };
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initLoginScreen, { once: true });
+        document.addEventListener('DOMContentLoaded', () => initLoginScreen().catch(authReadyReject), { once: true });
     } else {
-        initLoginScreen();
+        initLoginScreen().catch(authReadyReject);
     }
 })();

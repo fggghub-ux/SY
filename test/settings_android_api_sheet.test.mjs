@@ -123,6 +123,6 @@ test('changed Android input assets are cache-busted', () => {
     assert.match(indexSource, /css\/settings\.css\?v=20260710-storage-v7-cache1/);
     assert.match(indexSource, /js\/mobile_input_compat\.js\?v=20260709-android-input-v1/);
     assert.match(indexSource, /js\/settings\.js\?v=20260710-storage-v7-cache1/);
-    assert.match(indexSource, /id="storage-clean-cache-btn"[^>]*>清理缓存<\/button>/);
-    assert.match(settingsSource, /appStorage\.clearSafeCache\(\{ progressCallback: updateOperation \}\)/);
+    assert.match(indexSource, /id="storage-clean-cache-btn"[^>]*>优化存储<\/button>/);
+    assert.match(settingsSource, /appStorage\.optimizeStorage\(\{ progressCallback: updateOperation \}\)/);
 });

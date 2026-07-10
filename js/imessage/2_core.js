@@ -1540,14 +1540,12 @@ window.imApp.appendFriendMessage = async function(friendId, message, options = {
 
     try {
         if (window.imApp.ensureDataReady) await window.imApp.ensureDataReady();
-        if (!window.imStorage?.saveFriendMessage || !window.imStorage?.saveFriendMeta) {
+        if (!window.imStorage?.commitFriendMessage) {
             throw new Error('Incremental friend message persistence unavailable');
         }
 
         const persistedMessage = await window.imApp.runFriendPersistenceTask(safeFriendId, async () => {
-            const stored = await window.imStorage.saveFriendMessage(safeFriendId, targetMessage, nextOrder);
-            await window.imStorage.saveFriendMeta(targetFriend);
-            return stored;
+            return window.imStorage.commitFriendMessage(targetFriend, targetMessage, nextOrder);
         });
 
         if (persistedMessage && persistedMessage.id && !targetMessage.id) {
@@ -1613,14 +1611,12 @@ window.imApp.updateFriendMessage = async function(friendId, descriptor, mutator,
         window.imApp.syncActiveFriendReference(targetFriend);
 
         if (window.imApp.ensureDataReady) await window.imApp.ensureDataReady();
-        if (!window.imStorage?.saveFriendMessage || !window.imStorage?.saveFriendMeta) {
+        if (!window.imStorage?.commitFriendMessage) {
             throw new Error('Incremental friend message persistence unavailable');
         }
 
         const persistedMessage = await window.imApp.runFriendPersistenceTask(safeFriendId, async () => {
-            const stored = await window.imStorage.saveFriendMessage(safeFriendId, targetMessage, targetIndex);
-            await window.imStorage.saveFriendMeta(targetFriend);
-            return stored;
+            return window.imStorage.commitFriendMessage(targetFriend, targetMessage, targetIndex);
         });
 
         if (persistedMessage && persistedMessage.id && !targetMessage.id) {
@@ -3274,24 +3270,13 @@ window.imApp.initializeData = async function() {
 
         window.imData.ready = true;
 
-        if (typeof window.updateAppState === 'function') {
-            window.updateAppState('imessage', (currentState) => {
-                const safeState = currentState && typeof currentState === 'object' ? currentState : {};
-                const existingMeta = safeState.meta && typeof safeState.meta === 'object' ? safeState.meta : {};
-                return {
-                    ...safeState,
-                    meta: {
-                        ...existingMeta,
-                        storageMode: 'indexeddb',
-                        dataVersion: 2,
-                        ready: true,
-                        friendsCount: Array.isArray(window.imData.friends) ? window.imData.friends.length : 0,
-                        momentsCount: Array.isArray(window.imData.moments) ? window.imData.moments.length : 0,
-                        stickersCount: Array.isArray(window.imData.stickers) ? window.imData.stickers.length : 0,
-                        lastSyncAt: Date.now()
-                    }
-                };
-            }, { save: true });
+        if (window.appStorage?.setMeta) {
+            window.appStorage.setMeta('imessage_runtime', {
+                storageMode: 'indexeddb',
+                dataVersion: 3,
+                friendsCount: Array.isArray(window.imData.friends) ? window.imData.friends.length : 0,
+                lastSyncAt: Date.now()
+            }).catch((error) => console.warn('Failed to persist iMessage runtime metadata', error));
         }
 
         document.dispatchEvent(new CustomEvent('imessage-data-ready'));

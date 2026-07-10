@@ -113,6 +113,7 @@
         loadFriends: proxy('loadFriends'),
         saveFriendMeta: proxy('saveFriendMeta'),
         saveFriendMessage: proxy('saveFriendMessage'),
+        commitFriendMessage: proxy('commitFriendMessage'),
         deleteFriendMessage: proxy('deleteFriendMessage'),
         deleteFriendMessages: proxy('deleteFriendMessages'),
         saveFriendMessages: proxy('saveFriendMessages'),
