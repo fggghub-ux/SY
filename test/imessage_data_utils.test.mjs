@@ -77,6 +77,42 @@ test('normalizes group chat memory contexts as unique group IDs', () => {
     ]);
 });
 
+test('parses offline bilingual dialogue for display while keeping Minimax source language only', () => {
+    assert.equal(utils.getChatLanguageName('ko'), 'Korean');
+    assert.equal(utils.getChatLanguageName('ja'), 'Japanese');
+    assert.equal(utils.getChatLanguageName('en'), 'English');
+    assert.equal(utils.getChatLanguageName('fr'), 'French');
+
+    assert.deepEqual(utils.parseBilingualDialogue('잘자（晚安）', 'ko'), {
+        original: '잘자',
+        translation: '晚安'
+    });
+    assert.deepEqual(utils.parseBilingualDialogue('おやすみ（晚安）', 'ja'), {
+        original: 'おやすみ',
+        translation: '晚安'
+    });
+    assert.deepEqual(utils.parseBilingualDialogue('Good night（晚安）', 'en'), {
+        original: 'Good night',
+        translation: '晚安'
+    });
+    assert.deepEqual(utils.parseBilingualDialogue('Bonne nuit（晚安）', 'fr'), {
+        original: 'Bonne nuit',
+        translation: '晚安'
+    });
+    assert.deepEqual(utils.parseBilingualDialogue('晚安', 'zh'), {
+        original: '晚安',
+        translation: ''
+    });
+    assert.deepEqual(utils.parseBilingualDialogue('Good night (晚安)', 'en'), {
+        original: 'Good night (晚安)',
+        translation: ''
+    });
+    assert.deepEqual(utils.parseBilingualDialogue('Good night（translation）', 'en'), {
+        original: 'Good night（translation）',
+        translation: ''
+    });
+});
+
 test('deleting short-term summaries keeps the covered conversation out of the unsummarized queue', () => {
     const messages = [];
     for (let round = 1; round <= 10; round += 1) {
@@ -157,6 +193,56 @@ test('ships the full-screen sticker manager, manifest upload, and protected mome
     assert.match(html, /id="chat-memory-auto-summary-toggle"/);
     assert.match(html, /id="chat-memory-summary-round-input" value="30"/);
     assert.match(html, /id="chat-memory-group-context-btn"/);
+});
+
+test('offline meeting state is mutated only inside the persisted friend transaction', async () => {
+    const source = await fs.readFile(new URL('../js/imessage/4_chat_sheet.js', import.meta.url), 'utf8');
+
+    assert.doesNotMatch(source, /activeFriend\.offlineMessages\s*=/);
+    assert.doesNotMatch(source, /activeFriend\.offlineMeetingSessions\s*=/);
+    assert.doesNotMatch(source, /activeFriend\.offlineMeetingActive\s*=/);
+    assert.doesNotMatch(source, /activeFriend\.offlineCurrentSessionId\s*=/);
+    assert.doesNotMatch(source, /activeFriend\.offlineMeetingStartedAt\s*=/);
+    assert.doesNotMatch(source, /activeFriend\.offlineRegexScripts\s*=/);
+    assert.match(source, /const saved = await commitSheetFriendChange\(activeFriend\.id,[\s\S]*?targetFriend\.offlineMessages = normalized/);
+    assert.match(source, /if \(!saved\) throw new Error\('Failed to persist offline meeting messages'\)/);
+    assert.match(source, /if \(!savedSession\)[\s\S]*?Failed to save offline meeting session/);
+});
+
+test('offline chat dialogue and settings use the fullscreen studio presentation', async () => {
+    const [html, source, css] = await Promise.all([
+        fs.readFile(new URL('../index.html', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_sheet.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../css/imessage.css', import.meta.url), 'utf8')
+    ]);
+
+    assert.match(html, /class="app-view offline-settings-view" id="offline-tavern-settings-sheet"/);
+    assert.match(html, /id="offline-tavern-settings-back-btn"/);
+    assert.match(html, /OFFLINE STUDIO/);
+    assert.doesNotMatch(html, /bottom-sheet-overlay detail-sheet-overlay" id="offline-tavern-settings-sheet"/);
+    assert.match(source, /offline-tavern-speech offline-tavern-dialogue/);
+    assert.match(source, /id: 'bilingual_dialogue'[\s\S]*?name: '双语对话'[\s\S]*?presetVersion: 1/);
+    assert.match(source, /const bilingualPrompt = prompts\.find\(prompt => prompt\.id === 'bilingual_dialogue'\)[\s\S]*?concat\(bilingualPrompt \? \[bilingualPrompt\] : \[\]\)[\s\S]*?concat\(barragePrompt/);
+    assert.match(source, /id: 'cot'[\s\S]*?presetVersion: 3[\s\S]*?Read Char's Default Language[\s\S]*?audit every drafted Char dialogue line/);
+    assert.match(source, /Correct all language, translation, corner-quote, and full-width-parenthesis errors/);
+    assert.match(source, /Default Language: \$\{defaultLanguage\}/);
+    assert.match(source, /const quoteRegex = \/「\(\[\^」\\n\]\{1,180\}\)」\/g/);
+    assert.match(source, /parseOfflineBilingualDialogue\(match\[1\], language\)/);
+    assert.doesNotMatch(source, /quoteRegex = [^\n]*“/);
+    assert.doesNotMatch(source, /quoteRegex = [^\n]*\[\^"\\n\]/);
+    assert.match(source, /detail: '「」包裹的对话'/);
+    assert.match(source, /language: friend\?\.language \|\| 'zh'/);
+    assert.match(source, /offline-tavern-dialogue is-playable[\s\S]*?role="button"[\s\S]*?aria-busy="false"/);
+    assert.match(source, /querySelectorAll\('\.offline-tavern-speech\.is-playable'\)/);
+    assert.match(source, /window\.getSelection\(\)[\s\S]*?!selection\.isCollapsed/);
+    assert.match(source, /event\.key !== 'Enter' && event\.key !== ' '/);
+    assert.doesNotMatch(source, /offline-tavern-voice-btn/);
+    assert.match(source, /closeView\(document\.getElementById\('offline-tavern-settings-sheet'\)\)/);
+    assert.match(css, /\.offline-tavern-dialogue\s*\{\s*color:\s*var\(--offline-tavern-dialogue-color,\s*#8b8b8b\);\s*\}/);
+    assert.match(css, /\.offline-tavern-speech\.is-playable:hover\s*\{[\s\S]*?background:\s*rgba\(0, 0, 0, 0\.045\)/);
+    assert.match(css, /\.offline-tavern-speech\.is-playable\.is-loading\s*\{[\s\S]*?cursor:\s*wait/);
+    assert.match(css, /\.offline-settings-view\.active\s*\{[\s\S]*?display:\s*flex/);
+    assert.match(css, /@media \(max-width: 520px\)[\s\S]*?\.offline-settings-prompt-content\s*\{[\s\S]*?margin-left:\s*0/);
 });
 
 test('injects loaded group chat memory only into character single-chat prompts', async () => {

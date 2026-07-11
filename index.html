@@ -32,7 +32,7 @@
     <link rel="stylesheet" href="css/login.css">
     <link rel="stylesheet" href="css/home.css">
     <link rel="stylesheet" href="css/worldbook.css">
-    <link rel="stylesheet" href="css/imessage.css?v=20260709-android-input-v1">
+    <link rel="stylesheet" href="css/imessage.css?v=20260711-offline-studio-v1">
     <link rel="stylesheet" href="css/pay.css?v=20260705-safe-area-v1">
     <link rel="stylesheet" href="css/bstage.css">
     <link rel="stylesheet" href="css/tiktok.css">
@@ -1628,28 +1628,38 @@
               </div>
           </div>
 
-          <!-- Offline Tavern Settings Sheet -->
-          <div class="bottom-sheet-overlay detail-sheet-overlay" id="offline-tavern-settings-sheet" style="z-index: 1050;">
-              <div class="bottom-sheet" style="max-height: 85%; height: 80%; display: flex; flex-direction: column;">
-                  <div class="sheet-handle"></div>
-                  <div class="sheet-title">线下设定</div>
-                  <div class="detail-sheet-content" style="flex: 1; overflow-y: auto; padding: 0 16px;">
-                      <div class="offline-settings-tabs" id="offline-tavern-settings-tabs" role="tablist" aria-label="线下设定">
-                          <button type="button" class="active" data-offline-settings-tab="prompts" role="tab" aria-selected="true">提示词预设</button>
-                          <button type="button" data-offline-settings-tab="regex" role="tab" aria-selected="false">正则</button>
-                      </div>
-                      <div id="offline-tavern-prompts-panel" class="offline-settings-panel active" role="tabpanel">
-                          <div id="offline-tavern-settings-list" class="offline-settings-list">
-                              <!-- Prompts injected here via JS -->
-                          </div>
-                      </div>
-                      <div id="offline-tavern-regex-panel" class="offline-settings-panel" role="tabpanel" hidden>
-                          <div id="offline-tavern-regex-list" class="offline-settings-list">
-                              <!-- Regex rules injected here via JS -->
-                          </div>
-                      </div>
+          <!-- Offline Tavern Settings Fullscreen View -->
+          <div class="app-view offline-settings-view" id="offline-tavern-settings-sheet" style="z-index: 1050;">
+              <header class="offline-settings-header">
+                  <button type="button" class="offline-settings-back" id="offline-tavern-settings-back-btn" aria-label="返回" title="返回">
+                      <i class="fas fa-chevron-left"></i>
+                  </button>
+                  <div class="offline-settings-heading">
+                      <strong>线下设定</strong>
+                      <span>OFFLINE STUDIO</span>
+                  </div>
+                  <div class="offline-settings-header-spacer" aria-hidden="true"></div>
+              </header>
+              <div class="offline-settings-tabs-wrap">
+                  <div class="offline-settings-tabs" id="offline-tavern-settings-tabs" role="tablist" aria-label="线下设定">
+                      <button type="button" class="active" data-offline-settings-tab="prompts" role="tab" aria-selected="true"><span>提示词</span><small>PRESETS</small></button>
+                      <button type="button" data-offline-settings-tab="regex" role="tab" aria-selected="false"><span>正则</span><small>RULES</small></button>
+                      <button type="button" data-offline-settings-tab="theme" role="tab" aria-selected="false"><span>主题</span><small>THEME</small></button>
                   </div>
               </div>
+              <main class="offline-settings-content">
+                  <div class="offline-settings-content-inner">
+                      <section id="offline-tavern-prompts-panel" class="offline-settings-panel active" role="tabpanel">
+                          <div id="offline-tavern-settings-list" class="offline-settings-list"></div>
+                      </section>
+                      <section id="offline-tavern-regex-panel" class="offline-settings-panel" role="tabpanel" hidden>
+                          <div id="offline-tavern-regex-list" class="offline-settings-list"></div>
+                      </section>
+                      <section id="offline-tavern-theme-panel" class="offline-settings-panel" role="tabpanel" hidden>
+                          <div id="offline-tavern-theme-list" class="offline-settings-list"></div>
+                      </section>
+                  </div>
+              </main>
           </div>
 
         <div class="app-view imessage-view" id="imessage-view">
@@ -7427,7 +7437,7 @@
     <script src="js/system_notifications.js"></script>
     
     <!-- 引入 iMessage 模块分段代码 -->
-    <script src="js/imessage/data_utils.js?v=20260711-summary-cursor-v1"></script>
+    <script src="js/imessage/data_utils.js?v=20260711-offline-bilingual-v1"></script>
     <script src="js/imessage/2_core.js?v=20260711-summary-cursor-v1"></script>
     <script src="js/imessage/3_contacts.js"></script>
     <script src="js/imessage/3_groups.js?v=20260711-summary-cursor-v1"></script>
@@ -7438,7 +7448,7 @@
     <script src="js/imessage/minimax_tts.js"></script>
     <script src="js/imessage/4_chat_ai.js?v=20260707-group-summary-v1"></script>
     <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
-    <script src="js/imessage/4_chat_sheet.js?v=20260706-private-translation-v1"></script>
+    <script src="js/imessage/4_chat_sheet.js?v=20260711-offline-bilingual-v3"></script>
     <script src="js/imessage/4_chat_link.js?v=20260706-bugfix-v1"></script>
     <script src="js/imessage/4_chat_list.js"></script>
     <script src="js/imessage/4_chat_interface.js?v=20260711-chat-theme-v1"></script>

@@ -19,6 +19,42 @@
         return normalizeRoundLimit(value, fallback);
     }
 
+    function normalizeChatLanguage(value) {
+        const language = String(value || '').trim().toLowerCase();
+        if (!language || ['zh', 'cn', 'zh-cn'].includes(language)) return 'zh';
+        if (['ko', 'kr'].includes(language)) return 'ko';
+        if (['ja', 'jp'].includes(language)) return 'ja';
+        if (language === 'en') return 'en';
+        if (language === 'fr') return 'fr';
+        return language;
+    }
+
+    function getChatLanguageName(value) {
+        const language = normalizeChatLanguage(value);
+        return {
+            zh: 'Chinese',
+            ko: 'Korean',
+            ja: 'Japanese',
+            en: 'English',
+            fr: 'French'
+        }[language] || language || 'Chinese';
+    }
+
+    function parseBilingualDialogue(value, language) {
+        const text = String(value || '').trim();
+        if (!text) return { original: '', translation: '' };
+        if (normalizeChatLanguage(language) === 'zh') {
+            return { original: text, translation: '' };
+        }
+
+        const match = text.match(/^([\s\S]+)（([^（）]*[\u3400-\u9fff][^（）]*)）$/);
+        if (!match) return { original: text, translation: '' };
+        const original = String(match[1] || '').trim();
+        const translation = String(match[2] || '').trim();
+        if (!original || !translation) return { original: text, translation: '' };
+        return { original, translation };
+    }
+
     function normalizeGroupChatContexts(contexts, fallbackMessageLimit = 30) {
         const seenGroupIds = new Set();
         return (Array.isArray(contexts) ? contexts : [])
@@ -231,6 +267,9 @@
     return {
         normalizeRoundLimit,
         normalizeMessageLimit,
+        normalizeChatLanguage,
+        getChatLanguageName,
+        parseBilingualDialogue,
         normalizeGroupChatContexts,
         getRecentPublicGroupMessages,
         getRecentUserRounds,

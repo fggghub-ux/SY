@@ -2227,7 +2227,7 @@ button.group-private-chat-detail-bubble {
 
 .offline-tavern-bubble-text {
     background: #f2f2f7;
-    color: #111;
+    color: var(--offline-tavern-narrative-color, #111111);
     padding: 18px 20px;
     border-radius: 24px;
     font-size: 15px;
@@ -2562,7 +2562,10 @@ button.group-private-chat-detail-bubble {
     display: inline;
 }
 
-.offline-tavern-voice-btn,
+.offline-tavern-dialogue {
+    color: var(--offline-tavern-dialogue-color, #8b8b8b);
+}
+
 .offline-tavern-barrage-btn {
     border: none;
     background: transparent;
@@ -2579,10 +2582,31 @@ button.group-private-chat-detail-bubble {
     vertical-align: baseline;
 }
 
-.offline-tavern-voice-btn {
-    width: 18px;
-    height: 18px;
-    font-size: 11px;
+.offline-tavern-speech.is-playable {
+    border-radius: 4px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 0.14s ease, opacity 0.14s ease;
+}
+
+.offline-tavern-speech.is-playable:hover {
+    background: rgba(0, 0, 0, 0.045);
+}
+
+.offline-tavern-speech.is-playable:active {
+    background: rgba(0, 0, 0, 0.075);
+    opacity: 0.82;
+}
+
+.offline-tavern-speech.is-playable:focus-visible {
+    outline: 1px solid rgba(99, 99, 102, 0.55);
+    outline-offset: 2px;
+}
+
+.offline-tavern-speech.is-playable.is-loading {
+    background: rgba(0, 0, 0, 0.06);
+    cursor: wait;
+    opacity: 0.58;
 }
 
 .offline-tavern-barrage-btn {
@@ -2602,8 +2626,6 @@ button.group-private-chat-detail-bubble {
     align-self: flex-start;
 }
 
-.offline-tavern-voice-btn:hover,
-.offline-tavern-voice-btn:focus-visible,
 .offline-tavern-barrage-btn:hover,
 .offline-tavern-barrage-btn:focus-visible {
     color: #636366;
@@ -8441,6 +8463,639 @@ input:checked + .slider:before {
     background: #f2f2f7;
     color: #8e8e93;
     text-align: center;
+}
+
+/* Offline studio fullscreen settings */
+.app-view.offline-settings-view {
+    display: none;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    padding-top: 0;
+    background: #f2f2f2;
+    color: #111;
+}
+
+.offline-settings-view.active {
+    display: flex;
+}
+
+.offline-settings-header {
+    min-height: 58px;
+    padding: env(safe-area-inset-top, 0px) 16px 0;
+    box-sizing: content-box;
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) 40px;
+    align-items: center;
+    flex-shrink: 0;
+    background: #fff;
+    border-bottom: 1px solid #dedede;
+}
+
+.offline-settings-back {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #111;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 17px;
+}
+
+.offline-settings-heading {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+}
+
+.offline-settings-heading strong {
+    font-size: 17px;
+    line-height: 1.2;
+    font-weight: 750;
+    letter-spacing: 0;
+}
+
+.offline-settings-heading span,
+.offline-settings-section-kicker span,
+.offline-settings-worldbook-main small {
+    font-size: 9px;
+    line-height: 1.2;
+    font-weight: 700;
+    color: #8e8e93;
+    letter-spacing: 0;
+}
+
+.offline-settings-tabs-wrap {
+    flex-shrink: 0;
+    padding: 12px 16px 10px;
+    background: #fff;
+    border-bottom: 1px solid #dedede;
+}
+
+.offline-settings-tabs {
+    position: static;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: min(100%, 720px);
+    margin: 0 auto;
+    padding: 3px;
+    gap: 3px;
+    border: 1px solid #d6d6d6;
+    border-radius: 8px;
+    background: #ededed;
+}
+
+.offline-settings-tabs button {
+    min-height: 42px;
+    padding: 5px 12px;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    color: #636366;
+    font-size: 14px;
+}
+
+.offline-settings-tabs button small {
+    font-size: 9px;
+    font-weight: 700;
+    color: #8e8e93;
+    letter-spacing: 0;
+}
+
+.offline-settings-tabs button.active {
+    background: #111;
+    color: #fff;
+    box-shadow: none;
+}
+
+.offline-settings-tabs button.active small {
+    color: #b8b8b8;
+}
+
+.offline-settings-content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 20px 16px calc(28px + env(safe-area-inset-bottom, 0px));
+}
+
+.offline-settings-content-inner {
+    width: min(100%, 720px);
+    margin: 0 auto;
+}
+
+.offline-settings-list {
+    gap: 12px;
+    padding-bottom: 0;
+}
+
+.offline-settings-worldbook,
+.offline-settings-prompts,
+.offline-settings-variable-hint,
+.offline-regex-card,
+.offline-regex-intro,
+.offline-regex-empty {
+    border: 1px solid #dcdcdc;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: none;
+}
+
+.offline-settings-worldbook {
+    min-height: 64px;
+    padding: 12px 14px;
+    box-sizing: border-box;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    cursor: pointer;
+}
+
+.offline-settings-worldbook-main,
+.offline-settings-worldbook-meta {
+    display: flex;
+    align-items: center;
+}
+
+.offline-settings-worldbook-main {
+    min-width: 0;
+    gap: 11px;
+}
+
+.offline-settings-worldbook-main > i {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: #111;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+}
+
+.offline-settings-worldbook-main > span {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.offline-settings-worldbook-main strong {
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.offline-settings-worldbook-meta {
+    gap: 7px;
+    color: #8e8e93;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.offline-settings-variable-hint {
+    padding: 13px 14px;
+    color: #48484a;
+    font-size: 12px;
+    line-height: 1.65;
+}
+
+.offline-settings-section-kicker {
+    margin-bottom: 5px;
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+}
+
+.offline-settings-section-kicker strong {
+    color: #111;
+    font-size: 13px;
+}
+
+.offline-settings-variable-hint code {
+    color: #111;
+    background: #ededed;
+    border-radius: 4px;
+    padding: 1px 4px;
+}
+
+.offline-settings-prompts {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.offline-settings-prompt-item {
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.offline-settings-prompt-item:last-child {
+    border-bottom: 0;
+}
+
+.offline-settings-prompt-row,
+.offline-settings-move-actions,
+.offline-settings-prompt-actions {
+    display: flex;
+    align-items: center;
+}
+
+.offline-settings-prompt-row {
+    min-width: 0;
+    gap: 8px;
+    flex-wrap: nowrap;
+    cursor: pointer;
+}
+
+.offline-settings-move-actions {
+    gap: 3px;
+    flex-shrink: 0;
+}
+
+.offline-settings-prompt-actions {
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.offline-settings-icon-btn {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid #d8d8d8;
+    border-radius: 7px;
+    background: #f2f2f2;
+    color: #111;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.offline-settings-icon-btn:disabled {
+    color: #c7c7cc;
+    background: #fafafa;
+    cursor: default;
+}
+
+.offline-settings-icon-btn.danger {
+    color: #b42318;
+    background: #fff;
+    border-color: #e2c5c2;
+}
+
+.offline-settings-prompt-name {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.offline-settings-name-input,
+.offline-settings-name-label {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: #111;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    padding: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.offline-settings-state-label {
+    color: #8e8e93;
+    font-size: 11px;
+    font-weight: 650;
+}
+
+.offline-settings-expand-icon {
+    color: #8e8e93;
+    font-size: 12px;
+    transition: transform 0.2s ease;
+}
+
+.offline-settings-prompt-content {
+    display: none;
+    margin-left: 66px;
+}
+
+.offline-settings-prompt-textarea,
+.offline-settings-prompt-preview {
+    width: 100%;
+    min-height: 132px;
+    box-sizing: border-box;
+    border: 1px solid #d8d8d8;
+    border-radius: 8px;
+    outline: 0;
+    background: #f7f7f7;
+    padding: 11px 12px;
+    color: #333;
+    font: inherit;
+    font-size: 13px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.offline-settings-prompt-textarea {
+    resize: vertical;
+    user-select: text;
+}
+
+.offline-settings-add-btn,
+.offline-regex-add {
+    width: 100%;
+    height: 44px;
+    margin-top: 0;
+    border: 0;
+    border-radius: 8px;
+    background: #111;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.offline-settings-view .offline-regex-card {
+    border: 1px solid #dcdcdc;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: none;
+}
+
+.offline-settings-view .offline-regex-order-actions button {
+    border: 1px solid #d8d8d8;
+    border-radius: 6px;
+    background: #f2f2f2;
+    color: #111;
+}
+
+.offline-settings-view .offline-regex-order-actions button.danger {
+    color: #b42318;
+    background: #fff;
+    border-color: #e2c5c2;
+}
+
+.offline-settings-view .offline-regex-field input,
+.offline-settings-view .offline-regex-field textarea {
+    border-radius: 6px;
+    border-color: #d8d8d8;
+    background: #f7f7f7;
+}
+
+.offline-settings-view .offline-regex-field input:focus,
+.offline-settings-view .offline-regex-field textarea:focus {
+    border-color: #48484a;
+    background: #fff;
+}
+
+.offline-settings-view .offline-regex-add {
+    height: 44px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 8px;
+    background: #111;
+    color: #fff;
+}
+
+.offline-settings-view .toggle-switch input:checked + .slider {
+    background-color: #111;
+}
+
+.offline-theme-card {
+    overflow: hidden;
+    border: 1px solid #dcdcdc;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.offline-theme-heading {
+    padding: 16px;
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.offline-theme-heading > div {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.offline-theme-heading strong {
+    color: #111;
+    font-size: 15px;
+    font-weight: 750;
+}
+
+.offline-theme-heading span {
+    color: #8e8e93;
+    font-size: 9px;
+    font-weight: 700;
+}
+
+.offline-theme-heading p {
+    margin: 5px 0 0;
+    color: #636366;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.offline-theme-color-row {
+    min-height: 70px;
+    padding: 12px 16px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.offline-theme-color-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.offline-theme-color-copy strong {
+    color: #111;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.offline-theme-color-copy small {
+    color: #8e8e93;
+    font-size: 11px;
+}
+
+.offline-theme-color-controls {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-shrink: 0;
+}
+
+.offline-theme-color-swatch {
+    width: 22px;
+    height: 22px;
+    border: 1px solid #cfcfcf;
+    border-radius: 5px;
+    box-sizing: border-box;
+}
+
+.offline-theme-color-picker {
+    width: 32px;
+    height: 32px;
+    padding: 2px;
+    border: 1px solid #d8d8d8;
+    border-radius: 6px;
+    background: #f7f7f7;
+    cursor: pointer;
+}
+
+.offline-theme-color-picker::-webkit-color-swatch-wrapper {
+    padding: 1px;
+}
+
+.offline-theme-color-picker::-webkit-color-swatch {
+    border: 0;
+    border-radius: 3px;
+}
+
+.offline-theme-color-value {
+    width: 82px;
+    height: 34px;
+    padding: 0 9px;
+    box-sizing: border-box;
+    border: 1px solid #d8d8d8;
+    border-radius: 6px;
+    outline: none;
+    background: #f7f7f7;
+    color: #111;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    text-transform: uppercase;
+}
+
+.offline-theme-color-value:focus {
+    border-color: #48484a;
+    background: #fff;
+}
+
+.offline-theme-reset-btn {
+    width: 100%;
+    height: 44px;
+    padding: 0 16px;
+    border: 0;
+    background: #fff;
+    color: #48484a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.offline-theme-reset-btn:hover,
+.offline-theme-reset-btn:focus-visible {
+    background: #f2f2f2;
+    color: #111;
+}
+
+.offline-regex-intro {
+    color: #48484a;
+}
+
+.offline-regex-summary-state,
+.offline-regex-section-label {
+    color: #636366;
+}
+
+.offline-regex-field input,
+.offline-regex-field textarea {
+    border-radius: 6px;
+    border-color: #d8d8d8;
+    background: #f7f7f7;
+}
+
+@media (max-width: 520px) {
+    .offline-settings-content {
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+
+    .offline-settings-tabs-wrap {
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+
+    .offline-settings-prompt-item {
+        padding: 12px;
+    }
+
+    .offline-settings-prompt-content {
+        margin-left: 0;
+    }
+
+    .offline-settings-icon-btn {
+        width: 27px;
+        height: 28px;
+    }
+
+    .offline-settings-prompt-row {
+        gap: 6px;
+    }
+
+    .offline-settings-prompt-actions {
+        gap: 5px;
+    }
+
+    .offline-theme-color-row {
+        padding-left: 12px;
+        padding-right: 12px;
+        gap: 8px;
+    }
+
+    .offline-theme-color-swatch {
+        display: none;
+    }
+
+    .offline-theme-color-value {
+        width: 76px;
+    }
 }
 
 .offline-regex-card {

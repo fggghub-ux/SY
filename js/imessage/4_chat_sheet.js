@@ -563,6 +563,17 @@ function createAttachmentSheet(page) {
 
         const isLikelyChineseText = (value) => /[\u3400-\u9fff]/.test(String(value || ''));
 
+        const parseOfflineBilingualDialogue = (value, language) => {
+            if (window.imDataUtils?.parseBilingualDialogue) {
+                return window.imDataUtils.parseBilingualDialogue(value, language);
+            }
+            return { original: String(value || '').trim(), translation: '' };
+        };
+
+        const getOfflineChatLanguageName = (language) => window.imDataUtils?.getChatLanguageName
+            ? window.imDataUtils.getChatLanguageName(language)
+            : 'Chinese';
+
         const wrapOfflineSpeechDisplayText = (value) => {
             const text = String(value || '').trim();
             if (!text) return '';
@@ -815,30 +826,30 @@ function createAttachmentSheet(page) {
             return text.replace(/<[^>]+>/g, '').replace(/\n{3,}/g, '\n\n').trim();
         };
 
-        const renderOfflinePlainTextWithFallbackSpeech = (value, speechItems, enableVoice, allowFallbackSpeech) => {
+        const renderOfflinePlainTextWithFallbackSpeech = (value, speechItems, enableVoice, allowFallbackSpeech, language) => {
             const text = String(value || '');
             if (!enableVoice || !allowFallbackSpeech) {
                 return escapeSheetHtml(text).replace(/\n/g, '<br>');
             }
 
-            const quoteRegex = /「([^」\n]{1,180})」|“([^”\n]{1,180})”|"([^"\n]{1,180})"/g;
+            const quoteRegex = /「([^」\n]{1,180})」/g;
             let html = '';
             let lastIndex = 0;
             let match = null;
             while ((match = quoteRegex.exec(text)) !== null) {
-                const original = String(match[1] || match[2] || match[3] || '').trim();
-                if (!original) continue;
+                const bilingual = parseOfflineBilingualDialogue(match[1], language);
+                if (!bilingual.original) continue;
                 html += escapeSheetHtml(text.slice(lastIndex, match.index)).replace(/\n/g, '<br>');
                 const speechIndex = speechItems.length;
-                speechItems.push({ original, translation: '' });
-                html += `<span class="offline-tavern-speech">${escapeSheetHtml(match[0])}<button type="button" class="offline-tavern-voice-btn" data-offline-speech-index="${speechIndex}" title="播放语音" aria-label="播放语音"><i class="fas fa-volume-up"></i></button></span>`;
+                speechItems.push(bilingual);
+                html += `<span class="offline-tavern-speech offline-tavern-dialogue is-playable" data-offline-speech-index="${speechIndex}" role="button" tabindex="0" title="播放语音" aria-label="播放这段对话" aria-busy="false">${escapeSheetHtml(match[0])}</span>`;
                 lastIndex = match.index + match[0].length;
             }
             html += escapeSheetHtml(text.slice(lastIndex)).replace(/\n/g, '<br>');
             return html;
         };
 
-        const renderOfflineParagraphText = (value, speechItems, enableVoice) => {
+        const renderOfflineParagraphText = (value, speechItems, enableVoice, language) => {
             const text = String(value || '');
             const speechRegex = /<speech\b([^>]*?)>([\s\S]*?)<\/speech>|<speech\b([^>]*?)\/>/gi;
             let html = '';
@@ -848,7 +859,7 @@ function createAttachmentSheet(page) {
 
             while ((match = speechRegex.exec(text)) !== null) {
                 hasExplicitSpeech = true;
-                html += renderOfflinePlainTextWithFallbackSpeech(text.slice(lastIndex, match.index), speechItems, enableVoice, false);
+                html += renderOfflinePlainTextWithFallbackSpeech(text.slice(lastIndex, match.index), speechItems, enableVoice, false, language);
                 const attrText = match[1] || match[3] || '';
                 const attrs = parseOfflineTagAttributes(attrText);
                 const innerText = String(match[2] || '').replace(/<[^>]+>/g, '').trim();
@@ -859,12 +870,16 @@ function createAttachmentSheet(page) {
                 if (displayText) {
                     const speechIndex = speechItems.length;
                     speechItems.push({ original, translation });
-                    html += `<span class="offline-tavern-speech">${escapeSheetHtml(displayText)}${enableVoice ? `<button type="button" class="offline-tavern-voice-btn" data-offline-speech-index="${speechIndex}" title="播放语音" aria-label="播放语音"><i class="fas fa-volume-up"></i></button>` : ''}</span>`;
+                    const playableClass = enableVoice ? ' is-playable' : '';
+                    const playableAttrs = enableVoice
+                        ? ` data-offline-speech-index="${speechIndex}" role="button" tabindex="0" title="播放语音" aria-label="播放这段对话" aria-busy="false"`
+                        : '';
+                    html += `<span class="offline-tavern-speech offline-tavern-dialogue${playableClass}"${playableAttrs}>${escapeSheetHtml(displayText)}</span>`;
                 }
                 lastIndex = match.index + match[0].length;
             }
 
-            html += renderOfflinePlainTextWithFallbackSpeech(text.slice(lastIndex), speechItems, enableVoice, !hasExplicitSpeech);
+            html += renderOfflinePlainTextWithFallbackSpeech(text.slice(lastIndex), speechItems, enableVoice, !hasExplicitSpeech, language);
             return html;
         };
 
@@ -873,6 +888,7 @@ function createAttachmentSheet(page) {
             const enableVoice = options.enableVoice !== false;
             const enableBarrage = !!options.enableBarrage;
             const enableChoices = !!options.enableChoices;
+            const language = options.language || 'zh';
             const text = String(value == null ? '' : value).replace(/\r\n/g, '\n').trim();
             if (!text) {
                 if (messageId) {
@@ -907,7 +923,7 @@ function createAttachmentSheet(page) {
 
             const paragraphHtml = paragraphs
                 .map((part, index) => {
-                    const paragraphHtml = renderOfflineParagraphText(part, speechItems, enableVoice);
+                    const paragraphHtml = renderOfflineParagraphText(part, speechItems, enableVoice, language);
                     return `<div class="offline-tavern-paragraph-wrap"><p class="offline-tavern-paragraph">${paragraphHtml}</p></div>`;
                 })
                 .join('');
@@ -932,13 +948,15 @@ function createAttachmentSheet(page) {
             if (!bubbleDiv || !message?.id) return;
             const messageId = String(message.id);
 
-            bubbleDiv.querySelectorAll('.offline-tavern-voice-btn').forEach((button) => {
-                if (button.dataset.bound === 'true') return;
-                button.dataset.bound = 'true';
-                button.addEventListener('click', async (event) => {
+            bubbleDiv.querySelectorAll('.offline-tavern-speech.is-playable').forEach((speechEl) => {
+                if (speechEl.dataset.bound === 'true') return;
+                speechEl.dataset.bound = 'true';
+
+                const playSpeech = async (event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    const speechIndex = Number(button.getAttribute('data-offline-speech-index'));
+                    if (speechEl.getAttribute('aria-busy') === 'true') return;
+                    const speechIndex = Number(speechEl.getAttribute('data-offline-speech-index'));
                     const speeches = offlineSpeechRuntimeStore.get(messageId) || [];
                     const speech = speeches[speechIndex];
                     const originalText = String(speech?.original || '').trim();
@@ -949,17 +967,28 @@ function createAttachmentSheet(page) {
                         return;
                     }
 
-                    button.style.opacity = '0.45';
-                    button.style.pointerEvents = 'none';
+                    speechEl.classList.add('is-loading');
+                    speechEl.setAttribute('aria-busy', 'true');
                     try {
                         await window.u2MinimaxTts.speakTextCached(originalText, friend, speech);
                     } catch (error) {
                         console.error('Offline speech playback failed', error);
                         if (window.showToast) window.showToast('语音播放失败');
                     } finally {
-                        button.style.opacity = '';
-                        button.style.pointerEvents = '';
+                        speechEl.classList.remove('is-loading');
+                        speechEl.setAttribute('aria-busy', 'false');
                     }
+                };
+
+                speechEl.addEventListener('click', (event) => {
+                    const selection = typeof window.getSelection === 'function' ? window.getSelection() : null;
+                    if (selection && !selection.isCollapsed && selection.toString().trim()) return;
+                    playSpeech(event);
+                });
+
+                speechEl.addEventListener('keydown', (event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    playSpeech(event);
                 });
             });
 
@@ -1093,7 +1122,6 @@ function createAttachmentSheet(page) {
                 normalized = offlineRegexEngine.applyStorageRules(normalized, getOfflineRegexScripts(activeFriend));
             }
             if (serializeOfflineMessagesForCompare(previous) !== serializeOfflineMessagesForCompare(normalized)) {
-                activeFriend.offlineMessages = normalized;
                 commitSheetFriendChange(activeFriend, (targetFriend) => {
                     targetFriend.offlineMessages = normalized;
                 }, { silent: true, metaOnly: true });
@@ -1121,7 +1149,6 @@ function createAttachmentSheet(page) {
                 };
             });
             if (JSON.stringify(sessions) !== JSON.stringify(normalized)) {
-                activeFriend.offlineMeetingSessions = normalized;
                 commitSheetFriendChange(activeFriend, (targetFriend) => {
                     targetFriend.offlineMeetingSessions = normalized;
                 }, { silent: true, metaOnly: true });
@@ -1183,7 +1210,6 @@ function createAttachmentSheet(page) {
             } else if (window.imApp?.appendFriendMessage) {
                 saved = await window.imApp.appendFriendMessage(activeFriend.id, baseNotice, { silent: true });
             } else {
-                activeFriend.messages.push(baseNotice);
                 saved = await commitSheetFriendChange(activeFriend, (targetFriend) => {
                     if (!Array.isArray(targetFriend.messages)) targetFriend.messages = [];
                     targetFriend.messages.push(baseNotice);
@@ -1209,7 +1235,6 @@ function createAttachmentSheet(page) {
                     timestamp: message.timestamp || null
                 })), { silent: true });
             } else {
-                activeFriend.messages = activeFriend.messages.filter(message => !(message?.type === 'system_notice' && message.noticeKind === OFFLINE_ACTIVE_NOTICE_KIND));
                 saved = await commitSheetFriendChange(activeFriend, (targetFriend) => {
                     targetFriend.messages = (targetFriend.messages || []).filter(message => !(message?.type === 'system_notice' && message.noticeKind === OFFLINE_ACTIVE_NOTICE_KIND));
                 }, { silent: true });
@@ -2285,6 +2310,7 @@ function createAttachmentSheet(page) {
             if (!contentArea) return null;
 
             const friend = window.imData.currentActiveFriend;
+            applyOfflineTavernTheme(friend);
             const rawMessage = messageOrText && typeof messageOrText === 'object'
                 ? messageOrText
                 : { role: isUser ? 'user' : 'assistant', content: String(messageOrText || ''), timestamp: Date.now() };
@@ -2362,7 +2388,8 @@ function createAttachmentSheet(page) {
                         messageId: message.id,
                         enableVoice: !isUser,
                         enableBarrage: enableBarrageForMessage,
-                        enableChoices: enableChoicesForMessage
+                        enableChoices: enableChoicesForMessage,
+                        language: friend?.language || 'zh'
                     })}</div>
                     <div class="offline-tavern-bubble-footer">
                         <div class="offline-tavern-bubble-meta">${escapeSheetHtml(metaText)}</div>
@@ -2545,7 +2572,8 @@ function createAttachmentSheet(page) {
                             messageId: message.id,
                             enableVoice: !isUser,
                             enableBarrage: !isUser && isOfflineBarragePromptEnabled(window.imData.currentActiveFriend),
-                            enableChoices: !isUser && isOfflineChoicesPromptEnabled(window.imData.currentActiveFriend)
+                            enableChoices: !isUser && isOfflineChoicesPromptEnabled(window.imData.currentActiveFriend),
+                            language: window.imData.currentActiveFriend?.language || 'zh'
                         });
                         bindOfflineTavernTextControls(bubbleDiv, message, window.imData.currentActiveFriend, Number(options.floor) || 1);
                     } else if (textEl) {
@@ -2579,10 +2607,10 @@ function createAttachmentSheet(page) {
                     resetMessageIds: options.resetMessageIds || []
                 });
             }
-            activeFriend.offlineMessages = normalized;
-            await commitSheetFriendChange(activeFriend, (targetFriend) => {
+            const saved = await commitSheetFriendChange(activeFriend.id, (targetFriend) => {
                 targetFriend.offlineMessages = normalized;
             }, { silent: true, metaOnly: true });
+            if (!saved) throw new Error('Failed to persist offline meeting messages');
             return normalized;
         };
 
@@ -2594,20 +2622,21 @@ function createAttachmentSheet(page) {
             const needsNewSession = activeFriend.offlineMeetingActive !== true || !activeFriend.offlineCurrentSessionId;
             if (needsNewSession) {
                 const now = Date.now();
-                activeFriend.offlineMeetingActive = true;
-                activeFriend.offlineCurrentSessionId = activeFriend.offlineCurrentSessionId || createOfflineTavernId('offline-session');
-                activeFriend.offlineMeetingStartedAt = Number(activeFriend.offlineMeetingStartedAt) || now;
-                if (!Array.isArray(activeFriend.offlineMessages)) activeFriend.offlineMessages = [];
-                await commitSheetFriendChange(activeFriend, (targetFriend) => {
+                const sessionId = activeFriend.offlineCurrentSessionId || createOfflineTavernId('offline-session');
+                const startedAt = Number(activeFriend.offlineMeetingStartedAt) || now;
+                const currentMessages = Array.isArray(activeFriend.offlineMessages) ? activeFriend.offlineMessages : [];
+                const saved = await commitSheetFriendChange(activeFriend.id, (targetFriend) => {
                     targetFriend.offlineMeetingActive = true;
-                    targetFriend.offlineCurrentSessionId = activeFriend.offlineCurrentSessionId;
-                    targetFriend.offlineMeetingStartedAt = activeFriend.offlineMeetingStartedAt;
-                    targetFriend.offlineMessages = activeFriend.offlineMessages;
+                    targetFriend.offlineCurrentSessionId = sessionId;
+                    targetFriend.offlineMeetingStartedAt = startedAt;
+                    targetFriend.offlineMessages = currentMessages;
                 }, { silent: true, metaOnly: true });
+                if (!saved) throw new Error('Failed to persist offline meeting state');
             }
 
-            await removeOfflineMeetingActiveNotice(activeFriend);
-            return activeFriend.offlineCurrentSessionId;
+            const latestFriend = window.imApp?.getFriendById?.(activeFriend.id) || activeFriend;
+            await removeOfflineMeetingActiveNotice(latestFriend);
+            return latestFriend.offlineCurrentSessionId;
         };
 
         const renderOfflineHistoryButton = (contentArea, activeFriend) => {
@@ -3397,26 +3426,28 @@ function createAttachmentSheet(page) {
                 }
 
                 const sessions = normalizeOfflineMeetingSessions(activeFriend).concat(session);
-                activeFriend.offlineMeetingSessions = sessions;
-                activeFriend.offlineMessages = [];
-                activeFriend.offlineMeetingActive = false;
-                activeFriend.offlineCurrentSessionId = null;
-                activeFriend.offlineMeetingStartedAt = null;
-                await commitSheetFriendChange(activeFriend, (targetFriend) => {
+                const savedSession = await commitSheetFriendChange(activeFriend.id, (targetFriend) => {
                     targetFriend.offlineMeetingSessions = sessions;
                     targetFriend.offlineMessages = [];
                     targetFriend.offlineMeetingActive = false;
                     targetFriend.offlineCurrentSessionId = null;
                     targetFriend.offlineMeetingStartedAt = null;
                 }, { silent: true, metaOnly: true });
+                if (!savedSession) {
+                    throw new Error('Failed to save offline meeting session');
+                }
 
-                await removeOfflineMeetingActiveNotice(activeFriend);
-                renderOfflineCurrentMessages(activeFriend);
-                rerenderOnlineChatForFriend(activeFriend, { scroll: true });
+                const latestFriend = window.imApp?.getFriendById?.(activeFriend.id) || activeFriend;
+                await removeOfflineMeetingActiveNotice(latestFriend);
+                renderOfflineCurrentMessages(latestFriend);
+                rerenderOnlineChatForFriend(latestFriend, { scroll: true });
                 if (window.showToast) window.showToast('见面记录已生成');
             } catch (error) {
                 console.error('End offline meeting failed', error);
-                if (window.showToast) window.showToast('结束见面失败，请检查 API 配置或网络');
+                if (window.showToast) {
+                    const isPersistenceFailure = /Failed to (save|persist) offline meeting/.test(String(error?.message || ''));
+                    window.showToast(isPersistenceFailure ? '见面记录保存失败，当前记录已保留' : '结束见面失败，请检查 API 配置或网络');
+                }
             } finally {
                 if (endButton) {
                     endButton.dataset.busy = 'false';
@@ -3470,7 +3501,8 @@ function createAttachmentSheet(page) {
                         messageId,
                         enableVoice: true,
                         enableBarrage: isOfflineBarragePromptEnabled(activeFriend),
-                        enableChoices: isOfflineChoicesPromptEnabled(activeFriend)
+                        enableChoices: isOfflineChoicesPromptEnabled(activeFriend),
+                        language: activeFriend?.language || 'zh'
                     })
                     : '<div class="offline-tavern-reroll-placeholder">正在重新思考...</div>';
                 bindOfflineTavernTextControls(bubble, {
@@ -3587,6 +3619,7 @@ function createAttachmentSheet(page) {
             '资料区': 'data_zone',
             '语言和字数': 'length_words',
             '字数要求': 'length_words',
+            '双语对话': 'bilingual_dialogue',
             'NSFW': 'nsfw',
             '文风基调': 'style_baimiao',
             '文风-白描': 'style_baimiao',
@@ -3647,6 +3680,20 @@ System managed. Mounted world books, User persona, Char persona, and recent onli
 正文必须分段输出。每段约100至150字，段落之间必须保留一个空行，不要把所有文字挤在同一个长段落里。
 如果包含对白，仍要让叙述段落和对白自然分开，保持阅读呼吸感。
 </length_requirement>`,
+                editable: true,
+                deletable: false
+            },
+            {
+                id: 'bilingual_dialogue',
+                name: '双语对话',
+                enabled: true,
+                presetVersion: 1,
+                content: `<bilingual_dialogue>
+All spoken dialogue in the response must use {{char}}'s default language configured in Chat Settings.
+When the default language is not Chinese, every spoken line must use this exact format without variation: 「default-language dialogue（Chinese translation）」. Example: 「잘자（晚安）」.
+The text before the full-width parentheses must contain only the default-language dialogue. The text inside the parentheses must contain only its Chinese translation.
+When the default language is Chinese, output only Chinese dialogue in corner quotes, for example: 「晚安」. Do not append a duplicate Chinese translation.
+</bilingual_dialogue>`,
                 editable: true,
                 deletable: false
             },
@@ -3796,10 +3843,13 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
                 id: 'cot',
                 name: 'COT',
                 enabled: true,
-                presetVersion: 2,
+                presetVersion: 3,
                 content: `<thinking_instruction>
 Before every prose response, you must first output one <thinking>...</thinking> block.
 Inside <thinking>, think through the active world-book facts, personas, memories, recent online/offline context, scene goal, character motivation, narrative perspective, and a concise prose draft plan.
+Read Char's Default Language from the mounted profile before drafting any spoken dialogue.
+Before closing <thinking>, audit every drafted Char dialogue line. Confirm that the original dialogue uses Char's Default Language and that every non-Chinese line is immediately followed by an accurate Chinese translation in the exact fixed format 「default-language dialogue（Chinese translation）」.
+If Char's Default Language is Chinese, confirm that each dialogue line uses 「Chinese dialogue」 without a duplicate translation. Correct all language, translation, corner-quote, and full-width-parenthesis errors before writing the final prose.
 The <thinking> block must appear before the正文 and must be closed before any正文 begins.
 After </thinking>, output the final正文 only; do not continue thinking outside the tag.
 Keep the thinking concise, specific, and usable for drafting. The正文 must execute the draft plan instead of ignoring it.
@@ -3833,14 +3883,16 @@ Keep the thinking concise, specific, and usable for drafting. The正文 must exe
             const perspectivePrompts = perspectiveIds
                 .map(id => prompts.find(prompt => prompt.id === id))
                 .filter(Boolean);
+            const bilingualPrompt = prompts.find(prompt => prompt.id === 'bilingual_dialogue');
             const barragePrompt = prompts.find(prompt => prompt.id === 'barrage_comments');
             const choicesPrompt = prompts.find(prompt => prompt.id === 'player_choices');
             const groupedPrompts = perspectivePrompts
+                .concat(bilingualPrompt ? [bilingualPrompt] : [])
                 .concat(barragePrompt ? [barragePrompt] : [])
                 .concat(choicesPrompt ? [choicesPrompt] : []);
             if (groupedPrompts.length <= 1) return prompts;
 
-            const groupedIds = new Set(perspectiveIds.concat(['barrage_comments', 'player_choices']));
+            const groupedIds = new Set(perspectiveIds.concat(['bilingual_dialogue', 'barrage_comments', 'player_choices']));
             const withoutPerspective = prompts.filter(prompt => !groupedIds.has(prompt.id));
             const styleIndex = withoutPerspective.findIndex(prompt => prompt.id === 'style_baimiao');
             const insertIndex = styleIndex >= 0 ? styleIndex + 1 : Math.min(withoutPerspective.length, 5);
@@ -3892,7 +3944,7 @@ Keep the thinking concise, specific, and usable for drafting. The正文 must exe
                     item.name = (!shouldUseDefaultName && prompt.id && rawName) ? rawName : defaultPrompt.name;
                     const sourcePresetVersion = Math.max(0, Number(prompt.presetVersion) || 0);
                     const targetPresetVersion = Math.max(0, Number(defaultPrompt.presetVersion) || 0);
-                    const shouldSyncPreset = ['role_identity', 'perspective_third', 'task_instruction', 'barrage_comments', 'player_choices', 'format_rules', 'cot'].includes(id) && sourcePresetVersion < targetPresetVersion;
+                    const shouldSyncPreset = ['role_identity', 'perspective_third', 'task_instruction', 'barrage_comments', 'player_choices', 'bilingual_dialogue', 'format_rules', 'cot'].includes(id) && sourcePresetVersion < targetPresetVersion;
                     item.content = item.systemManaged || shouldSyncPreset
                         ? defaultPrompt.content
                         : ((!isLegacyDefault && typeof prompt.content === 'string') ? prompt.content : defaultPrompt.content);
@@ -3938,6 +3990,59 @@ Keep the thinking concise, specific, and usable for drafting. The正文 must exe
         const serializeOfflinePrompts = (prompts) => JSON.stringify((prompts || []).map(prompt => cloneOfflinePrompt(prompt)));
         let offlinePromptSaveTimer = null;
 
+        const OFFLINE_THEME_DEFAULTS = Object.freeze({
+            narrativeColor: '#111111',
+            dialogueColor: '#8B8B8B'
+        });
+        const normalizeOfflineThemeColor = (value, fallback) => {
+            const color = String(value || '').trim();
+            return /^#[0-9a-fA-F]{6}$/.test(color) ? color.toUpperCase() : fallback;
+        };
+        const normalizeOfflineTheme = (theme) => ({
+            narrativeColor: normalizeOfflineThemeColor(theme?.narrativeColor, OFFLINE_THEME_DEFAULTS.narrativeColor),
+            dialogueColor: normalizeOfflineThemeColor(theme?.dialogueColor, OFFLINE_THEME_DEFAULTS.dialogueColor)
+        });
+        const applyOfflineTavernTheme = (friend) => {
+            const view = document.getElementById('offline-tavern-view');
+            const theme = normalizeOfflineTheme(friend?.offlineTheme);
+            if (view) {
+                view.style.setProperty('--offline-tavern-narrative-color', theme.narrativeColor);
+                view.style.setProperty('--offline-tavern-dialogue-color', theme.dialogueColor);
+            }
+            return theme;
+        };
+        let offlineThemeSaveTimer = null;
+
+        const persistOfflineTheme = async (activeFriend, theme) => {
+            if (!activeFriend) return OFFLINE_THEME_DEFAULTS;
+            if (offlineThemeSaveTimer) {
+                clearTimeout(offlineThemeSaveTimer);
+                offlineThemeSaveTimer = null;
+            }
+            const normalized = normalizeOfflineTheme(theme);
+            activeFriend.offlineTheme = normalized;
+            const saved = await commitSheetFriendChange(activeFriend.id, (targetFriend) => {
+                targetFriend.offlineTheme = normalized;
+            }, { silent: true, metaOnly: true });
+            if (!saved) throw new Error('Failed to persist offline theme');
+            applyOfflineTavernTheme({ ...activeFriend, offlineTheme: normalized });
+            return normalized;
+        };
+
+        const scheduleOfflineThemePersist = (activeFriend, theme) => {
+            if (!activeFriend) return;
+            const normalized = normalizeOfflineTheme(theme);
+            activeFriend.offlineTheme = normalized;
+            applyOfflineTavernTheme(activeFriend);
+            if (offlineThemeSaveTimer) clearTimeout(offlineThemeSaveTimer);
+            offlineThemeSaveTimer = setTimeout(() => {
+                persistOfflineTheme(activeFriend, normalized).catch((error) => {
+                    console.error('Offline theme persistence failed', error);
+                    if (window.showToast) window.showToast('线下主题保存失败');
+                });
+            }, 350);
+        };
+
         const persistOfflinePrompts = async (activeFriend, prompts, options = {}) => {
             if (!activeFriend) return [];
             if (offlinePromptSaveTimer) {
@@ -3945,20 +4050,22 @@ Keep the thinking concise, specific, and usable for drafting. The正文 must exe
                 offlinePromptSaveTimer = null;
             }
             const normalized = normalizeOfflinePrompts(prompts);
-            activeFriend.offlinePrompts = normalized;
-            await commitSheetFriendChange(activeFriend, (targetFriend) => {
+            const saved = await commitSheetFriendChange(activeFriend.id, (targetFriend) => {
                 targetFriend.offlinePrompts = normalized;
             }, { silent: true, metaOnly: true, ...options });
+            if (!saved) throw new Error('Failed to persist offline prompts');
             return normalized;
         };
 
         const scheduleOfflinePromptsPersist = (activeFriend, prompts) => {
             if (!activeFriend) return;
             const normalized = normalizeOfflinePrompts(prompts);
-            activeFriend.offlinePrompts = normalized;
             if (offlinePromptSaveTimer) clearTimeout(offlinePromptSaveTimer);
             offlinePromptSaveTimer = setTimeout(() => {
-                persistOfflinePrompts(activeFriend, normalized);
+                persistOfflinePrompts(activeFriend, normalized).catch((error) => {
+                    console.error('Offline prompts persistence failed', error);
+                    if (window.showToast) window.showToast('线下提示词保存失败');
+                });
             }, 350);
         };
 
@@ -3967,7 +4074,6 @@ Keep the thinking concise, specific, and usable for drafting. The正文 must exe
             const previous = Array.isArray(activeFriend.offlinePrompts) ? activeFriend.offlinePrompts : [];
             const normalized = normalizeOfflinePrompts(previous);
             if (serializeOfflinePrompts(previous) !== serializeOfflinePrompts(normalized)) {
-                activeFriend.offlinePrompts = normalized;
                 commitSheetFriendChange(activeFriend, (targetFriend) => {
                     targetFriend.offlinePrompts = normalized;
                 }, { silent: true, metaOnly: true });
@@ -4031,9 +4137,11 @@ Keep the thinking concise, specific, and usable for drafting. The正文 must exe
             const contexts = worldBookContexts || {};
             const isGroup = !!identityContext?.isGroup;
             const groupMembers = Array.isArray(identityContext?.groupMembers) ? identityContext.groupMembers : [];
+            const defaultLanguage = getOfflineChatLanguageName(activeFriend?.language);
             const charProfile = isGroup
                 ? `<group_profile>
 Group Name: ${activeFriend?.nickname || activeFriend?.realName || 'Group'}
+Default Language: ${defaultLanguage}
 Members:
 ${groupMembers.length > 0 ? groupMembers.map((member, index) => `- Member ${index + 1}
   True Name: ${member.realName || member.nickname || 'Unknown'}
@@ -4042,6 +4150,7 @@ ${groupMembers.length > 0 ? groupMembers.map((member, index) => `- Member ${inde
 </group_profile>`
                 : `<char_profile>
 Name: ${charName}
+Default Language: ${defaultLanguage}
 Persona: ${charPersona}
 </char_profile>`;
 
@@ -4165,7 +4274,6 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             const previous = Array.isArray(activeFriend.offlineRegexScripts) ? activeFriend.offlineRegexScripts : [];
             const normalized = offlineRegexEngine.normalizeRules(previous);
             if (serializeOfflineRegexScripts(previous) !== serializeOfflineRegexScripts(normalized)) {
-                activeFriend.offlineRegexScripts = normalized;
                 commitSheetFriendChange(activeFriend, (targetFriend) => {
                     targetFriend.offlineRegexScripts = normalized;
                 }, { silent: true, metaOnly: true });
@@ -4180,15 +4288,16 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                 offlineRegexSaveTimer = null;
             }
             const normalized = offlineRegexEngine.normalizeRules(scripts);
-            activeFriend.offlineRegexScripts = normalized;
-            await commitSheetFriendChange(activeFriend, (targetFriend) => {
+            const saved = await commitSheetFriendChange(activeFriend.id, (targetFriend) => {
                 targetFriend.offlineRegexScripts = normalized;
             }, { silent: true, metaOnly: true });
+            if (!saved) throw new Error('Failed to persist offline regex scripts');
 
             if (options.applyMessages !== false) {
-                await persistOfflineMessages(activeFriend, normalizeOfflineMessagesForFriend(activeFriend));
+                const latestFriend = window.imApp?.getFriendById?.(activeFriend.id) || activeFriend;
+                await persistOfflineMessages(latestFriend, normalizeOfflineMessagesForFriend(latestFriend));
                 const titleEl = document.querySelector('#offline-tavern-view .offline-tavern-title');
-                if (titleEl?.textContent === '线下') renderOfflineCurrentMessages(activeFriend);
+                if (titleEl?.textContent === '线下') renderOfflineCurrentMessages(latestFriend);
             }
             return normalized;
         };
@@ -4196,10 +4305,12 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
         const scheduleOfflineRegexScriptsPersist = (activeFriend, scripts) => {
             if (!activeFriend || !offlineRegexEngine) return;
             const normalized = offlineRegexEngine.normalizeRules(scripts);
-            activeFriend.offlineRegexScripts = normalized;
             if (offlineRegexSaveTimer) clearTimeout(offlineRegexSaveTimer);
             offlineRegexSaveTimer = setTimeout(() => {
-                persistOfflineRegexScripts(activeFriend, normalized);
+                persistOfflineRegexScripts(activeFriend, normalized).catch((error) => {
+                    console.error('Offline regex persistence failed', error);
+                    if (window.showToast) window.showToast('线下正则保存失败');
+                });
             }, 350);
         };
 
@@ -4367,22 +4478,21 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             listEl.innerHTML = '';
 
             const wbBtnDiv = document.createElement('div');
-            wbBtnDiv.style.cssText = 'background:#fff; border-radius:12px; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; cursor:pointer; margin-bottom:8px;';
+            wbBtnDiv.className = 'offline-settings-worldbook';
             wbBtnDiv.innerHTML = `
-                <div style="font-size:15px; font-weight:700; color:#000; display:flex; align-items:center; gap:8px;">
-                    <i class="fas fa-book" style="font-size:14px; color:#007aff;"></i>
-                    <span>挂载世界书</span>
+                <div class="offline-settings-worldbook-main">
+                    <i class="fas fa-book"></i>
+                    <span><strong>挂载世界书</strong><small>WORLD BOOK</small></span>
                 </div>
-                <div style="color:#8e8e93; font-size:13px; display:flex; align-items:center; gap:4px;">
+                <div class="offline-settings-worldbook-meta">
                     <span id="offline-tavern-wb-count">${(activeFriend.worldbooks || activeFriend.boundBooks || []).length} 项</span>
-                    <i class="fas fa-chevron-right" style="font-size:12px;"></i>
+                    <i class="fas fa-chevron-right"></i>
                 </div>
             `;
             wbBtnDiv.addEventListener('click', () => {
                 const currentIds = activeFriend.worldbooks || activeFriend.boundBooks || [];
                 const handleSelection = (newIds) => {
-                    activeFriend.worldbooks = newIds;
-                    commitSheetFriendChange(activeFriend, (targetFriend) => {
+                    commitSheetFriendChange(activeFriend.id, (targetFriend) => {
                         targetFriend.worldbooks = newIds;
                     }, { silent: true, metaOnly: true });
                     const countSpan = document.getElementById('offline-tavern-wb-count');
@@ -4398,13 +4508,13 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             listEl.appendChild(wbBtnDiv);
 
             const variableHint = document.createElement('div');
-            variableHint.style.cssText = 'margin-bottom:8px; padding:11px 14px; border-radius:12px; background:#eef6ff; color:#31506f; font-size:12px; line-height:1.55;';
-            variableHint.innerHTML = '<div style="font-weight:800; color:#007aff; margin-bottom:3px;">可用变量</div><div><code>{{user}}</code> 当前 User 名字</div><div><code>{{char}}</code> 单聊为 Char 真名；群聊为全部群成员真名</div>';
+            variableHint.className = 'offline-settings-variable-hint';
+            variableHint.innerHTML = '<div class="offline-settings-section-kicker"><strong>可用变量</strong><span>VARIABLES</span></div><div><code>{{user}}</code> 当前 User 名字</div><div><code>{{char}}</code> 单聊为 Char 真名；群聊为全部群成员真名</div>';
             listEl.appendChild(variableHint);
 
             const prompts = ensureOfflinePromptsForFriend(activeFriend);
             const promptsContainer = document.createElement('div');
-            promptsContainer.style.cssText = 'background:#fff; border-radius:12px; display:flex; flex-direction:column; overflow:hidden;';
+            promptsContainer.className = 'offline-settings-prompts';
             listEl.appendChild(promptsContainer);
 
             const makeIconButton = (iconClass, label, disabled = false) => {
@@ -4413,20 +4523,20 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                 button.setAttribute('aria-label', label);
                 button.title = label;
                 button.disabled = disabled;
-                button.style.cssText = `width:30px; height:30px; border:none; border-radius:15px; background:${disabled ? '#f7f7fa' : '#f2f2f7'}; color:${disabled ? '#c7c7cc' : '#111'}; display:flex; align-items:center; justify-content:center; cursor:${disabled ? 'default' : 'pointer'}; flex-shrink:0;`;
-                button.innerHTML = `<i class="${iconClass}" style="font-size:12px;"></i>`;
+                button.className = 'offline-settings-icon-btn';
+                button.innerHTML = `<i class="${iconClass}"></i>`;
                 return button;
             };
 
             prompts.forEach((prompt, index) => {
                 const itemDiv = document.createElement('div');
-                itemDiv.style.cssText = 'padding:12px 14px; display:flex; flex-direction:column; gap:10px; border-bottom:1px solid #f2f2f7;';
+                itemDiv.className = 'offline-settings-prompt-item';
 
                 const topRow = document.createElement('div');
-                topRow.style.cssText = 'display:flex; align-items:center; gap:8px; cursor:pointer;';
+                topRow.className = 'offline-settings-prompt-row';
 
                 const moveGroup = document.createElement('div');
-                moveGroup.style.cssText = 'display:flex; gap:4px; flex-shrink:0;';
+                moveGroup.className = 'offline-settings-move-actions';
                 const upBtn = makeIconButton('fas fa-arrow-up', '上移', index === 0);
                 const downBtn = makeIconButton('fas fa-arrow-down', '下移', index === prompts.length - 1);
 
@@ -4453,13 +4563,13 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                 topRow.appendChild(moveGroup);
 
                 const nameWrap = document.createElement('div');
-                nameWrap.style.cssText = 'min-width:0; flex:1; display:flex; flex-direction:column; gap:3px;';
+                nameWrap.className = 'offline-settings-prompt-name';
 
                 if (prompt.editable !== false) {
                     const nameInput = document.createElement('input');
                     nameInput.type = 'text';
                     nameInput.value = prompt.name || '未命名提示词';
-                    nameInput.style.cssText = 'width:100%; border:none; outline:none; background:transparent; color:#000; font-size:15px; font-weight:700; padding:0;';
+                    nameInput.className = 'offline-settings-name-input';
                     nameInput.addEventListener('click', event => event.stopPropagation());
                     nameInput.addEventListener('input', () => {
                         prompt.name = nameInput.value || '未命名提示词';
@@ -4468,19 +4578,19 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     nameWrap.appendChild(nameInput);
                 } else {
                     const nameLabel = document.createElement('div');
-                    nameLabel.style.cssText = 'font-size:15px; font-weight:700; color:#000; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;';
+                    nameLabel.className = 'offline-settings-name-label';
                     nameLabel.textContent = prompt.name || '系统条目';
                     nameWrap.appendChild(nameLabel);
                 }
 
                 if (prompt.systemManaged) {
                     const managedLabel = document.createElement('div');
-                    managedLabel.style.cssText = 'font-size:11px; color:#007aff; font-weight:700;';
+                    managedLabel.className = 'offline-settings-state-label';
                     managedLabel.textContent = '系统挂载 · 始终开启';
                     nameWrap.appendChild(managedLabel);
                 } else if (prompt.alwaysEnabled) {
                     const alwaysLabel = document.createElement('div');
-                    alwaysLabel.style.cssText = 'font-size:11px; color:#34c759; font-weight:700;';
+                    alwaysLabel.className = 'offline-settings-state-label';
                     alwaysLabel.textContent = '已永久开启';
                     nameWrap.appendChild(alwaysLabel);
                 }
@@ -4488,7 +4598,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                 topRow.appendChild(nameWrap);
 
                 const actionGroup = document.createElement('div');
-                actionGroup.style.cssText = 'display:flex; align-items:center; gap:8px; flex-shrink:0;';
+                actionGroup.className = 'offline-settings-prompt-actions';
 
                 if (!prompt.alwaysEnabled) {
                     const toggleLabel = document.createElement('label');
@@ -4513,8 +4623,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
 
                 if (prompt.deletable) {
                     const deleteBtn = makeIconButton('fas fa-trash', '删除');
-                    deleteBtn.style.background = '#fff0f0';
-                    deleteBtn.style.color = '#ff3b30';
+                    deleteBtn.classList.add('danger');
                     deleteBtn.addEventListener('click', async (event) => {
                         event.stopPropagation();
                         const nextPrompts = prompts.filter((_, promptIndex) => promptIndex !== index);
@@ -4526,18 +4635,18 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
 
                 const expandIcon = document.createElement('i');
                 expandIcon.className = 'fas fa-chevron-down';
-                expandIcon.style.cssText = 'font-size:13px; color:#8e8e93; transition:transform 0.2s;';
+                expandIcon.classList.add('offline-settings-expand-icon');
                 actionGroup.appendChild(expandIcon);
                 topRow.appendChild(actionGroup);
 
                 const contentDiv = document.createElement('div');
-                contentDiv.style.cssText = 'display:none; margin-left:68px;';
+                contentDiv.className = 'offline-settings-prompt-content';
 
                 if (prompt.editable !== false) {
                     const textarea = document.createElement('textarea');
                     textarea.value = prompt.content || '';
                     textarea.placeholder = '输入提示词内容...';
-                    textarea.style.cssText = 'width:100%; min-height:132px; border:none; outline:none; resize:vertical; border-radius:10px; background:#f2f2f7; padding:10px 12px; box-sizing:border-box; font-size:13px; line-height:1.45; color:#333; font-family:inherit; user-select:text;';
+                    textarea.className = 'offline-settings-prompt-textarea';
                     textarea.addEventListener('click', event => event.stopPropagation());
                     textarea.addEventListener('input', () => {
                         prompt.content = textarea.value;
@@ -4546,7 +4655,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     contentDiv.appendChild(textarea);
                 } else {
                     const preview = document.createElement('div');
-                    preview.style.cssText = 'font-size:13px; color:#666; background:#f2f2f7; padding:10px 12px; border-radius:10px; white-space:pre-wrap; word-break:break-word; line-height:1.45;';
+                    preview.className = 'offline-settings-prompt-preview';
                     preview.textContent = prompt.content || '';
                     contentDiv.appendChild(preview);
                 }
@@ -4569,8 +4678,8 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
 
             const addBtn = document.createElement('button');
             addBtn.type = 'button';
-            addBtn.style.cssText = 'width:100%; margin-top:12px; border:none; border-radius:12px; background:#111; color:#fff; height:44px; display:flex; align-items:center; justify-content:center; gap:8px; font-size:15px; font-weight:800; cursor:pointer;';
-            addBtn.innerHTML = '<i class="fas fa-plus" style="font-size:13px;"></i><span>增加条目</span>';
+            addBtn.className = 'offline-settings-add-btn';
+            addBtn.innerHTML = '<i class="fas fa-plus"></i><span>增加条目</span>';
             addBtn.addEventListener('click', async () => {
                 const nextPrompts = prompts.concat(createCustomOfflinePrompt());
                 await persistOfflinePrompts(activeFriend, nextPrompts);
@@ -4579,33 +4688,119 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             listEl.appendChild(addBtn);
         };
 
+        const renderOfflineThemeSettingsEditor = (listEl, activeFriend) => {
+            if (!listEl || !activeFriend) return;
+            listEl.innerHTML = '';
+
+            const card = document.createElement('section');
+            card.className = 'offline-theme-card';
+            const heading = document.createElement('div');
+            heading.className = 'offline-theme-heading';
+            heading.innerHTML = '<div><strong>聊天文字</strong><span>TEXT COLORS</span></div><p>仅影响 AI 叙述与对话，不改变用户气泡。</p>';
+            card.appendChild(heading);
+
+            let theme = applyOfflineTavernTheme(activeFriend);
+            const controls = [];
+            const updateControls = () => {
+                controls.forEach(({ field, colorInput, textInput, swatch }) => {
+                    const value = theme[field];
+                    colorInput.value = value;
+                    textInput.value = value;
+                    swatch.style.backgroundColor = value;
+                });
+            };
+            const updateTheme = (field, value) => {
+                theme = normalizeOfflineTheme({ ...theme, [field]: value });
+                updateControls();
+                scheduleOfflineThemePersist(activeFriend, theme);
+            };
+
+            [
+                { field: 'narrativeColor', label: '普通文本', detail: 'AI 叙述正文' },
+                { field: 'dialogueColor', label: '对话文本', detail: '「」包裹的对话' }
+            ].forEach(({ field, label, detail }) => {
+                const row = document.createElement('label');
+                row.className = 'offline-theme-color-row';
+
+                const copy = document.createElement('span');
+                copy.className = 'offline-theme-color-copy';
+                copy.innerHTML = `<strong>${label}</strong><small>${detail}</small>`;
+
+                const controlsWrap = document.createElement('span');
+                controlsWrap.className = 'offline-theme-color-controls';
+                const swatch = document.createElement('span');
+                swatch.className = 'offline-theme-color-swatch';
+                const colorInput = document.createElement('input');
+                colorInput.type = 'color';
+                colorInput.className = 'offline-theme-color-picker';
+                colorInput.value = theme[field];
+                colorInput.setAttribute('aria-label', `${label}颜色选择器`);
+                const textInput = document.createElement('input');
+                textInput.type = 'text';
+                textInput.className = 'offline-theme-color-value';
+                textInput.value = theme[field];
+                textInput.maxLength = 7;
+                textInput.spellcheck = false;
+                textInput.setAttribute('aria-label', `${label}十六进制颜色`);
+
+                colorInput.addEventListener('input', () => updateTheme(field, colorInput.value));
+                textInput.addEventListener('input', () => {
+                    if (/^#[0-9a-fA-F]{6}$/.test(textInput.value.trim())) {
+                        updateTheme(field, textInput.value);
+                    }
+                });
+                textInput.addEventListener('blur', () => {
+                    textInput.value = theme[field];
+                });
+
+                controls.push({ field, colorInput, textInput, swatch });
+                controlsWrap.append(swatch, colorInput, textInput);
+                row.append(copy, controlsWrap);
+                card.appendChild(row);
+            });
+
+            const resetBtn = document.createElement('button');
+            resetBtn.type = 'button';
+            resetBtn.className = 'offline-theme-reset-btn';
+            resetBtn.innerHTML = '<i class="fas fa-undo"></i><span>恢复默认颜色</span>';
+            resetBtn.addEventListener('click', async () => {
+                theme = await persistOfflineTheme(activeFriend, OFFLINE_THEME_DEFAULTS);
+                updateControls();
+            });
+            card.appendChild(resetBtn);
+            listEl.appendChild(card);
+        };
+
         // Render Offline Tavern Settings
         const renderOfflineTavernSettings = () => {
             const listEl = document.getElementById('offline-tavern-settings-list');
             const regexListEl = document.getElementById('offline-tavern-regex-list');
-            if (!listEl || !regexListEl) return;
+            const themeListEl = document.getElementById('offline-tavern-theme-list');
+            if (!listEl || !regexListEl || !themeListEl) return;
             listEl.innerHTML = '';
             regexListEl.innerHTML = '';
+            themeListEl.innerHTML = '';
             
             const activeFriend = window.imData.currentActiveFriend;
             if (!activeFriend) return;
 
             renderOfflineTavernSettingsEditor(listEl, activeFriend);
             renderOfflineRegexSettingsEditor(regexListEl, activeFriend);
+            renderOfflineThemeSettingsEditor(themeListEl, activeFriend);
 
             const tabButtons = Array.from(document.querySelectorAll('#offline-tavern-settings-tabs [data-offline-settings-tab]'));
-            const promptPanel = document.getElementById('offline-tavern-prompts-panel');
-            const regexPanel = document.getElementById('offline-tavern-regex-panel');
+            const panels = {
+                prompts: document.getElementById('offline-tavern-prompts-panel'),
+                regex: document.getElementById('offline-tavern-regex-panel'),
+                theme: document.getElementById('offline-tavern-theme-panel')
+            };
             const activateTab = (tabName) => {
-                const showRegex = tabName === 'regex';
-                if (promptPanel) {
-                    promptPanel.hidden = showRegex;
-                    promptPanel.classList.toggle('active', !showRegex);
-                }
-                if (regexPanel) {
-                    regexPanel.hidden = !showRegex;
-                    regexPanel.classList.toggle('active', showRegex);
-                }
+                Object.entries(panels).forEach(([name, panel]) => {
+                    if (!panel) return;
+                    const active = name === tabName;
+                    panel.hidden = !active;
+                    panel.classList.toggle('active', active);
+                });
                 tabButtons.forEach((button) => {
                     const active = button.getAttribute('data-offline-settings-tab') === tabName;
                     button.classList.toggle('active', active);
@@ -4771,7 +4966,10 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                             }
                         } catch (error) {
                             console.error("Offline Tavern API Error:", error);
-                            if (window.showToast) window.showToast('请求失败，请检查网络或 API 配置');
+                            if (window.showToast) {
+                                const isPersistenceFailure = /Failed to persist offline meeting/.test(String(error?.message || ''));
+                                window.showToast(isPersistenceFailure ? '线下聊天记录保存失败' : '请求失败，请检查网络或 API 配置');
+                            }
                         } finally {
                             isGenerating = false;
                             currentGenerationController = null;
@@ -5280,6 +5478,13 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             tavernSettingsBtn.addEventListener('click', () => {
                 renderOfflineTavernSettings();
                 window.openView(document.getElementById('offline-tavern-settings-sheet'));
+            });
+        }
+
+        const tavernSettingsBackBtn = document.getElementById('offline-tavern-settings-back-btn');
+        if (tavernSettingsBackBtn) {
+            tavernSettingsBackBtn.addEventListener('click', () => {
+                window.closeView(document.getElementById('offline-tavern-settings-sheet'));
             });
         }
 
