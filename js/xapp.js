@@ -123,14 +123,14 @@
         const xAcceptedImageTypes = new Set(['image/jpeg', 'image/jpg', 'image/png']);
         const maxXTrends = 15;
         const xLandscapeAvatarImages = Object.freeze([
-            'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=256&h=256&q=82',
-            'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=256&h=256&q=82',
-            'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=256&h=256&q=82',
-            'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=256&h=256&q=82',
-            'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=256&h=256&q=82',
-            'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=256&h=256&q=82',
-            'https://images.unsplash.com/photo-1501854140801-50d01698950b?auto=format&fit=crop&w=256&h=256&q=82',
-            'https://images.unsplash.com/photo-1473448912268-2022ce9509d8?auto=format&fit=crop&w=256&h=256&q=82'
+            'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=256&h=256&q=82&sat=-100',
+            'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=256&h=256&q=82&sat=-100',
+            'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=256&h=256&q=82&sat=-100',
+            'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=256&h=256&q=82&sat=-100',
+            'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=256&h=256&q=82&sat=-100',
+            'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=256&h=256&q=82&sat=-100',
+            'https://images.unsplash.com/photo-1501854140801-50d01698950b?auto=format&fit=crop&w=256&h=256&q=82&sat=-100',
+            'https://images.unsplash.com/photo-1473448912268-2022ce9509d8?auto=format&fit=crop&w=256&h=256&q=82&sat=-100'
         ]);
 
         const postData = {
@@ -586,7 +586,7 @@ X is a global app. Non-User authors may write in the language that naturally fit
 
         function getStableExternalImage(seed, width = 1200, height = 480) {
             const safeSeed = encodeURIComponent(safeText(seed, 'x-image').replace(/\s+/g, '-'));
-            return `https://picsum.photos/seed/${safeSeed}/${width}/${height}`;
+            return `https://picsum.photos/seed/${safeSeed}/${width}/${height}?grayscale`;
         }
 
         function normalizeXAccount(raw = {}, index = 0) {

@@ -47,6 +47,14 @@ test('X app has one-time chrome/event guards and paged home feed rendering', () 
     assert.match(xappSource, /function renderVisibleXTab\(index = currentIndex, state = getXState\(\), options = \{\}\)/);
 });
 
+test('X external random image sources use grayscale rendering', () => {
+    const externalImageBody = getFunctionBody('getStableExternalImage');
+    assert.match(externalImageBody, /picsum\.photos\/seed\/\$\{safeSeed\}\/\$\{width\}\/\$\{height\}\?grayscale/);
+    const unsplashAvatars = xappSource.match(/https:\/\/images\.unsplash\.com\/[^']+/g) || [];
+    assert.equal(unsplashAvatars.length, 8);
+    assert.ok(unsplashAvatars.every((url) => url.includes('sat=-100')));
+});
+
 test('X iMessage imports do not copy single-chat messages into X DMs', () => {
     const stripBody = getFunctionBody('stripImessageCharMessagesForXImport');
     assert.match(stripBody, /messages:\s*\[\]/);

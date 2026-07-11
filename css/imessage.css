@@ -442,9 +442,12 @@
 }
 
 .group-private-chat-detail-bubble {
-    display: inline-block;
+    display: inline-flex;
+    flex-direction: column;
+    align-self: flex-start;
     flex: 0 1 auto;
-    width: fit-content;
+    width: max-content;
+    inline-size: max-content;
     min-width: 0;
     max-width: 78%;
     max-inline-size: min(78%, 300px);
@@ -464,8 +467,11 @@
 }
 
 button.group-private-chat-detail-bubble {
-    display: inline-block;
-    width: fit-content;
+    display: inline-flex;
+    flex-direction: column;
+    align-self: flex-start;
+    width: max-content;
+    inline-size: max-content;
     max-width: 78%;
     max-inline-size: min(78%, 300px);
     min-width: 0;
@@ -487,6 +493,7 @@ button.group-private-chat-detail-bubble {
 }
 
 .group-private-chat-detail-row.is-sender .group-private-chat-detail-bubble {
+    align-self: flex-end;
     background: #111;
     color: #fff;
 }

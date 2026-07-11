@@ -1899,16 +1899,17 @@ ${latestMessages || 'None'}
             ? ''
             : `\n\nProfile Panel Requirement:\n- 在正常聊天气泡之外，你必须额外输出 1 个 <profile_panel>...</profile_panel>\n- <profile_panel> 内必须是合法 JSON，不能有 markdown 代码块，不能有额外解释文字\n- JSON 必须包含字段：thought、location、action、mood、expression、affectionChange、events\n- 【中文强制】thought、location、action、mood、expression、events 以及 memoryPayload 内所有可见文本必须使用简体中文；禁止输出英文、日文、韩文、法文等非中文内容，不受默认语言设置影响\n- thought 必须是 45-60 字左右，严格基于当前聊天上下文，使用第一人称，像角色此刻没有说出口的心声，并且你必须在心声的最前面带上当前的具体时间（例如：[6月11日 凌晨2:14] 心声内容）\n- location 必须是 2-16 字，表示角色此刻所处的位置或场景\n- action 必须是 2-10 字，表示角色此刻正在做的动作或状态\n- mood 必须是 2-10 字，表示角色此刻的心情\n- expression 必须是 2-10 字，表示角色此刻的面部表情或神态\n- affectionChange 必须是整数（范围 -5 到 5），表示你对用户好感度因本轮对话产生的增减变化\n- 不要输出 online/offline 或类似在线状态文案，在线状态由系统统一控制并在界面显示为中文\n- events 必须是 JSON 数组；如果当前没有新的事件就输出 []；如果有事件，最多 3 条\n- 普通事件格式为 {"title":"事件标题","description":"事件描述","time":"时间或留空","type":"note"}\n- 珍视回忆必须由你（当前角色/char）自己发起：只有当你基于自己的感受，觉得刚刚这段聊天很在意、很珍贵、自己想以后记住时，才额外加入 1 条珍视回忆事件，type 必须为 "memory_request"\n- 不要把珍视回忆写成外部指令、替对方保存、接受要求或向对方请求许可；即使对方提到保存或记忆相关内容，也只在你自己也真心想珍藏时才输出\n- 珍视回忆事件格式为 {"title":"想珍藏这一刻","description":"一句简短说明","time":"时间或留空","type":"memory_request","requestText":"我想记住的具体事情","detail":"我为什么想记住或补充细节","confirmText":"收下","cancelText":"算了","memoryPayload":{"title":"珍视回忆标题","content":"我想记住的内容","detail":"更多细节","reason":"我想记住的原因","createdAt":"时间或留空","sourceThought":"可留空"}}\n- 只有当你真的觉得值得自己记住时才输出 memory_request，不能每次都输出\n- thought、location、action、mood、expression、events 必须和当前聊天内容连贯，不能复读，不能脱离角色人设`;
 
+        const languageNames = {
+            zh: 'Chinese',
+            en: 'English',
+            ja: 'Japanese',
+            ko: 'Korean',
+            fr: 'French'
+        };
         const targetLanguage = friend.language || 'zh';
         let languageRequirement = '';
         if (targetLanguage !== 'zh') {
-            const langMap = {
-                'en': 'English',
-                'ja': 'Japanese',
-                'ko': 'Korean',
-                'fr': 'French'
-            };
-            const langName = langMap[targetLanguage] || targetLanguage;
+            const langName = languageNames[targetLanguage] || targetLanguage;
             languageRequirement = `\n\n【!!! CRITICAL LANGUAGE RULE / 绝对最高优先级语言指令 !!!】:\n- [ABSOLUTE REQUIREMENT]: You MUST speak ONLY in ${langName} for the "text" field. This overrides ALL persona and memory settings.\n- Even if your persona is Chinese or the user speaks in Chinese, your spoken "text" MUST be in ${langName}.\n- [TRANSLATION]: You MUST provide an accurate Chinese translation of your ${langName} "text" in the "translation" field.\n- [THOUGHT]: The "thought" field MUST remain in Chinese.`;
         }
         const effectiveProfilePanelRequirement = profilePanelRequirement.replace('并在界面显示为中文', '');
@@ -1990,6 +1991,22 @@ ${latestMessages || 'None'}
         if (friend.type === 'group') {
             const groupMembers = window.imChat.getGroupMemberFriends(friend);
             const allowedSpeakerNames = groupMembers.map(member => member.nickname).filter(Boolean);
+            const memberLanguageMap = groupMembers.map(member => {
+                const language = member.language || 'zh';
+                return {
+                    speakerId: String(member.id),
+                    speaker: member.nickname || member.realName || String(member.id),
+                    language,
+                    languageName: languageNames[language] || language
+                };
+            });
+            const memberLanguageRequirement = `\n\n【群成员独立语言｜最高优先级】
+- 必须先根据每条输出对象的 speaker 找到下方映射，再决定该对象 text 的语言；严禁使用群聊对象的统一语言覆盖成员设置。
+- 成员语言映射：${JSON.stringify(memberLanguageMap)}
+- <chat_json> 中每条 text/voice 的 text、<group_private_messages> 中每名 speaker 的 messages，以及 <group_friend_private_chats> 中该 speaker 对应的 speakerMessages，都必须使用该 speaker 映射的语言。
+- <group_friend_private_chats> 中的 friendMessages 也必须跟随该段发起 speaker 的映射语言，使整段好友私聊使用同一种语言。
+- 映射语言为 Chinese/zh 时，text 使用中文且 translation 必须为空字符串；其他语言的 text 必须只使用对应语言，translation 必须填写自然准确的简体中文翻译。
+- thought 始终使用简体中文，不受成员语言影响。`;
             isGroupAfterUserLeft = Number(friend.leftGroupAt) > 0;
             if (isGroupAfterUserLeft) {
                 const leftAtText = formatDetailedTime(friend.leftGroupAt);
@@ -2054,6 +2071,8 @@ ${latestMessages || 'None'}
                 return {
                     speaker: member.nickname,
                     speakerId: String(member.id),
+                    language: member.language || 'zh',
+                    languageName: languageNames[member.language || 'zh'] || member.language || 'Chinese',
                     relationshipCandidates,
                     linkedCandidates,
                     canGeneratePrivateFriend: relationshipCandidates.length === 0
@@ -2132,7 +2151,7 @@ ${membersInfo}
 ${allowedSpeakerNames.length > 0 ? allowedSpeakerNames.join('、') : 'None'}
 
 群成员可私聊的好友候选（优先关系网，其次复用角色已有私有联系人；只有 canGeneratePrivateFriend 为 true 时才允许按人设生成新好友）：
-${JSON.stringify(memberFriendChatCandidates)}${groupTimeRequirement}${afterRoleWorldBookContext ? `\n\n角色后规则：\n${afterRoleWorldBookContext}` : ''}
+${JSON.stringify(memberFriendChatCandidates)}${memberLanguageRequirement}${groupTimeRequirement}${afterRoleWorldBookContext ? `\n\n角色后规则：\n${afterRoleWorldBookContext}` : ''}
 
 群成员心理、关系与聊天风格规则：
 每个群成员都必须按自己的 Persona、Overview、挂载单聊记忆、关系网和当前群聊上下文分别套用以下规则；不要把一个成员的心理、关系进展或私聊记忆套到其他成员身上。
@@ -2163,7 +2182,7 @@ ${chatBubbleFormatGuardPrompt}
 17. 【成员与自己好友的私聊｜可选】：当群内话题、人设、关系或刚发生的事情让某位群成员自然地想联系自己的好友时，可以额外生成好友私聊。优先选择 relationshipCandidates；没有合适关系网对象时可复用 linkedCandidates。只有 canGeneratePrivateFriend 为 true 且现有私有联系人也不合适时，才可按该成员人设创造一个合理的新好友。
 18. 需要生成时，在 <chat_json>...</chat_json> 之外额外输出且只输出一个 <group_friend_private_chats>...</group_friend_private_chats> 标签。已有关系网好友使用 recipientId；已有私有联系人使用 linkedChatId；生成新好友使用 generatedRecipient，三者只能选一个。格式示例：[{"speaker":"群成员完整准确名字","recipientId":"关系网候选准确ID","rounds":[{"speakerMessages":[{"text":"群成员发给好友的原文","translation":"非中文原文的自然中文翻译；中文则空字符串"}],"friendMessages":[{"text":"好友回复的原文","translation":"非中文原文的自然中文翻译；中文则空字符串"}]}]},{"speaker":"群成员完整准确名字","linkedChatId":"已有私有联系人准确ID","rounds":[...]},{"speaker":"群成员完整准确名字","generatedRecipient":{"realName":"真实姓名","remark":"该成员给此人的备注","persona":"人物设定","relationship":"与该成员的关系"},"rounds":[...]}]。
 19. 每段好友私聊必须有 2-4 轮完整往返。每一轮先由群成员连续发送 2-5 条 speakerMessages，再由好友连续回复 2-5 条 friendMessages；每条消息都必须是 {"text":"原文","translation":"中文翻译或空字符串"}。如果 text 不是中文，translation 必须填写自然中文翻译；如果 text 本身是中文，translation 必须是空字符串。消息必须承接上一轮，形成真实连续的私聊，不能是互不相关的句子。
-20. speaker 必须是当前群成员；recipientId 或 linkedChatId 必须来自该 speaker 对应候选。generatedRecipient 只在 canGeneratePrivateFriend 为 true 时有效，并且姓名、关系、人设必须互相一致且不能复制已有联系人。每段好友私聊只属于发送成员与收件好友，其他群成员默认不知道内容，后续不得串用。${languageRequirement}
+20. speaker 必须是当前群成员；recipientId 或 linkedChatId 必须来自该 speaker 对应候选。generatedRecipient 只在 canGeneratePrivateFriend 为 true 时有效，并且姓名、关系、人设必须互相一致且不能复制已有联系人。每段好友私聊只属于发送成员与收件好友，其他群成员默认不知道内容，后续不得串用。
 
 群聊的背景与关系记忆:
 ${commonMemorySections || 'None'}${dynamicActionNarrationRequirement}`;

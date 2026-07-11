@@ -409,3 +409,34 @@ test('keeps group time awareness, role recall toggle, Chinese generated thoughts
     assert.match(settingsSource, /relationshipInput\.value\s*=\s*friend\.relationship \|\| ''/);
     assert.match(settingsSource, /targetFriend\.relationship\s*=\s*relationshipInput \? relationshipInput\.value : ''/);
 });
+
+test('uses per-member group languages, content-sized private bubbles, and fresh edited-message context', async () => {
+    const [aiSource, mainSource, coreSource, cssSource, indexSource] = await Promise.all([
+        fs.readFile(new URL('../js/imessage/4_chat_ai.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_main.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/2_core.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../css/imessage.css', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../index.html', import.meta.url), 'utf8')
+    ]);
+
+    assert.match(aiSource, /const memberLanguageMap = groupMembers\.map/);
+    assert.match(aiSource, /language:\s*member\.language \|\| 'zh'/);
+    assert.match(aiSource, /【群成员独立语言｜最高优先级】/);
+    assert.match(aiSource, /friendMessages 也必须跟随该段发起 speaker 的映射语言/);
+    assert.match(aiSource, /严禁使用群聊对象的统一语言覆盖成员设置/);
+
+    assert.match(cssSource, /\.group-private-chat-detail-bubble\s*\{[\s\S]*?display:\s*inline-flex/);
+    assert.match(cssSource, /\.group-private-chat-detail-bubble\s*\{[\s\S]*?inline-size:\s*max-content/);
+    assert.match(cssSource, /button\.group-private-chat-detail-bubble\s*\{[\s\S]*?max-inline-size:\s*min\(78%,\s*300px\)/);
+    assert.match(cssSource, /\.group-private-chat-detail-row\.is-sender \.group-private-chat-detail-bubble\s*\{[\s\S]*?align-self:\s*flex-end/);
+
+    assert.match(mainSource, /const rowMessageId = row\.getAttribute\('data-message-id'\)/);
+    assert.match(mainSource, /window\.imApp\.findFriendMessageIndex\(liveFriend, messageDescriptor\)/);
+    assert.match(mainSource, /id:\s*msg\.id \|\| rowMessageId \|\| null/);
+    assert.match(coreSource, /const getApiContextFingerprint = \(message\) => JSON\.stringify/);
+    assert.match(coreSource, /getApiContextFingerprint\(targetMessage\) !== previousContextFingerprint/);
+    assert.match(coreSource, /window\.imApp\.clearFriendRuntimeMessageContext\(targetFriend\)/);
+    assert.match(indexSource, /js\/imessage\/2_core\.js\?v=20260711-group-chat-fixes-v1/);
+    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260711-group-chat-fixes-v1/);
+    assert.match(indexSource, /js\/imessage\/4_chat_main\.js\?v=20260711-group-chat-fixes-v1/);
+});

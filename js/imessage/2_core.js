@@ -1649,6 +1649,16 @@ window.imApp.updateFriendMessage = async function(friendId, descriptor, mutator,
 
     const previousMessage = window.imApp.cloneDataSnapshot(targetFriend.messages[targetIndex]);
     const targetMessage = targetFriend.messages[targetIndex];
+    const getApiContextFingerprint = (message) => JSON.stringify({
+        role: message?.role || '',
+        type: message?.type || '',
+        content: message?.content || '',
+        text: message?.text || '',
+        transcript: message?.transcript || '',
+        description: message?.description || '',
+        replyTo: message?.replyTo || ''
+    });
+    const previousContextFingerprint = getApiContextFingerprint(previousMessage);
 
     try {
         if (typeof mutator === 'function') {
@@ -1672,6 +1682,11 @@ window.imApp.updateFriendMessage = async function(friendId, descriptor, mutator,
             targetMessage.id = persistedMessage.id;
         }
         targetMessage.__messageOrder = targetIndex;
+        if (getApiContextFingerprint(targetMessage) !== previousContextFingerprint) {
+            window.imApp.clearFriendRuntimeMessageContext(targetFriend);
+        }
+        window.imApp.syncActiveFriendReference(targetFriend);
+        window.imApp.syncSettingsFriendReference(targetFriend);
         window.imApp.saveState.lastError = null;
         return true;
     } catch (e) {

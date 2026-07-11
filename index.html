@@ -32,7 +32,7 @@
     <link rel="stylesheet" href="css/login.css">
     <link rel="stylesheet" href="css/home.css">
     <link rel="stylesheet" href="css/worldbook.css">
-    <link rel="stylesheet" href="css/imessage.css?v=20260711-offline-studio-v1">
+    <link rel="stylesheet" href="css/imessage.css?v=20260711-group-chat-fixes-v1">
     <link rel="stylesheet" href="css/pay.css?v=20260705-safe-area-v1">
     <link rel="stylesheet" href="css/bstage.css">
     <link rel="stylesheet" href="css/tiktok.css">
@@ -42,7 +42,7 @@
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
-    <link rel="stylesheet" href="css/loves.css?v=20260706-diary-v1">
+    <link rel="stylesheet" href="css/loves.css?v=20260711-friend-mac-v7">
     <link rel="stylesheet" href="css/library.css?v=20260704-together-picker-border-v1">
     <!-- App Styles -->
     <link rel="stylesheet" href="css/settings.css?v=20260710-storage-v7-cache1">
@@ -6712,6 +6712,48 @@
             </div>
 
             <!-- ========================================== -->
+            <!-- LOVERS FRIEND COMPUTER VIEW -->
+            <!-- ========================================== -->
+            <div class="app-view lovers-friend-computer-view" id="lovers-friend-computer-view" aria-label="好友电脑">
+                <button type="button" id="friend-computer-back-btn" class="friend-mac-floating-back" aria-label="返回"><i class="fas fa-chevron-left"></i></button>
+
+                <main class="friend-mac-desktop" id="friend-mac-desktop">
+                    <div class="friend-mac-owner">
+                        <span>WORKSPACE</span>
+                        <strong id="friend-mac-owner-name">TA 的 Mac</strong>
+                    </div>
+                    <div class="friend-mac-desktop-icons" aria-label="桌面应用">
+                        <button type="button" class="friend-mac-desktop-app" data-computer-app="resume"><span><i class="fas fa-id-card"></i></span><b>简历</b></button>
+                        <button type="button" class="friend-mac-desktop-app" data-computer-app="mail"><span><i class="fas fa-envelope"></i></span><b>邮件</b></button>
+                        <button type="button" class="friend-mac-desktop-app" data-computer-app="calendar"><span><i class="fas fa-calendar-alt"></i></span><b>日历</b></button>
+                        <button type="button" class="friend-mac-desktop-app" data-computer-app="notes"><span><i class="fas fa-sticky-note"></i></span><b>备忘录</b></button>
+                        <button type="button" class="friend-mac-desktop-app" data-computer-app="files"><span><i class="fas fa-folder"></i></span><b>文件</b></button>
+                    </div>
+
+                    <section class="friend-mac-window" id="friend-mac-window" aria-live="polite" hidden>
+                        <div class="friend-mac-windowbar">
+                            <div class="friend-mac-traffic">
+                                <button type="button" id="friend-mac-window-close" aria-label="关闭窗口"></button><span></span><span></span>
+                            </div>
+                            <strong id="friend-mac-window-title">简历</strong>
+                            <div class="friend-mac-window-spacer"></div>
+                        </div>
+                        <div class="friend-mac-window-content" id="friend-mac-window-content"></div>
+                    </section>
+                </main>
+
+                <nav class="friend-mac-dock" aria-label="电脑程序坞">
+                    <button type="button" data-computer-app="resume" aria-label="简历"><i class="fas fa-id-card"></i></button>
+                    <button type="button" data-computer-app="mail" aria-label="邮件"><i class="fas fa-envelope"></i></button>
+                    <button type="button" data-computer-app="calendar" aria-label="日历"><i class="fas fa-calendar-alt"></i></button>
+                    <button type="button" data-computer-app="notes" aria-label="备忘录"><i class="fas fa-sticky-note"></i></button>
+                    <button type="button" data-computer-app="files" aria-label="文件"><i class="fas fa-folder"></i></button>
+                    <span></span>
+                    <button type="button" data-computer-app="settings" aria-label="设置"><i class="fas fa-cog"></i></button>
+                </nav>
+            </div>
+
+            <!-- ========================================== -->
             <!-- LOVERS FRIEND PHONE VIEW (全屏界面) -->
             <!-- ========================================== -->
             <div class="app-view lovers-friend-phone-view" id="lovers-friend-phone-view" style="background-color: #fff; background-size: cover; background-position: center; padding-top: 0;">
@@ -6755,7 +6797,7 @@
                     </div>
                     <!-- Weibo -->
                     <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer;" id="friend-phone-app-weibo">
-                        <div style="width: 60px; height: 60px; border-radius: 14px; background: linear-gradient(135deg, #ff8a00, #ff2d55); color: #fff; display: flex; justify-content: center; align-items: center; font-size: 30px; box-shadow: 0 8px 18px rgba(255, 102, 0, 0.28);"><i class="fab fa-weibo"></i></div>
+                        <div style="width: 60px; height: 60px; border-radius: 14px; background: linear-gradient(135deg, #ff8a00, #ff2d55); color: #fff; display: flex; justify-content: center; align-items: center; font-size: 30px;"><i class="fab fa-weibo"></i></div>
                         <div style="font-size: 12px; color: #333; font-weight: 500;">微博</div>
                     </div>
                 </div>
@@ -7030,149 +7072,109 @@
             </div>
 
             <!-- 好友手机：设置全屏/底部弹窗 -->
-            <div class="app-view friend-settings-view" id="friend-phone-settings-sheet" style="position: absolute; inset: 0; z-index: 200; flex-direction: column; background: #f2f2f7; padding-top: 0;">
+            <div class="app-view friend-settings-view" id="friend-phone-settings-sheet" style="position: absolute; inset: 0; z-index: 200; flex-direction: column; padding-top: 0;">
                 <!-- 顶部导航栏 -->
-                <div style="padding-top: var(--safe-top); height: calc(54px + var(--safe-top)); display: flex; flex-direction: column; justify-content: flex-end; position: relative; border-bottom: none; flex-shrink: 0; background: rgba(242,242,247,0.9);   box-sizing: border-box;">
-                    <div style="height: 54px; display: flex; align-items: center; justify-content: center; position: relative; width: 100%; padding-left: 16px; padding-right: 16px; box-sizing: border-box;">
-                        <div id="friend-settings-back-btn" style="position: absolute; left: 16px; font-size: 20px; color: #007aff; cursor: pointer; display: flex; align-items: center;"><i class="fas fa-chevron-left" style="margin-right: 4px;"></i><span style="font-size: 16px; font-weight: 500;">返回</span></div>
-                        <div style="font-size: 17px; font-weight: 600; color: #111;">设置</div>
+                <div class="friend-settings-nav" style="padding-top: var(--safe-top); height: calc(54px + var(--safe-top)); display: flex; flex-direction: column; justify-content: flex-end; position: relative; flex-shrink: 0; box-sizing: border-box;">
+                    <div class="friend-settings-nav-bar" style="height: 54px; display: flex; align-items: center; justify-content: center; position: relative; width: 100%; padding-left: 16px; padding-right: 16px; box-sizing: border-box;">
+                        <button type="button" id="friend-settings-back-btn" class="friend-settings-back"><i class="fas fa-chevron-left"></i><span>返回</span></button>
+                        <div class="friend-settings-nav-title">好友手机</div>
                     </div>
                 </div>
                 
-                <div class="detail-sheet-content" style="padding: 0; flex: 1; overflow-y: auto;">
-                    <!-- 顶部的搜索栏留白或大字标题占位 -->
-                    <div style="padding: 10px 20px 20px; font-size: 32px; font-weight: 800; color: #111;">设置</div>
+                <div class="detail-sheet-content friend-settings-content" style="padding: 0; flex: 1; overflow-y: auto;">
+                    <div class="friend-settings-title"><h2>设置</h2></div>
                     
-                    <div class="settings-group fully-rounded" style="margin: 0 16px;">
-                        <div class="settings-item" style="border-bottom: none; position: relative; padding: 12px 16px;">
+                    <div class="settings-group fully-rounded friend-settings-wallpaper" style="margin: 0 16px;">
+                        <div class="settings-item" style="position: relative; padding: 12px 16px;">
                             <div class="settings-icon" style="background-color: #007aff; width: 34px; height: 34px; border-radius: 8px;"><i class="fas fa-image"></i></div>
                             <div class="settings-text" style="font-weight: 500; font-size: 16px; margin-left: 5px;">更换主屏幕壁纸</div>
                             <i class="fas fa-chevron-right arrow"></i>
                             <input type="file" id="friend-phone-bg-upload" accept="image/*" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;">
                         </div>
+                        <button type="button" class="settings-item friend-phone-bg-reset" id="friend-phone-bg-reset-btn">
+                            <div class="settings-icon"><i class="fas fa-rotate-left"></i></div>
+                            <div class="settings-text">恢复默认背景</div>
+                        </button>
                     </div>
                     
-                    <div class="settings-group fully-rounded" style="margin: 20px 16px 0;">
-                        <div class="settings-item" id="friend-phone-gen-settings-btn" style="border-bottom: none; cursor: pointer; padding: 12px 16px;">
-                            <div class="settings-icon" style="background-color: #5856d6; width: 34px; height: 34px; border-radius: 8px;"><i class="fas fa-wand-magic-sparkles"></i></div>
-                            <div class="settings-text" style="font-weight: 500; font-size: 16px; margin-left: 5px;">生成数据</div>
-                            <i class="fas fa-chevron-right arrow"></i>
+                    <div class="friend-gen-section">
+                        <div class="friend-gen-heading">
+                            <h3>生成应用数据</h3>
                         </div>
+
+                        <label class="friend-real-time-option">
+                            <span><i class="fas fa-clock"></i><strong>使用真实时间</strong><small>在生成提示词中加入当前日期、星期与时间</small></span>
+                            <input type="checkbox" id="friend-phone-real-time-toggle" checked>
+                        </label>
+
+                        <div class="friend-gen-limits" id="friend-phone-apps-select">
+                            <div class="friend-gen-limit-row" data-gen-app="imessage">
+                                <label class="friend-gen-check" aria-label="生成短信数据"><input type="checkbox" class="gen-app-checkbox" value="imessage" checked><span><i class="fas fa-check"></i></span></label>
+                                <div class="friend-gen-limit-name"><div class="settings-icon" style="background-color: #34c759;"><i class="fas fa-comment"></i></div><span>短信</span></div>
+                                <div class="friend-gen-limit-inputs">
+                                    <label><span>大号</span><input type="number" id="friend-gen-imessage-main-count" min="1" max="10" step="1" inputmode="numeric" value="5"></label>
+                                    <label><span>小号</span><input type="number" id="friend-gen-imessage-alt-count" min="2" max="10" step="1" inputmode="numeric" value="5"></label>
+                                </div>
+                            </div>
+                            <div class="friend-gen-limit-row" data-gen-app="music">
+                                <label class="friend-gen-check" aria-label="生成音乐数据"><input type="checkbox" class="gen-app-checkbox" value="music" checked><span><i class="fas fa-check"></i></span></label>
+                                <div class="friend-gen-limit-name"><div class="settings-icon" style="background-color: #ff2d55;"><i class="fas fa-music"></i></div><span>音乐</span></div>
+                                <div class="friend-gen-limit-inputs is-single">
+                                    <label><span>排行</span><input type="number" id="friend-gen-music-top-count" min="1" max="10" step="1" inputmode="numeric" value="3"></label>
+                                </div>
+                            </div>
+                            <div class="friend-gen-limit-row" data-gen-app="health">
+                                <label class="friend-gen-check" aria-label="生成健康数据"><input type="checkbox" class="gen-app-checkbox" value="health" checked><span><i class="fas fa-check"></i></span></label>
+                                <div class="friend-gen-limit-name"><div class="settings-icon is-light" style="color: #ff2d55;"><i class="fas fa-heart"></i></div><span>健康</span></div>
+                                <div class="friend-gen-limit-inputs is-empty"></div>
+                            </div>
+                            <div class="friend-gen-limit-row" data-gen-app="pay">
+                                <label class="friend-gen-check" aria-label="生成钱包数据"><input type="checkbox" class="gen-app-checkbox" value="pay" checked><span><i class="fas fa-check"></i></span></label>
+                                <div class="friend-gen-limit-name"><div class="settings-icon" style="background-color: #007aff;"><i class="fas fa-wallet"></i></div><span>钱包</span></div>
+                                <div class="friend-gen-limit-inputs is-empty"></div>
+                            </div>
+                            <div class="friend-gen-limit-row" data-gen-app="game">
+                                <label class="friend-gen-check" aria-label="生成游戏数据"><input type="checkbox" class="gen-app-checkbox" value="game" checked><span><i class="fas fa-check"></i></span></label>
+                                <div class="friend-gen-limit-name"><div class="settings-icon" style="background-color: #171918;"><i class="fas fa-gamepad"></i></div><span>游戏</span></div>
+                                <div class="friend-gen-limit-inputs is-single">
+                                    <label><span>游戏</span><input type="number" id="friend-gen-game-count" min="1" max="5" step="1" inputmode="numeric" value="2"></label>
+                                </div>
+                            </div>
+                            <div class="friend-gen-limit-row" data-gen-app="call">
+                                <label class="friend-gen-check" aria-label="生成通话数据"><input type="checkbox" class="gen-app-checkbox" value="call" checked><span><i class="fas fa-check"></i></span></label>
+                                <div class="friend-gen-limit-name"><div class="settings-icon" style="background-color: #34c759;"><i class="fas fa-phone" style="transform: rotate(90deg);"></i></div><span>通话</span></div>
+                                <div class="friend-gen-limit-inputs is-single">
+                                    <label><span>通话</span><input type="number" id="friend-gen-call-count" min="1" max="20" step="1" inputmode="numeric" value="5"></label>
+                                </div>
+                            </div>
+                            <div class="friend-gen-limit-row" data-gen-app="safari">
+                                <label class="friend-gen-check" aria-label="生成浏览器数据"><input type="checkbox" class="gen-app-checkbox" value="safari" checked><span><i class="fas fa-check"></i></span></label>
+                                <div class="friend-gen-limit-name"><div class="settings-icon is-light" style="color: #007aff;"><i class="far fa-compass"></i></div><span>浏览器</span></div>
+                                <div class="friend-gen-limit-inputs is-single">
+                                    <label><span>总数</span><input type="number" id="friend-gen-safari-count" min="2" max="30" step="1" inputmode="numeric" value="10"></label>
+                                </div>
+                            </div>
+                            <div class="friend-gen-limit-row" data-gen-app="weibo">
+                                <label class="friend-gen-check" aria-label="生成微博数据"><input type="checkbox" class="gen-app-checkbox" value="weibo" checked><span><i class="fas fa-check"></i></span></label>
+                                <div class="friend-gen-limit-name"><div class="settings-icon" style="background: linear-gradient(135deg, #ff8a00, #ff2d55);"><i class="fab fa-weibo"></i></div><span>微博</span></div>
+                                <div class="friend-gen-limit-inputs">
+                                    <label><span>帖子</span><input type="number" id="friend-gen-weibo-post-count" min="2" max="20" step="1" inputmode="numeric" value="10"></label>
+                                    <label><span>照片</span><input type="number" id="friend-gen-weibo-photo-count" min="2" max="12" step="1" inputmode="numeric" value="6"></label>
+                                </div>
+                            </div>
+                            <div class="friend-gen-limit-row" data-gen-app="files">
+                                <label class="friend-gen-check" aria-label="生成文件数据"><input type="checkbox" class="gen-app-checkbox" value="files" checked><span><i class="fas fa-check"></i></span></label>
+                                <div class="friend-gen-limit-name"><div class="settings-icon is-light" style="color: #007aff;"><i class="far fa-folder-open"></i></div><span>文件</span></div>
+                                <div class="friend-gen-limit-inputs is-empty"></div>
+                            </div>
+                        </div>
+
+                        <button type="button" id="friend-phone-gen-confirm-btn" class="friend-gen-submit">
+                            <i class="fas fa-wand-magic-sparkles" aria-hidden="true"></i>
+                            <span>生成选中的应用数据</span>
+                        </button>
                     </div>
 
-                    <div class="settings-group fully-rounded" style="margin: 30px 16px 20px;">
-                        <div class="settings-item" id="friend-phone-clear-all-data-btn" style="border-bottom: none; cursor: pointer; padding: 12px 16px;">
-                            <div class="settings-icon" style="background-color: #ff3b30; width: 34px; height: 34px; border-radius: 8px;"><i class="fas fa-trash-alt"></i></div>
-                            <div class="settings-text" style="font-weight: 500; font-size: 16px; margin-left: 5px; color: #ff3b30;">清空所有数据</div>
-                        </div>
-                    </div>
-                    <div style="padding: 0 20px 20px; font-size: 13px; color: #8e8e93; line-height: 1.5; text-align: center;">
-                        "清空所有数据"将重置该好友的所有应用数据。
-                    </div>
-                </div>
-            </div>
-
-            <!-- 好友手机：生成设置弹窗 (底部原生风格) -->
-            <div class="bottom-sheet-overlay detail-sheet-overlay" id="friend-phone-gen-modal" style="z-index: 600;">
-                <div class="bottom-sheet" style="height: 85%; display: flex; flex-direction: column; background: #ffffff;">
-                    <div class="sheet-handle"></div>
-                    <div class="sheet-title" style="margin-bottom: 5px;">生成应用数据</div>
-                    <div style="font-size: 13px; color: #8e8e93; text-align: center; margin-bottom: 8px; padding: 0 20px;">开启需要由 AI 模拟生成的应用</div>
-                    <div style="margin: 0 16px 15px; padding: 10px 12px; border-radius: 14px; background: #fff7e8; color: #9a5a00; font-size: 13px; line-height: 1.45; display: flex; align-items: flex-start; gap: 8px;">
-                        <i class="fas fa-lightbulb" style="margin-top: 2px; color: #ff9500;"></i>
-                        <span>建议一次最多开启 3-5 个应用，生成会更稳定，内容也更细。</span>
-                    </div>
-                    
-                    <div class="detail-sheet-content" style="flex: 1; overflow-y: auto; padding: 0 16px 20px;">
-                        <div class="settings-group fully-rounded" id="friend-phone-apps-select" style="margin: 0;">
-                            <!-- iMessage -->
-                            <div class="settings-item" style="border-bottom: 1px solid var(--separator-color); padding: 10px 16px;">
-                                <div class="settings-icon" style="background-color: #34c759; width: 32px; height: 32px; border-radius: 8px; "><i class="fas fa-comment"></i></div>
-                                <div class="settings-text" style="font-weight: 500; margin-left: 5px;">短信 (iMessage)</div>
-                                <label class="gen-mini-toggle">
-                                    <input type="checkbox" class="gen-app-checkbox" value="imessage" checked>
-                                    <span class="gen-mini-slider"></span>
-                                </label>
-                            </div>
-                            <!-- Music -->
-                            <div class="settings-item" style="border-bottom: 1px solid var(--separator-color); padding: 10px 16px;">
-                                <div class="settings-icon" style="background-color: #ff2d55; width: 32px; height: 32px; border-radius: 8px; "><i class="fas fa-music"></i></div>
-                                <div class="settings-text" style="font-weight: 500; margin-left: 5px;">音乐 (Music)</div>
-                                <label class="gen-mini-toggle">
-                                    <input type="checkbox" class="gen-app-checkbox" value="music" checked>
-                                    <span class="gen-mini-slider"></span>
-                                </label>
-                            </div>
-                            <!-- Health -->
-                            <div class="settings-item" style="border-bottom: 1px solid var(--separator-color); padding: 10px 16px;">
-                                <div class="settings-icon" style="background-color: #fff; color: #ff2d55; width: 32px; height: 32px; border-radius: 8px; "><i class="fas fa-heart"></i></div>
-                                <div class="settings-text" style="font-weight: 500; margin-left: 5px;">健康 (Health)</div>
-                                <label class="gen-mini-toggle">
-                                    <input type="checkbox" class="gen-app-checkbox" value="health" checked>
-                                    <span class="gen-mini-slider"></span>
-                                </label>
-                            </div>
-                            <!-- Pay -->
-                            <div class="settings-item" style="border-bottom: 1px solid var(--separator-color); padding: 10px 16px;">
-                                <div class="settings-icon" style="background-color: #007aff; width: 32px; height: 32px; border-radius: 8px; "><i class="fas fa-wallet"></i></div>
-                                <div class="settings-text" style="font-weight: 500; margin-left: 5px;">钱包 (Pay)</div>
-                                <label class="gen-mini-toggle">
-                                    <input type="checkbox" class="gen-app-checkbox" value="pay" checked>
-                                    <span class="gen-mini-slider"></span>
-                                </label>
-                            </div>
-                            <!-- Game -->
-                            <div class="settings-item" style="border-bottom: 1px solid var(--separator-color); padding: 10px 16px;">
-                                <div class="settings-icon" style="background-color: #000; width: 32px; height: 32px; border-radius: 8px; "><i class="fas fa-gamepad"></i></div>
-                                <div class="settings-text" style="font-weight: 500; margin-left: 5px;">游戏 (Game)</div>
-                                <label class="gen-mini-toggle">
-                                    <input type="checkbox" class="gen-app-checkbox" value="game" checked>
-                                    <span class="gen-mini-slider"></span>
-                                </label>
-                            </div>
-                            <!-- Call -->
-                            <div class="settings-item" style="border-bottom: 1px solid var(--separator-color); padding: 10px 16px;">
-                                <div class="settings-icon" style="background-color: #34c759; width: 32px; height: 32px; border-radius: 8px; "><i class="fas fa-phone" style="transform: rotate(90deg);"></i></div>
-                                <div class="settings-text" style="font-weight: 500; margin-left: 5px;">call</div>
-                                <label class="gen-mini-toggle">
-                                    <input type="checkbox" class="gen-app-checkbox" value="call" checked>
-                                    <span class="gen-mini-slider"></span>
-                                </label>
-                            </div>
-                            <!-- Safari -->
-                            <div class="settings-item" style="border-bottom: 1px solid var(--separator-color); padding: 10px 16px;">
-                                <div class="settings-icon" style="background-color: #fff; color: #007aff; width: 32px; height: 32px; border-radius: 8px; "><i class="far fa-compass"></i></div>
-                                <div class="settings-text" style="font-weight: 500; margin-left: 5px;">浏览器 (Safari)</div>
-                                <label class="gen-mini-toggle">
-                                    <input type="checkbox" class="gen-app-checkbox" value="safari" checked>
-                                    <span class="gen-mini-slider"></span>
-                                </label>
-                            </div>
-                            <!-- Weibo -->
-                            <div class="settings-item" style="border-bottom: 1px solid var(--separator-color); padding: 10px 16px;">
-                                <div class="settings-icon" style="background: linear-gradient(135deg, #ff8a00, #ff2d55); width: 32px; height: 32px; border-radius: 8px; "><i class="fab fa-weibo"></i></div>
-                                <div class="settings-text" style="font-weight: 500; margin-left: 5px;">微博 (Weibo)</div>
-                                <label class="gen-mini-toggle">
-                                    <input type="checkbox" class="gen-app-checkbox" value="weibo" checked>
-                                    <span class="gen-mini-slider"></span>
-                                </label>
-                            </div>
-                            <!-- Files -->
-                            <div class="settings-item" style="border-bottom: none; padding: 10px 16px;">
-                                <div class="settings-icon" style="background-color: #fff; color: #007aff; width: 32px; height: 32px; border-radius: 8px; "><i class="far fa-folder-open"></i></div>
-                                <div class="settings-text" style="font-weight: 500; margin-left: 5px;">文件 (Files)</div>
-                                <label class="gen-mini-toggle">
-                                    <input type="checkbox" class="gen-app-checkbox" value="files" checked>
-                                    <span class="gen-mini-slider"></span>
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-                    <!-- 底部操作按钮 -->
-                    <div style="padding: 10px 16px 20px; display: flex; gap: 15px; background: transparent; flex-shrink: 0;">
-                        <div class="sheet-action" onclick="window.closeView(document.getElementById('friend-phone-gen-modal'))" style="flex: 1; margin: 0; background: #e5e5ea; color: #111; border-radius: 14px; font-weight: 600; padding: 14px 0; font-size: 16px;">取消</div>
-                        <div class="sheet-action" id="friend-phone-gen-confirm-btn" style="flex: 1; margin: 0; background: #007aff; color: #fff; border-radius: 14px; font-weight: 600; padding: 14px 0; font-size: 16px; ">生成</div>
-                    </div>
                 </div>
             </div>
 
@@ -7438,7 +7440,7 @@
     
     <!-- 引入 iMessage 模块分段代码 -->
     <script src="js/imessage/data_utils.js?v=20260711-offline-bilingual-v1"></script>
-    <script src="js/imessage/2_core.js?v=20260711-summary-cursor-v1"></script>
+    <script src="js/imessage/2_core.js?v=20260711-group-chat-fixes-v1"></script>
     <script src="js/imessage/3_contacts.js"></script>
     <script src="js/imessage/3_groups.js?v=20260711-summary-cursor-v1"></script>
     <script src="js/imessage/4_chat_common.js"></script>
@@ -7446,14 +7448,14 @@
     <script src="js/imessage/4_chat_payment.js?v=20260705-offline-identity-v2"></script>
     <script src="js/imessage/4_chat_bubbles.js?v=20260705-offline-identity-v2"></script>
     <script src="js/imessage/minimax_tts.js"></script>
-    <script src="js/imessage/4_chat_ai.js?v=20260707-group-summary-v1"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260711-group-chat-fixes-v1"></script>
     <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
     <script src="js/imessage/4_chat_sheet.js?v=20260711-offline-bilingual-v3"></script>
     <script src="js/imessage/4_chat_link.js?v=20260706-bugfix-v1"></script>
     <script src="js/imessage/4_chat_list.js"></script>
     <script src="js/imessage/4_chat_interface.js?v=20260711-chat-theme-v1"></script>
     <script src="js/imessage/4_chat_voice_call.js"></script>
-    <script src="js/imessage/4_chat_main.js?v=20260705-recall-v1"></script>
+    <script src="js/imessage/4_chat_main.js?v=20260711-group-chat-fixes-v1"></script>
     <script src="js/imessage/5_settings.js?v=20260711-chat-theme-v1"></script>
     <script src="js/imessage/6_moments.js"></script>
 
@@ -7469,7 +7471,7 @@
     <script src="js/settings.js?v=20260711-chat-theme-v1"></script>
     <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="js/library.js?v=20260707-hidden-focus-v1"></script>
-    <script src="js/loves.js?v=20260706-diary-v2"></script>
+    <script src="js/loves.js?v=20260711-friend-mac-v7"></script>
     <script src="js/tiktok/2_core.js?v=20260710-storage-ready-v1"></script>
     <script src="js/tiktok/3_home.js"></script>
     <script src="js/tiktok/4_chat.js"></script>

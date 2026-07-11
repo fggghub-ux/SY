@@ -399,7 +399,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (ts && window.imData.currentActiveFriend) {
                             const friendId = window.imData.currentActiveFriend.id;
                             const liveFriend = (window.imData.friends || []).find(f => String(f.id) === String(friendId)) || window.imData.currentActiveFriend;
-                            const msg = (liveFriend.messages || []).find(m => String(m.timestamp) === String(ts));
+                            const rowMessageId = row.getAttribute('data-message-id');
+                            const messageDescriptor = {
+                                id: rowMessageId || null,
+                                timestamp: ts || null
+                            };
+                            const messageIndex = window.imApp.findFriendMessageIndex
+                                ? window.imApp.findFriendMessageIndex(liveFriend, messageDescriptor)
+                                : (liveFriend.messages || []).findIndex(m => String(m.timestamp) === String(ts));
+                            const msg = messageIndex >= 0 ? liveFriend.messages[messageIndex] : null;
                             if (msg) {
                                 if (msg.translation) {
                                     const nextShowTranslation = !msg.showTranslation;
@@ -474,7 +482,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (ts && window.imData.currentActiveFriend) {
                             const friendId = window.imData.currentActiveFriend.id;
                             const liveFriend = (window.imData.friends || []).find(f => String(f.id) === String(friendId)) || window.imData.currentActiveFriend;
-                            const msg = (liveFriend.messages || []).find(m => String(m.timestamp) === String(ts));
+                            const rowMessageId = row.getAttribute('data-message-id');
+                            const messageDescriptor = {
+                                id: rowMessageId || null,
+                                timestamp: ts || null
+                            };
+                            const messageIndex = window.imApp.findFriendMessageIndex
+                                ? window.imApp.findFriendMessageIndex(liveFriend, messageDescriptor)
+                                : (liveFriend.messages || []).findIndex(m => String(m.timestamp) === String(ts));
+                            const msg = messageIndex >= 0 ? liveFriend.messages[messageIndex] : null;
                             if (msg) {
                                 if (window.showCustomModal) {
                                     window.showCustomModal({
@@ -496,8 +512,8 @@ document.addEventListener('DOMContentLoaded', () => {
                                                 const nextContent = finalVal.trim();
                                                 const saved = window.imApp.updateFriendMessage
                                                     ? await window.imApp.updateFriendMessage(friendId, {
-                                                        id: msg.id || null,
-                                                        timestamp: ts || null
+                                                        id: msg.id || rowMessageId || null,
+                                                        timestamp: msg.timestamp || ts || null
                                                     }, (targetMsg) => {
                                                         if (!targetMsg) return;
                                                         targetMsg.content = nextContent;
