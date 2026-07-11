@@ -102,3 +102,17 @@ test('X high-value writes flush durable app state', () => {
     const closeBody = getFunctionBody('closeXApp');
     assert.match(closeBody, /flushXStateNow\('x-close'\)/);
 });
+
+test('X post deletion clears every post source and restores state when persistence fails', () => {
+    const deleteBody = getFunctionBody('deleteXPost');
+    assert.match(deleteBody, /draft\.xGeneratedPosts[\s\S]*?\.filter/);
+    assert.match(deleteBody, /draft\.xDirectMessages[\s\S]*?profilePosts[\s\S]*?\.filter/);
+    assert.match(deleteBody, /delete draft\.xPostThreads\[String\(postId\)\]/);
+    assert.match(deleteBody, /delete postData\[postId\]/);
+    assert.match(deleteBody, /await flushXStateNow\('x-post-delete'\)/);
+    assert.match(deleteBody, /saveXState\(previousState\)/);
+    assert.match(deleteBody, /帖子删除未保存，请重试/);
+
+    const targetBody = getFunctionBody('deleteTargetPost');
+    assert.match(targetBody, /void deleteXPost\(postId\)/);
+});

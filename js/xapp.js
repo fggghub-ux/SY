@@ -4399,6 +4399,44 @@ Rules:
             setTimeout(() => { currentActionPostId = null; }, 300);
         }
 
+        async function deleteXPost(postId) {
+            const previousState = getXState();
+            updateXState((draft) => {
+                draft.xGeneratedPosts = (draft.xGeneratedPosts || [])
+                    .filter((post) => String(post?.id) !== String(postId));
+                draft.xDirectMessages = (draft.xDirectMessages || []).map((item) => ({
+                    ...item,
+                    profilePosts: (item.profilePosts || [])
+                        .filter((post) => String(post?.id) !== String(postId))
+                }));
+                delete draft.xPostThreads[String(postId)];
+            });
+            delete postData[postId];
+
+            const durable = await flushXStateNow('x-post-delete');
+            if (!durable) {
+                saveXState(previousState);
+                renderGeneratedPosts();
+                if (typeof window.showToast === 'function') window.showToast('帖子删除未保存，请重试');
+                return false;
+            }
+
+            const cards = view.querySelectorAll(`.x-feed-card[data-post-id="${escapeCssIdent(postId)}"]`);
+            cards.forEach(card => {
+                card.style.opacity = '0';
+                card.style.transform = 'scale(0.95)';
+                card.style.transition = 'all 0.2s ease';
+                setTimeout(() => card.remove(), 200);
+            });
+
+            closePostSettingsSheet();
+            if (currentDetailPostId === postId) {
+                closePostDetail();
+            }
+            if (typeof window.showToast === 'function') window.showToast('帖子已删除');
+            return true;
+        }
+
         function deleteTargetPost() {
             if (!currentActionPostId) return;
             const postId = currentActionPostId;
@@ -4408,23 +4446,7 @@ Rules:
                 confirmText: '删除',
                 isDestructive: true,
                 onConfirm: () => {
-                    updateXState((draft) => {
-                        draft.xGeneratedPosts = (draft.xGeneratedPosts || []).filter(p => String(p.id) !== String(postId));
-                    });
-                    
-                    const cards = view.querySelectorAll(`.x-feed-card[data-post-id="${escapeCssIdent(postId)}"]`);
-                    cards.forEach(card => {
-                        card.style.opacity = '0';
-                        card.style.transform = 'scale(0.95)';
-                        card.style.transition = 'all 0.2s ease';
-                        setTimeout(() => card.remove(), 200);
-                    });
-                    
-                    closePostSettingsSheet();
-                    if (currentDetailPostId === postId) {
-                        closePostDetail();
-                    }
-                    if (typeof window.showToast === 'function') window.showToast('帖子已删除');
+                    void deleteXPost(postId);
                 }
             });
         }

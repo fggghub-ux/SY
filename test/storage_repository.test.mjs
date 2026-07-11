@@ -205,6 +205,66 @@ test('X collections are committed to their normalized stores', async () => {
     assert.ok(dms.some((dm) => dm.id === 'dm-1'));
 });
 
+test('X post deletion removes generated posts, Char profile posts, and threads durably', async () => {
+    const generatedPostId = 'generated-delete-post';
+    const profilePostId = 'char-profile-delete-post';
+    const charId = 'char-delete-post-owner';
+
+    await window.appStorage.commitDomain('x', (draft) => ({
+        ...draft,
+        xGeneratedPosts: [
+            ...(draft.xGeneratedPosts || []),
+            { id: generatedPostId, authorId: 'account:generated', text: 'delete me', createdAt: 40 }
+        ],
+        xPostThreads: {
+            ...(draft.xPostThreads || {}),
+            [generatedPostId]: { comments: [{ id: 'generated-comment', text: 'delete thread' }] },
+            [profilePostId]: { comments: [{ id: 'profile-comment', text: 'delete thread' }] }
+        },
+        xDirectMessages: [
+            ...(draft.xDirectMessages || []).filter((item) => item.id !== charId),
+            {
+                id: charId,
+                name: 'Delete Char',
+                messages: [],
+                profilePosts: [{ id: profilePostId, authorId: charId, text: 'delete profile post', createdAt: 41 }]
+            }
+        ]
+    }), { critical: true, reason: 'x-post-delete-seed' });
+
+    await window.appStorage.commitDomain('x', (draft) => ({
+        ...draft,
+        xGeneratedPosts: (draft.xGeneratedPosts || []).filter((post) => post.id !== generatedPostId),
+        xPostThreads: Object.fromEntries(Object.entries(draft.xPostThreads || {}).filter(([postId]) => (
+            postId !== generatedPostId && postId !== profilePostId
+        ))),
+        xDirectMessages: (draft.xDirectMessages || []).map((item) => (
+            item.id === charId
+                ? { ...item, profilePosts: (item.profilePosts || []).filter((post) => post.id !== profilePostId) }
+                : item
+        ))
+    }), { critical: true, reason: 'x-post-delete' });
+
+    const [posts, threads, dms, state] = await Promise.all([
+        window.appStorage.withStore([window.appStorage.STORES.xPosts], 'readonly', (stores) =>
+            window.appStorage.requestToPromise(stores[window.appStorage.STORES.xPosts].getAll())
+        ),
+        window.appStorage.withStore([window.appStorage.STORES.xThreads], 'readonly', (stores) =>
+            window.appStorage.requestToPromise(stores[window.appStorage.STORES.xThreads].getAll())
+        ),
+        window.appStorage.withStore([window.appStorage.STORES.xDms], 'readonly', (stores) =>
+            window.appStorage.requestToPromise(stores[window.appStorage.STORES.xDms].get(charId))
+        ),
+        Promise.resolve(window.appStorage.readDomain('x', {}))
+    ]);
+
+    assert.ok(!posts.some((post) => post.id === generatedPostId));
+    assert.ok(!threads.some((thread) => thread.postId === generatedPostId || thread.postId === profilePostId));
+    assert.ok(!dms.profilePosts.some((post) => post.id === profilePostId));
+    assert.ok(!state.xGeneratedPosts.some((post) => post.id === generatedPostId));
+    assert.ok(!state.xDirectMessages.find((item) => item.id === charId).profilePosts.some((post) => post.id === profilePostId));
+});
+
 test('iMessage field patches preserve persona and moments-cover assets across concurrent commits', async () => {
     await window.appStorage.saveFriend({
         id: 'friend-1',
