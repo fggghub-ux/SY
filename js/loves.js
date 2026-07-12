@@ -2865,9 +2865,6 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
         };
         const close = document.getElementById('friend-mac-window-close');
         if (close) close.onclick = () => this.closeFriendComputerApp();
-        view.querySelectorAll('.friend-mac-desktop-app[data-computer-app]').forEach(button => {
-            button.onclick = () => this.openFriendComputerApp(button.dataset.computerApp);
-        });
         view.querySelectorAll('.friend-mac-dock [data-computer-app]').forEach(button => {
             button.onclick = () => {
                 if (this.currentComputerApp === button.dataset.computerApp && !document.getElementById('friend-mac-window')?.hidden) {

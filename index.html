@@ -29,7 +29,7 @@
         }
     </script>
     <link rel="stylesheet" href="css/global.css?v=20260709-android-input-v1">
-    <link rel="stylesheet" href="css/login.css">
+    <link rel="stylesheet" href="css/login.css?v=20260712-login-notice-v1">
     <link rel="stylesheet" href="css/home.css">
     <link rel="stylesheet" href="css/worldbook.css">
     <link rel="stylesheet" href="css/imessage.css?v=20260711-group-chat-fixes-v1">
@@ -42,10 +42,10 @@
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
-    <link rel="stylesheet" href="css/loves.css?v=20260711-friend-mac-v7">
+    <link rel="stylesheet" href="css/loves.css?v=20260712-friend-mac-v8">
     <link rel="stylesheet" href="css/library.css?v=20260704-together-picker-border-v1">
     <!-- App Styles -->
-    <link rel="stylesheet" href="css/settings.css?v=20260710-storage-v7-cache1">
+    <link rel="stylesheet" href="css/settings.css?v=20260712-login-notice-v1">
     <link rel="stylesheet" href="css/youtube.css">
     <link rel="stylesheet" href="css/netflix.css">
 </head>
@@ -117,6 +117,10 @@
                                 </button>
                             </span>
                         </label>
+                    </div>
+                    <div class="u2-login-notice" id="u2-login-notice-row">
+                        <input id="u2-login-notice-accepted" name="noticeAccepted" type="checkbox" aria-describedby="u2-login-error">
+                        <label for="u2-login-notice-accepted">我已知晓《</label><button type="button" id="u2-login-notice-link">u2phone食用须知</button><span>》</span>
                     </div>
                     <div class="u2-login-error" id="u2-login-error" role="status" aria-live="polite"></div>
                     <button class="u2-login-submit" id="u2-login-submit" type="submit">
@@ -258,12 +262,12 @@
                             
                             <!-- 右侧文本与控制区 -->
                             <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; padding-left: 10px; padding-right: 15px;">
-                                <div class="home-widget-music-title music-title-edit" contenteditable="false" spellcheck="false" style="font-size: 18px; font-weight: 700; color: #111; text-align: center; outline: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">happytwogether</div>
+                                <div class="home-widget-music-title music-title-edit" contenteditable="false" spellcheck="false" style="font-size: 18px; font-weight: 700; color: #111; text-align: center; outline: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">oode...</div>
                                 
                                 <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 3px; text-align: center;">
-                                    <div class="music-lyric1-edit" contenteditable="false" spellcheck="false" style="font-size: 9px; color: #666; outline: none;">So fast, I almost missed it</div>
-                                    <div class="music-lyric2-edit" contenteditable="false" spellcheck="false" style="font-size: 10px; font-weight: 700; color: #111; outline: none;">I spill another glass of wine</div>
-                                    <div class="music-lyric3-edit" contenteditable="false" spellcheck="false" style="font-size: 9px; color: #666; outline: none;">Kill the lights to pass the time</div>
+                                    <div class="music-lyric1-edit" contenteditable="false" spellcheck="false" style="font-size: 9px; color: #666; outline: none;">u2phone</div>
+                                    <div class="music-lyric2-edit" contenteditable="false" spellcheck="false" style="font-size: 10px; font-weight: 700; color: #111; outline: none;">sonokoiomoiiyo</div>
+                                    <div class="music-lyric3-edit" contenteditable="false" spellcheck="false" style="font-size: 9px; color: #666; outline: none;">The rain of destiny</div>
                                 </div>
                                 
                                 <!-- 控制按钮 -->
@@ -2261,6 +2265,7 @@
                     </div>
 
                     <div class="sheet-action" id="about-device-disclaimer-btn" style="margin-top: 0; margin-bottom: 12px;">免责声明</div>
+                    <div class="sheet-action" id="about-device-changelog-btn" style="margin-top: 0; margin-bottom: 12px;">更新日志</div>
                     <div class="sheet-action" id="about-device-close-btn" style="margin-top: 0;">关闭</div>
                 </div>
             </div>
@@ -2654,15 +2659,8 @@
                         </div>
                     </div>
 
-                    <!-- Stream & Background Activity Group -->
+                    <!-- Background Activity & Notification Group -->
                     <div class="form-group fully-rounded" style="margin-bottom: 20px;">
-                        <div class="form-item" style="justify-content: space-between;">
-                            <label style="width: auto; white-space: nowrap; flex: 1; margin-right: 10px; color: #000; font-size: 16px;">流式传输</label>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="stream-response-toggle">
-                                <span class="slider"></span>
-                            </label>
-                        </div>
                         <div class="form-item" style="justify-content: space-between;">
                             <label style="width: auto; white-space: nowrap; flex: 1; margin-right: 10px; color: #000; font-size: 16px;">后台保活</label>
                             <label class="toggle-switch">
@@ -6722,14 +6720,6 @@
                         <span>WORKSPACE</span>
                         <strong id="friend-mac-owner-name">TA 的 Mac</strong>
                     </div>
-                    <div class="friend-mac-desktop-icons" aria-label="桌面应用">
-                        <button type="button" class="friend-mac-desktop-app" data-computer-app="resume"><span><i class="fas fa-id-card"></i></span><b>简历</b></button>
-                        <button type="button" class="friend-mac-desktop-app" data-computer-app="mail"><span><i class="fas fa-envelope"></i></span><b>邮件</b></button>
-                        <button type="button" class="friend-mac-desktop-app" data-computer-app="calendar"><span><i class="fas fa-calendar-alt"></i></span><b>日历</b></button>
-                        <button type="button" class="friend-mac-desktop-app" data-computer-app="notes"><span><i class="fas fa-sticky-note"></i></span><b>备忘录</b></button>
-                        <button type="button" class="friend-mac-desktop-app" data-computer-app="files"><span><i class="fas fa-folder"></i></span><b>文件</b></button>
-                    </div>
-
                     <section class="friend-mac-window" id="friend-mac-window" aria-live="polite" hidden>
                         <div class="friend-mac-windowbar">
                             <div class="friend-mac-traffic">
@@ -7428,12 +7418,49 @@
 
 
     
+<div class="about-info-modal-overlay" id="about-info-modal" hidden aria-hidden="true">
+    <section class="about-info-modal-card" role="dialog" aria-modal="true" aria-labelledby="about-info-modal-title">
+        <header class="about-info-modal-header">
+            <h2 id="about-info-modal-title">免责声明</h2>
+            <button type="button" class="about-info-modal-close" id="about-info-modal-close" aria-label="关闭"><i class="fas fa-times"></i></button>
+        </header>
+        <div class="about-info-modal-body">
+            <div id="about-disclaimer-content" class="about-info-panel">
+                <section class="about-author-block">
+                    <span>作者</span>
+                    <strong>iisonyoung</strong>
+                    <p>小红书号：49713923588</p>
+                </section>
+                <section class="about-notice-block">
+                    <h3>使用须知</h3>
+                    <ol>
+                        <li>本作品默认用户已成年，仅面向年满 18 周岁的玩家。</li>
+                        <li>内容仅供个人娱乐与交流，不构成现实建议；AI 生成内容可能存在虚构或错误。</li>
+                        <li>第三方 API、网络服务及其内容由对应服务提供方负责。用户应自行保管密钥并承担使用风险。</li>
+                        <li>应用数据主要保存在本机，请自行备份重要数据。</li>
+                        <li>禁止二次上传、二传、倒卖、分享或出售下载链接或访问链接、改包分发、镜像传播、冒充作者及其他未经许可的商业使用。</li>
+                        <li>第三方名称、图标和素材权利归原权利人所有，如有问题可联系作者处理。</li>
+                    </ol>
+                </section>
+            </div>
+            <div id="about-changelog-content" class="about-info-panel about-changelog-empty" hidden>
+                <i class="fas fa-clock-rotate-left" aria-hidden="true"></i>
+                <strong>暂无更新日志</strong>
+            </div>
+        </div>
+        <footer class="about-info-modal-footer">
+            <button type="button" id="about-info-modal-confirm">知道了</button>
+        </footer>
+    </section>
+</div>
+
 <script src="js/storage/app_storage.js?v=20260710-storage-idb-only-v9"></script>
     <script src="js/storage/imessage_storage.js?v=20260710-storage-v8-idb1"></script>
     <script src="storage.js?v=20260710-storage-v7-cache1"></script>
     <script src="js/app_state_bridge.js?v=20260710-bstage-chat-recovery-v1"></script>
     <script src="js/bootstrap_globals.js"></script>
-    <script src="js/login.js?v=20260710-storage-v8-idb1"></script>
+    <script src="js/about_info_modal.js?v=20260712-login-notice-v1"></script>
+    <script src="js/login.js?v=20260712-login-notice-v1"></script>
     <script src="js/mobile_input_compat.js?v=20260709-android-input-v1"></script>
     <script src="js/background_activity.js"></script>
     <script src="js/system_notifications.js"></script>
@@ -7468,10 +7495,10 @@
     <script src="js/worldbook.js"></script>
     <!-- 引入核心 UI 管理与设置模块脚本 -->
     <script src="js/ui.js"></script>
-    <script src="js/settings.js?v=20260711-chat-theme-v1"></script>
+    <script src="js/settings.js?v=20260712-login-notice-v1"></script>
     <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="js/library.js?v=20260707-hidden-focus-v1"></script>
-    <script src="js/loves.js?v=20260711-friend-mac-v7"></script>
+    <script src="js/loves.js?v=20260712-friend-mac-v8"></script>
     <script src="js/tiktok/2_core.js?v=20260710-storage-ready-v1"></script>
     <script src="js/tiktok/3_home.js"></script>
     <script src="js/tiktok/4_chat.js"></script>

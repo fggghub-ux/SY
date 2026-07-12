@@ -18,6 +18,7 @@
     let keepAliveAudio = null;
     let keepAliveAudioUrl = '';
     let audioUnlockBound = false;
+    let storageHydrated = false;
 
     function clampInterval(value) {
         const number = Number.parseInt(value, 10);
@@ -57,6 +58,23 @@
         } catch (error) {
             console.warn('[background_activity] Failed to save settings:', error);
         }
+    }
+
+    function notifySettingsChanged(reason) {
+        window.dispatchEvent(new CustomEvent('u2:background-activity-settings-changed', {
+            detail: { ...getSettings(), reason }
+        }));
+    }
+
+    function hydrateSettingsFromStorage() {
+        settings = normalize(loadSettings());
+        storageHydrated = true;
+
+        if (settings.enabled) start('storage-ready');
+        else stop();
+
+        notifySettingsChanged('storage-ready');
+        return getSettings();
     }
 
     function clearTimer() {
@@ -318,6 +336,7 @@
             stop();
         }
 
+        notifySettingsChanged('settings');
         return getSettings();
     }
 
@@ -352,6 +371,16 @@
         start,
         stop
     };
+
+    window.addEventListener('u2-storage-ready', hydrateSettingsFromStorage, { once: true });
+
+    if (window.appStorage?.ready && typeof window.appStorage.ready.then === 'function') {
+        window.appStorage.ready.then(() => {
+            if (!storageHydrated) hydrateSettingsFromStorage();
+        }).catch((error) => {
+            console.warn('[background_activity] Storage hydration failed:', error);
+        });
+    }
 
     if (settings.enabled) {
         start('boot');

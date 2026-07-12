@@ -180,6 +180,33 @@ body.u2-login-locked #app {
     color: #ff3b30;
 }
 
+.u2-login-notice {
+    min-height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    color: #636366;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.u2-login-notice input {
+    width: 18px;
+    height: 18px;
+    margin: 0 8px 0 0;
+    flex: 0 0 18px;
+    accent-color: #111;
+    cursor: pointer;
+}
+
+.u2-login-notice label { cursor: pointer; }
+.u2-login-notice button { margin: 0; padding: 0; border: 0; background: transparent; color: #111; font: inherit; font-weight: 650; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.u2-login-notice input:focus-visible { outline: 2px solid #111; outline-offset: 3px; }
+.u2-login-notice button:focus-visible { outline: 2px solid #111; outline-offset: 3px; border-radius: 2px; }
+.u2-login-notice.is-invalid { color: #ff3b30; }
+.u2-login-notice.is-invalid button { color: #ff3b30; }
+
 .u2-login-password-toggle {
     width: 34px;
     height: 34px;

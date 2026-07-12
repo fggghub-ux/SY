@@ -342,6 +342,8 @@
         const aboutDeviceBtn = document.getElementById('about-device-btn');
         const aboutDeviceSheet = document.getElementById('about-device-sheet');
         const aboutDeviceCloseBtn = document.getElementById('about-device-close-btn');
+        const aboutDisclaimerBtn = document.getElementById('about-device-disclaimer-btn');
+        const aboutChangelogBtn = document.getElementById('about-device-changelog-btn');
         
         if (aboutDeviceBtn && aboutDeviceSheet) {
             aboutDeviceBtn.addEventListener('click', () => {
@@ -353,6 +355,8 @@
         if (aboutDeviceCloseBtn && aboutDeviceSheet) {
             aboutDeviceCloseBtn.addEventListener('click', () => closeView(aboutDeviceSheet));
         }
+        aboutDisclaimerBtn?.addEventListener('click', () => window.u2AboutInfoModal?.open('disclaimer'));
+        aboutChangelogBtn?.addEventListener('click', () => window.u2AboutInfoModal?.open('changelog'));
 
         // Data Management
         const dataManagementBtn = document.getElementById('data-management-btn');
@@ -2860,6 +2864,7 @@
             UI.inputs.bgActivityToggle.addEventListener('change', () => {
                 applyBackgroundActivityControls(true);
             });
+            window.addEventListener('u2:background-activity-settings-changed', syncBackgroundActivityControls);
         }
 
         function syncSystemNotificationControls() {

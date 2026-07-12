@@ -76,6 +76,8 @@
     function showLoginScreen(options = {}) {
         const dom = cachedDom || collectDom();
         if (!dom.screen) return;
+        if (dom.noticeAccepted) dom.noticeAccepted.checked = false;
+        dom.noticeRow?.classList.remove('is-invalid');
         dom.screen.classList.remove('is-hidden');
         dom.screen.setAttribute('aria-hidden', 'false');
         setLoginLocked(true);
@@ -140,6 +142,9 @@
             accountInput: document.getElementById('u2-login-account'),
             passwordInput: document.getElementById('u2-login-password'),
             passwordToggle: document.getElementById('u2-login-password-toggle'),
+            noticeRow: document.getElementById('u2-login-notice-row'),
+            noticeAccepted: document.getElementById('u2-login-notice-accepted'),
+            noticeLink: document.getElementById('u2-login-notice-link'),
             submitButton: document.getElementById('u2-login-submit'),
             error: document.getElementById('u2-login-error')
         };
@@ -155,13 +160,15 @@
         const dom = cachedDom || collectDom();
         dom.accountField?.classList.remove('is-invalid');
         dom.passwordField?.classList.remove('is-invalid');
+        dom.noticeRow?.classList.remove('is-invalid');
         setError('');
     }
 
-    function markInvalid(accountMissing, passwordMissing) {
+    function markInvalid(accountMissing, passwordMissing, noticeMissing = false) {
         const dom = cachedDom || collectDom();
         dom.accountField?.classList.toggle('is-invalid', !!accountMissing);
         dom.passwordField?.classList.toggle('is-invalid', !!passwordMissing);
+        dom.noticeRow?.classList.toggle('is-invalid', !!noticeMissing);
     }
 
     async function handleSubmit(event) {
@@ -171,12 +178,20 @@
         const password = dom.passwordInput ? dom.passwordInput.value : '';
         const accountMissing = !account;
         const passwordMissing = !password;
+        const noticeMissing = !dom.noticeAccepted?.checked;
 
         if (accountMissing || passwordMissing) {
-            markInvalid(accountMissing, passwordMissing);
+            markInvalid(accountMissing, passwordMissing, noticeMissing);
             setError('Enter account and password / 请输入账号和密码');
             if (accountMissing && dom.accountInput) dom.accountInput.focus();
             else if (passwordMissing && dom.passwordInput) dom.passwordInput.focus();
+            return;
+        }
+
+        if (noticeMissing) {
+            markInvalid(false, false, true);
+            setError('请先阅读并勾选《u2phone食用须知》');
+            dom.noticeAccepted?.focus();
             return;
         }
 
@@ -194,6 +209,7 @@
         }
 
         if (dom.passwordInput) dom.passwordInput.value = '';
+        if (dom.noticeAccepted) dom.noticeAccepted.checked = false;
         if (typeof window.showToast === 'function') {
             window.showToast('Signed in');
         }
@@ -222,6 +238,10 @@
             input.addEventListener('input', () => {
                 clearInvalidState();
             });
+        });
+        dom.noticeAccepted?.addEventListener('change', clearInvalidState);
+        dom.noticeLink?.addEventListener('click', () => {
+            window.u2AboutInfoModal?.open('disclaimer');
         });
     }
 

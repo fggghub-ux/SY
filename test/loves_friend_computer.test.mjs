@@ -65,8 +65,8 @@ test('friend computer view exposes six Mac apps and versioned assets', async () 
     ['resume', 'mail', 'calendar', 'notes', 'files', 'settings'].forEach(app => {
         assert.match(html, new RegExp(`data-computer-app="${app}"`));
     });
-    assert.match(html, /css\/loves\.css\?v=20260711-friend-mac-v7/);
-    assert.match(html, /js\/loves\.js\?v=20260711-friend-mac-v7/);
+    assert.match(html, /css\/loves\.css\?v=20260712-friend-mac-v8/);
+    assert.match(html, /js\/loves\.js\?v=20260712-friend-mac-v8/);
     assert.match(css, /@media \(max-width: 620px\)/);
     assert.match(source, /friend\.computerData = this\.normalizeFriendComputerData/);
     assert.match(source, /selected\.forEach\(key =>/);
@@ -88,7 +88,12 @@ test('friend computer view exposes six Mac apps and versioned assets', async () 
     assert.match(css, /\.lovers-friend-computer-view\.app-open \.friend-mac-floating-back/);
     assert.match(css, /#friend-phone-app-weibo > div,[\s\S]*background: #fff !important;[\s\S]*color: #111 !important/);
     assert.match(css, /div:last-child \{[\s\S]*background: transparent !important/);
-    assert.match(css, /\.friend-mac-owner \{[^}]*top: 76px/);
+    assert.match(css, /\.friend-mac-owner \{[^}]*top: calc\(var\(--safe-top\) \+ 76px\)/);
+    assert.doesNotMatch(html, /class="friend-mac-desktop-icons"/);
+    assert.doesNotMatch(source, /friend-mac-desktop-app\[data-computer-app\]/);
+    assert.match(css, /\.friend-mac-dock \{[^}]*overflow-x: auto/);
+    assert.match(css, /\.friend-mac-dock button \{[^}]*flex: 0 0 52px/);
+    assert.match(css, /\.friend-mac-window \{[^}]*top: var\(--safe-top\)/);
     assert.match(source, /getRecentSingleChatRounds\(friend\.messages, 20\)/);
     assert.doesNotMatch(source, /friend\.messages\.slice\(-20\)/);
     assert.match(html, /id="friend-phone-bg-reset-btn"/);

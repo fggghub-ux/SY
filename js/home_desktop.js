@@ -45,11 +45,11 @@
         profileFollowers: '1314',
         profileFollowing: '520',
         petText: 'oxo',
-        musicTitle: 'happytwogether',
+        musicTitle: 'oode...',
         musicArtist: '- Maximillian',
-        musicLyric1: '鎴戝枩娆㈡贰娣＄殑鐢熸椿',
-        musicLyric2: '娣℃贰鐨勬儏缁紝娣℃贰鐨勫績鎯呭拰绠€鐣ョ殑璇█',
-        musicLyric3: '灏卞儚闆ㄦ淮钀藉湪鍦伴潰娌℃湁浠讳綍鐥曡抗',
+        musicLyric1: 'u2phone',
+        musicLyric2: 'sonokoiomoiiyo',
+        musicLyric3: 'The rain of destiny',
         coupleLeft: '銋犮厾',
         coupleRight: '銋庛厧',
         photoTitle: 'iisonyoung',
@@ -334,6 +334,24 @@
                 images: mergeWidgetImagesWithDefaults(entry.type, widgets[entry.id].images)
             };
             if (entry.type === 'photo') normalizePhotoTextDefaults(widgets[entry.id]);
+            if (entry.type === 'music') migrateLegacyMusicText(widgets[entry.id]);
+        });
+    }
+
+    function migrateLegacyMusicText(config) {
+        if (!config?.text) return;
+
+        const migrations = {
+            musicTitle: new Set(['happytwogether']),
+            musicLyric1: new Set(['So fast, I almost missed it', '我喜欢淡淡的生活', '鎴戝枩娆㈡贰娣＄殑鐢熸椿']),
+            musicLyric2: new Set(['I spill another glass of wine', '淡淡的情绪，淡淡的心情和简略的语言', '娣℃贰鐨勬儏缁紝娣℃贰鐨勫績鎯呭拰绠€鐣ョ殑璇█']),
+            musicLyric3: new Set(['Kill the lights to pass the time', '就像雨滴落在地面没有任何痕迹', '灏卞儚闆ㄦ淮钀藉湪鍦伴潰娌℃湁浠讳綍鐥曡抗'])
+        };
+
+        Object.entries(migrations).forEach(([key, oldValues]) => {
+            if (!oldValues.has(config.text[key])) return;
+            config.text[key] = DEFAULT_WIDGET_TEXT[key];
+            desktopStateNeedsSave = true;
         });
     }
 
@@ -1388,11 +1406,11 @@
                         </div>
                     </div>
                     <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; padding-left: 10px; padding-right: 15px;">
-                        <div class="home-widget-music-title music-title-edit" contenteditable="false" spellcheck="false" style="font-size: 18px; font-weight: 700; color: #111; text-align: center; outline: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">happytwogether</div>
+                        <div class="home-widget-music-title music-title-edit" contenteditable="false" spellcheck="false" style="font-size: 18px; font-weight: 700; color: #111; text-align: center; outline: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">oode...</div>
                         <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 3px; text-align: center;">
-                            <div class="music-lyric1-edit" contenteditable="false" spellcheck="false" style="font-size: 9px; color: #666; outline: none;">So fast, I almost missed it</div>
-                            <div class="music-lyric2-edit" contenteditable="false" spellcheck="false" style="font-size: 10px; font-weight: 700; color: #111; outline: none;">I spill another glass of wine</div>
-                            <div class="music-lyric3-edit" contenteditable="false" spellcheck="false" style="font-size: 9px; color: #666; outline: none;">Kill the lights to pass the time</div>
+                            <div class="music-lyric1-edit" contenteditable="false" spellcheck="false" style="font-size: 9px; color: #666; outline: none;">u2phone</div>
+                            <div class="music-lyric2-edit" contenteditable="false" spellcheck="false" style="font-size: 10px; font-weight: 700; color: #111; outline: none;">sonokoiomoiiyo</div>
+                            <div class="music-lyric3-edit" contenteditable="false" spellcheck="false" style="font-size: 9px; color: #666; outline: none;">The rain of destiny</div>
                         </div>
                         <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-top: 12px; color: #111; font-size: 14px;">
                             <i class="fas fa-random" style="font-size: 12px;"></i>
