@@ -173,7 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             const text = clone.innerText || clone.textContent;
                             
                             window.imData.currentReplyText = text.trim();
-                            window.imData.currentReplyMessageId = row.getAttribute('data-message-id') || null;
+                            window.imData.currentReplyMessageId = window.imData.currentActiveRow.getAttribute('data-message-id') || null;
                             
                             const page = document.querySelector('.active-chat-interface[style*="display: flex"]');
                             if (page) {
