@@ -241,7 +241,6 @@ document.addEventListener('DOMContentLoaded', () => {
         window.closeView(document.getElementById('tk-edit-char-sheet'));
         window.closeView(document.getElementById('tk-import-char-sheet'));
         window.closeView(document.getElementById('tk-share-sheet'));
-        window.closeView(document.getElementById('tk-comment-user-modal'));
         document.getElementById('tk-sub-profile-view').classList.remove('active');
     };
 

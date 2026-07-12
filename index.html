@@ -32,10 +32,10 @@
     <link rel="stylesheet" href="css/login.css?v=20260712-login-notice-v1">
     <link rel="stylesheet" href="css/home.css">
     <link rel="stylesheet" href="css/worldbook.css">
-    <link rel="stylesheet" href="css/imessage.css?v=20260711-group-chat-fixes-v1">
+    <link rel="stylesheet" href="css/imessage.css?v=20260712-longpress-context-cleanup-v1">
     <link rel="stylesheet" href="css/pay.css?v=20260705-safe-area-v1">
     <link rel="stylesheet" href="css/bstage.css">
-    <link rel="stylesheet" href="css/tiktok.css">
+    <link rel="stylesheet" href="css/tiktok.css?v=20260712-tiktok-feed-cleanup-v1">
     <link rel="stylesheet" href="css/shopping.css">
     <link rel="stylesheet" href="css/x.css?v=20260702-x-dm-reply-batch-v8">
     
@@ -4230,13 +4230,11 @@
                                 <div class="settings-item" id="chat-memory-manual-summary-btn" style="border-bottom: 1px solid var(--separator-color); cursor: pointer;">
                                     <div class="settings-icon" style="background-color: #007aff;"><i class="fas fa-wand-magic-sparkles"></i></div>
                                     <div class="settings-text">总结对话</div>
-                                    <i class="fas fa-chevron-right arrow"></i>
                                 </div>
                                 <div class="settings-item" id="chat-memory-autonomous-btn" style="border-bottom: none; cursor: pointer;">
                                     <div class="settings-icon" style="background-color: #34c759;"><i class="fas fa-satellite-dish"></i></div>
                                     <div class="settings-text">自主活动</div>
                                     <span id="chat-memory-autonomous-status" style="margin-left:auto; color:#8e8e93; font-size:14px;">关闭</span>
-                                    <i class="fas fa-chevron-right arrow"></i>
                                 </div>
                             </div>
 
@@ -4245,7 +4243,6 @@
                                     <div class="settings-icon" style="background-color: #34c759;"><i class="fas fa-users"></i></div>
                                     <div class="settings-text">群聊记忆</div>
                                     <span id="chat-memory-group-context-count" style="margin-left:auto; color:#8e8e93; font-size:14px;"></span>
-                                    <i class="fas fa-chevron-right arrow"></i>
                                 </div>
                                 <div class="settings-item" id="chat-memory-shortterm-btn" style="border-bottom: 1px solid var(--separator-color); cursor: pointer;">
                                     <div class="settings-icon" style="background-color: #007aff;"><i class="fas fa-mobile-alt"></i></div>
@@ -5116,7 +5113,6 @@
                                         <div class="tk-activity-title">新粉丝</div>
                                         <div class="tk-activity-desc">暂无新粉丝</div>
                                     </div>
-                                    <i class="fas fa-chevron-right arrow"></i>
                                 </div>
                                 <div class="tk-activity-item">
                                     <div class="tk-activity-icon" style="background: #f0f0f0; color: #333;"><i class="fas fa-heart"></i></div>
@@ -5124,7 +5120,6 @@
                                         <div class="tk-activity-title">点赞与收藏</div>
                                         <div class="tk-activity-desc">互动消息</div>
                                     </div>
-                                    <i class="fas fa-chevron-right arrow"></i>
                                 </div>
                                 <div class="tk-activity-item">
                                     <div class="tk-activity-icon" style="background: #f0f0f0; color: #333;"><i class="fas fa-comment-dots"></i></div>
@@ -5132,7 +5127,6 @@
                                         <div class="tk-activity-title">评论和@</div>
                                         <div class="tk-activity-desc">互动消息</div>
                                     </div>
-                                    <i class="fas fa-chevron-right arrow"></i>
                                 </div>
                                 
                                 <div class="tk-chat-section-title">消息记录</div>
@@ -5753,16 +5747,6 @@
                 </div>
             </div>
 
-            <div class="bottom-sheet-overlay detail-sheet-overlay" id="tk-comment-user-modal">
-                <div class="bottom-sheet" style="height: auto; padding-bottom: 20px; text-align: center;">
-                    <div class="sheet-handle"></div>
-                    <div style="padding: 20px;">
-                        <img src="" id="tk-comment-modal-avatar" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; margin-bottom: 15px; background: #f0f0f0;">
-                        <div id="tk-comment-modal-name" style="font-size: 18px; font-weight: bold; color: #111; margin-bottom: 20px;">Name</div>
-                        <div class="tk-btn-primary" id="tk-comment-modal-home-btn" style="display: inline-block; padding: 12px 40px;">查看主页</div>
-                    </div>
-                </div>
-            </div>
         </div> <!-- Closing tiktok-view -->
 
             <!-- ========================================== -->
@@ -7467,30 +7451,30 @@
     
     <!-- 引入 iMessage 模块分段代码 -->
     <script src="js/imessage/data_utils.js?v=20260711-offline-bilingual-v1"></script>
-    <script src="js/imessage/2_core.js?v=20260711-group-chat-fixes-v1"></script>
+    <script src="js/imessage/2_core.js?v=20260712-longpress-context-cleanup-v1"></script>
     <script src="js/imessage/3_contacts.js"></script>
     <script src="js/imessage/3_groups.js?v=20260711-summary-cursor-v1"></script>
     <script src="js/imessage/4_chat_common.js"></script>
-    <script src="js/imessage/4_chat_status.js"></script>
+    <script src="js/imessage/4_chat_status.js?v=20260712-memory-tags-recall-v1"></script>
     <script src="js/imessage/4_chat_payment.js?v=20260705-offline-identity-v2"></script>
-    <script src="js/imessage/4_chat_bubbles.js?v=20260705-offline-identity-v2"></script>
+    <script src="js/imessage/4_chat_bubbles.js?v=20260712-longpress-context-cleanup-v1"></script>
     <script src="js/imessage/minimax_tts.js"></script>
-    <script src="js/imessage/4_chat_ai.js?v=20260711-group-chat-fixes-v1"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260712-longpress-context-cleanup-v1"></script>
     <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
     <script src="js/imessage/4_chat_sheet.js?v=20260711-offline-bilingual-v3"></script>
     <script src="js/imessage/4_chat_link.js?v=20260706-bugfix-v1"></script>
     <script src="js/imessage/4_chat_list.js"></script>
-    <script src="js/imessage/4_chat_interface.js?v=20260711-chat-theme-v1"></script>
+    <script src="js/imessage/4_chat_interface.js?v=20260712-longpress-context-cleanup-v1"></script>
     <script src="js/imessage/4_chat_voice_call.js"></script>
-    <script src="js/imessage/4_chat_main.js?v=20260711-group-chat-fixes-v1"></script>
-    <script src="js/imessage/5_settings.js?v=20260711-chat-theme-v1"></script>
+    <script src="js/imessage/4_chat_main.js?v=20260712-longpress-context-cleanup-v1"></script>
+    <script src="js/imessage/5_settings.js?v=20260712-memory-recall-presentation-v2"></script>
     <script src="js/imessage/6_moments.js"></script>
 
     <!-- 引入其他应用模块 -->
     <script src="js/pay.js?v=20260710-storage-ready-v1"></script>
     <script src="js/bstage.js?v=20260710-bstage-idb-only-v4"></script>
     <!-- 引入世界书核心模块脚本 -->
-    <script src="js/builtin_worldbook.js"></script>
+    <script src="js/builtin_worldbook.js?v=20260712-enable-override-limit-v1"></script>
     <script src="https://unpkg.com/mammoth@1.8.0/mammoth.browser.min.js"></script>
     <script src="js/worldbook.js"></script>
     <!-- 引入核心 UI 管理与设置模块脚本 -->
@@ -7499,10 +7483,10 @@
     <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="js/library.js?v=20260707-hidden-focus-v1"></script>
     <script src="js/loves.js?v=20260712-friend-mac-v8"></script>
-    <script src="js/tiktok/2_core.js?v=20260710-storage-ready-v1"></script>
-    <script src="js/tiktok/3_home.js"></script>
-    <script src="js/tiktok/4_chat.js"></script>
-    <script src="js/tiktok/5_profile.js"></script>
+    <script src="js/tiktok/2_core.js?v=20260712-tiktok-feed-cleanup-v1"></script>
+    <script src="js/tiktok/3_home.js?v=20260712-tiktok-feed-cleanup-v1"></script>
+    <script src="js/tiktok/4_chat.js?v=20260712-tiktok-polish-v1"></script>
+    <script src="js/tiktok/5_profile.js?v=20260712-tiktok-polish-v1"></script>
     <script src="js/youtube/2_core.js?v=20260710-storage-ready-v1"></script>
     <script src="js/youtube/3_channel.js"></script>
     <script src="js/youtube/4_settings.js"></script>

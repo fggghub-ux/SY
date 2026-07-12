@@ -74,145 +74,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const desc = items[index]?.querySelector('.tk-activity-desc');
             if (desc) desc.textContent = text || '互动消息';
         });
-        tkDmBindActivityItems(items);
-    }
-
-    function tkDmBindActivityItems(items) {
-        const types = ['followers', 'likesSaves', 'comments'];
-        Array.from(items).slice(0, 3).forEach((item, index) => {
-            if (item.dataset.tkActivityBound === 'true') return;
-            item.dataset.tkActivityBound = 'true';
-            item.style.cursor = 'pointer';
-            item.addEventListener('click', () => tkDmOpenActivityDetail(types[index]));
-        });
-    }
-
-    function tkDmEnsureActivitySheet() {
-        let sheet = document.getElementById('tk-activity-detail-sheet');
-        if (sheet) return sheet;
-
-        sheet = document.createElement('div');
-        sheet.id = 'tk-activity-detail-sheet';
-        sheet.className = 'bottom-sheet-overlay detail-sheet-overlay';
-        sheet.innerHTML = `
-            <div class="bottom-sheet" style="background: #ffffff;">
-                <div class="sheet-handle"></div>
-                <div class="sheet-title" id="tk-activity-detail-title">互动消息</div>
-                <div class="detail-sheet-content" id="tk-activity-detail-content" style="padding: 10px 16px 24px; background: #ffffff;"></div>
-            </div>
-        `;
-        (document.getElementById('tiktok-view') || document.body).appendChild(sheet);
-        sheet.addEventListener('click', (event) => {
-            if (event.target === sheet) window.closeView(sheet);
-        });
-        return sheet;
-    }
-
-    function tkDmActivityTime(value) {
-        const time = Number(value);
-        if (!Number.isFinite(time) || time <= 0) return '刚刚';
-        return new Date(time).toLocaleString('zh-CN', {
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    }
-
-    function tkDmActivityAvatar(entry) {
-        const avatar = entry.avatar || entry.authorAvatar || (window.tkResolveAvatar
-            ? window.tkResolveAvatar(entry.id || entry.authorId || entry.name || entry.title, entry.name || entry.authorName || entry.title, '')
-            : '');
-        return avatar
-            ? `<img src="${tkDmEscapeHtml(avatar)}" style="width:100%; height:100%; object-fit:cover; border-radius:50%;">`
-            : `<i class="fas ${entry.icon || 'fa-user'}"></i>`;
-    }
-
-    function tkDmActivityItemHtml(entry, fallbackText = '') {
-        const name = entry.name || entry.authorName || entry.title || 'TikTok';
-        const text = entry.text || entry.desc || fallbackText || '';
-        return `
-            <div class="tk-activity-item" style="cursor: default; background:#fff;">
-                <div class="tk-activity-icon" style="background:#f0f0f0; color:#333;">${tkDmActivityAvatar(entry)}</div>
-                <div class="tk-activity-text">
-                    <div class="tk-activity-title">${tkDmEscapeHtml(name)}</div>
-                    <div class="tk-activity-desc">${tkDmEscapeHtml(text)}</div>
-                    <div style="font-size:11px; color:#aaa; margin-top:3px;">${tkDmEscapeHtml(tkDmActivityTime(entry.createdAt))}</div>
-                </div>
-            </div>
-        `;
-    }
-
-    function tkDmExtractActivityCount(entry) {
-        const explicit = Number(entry?.count ?? entry?.total ?? entry?.value);
-        if (Number.isFinite(explicit) && explicit > 0) return explicit;
-        const source = `${entry?.text || ''} ${entry?.desc || ''} ${entry?.title || ''}`;
-        const match = source.match(/\d+/);
-        return match ? Number(match[0]) : 1;
-    }
-
-    function tkDmActivitySummaryHtml(type, activity, emptyText) {
-        const followers = Array.isArray(activity.followers) ? activity.followers : [];
-        const likes = Array.isArray(activity.likes) ? activity.likes : [];
-        const saves = Array.isArray(activity.saves) ? activity.saves : [];
-        const comments = Array.isArray(activity.comments) ? activity.comments : [];
-        const likeTotal = likes.reduce((sum, entry) => sum + tkDmExtractActivityCount(entry), 0);
-        const saveTotal = saves.reduce((sum, entry) => sum + tkDmExtractActivityCount(entry), 0);
-
-        let rows = [];
-        if (type === 'followers') {
-            if (!followers.length) return `<div style="padding: 36px 0; text-align:center; color:#999; font-size:13px;">${tkDmEscapeHtml(emptyText)}</div>`;
-            rows = [['新粉丝', followers.length]];
-        } else if (type === 'likesSaves') {
-            if (!likeTotal && !saveTotal) return `<div style="padding: 36px 0; text-align:center; color:#999; font-size:13px;">${tkDmEscapeHtml(emptyText)}</div>`;
-            rows = [['点赞', likeTotal], ['收藏', saveTotal], ['合计', likeTotal + saveTotal]];
-        } else {
-            if (!comments.length) return `<div style="padding: 36px 0; text-align:center; color:#999; font-size:13px;">${tkDmEscapeHtml(emptyText)}</div>`;
-            rows = [['评论和@', comments.length]];
-        }
-
-        return `
-            <div style="border:1px solid #f0f0f0; border-radius:14px; padding:16px; background:#fff;">
-                ${rows.map(([label, value], index) => `
-                    <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 0; ${index === rows.length - 1 ? 'border-bottom:none;' : 'border-bottom:1px solid #f5f5f5;'}">
-                        <span style="font-size:14px; color:#666;">${tkDmEscapeHtml(label)}</span>
-                        <strong style="font-size:22px; color:#111;">${tkDmEscapeHtml(window.tkFormatCount ? window.tkFormatCount(value) : value)}</strong>
-                    </div>
-                `).join('')}
-            </div>
-        `;
-    }
-
-    function tkDmOpenActivityDetail(type) {
-        const sheet = tkDmEnsureActivitySheet();
-        const titleEl = sheet.querySelector('#tk-activity-detail-title');
-        const contentEl = sheet.querySelector('#tk-activity-detail-content');
-        const activity = tkState.activity && typeof tkState.activity === 'object' ? tkState.activity : {};
-        let title = '互动消息';
-        let entries = [];
-        let empty = '暂无互动消息';
-
-        if (type === 'followers') {
-            title = '新粉丝';
-            entries = Array.isArray(activity.followers) ? activity.followers : [];
-            empty = '暂无新粉丝';
-        } else if (type === 'likesSaves') {
-            title = '点赞与收藏';
-            const likes = Array.isArray(activity.likes) ? activity.likes : [];
-            const saves = Array.isArray(activity.saves) ? activity.saves : [];
-            entries = likes.concat(saves).sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
-            empty = '暂无点赞与收藏';
-        } else {
-            title = '评论和@';
-            entries = Array.isArray(activity.comments) ? activity.comments : [];
-            empty = '暂无评论和@';
-        }
-
-        if (titleEl) titleEl.textContent = title;
-        if (contentEl) {
-            contentEl.innerHTML = tkDmActivitySummaryHtml(type, activity, empty);
-        }
-        window.openView(sheet);
     }
 
     function tkFindLinkedImFriend(char) {
@@ -1695,8 +1556,8 @@ ${tkMountedWorldBookContext ? `\nTikTok Mounted World Book:\n${tkMountedWorldBoo
                 timeRow.style.width = '100%';
                 timeRow.style.display = 'flex';
                 timeRow.style.justifyContent = 'center';
-                timeRow.style.marginBottom = '8px';
-                timeRow.style.marginTop = index === 0 ? '3px' : '10px';
+                timeRow.style.marginBottom = '5px';
+                timeRow.style.marginTop = index === 0 ? '2px' : '7px';
                 
                 timeRow.innerHTML = `<span style="background: rgba(0,0,0,0.05); color: #999; font-size: 11px; padding: 2px 8px; border-radius: 8px;">${timeStr}</span>`;
                 messagesContainer.appendChild(timeRow);
@@ -1704,12 +1565,12 @@ ${tkMountedWorldBookContext ? `\nTikTok Mounted World Book:\n${tkMountedWorldBoo
                 lastSender = null; // Reset sender so first msg after time always has avatar/normal spacing
             }
 
-            // Look ahead to check if the next message is also from the same sender
-            const hasNext = (index < dm.messages.length - 1 && dm.messages[index + 1].sender === msg.sender && dm.messages[index + 1].timestamp !== lastTimeStr /* approximation */);
+            // Consecutive messages from the same sender form a compact bubble group.
+            const hasNext = index < dm.messages.length - 1 && dm.messages[index + 1].sender === msg.sender;
             const isConsecutive = (lastSender === msg.sender);
             
             // Tight gap if there's a next message from same sender (iMessage style)
-            const marginBottom = hasNext ? '1px' : '8px';
+            const marginBottom = hasNext ? '1px' : '6px';
             lastSender = msg.sender;
 
             const row = document.createElement('div');
@@ -1719,16 +1580,16 @@ ${tkMountedWorldBookContext ? `\nTikTok Mounted World Book:\n${tkMountedWorldBoo
             row.style.marginBottom = marginBottom;
             
             // Build bubble style and content based on whether it's a shared video
-            let bubbleStyle = `background: ${isSelf ? '#111' : '#f0f0f0'}; color: ${isSelf ? '#fff' : '#111'}; padding: 8px 13px; font-size: 15px; max-width: 75%; line-height: 1.35; word-break: break-word; position: relative;`;
+            let bubbleStyle = `background: ${isSelf ? '#111' : '#f0f0f0'}; color: ${isSelf ? '#fff' : '#111'}; padding: 6px 10px; font-size: 14px; max-width: 76%; line-height: 1.35; word-break: break-word; position: relative;`;
             
             // Force fully rounded corners like iMessage
-            let borderRadius = '20px';
+            let borderRadius = '16px';
             bubbleStyle += `border-radius: ${borderRadius};`;
 
             const cleanMessageText = tkDmEscapeHtml(msg.text || '');
             const cleanTranslation = String(msg.translationZh || '').trim();
             const translationHtml = cleanTranslation
-                ? `<div class="tk-dm-translation" style="display:none;">${tkDmEscapeHtml(cleanTranslation)}</div>`
+                ? `<div class="tk-dm-translation" style="display:${msg.translationExpanded ? 'block' : 'none'};">${tkDmEscapeHtml(cleanTranslation)}</div>`
                 : '';
             let msgContentHtml = `${cleanMessageText}${translationHtml}`;
 
@@ -1790,11 +1651,11 @@ ${tkMountedWorldBookContext ? `\nTikTok Mounted World Book:\n${tkMountedWorldBoo
                 let avatarHtml = '';
                 if (!isConsecutive) {
                     avatarHtml = charAvatar
-                        ? `<img src="${charAvatar}" style="width: 34px; height: 34px; border-radius: 50%; margin-right: 8px; object-fit: cover; background: #f0f0f0; flex-shrink: 0; align-self: flex-end;">`
-                        : `<div style="width: 34px; height: 34px; border-radius: 50%; background: #f0f0f0; display: flex; justify-content: center; align-items: center; margin-right: 8px; color: #999; flex-shrink: 0; align-self: flex-end;"><i class="fas fa-user"></i></div>`;
+                        ? `<img src="${charAvatar}" style="width: 30px; height: 30px; border-radius: 50%; margin-right: 6px; object-fit: cover; background: #f0f0f0; flex-shrink: 0; align-self: flex-end;">`
+                        : `<div style="width: 30px; height: 30px; border-radius: 50%; background: #f0f0f0; display: flex; justify-content: center; align-items: center; margin-right: 6px; color: #999; flex-shrink: 0; align-self: flex-end;"><i class="fas fa-user"></i></div>`;
                 } else {
                     // Remove height constraint to avoid expanding the row unexpectedly
-                    avatarHtml = `<div style="width: 34px; margin-right: 8px; flex-shrink: 0;"></div>`;
+                    avatarHtml = `<div style="width: 30px; margin-right: 6px; flex-shrink: 0;"></div>`;
                 }
 
                 row.style.justifyContent = 'flex-start';
@@ -1814,7 +1675,9 @@ ${tkMountedWorldBookContext ? `\nTikTok Mounted World Book:\n${tkMountedWorldBoo
                     event.stopPropagation();
                     const translationEl = translatableBubble.querySelector('.tk-dm-translation');
                     if (!translationEl) return;
-                    translationEl.style.display = translationEl.style.display === 'none' || !translationEl.style.display ? 'block' : 'none';
+                    msg.translationExpanded = !msg.translationExpanded;
+                    translationEl.style.display = msg.translationExpanded ? 'block' : 'none';
+                    if (window.tkPersistState) window.tkPersistState();
                 });
             }
         });

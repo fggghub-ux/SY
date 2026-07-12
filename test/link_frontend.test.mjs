@@ -265,8 +265,8 @@ test('restores saved iMessage theme CSS after contact data hydration and chat pa
     assert.match(restoreSource, /window\.imData\.friends\.forEach\(f => applyFriendCss\(f\)\)/);
 
     assert.ok((interfaceSource.match(/window\.imApp\.applyFriendCss\(friend\)/g) || []).length >= 2);
-    assert.match(indexSource, /js\/imessage\/4_chat_interface\.js\?v=20260711-chat-theme-v1/);
-    assert.match(indexSource, /js\/imessage\/5_settings\.js\?v=20260711-chat-theme-v1/);
+    assert.match(indexSource, /js\/imessage\/4_chat_interface\.js\?v=20260712-longpress-context-cleanup-v1/);
+    assert.match(indexSource, /js\/imessage\/5_settings\.js\?v=20260712-memory-recall-presentation-v2/);
 });
 
 test('keeps iOS modal, theme preset, stickers, and private-chat safeguards', async () => {
@@ -381,6 +381,8 @@ test('keeps group time awareness, role recall toggle, Chinese generated thoughts
         builtinWorldBookSource.indexOf('window.getBuiltinWorldBookEntries')
     );
     assert.doesNotMatch(enabledBuiltinWorldBookSource, /builtin-anti-format-drop-1-0/);
+    assert.match(enabledBuiltinWorldBookSource, /builtin-override-limit/);
+    assert.match(indexSource, /js\/builtin_worldbook\.js\?v=20260712-enable-override-limit-v1/);
 
     assert.match(interfaceSource, /window\.imApp\.getFriendById\(friend\.id\)/);
     assert.match(interfaceSource, /hasHistoricalThought/);
@@ -410,6 +412,54 @@ test('keeps group time awareness, role recall toggle, Chinese generated thoughts
     assert.match(settingsSource, /targetFriend\.relationship\s*=\s*relationshipInput \? relationshipInput\.value : ''/);
 });
 
+test('uses visible keyword-triggered memory recall for single and group chats', async () => {
+    const [aiSource, coreSource, settingsSource, statusSource, bubblesSource, cssSource, indexSource] = await Promise.all([
+        fs.readFile(new URL('../js/imessage/4_chat_ai.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/2_core.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/5_settings.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_status.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_bubbles.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../css/imessage.css', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../index.html', import.meta.url), 'utf8')
+    ]);
+    const recallNoticeSource = aiSource.slice(
+        aiSource.indexOf('function showMemoryRecallNotice'),
+        aiSource.indexOf('function resolveMountedSticker')
+    );
+
+    assert.match(aiSource, /function normalizeMemoryTriggerKeywords/);
+    assert.match(aiSource, /function resolveActiveMemoryRecall/);
+    assert.match(aiSource, /const longTermEntries = isGroupChat \? \[\] : pickTriggered/);
+    assert.match(aiSource, /const cherishedEntries = isGroupChat \? \[\] : pickTriggered/);
+    assert.match(aiSource, /hasUserTriggeredRecallSource \? currentUserRecallSource\.text : ''/);
+    assert.match(aiSource, /ensureRecallPresentationBeforeCharReply/);
+    assert.match(aiSource, /persistMemoryRecallPresentation/);
+    assert.doesNotMatch(aiSource, /showMemoryRecallNotice\(friend, memoryRecall, container, typingRow\)/);
+    assert.match(coreSource, /recallPresentation: null/);
+    assert.match(bubblesSource, /recallAnchorMessage/);
+    assert.match(bubblesSource, /renderMemoryRecallPresentation/);
+    assert.match(recallNoticeSource, /chat-row memory-recall-narration/);
+    assert.match(recallNoticeSource, /dataset\.transient = 'true'/);
+    assert.doesNotMatch(recallNoticeSource, /appendFriendMessage|friend\.messages/);
+    assert.match(aiSource, /回忆起了一些事/);
+    assert.match(aiSource, /想记住的原因/);
+    assert.match(aiSource, /function getShortTermMemoryTags/);
+    assert.match(aiSource, /<memory_tags>/);
+    assert.doesNotMatch(aiSource, /isGroupChat\s*\?\s*entries\.slice\(-12\)/);
+
+    assert.match(coreSource, /memoryTags: Array\.isArray\(entry\?\.memoryTags\)/);
+    assert.match(coreSource, /triggerKeywords: Array\.isArray\(entry\?\.triggerKeywords\)/);
+    assert.match(coreSource, /eventItem\.memoryPayload\.triggerKeywords/);
+    assert.match(settingsSource, /promptWithMemoryTriggers/);
+    assert.match(settingsSource, /promptWithMemoryTags = prompt\.replace/);
+    assert.match(settingsSource, /summaryPayload\.memoryTags/);
+    assert.match(statusSource, /triggerKeywords = window\.imChat\?\.normalizeMemoryTriggerKeywords/);
+    assert.match(cssSource, /\.memory-recall-narration-pill/);
+    assert.match(indexSource, /4_chat_ai\.js\?v=20260712-longpress-context-cleanup-v1/);
+    assert.match(indexSource, /4_chat_bubbles\.js\?v=20260712-longpress-context-cleanup-v1/);
+    assert.match(indexSource, /5_settings\.js\?v=20260712-memory-recall-presentation-v2/);
+});
+
 test('uses per-member group languages, content-sized private bubbles, and fresh edited-message context', async () => {
     const [aiSource, mainSource, coreSource, cssSource, indexSource] = await Promise.all([
         fs.readFile(new URL('../js/imessage/4_chat_ai.js', import.meta.url), 'utf8'),
@@ -436,7 +486,45 @@ test('uses per-member group languages, content-sized private bubbles, and fresh 
     assert.match(coreSource, /const getApiContextFingerprint = \(message\) => JSON\.stringify/);
     assert.match(coreSource, /getApiContextFingerprint\(targetMessage\) !== previousContextFingerprint/);
     assert.match(coreSource, /window\.imApp\.clearFriendRuntimeMessageContext\(targetFriend\)/);
-    assert.match(indexSource, /js\/imessage\/2_core\.js\?v=20260711-group-chat-fixes-v1/);
-    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260711-group-chat-fixes-v1/);
-    assert.match(indexSource, /js\/imessage\/4_chat_main\.js\?v=20260711-group-chat-fixes-v1/);
+    assert.match(indexSource, /js\/imessage\/2_core\.js\?v=20260712-longpress-context-cleanup-v1/);
+    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260712-longpress-context-cleanup-v1/);
+    assert.match(indexSource, /js\/imessage\/4_chat_main\.js\?v=20260712-longpress-context-cleanup-v1/);
+});
+
+test('uses stable long-press selection and purges deleted chat context without selecting narration', async () => {
+    const [coreSource, aiSource, interfaceSource, mainSource, bubblesSource, cssSource, indexSource] = await Promise.all([
+        fs.readFile(new URL('../js/imessage/2_core.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_ai.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_interface.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_main.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_bubbles.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../css/imessage.css', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../index.html', import.meta.url), 'utf8')
+    ]);
+
+    assert.match(coreSource, /batchSelectedMessages: new Map\(\)/);
+    assert.match(interfaceSource, /key: id \? `id:\$\{id\}` : `timestamp:\$\{timestamp\}`/);
+    assert.match(interfaceSource, /selection\.set\(descriptor\.key, descriptor\)/);
+    assert.match(interfaceSource, /chat-batch-selection-count/);
+    assert.match(interfaceSource, /selected \? '#111111' : '#c7c7cc'/);
+    assert.doesNotMatch(interfaceSource, /batch-forward-btn|batch-star-btn/);
+    assert.match(mainSource, /window\.imChat\.enterBatchSelectMode\(activeFriend, row, page\)/);
+    assert.match(mainSource, /if \(window\.imData\.batchSelectMode\) return/);
+
+    assert.match(coreSource, /window\.imChat\.invalidateFriendConversation\(safeFriendId\)/);
+    assert.match(coreSource, /removedMessageIds\.has\(replyMessageId\)/);
+    assert.match(coreSource, /targetFriend\.memory\.recallPresentation = null/);
+    assert.match(coreSource, /purgeRegenerateRunSnapshots/);
+    assert.match(coreSource, /targetFriend\.messages = previousMessages/);
+    assert.match(aiSource, /function purgeRegenerateRunSnapshots/);
+    assert.match(aiSource, /window\.imChat\.purgeRegenerateRunSnapshots = purgeRegenerateRunSnapshots/);
+
+    const narrationRenderer = bubblesSource.slice(
+        bubblesSource.indexOf('function renderSystemNoticeBubble'),
+        bubblesSource.indexOf('function renderGroupRedPacketBubble')
+    );
+    assert.match(narrationRenderer, /row\.className = 'chat-system-row'/);
+    assert.doesNotMatch(narrationRenderer, /chat-checkbox-wrapper/);
+    assert.match(cssSource, /\.im-chat-cancel-batch-btn\s*\{[\s\S]*?color:\s*#111111/);
+    assert.match(indexSource, /css\/imessage\.css\?v=20260712-longpress-context-cleanup-v1/);
 });

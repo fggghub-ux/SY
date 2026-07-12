@@ -102,6 +102,9 @@ document.addEventListener('DOMContentLoaded', () => {
             || friend?.profilePanel?.thought
             || friend?.latestThought
             || '';
+        const triggerKeywords = window.imChat?.normalizeMemoryTriggerKeywords
+            ? window.imChat.normalizeMemoryTriggerKeywords(payload?.triggerKeywords || [])
+            : (Array.isArray(payload?.triggerKeywords) ? payload.triggerKeywords : []);
 
         if (!content.trim()) return null;
 
@@ -113,7 +116,8 @@ document.addEventListener('DOMContentLoaded', () => {
             reason,
             sourceEventId: String(payload?.sourceEventId || eventItem.id || ''),
             createdAt,
-            sourceThought
+            sourceThought,
+            triggerKeywords
         };
     }
 

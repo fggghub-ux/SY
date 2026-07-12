@@ -877,6 +877,17 @@ function renderChatHistory(friend, container, options = {}) {
         const messages = Array.isArray(friend.messages) ? friend.messages : [];
         const state = getChatHistoryState(friend, container, messages, options);
         let lastTime = 0;
+        const recallPresentation = friend.memory?.recallPresentation || null;
+        const recallApiRunId = String(recallPresentation?.apiRunId || '');
+        const triggerUserMessageId = String(recallPresentation?.triggerUserMessageId || '');
+        const triggerMessageExists = !triggerUserMessageId || messages.some(message => (
+            message?.role === 'user' && String(message.id || '') === triggerUserMessageId
+        ));
+        const recallAnchorMessage = recallApiRunId && triggerMessageExists
+            ? messages.find(message => (
+                message?.role === 'assistant' && String(message.apiRunId || '') === recallApiRunId
+            ))
+            : null;
 
         try {
             container._imIsRenderingHistory = true;
@@ -890,11 +901,18 @@ function renderChatHistory(friend, container, options = {}) {
                         window.imChat.renderTimestamp(msgTime, container);
                         lastTime = msgTime;
                     }
+                    if (msg === recallAnchorMessage && window.imChat.renderMemoryRecallPresentation) {
+                        window.imChat.renderMemoryRecallPresentation(friend, container, recallPresentation);
+                    }
                     renderMessageBubble(msg, friend, container, msgTime);
                 });
             }
         } finally {
             container._imIsRenderingHistory = false;
+        }
+
+        if (window.imChat.syncBatchSelectionUi) {
+            window.imChat.syncBatchSelectionUi(friend, container.closest('.active-chat-interface'));
         }
 
         if (options.scroll !== false) {

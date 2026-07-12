@@ -19,6 +19,10 @@ window.imData = {
     isRelationshipPickerVisible: false,
     longPressTimer: null,
     currentActiveRow: null,
+    currentReplyMessageId: null,
+    batchSelectMode: false,
+    batchSelectionFriendId: '',
+    batchSelectedMessages: new Map(),
     stickers: [],
     momentsCoverUrl: null,
     profilePanelUiStateByFriendId: {},
@@ -275,7 +279,8 @@ window.imApp.createDefaultMemory = function() {
         schedule: { enabled: false, sleepTime: '23:00', wakeTime: '07:00', events: [] },
         lastSummaryMessageCount: 0,
         mountSettings: {},
-        mountLimits: {}
+        mountLimits: {},
+        recallPresentation: null
     };
 };
 
@@ -428,7 +433,10 @@ window.imApp.createDefaultProfilePanel = function(friend = {}) {
                         reason: eventItem.memoryPayload.reason || '',
                         sourceEventId: eventItem.memoryPayload.sourceEventId || (eventItem?.id != null ? eventItem.id : `event-${index}`),
                         createdAt: eventItem.memoryPayload.createdAt || eventItem?.time || '',
-                        sourceThought: eventItem.memoryPayload.sourceThought || ''
+                        sourceThought: eventItem.memoryPayload.sourceThought || '',
+                        triggerKeywords: Array.isArray(eventItem.memoryPayload.triggerKeywords)
+                            ? eventItem.memoryPayload.triggerKeywords.map(keyword => String(keyword || '').trim()).filter(Boolean)
+                            : []
                     }
                     : null
             }))
@@ -491,6 +499,30 @@ window.imApp.normalizeFriendData = function(friend) {
 
     const defaultMemory = window.imApp.createDefaultMemory();
     const memory = normalized.memory || {};
+    const recallPresentationSource = memory.recallPresentation && typeof memory.recallPresentation === 'object'
+        ? memory.recallPresentation
+        : null;
+    const normalizeRecallPresentationEntries = (entries) => (Array.isArray(entries) ? entries : [])
+        .filter(entry => entry && typeof entry === 'object')
+        .slice(-8)
+        .map(entry => ({ ...entry }));
+    const normalizedRecallPresentation = recallPresentationSource
+        && recallPresentationSource.apiRunId
+        && recallPresentationSource.recall
+        && typeof recallPresentationSource.recall === 'object'
+        ? {
+            apiRunId: String(recallPresentationSource.apiRunId),
+            triggerUserMessageId: String(recallPresentationSource.triggerUserMessageId || ''),
+            createdAt: Number(recallPresentationSource.createdAt) || 0,
+            recall: {
+                friendId: String(recallPresentationSource.recall.friendId || normalized.id || ''),
+                isGroupChat: !!recallPresentationSource.recall.isGroupChat,
+                shortTermEntries: normalizeRecallPresentationEntries(recallPresentationSource.recall.shortTermEntries),
+                longTermEntries: normalizeRecallPresentationEntries(recallPresentationSource.recall.longTermEntries),
+                cherishedEntries: normalizeRecallPresentationEntries(recallPresentationSource.recall.cherishedEntries)
+            }
+        }
+        : null;
     const normalizedSchedule = window.imDataUtils?.normalizeSchedule
         ? window.imDataUtils.normalizeSchedule(memory.schedule)
         : {
@@ -527,8 +559,16 @@ window.imApp.normalizeFriendData = function(friend) {
                 time: entry?.time || entry?.createdAt || '',
                 event: entry?.event || entry?.content || '',
                 memoryPoints: entry?.memoryPoints || entry?.points || '',
+                memoryTags: Array.isArray(entry?.memoryTags)
+                    ? entry.memoryTags.map(tag => String(tag || '').trim()).filter(Boolean)
+                    : [],
                 degree: entry?.degree || '高',
                 lastActivatedAt: entry?.lastActivatedAt || entry?.activatedAt || entry?.time || entry?.createdAt || '',
+                triggerKeywords: Array.isArray(entry?.triggerKeywords)
+                    ? entry.triggerKeywords.map(keyword => String(keyword || '').trim()).filter(Boolean)
+                    : (Array.isArray(entry?.memoryTags)
+                        ? entry.memoryTags.map(tag => String(tag || '').trim()).filter(Boolean)
+                        : (entry?.keyword ? [String(entry.keyword).trim()] : [])),
                 raw: entry?.raw || '',
                 sourceCount: Math.max(0, Number(entry?.sourceCount) || 0),
                 sourceRoundCount: Math.max(0, Number(entry?.sourceRoundCount) || 0),
@@ -544,7 +584,10 @@ window.imApp.normalizeFriendData = function(friend) {
                 id: entry?.id != null ? entry.id : `longterm-${index}`,
                 title: entry?.title || '长期记忆',
                 content: entry?.content || '',
-                createdAt: entry?.createdAt || ''
+                createdAt: entry?.createdAt || '',
+                triggerKeywords: Array.isArray(entry?.triggerKeywords)
+                    ? entry.triggerKeywords.map(keyword => String(keyword || '').trim()).filter(Boolean)
+                    : (entry?.keyword ? [String(entry.keyword).trim()] : [])
             }))
             : defaultMemory.longTermEntries,
         lastSummaryMessageCount: typeof memory.lastSummaryMessageCount === 'number' ? memory.lastSummaryMessageCount : 0,
@@ -558,7 +601,10 @@ window.imApp.normalizeFriendData = function(friend) {
                 reason: entry?.reason || '',
                 sourceEventId: entry?.sourceEventId || '',
                 createdAt: entry?.createdAt || '',
-                sourceThought: entry?.sourceThought || ''
+                sourceThought: entry?.sourceThought || '',
+                triggerKeywords: Array.isArray(entry?.triggerKeywords)
+                    ? entry.triggerKeywords.map(keyword => String(keyword || '').trim()).filter(Boolean)
+                    : (entry?.keyword ? [String(entry.keyword).trim()] : [])
             }))
             : defaultMemory.cherishedEntries,
         relationships: Array.isArray(memory.relationships) ? memory.relationships : defaultMemory.relationships,
@@ -574,7 +620,8 @@ window.imApp.normalizeFriendData = function(friend) {
                     id: account?.id || `social-${index}`
                 }))
                 .filter(account => account.platform || account.handle || account.url)
-            : defaultMemory.socialAccounts,
+                : defaultMemory.socialAccounts,
+        recallPresentation: normalizedRecallPresentation,
         userOverride: memory.userOverride || null,
         mountSettings: (memory.mountSettings && typeof memory.mountSettings === 'object' && !Array.isArray(memory.mountSettings))
             ? { ...memory.mountSettings }
@@ -1283,6 +1330,7 @@ window.imApp.clearFriendRuntimeMessageContext = function(friend) {
     if (!friend) return;
     if (friend.pendingRegenerateContext) delete friend.pendingRegenerateContext;
     if (window.imData.currentReplyText) window.imData.currentReplyText = null;
+    if (window.imData.currentReplyMessageId) window.imData.currentReplyMessageId = null;
     const safeFriendId = String(friend.id);
     if (window.imData.profilePanelUiStateByFriendId) {
         delete window.imData.profilePanelUiStateByFriendId[safeFriendId];
@@ -1656,7 +1704,8 @@ window.imApp.updateFriendMessage = async function(friendId, descriptor, mutator,
         text: message?.text || '',
         transcript: message?.transcript || '',
         description: message?.description || '',
-        replyTo: message?.replyTo || ''
+        replyTo: message?.replyTo || '',
+        replyToMessageId: message?.replyToMessageId || ''
     });
     const previousContextFingerprint = getApiContextFingerprint(previousMessage);
 
@@ -1716,6 +1765,10 @@ window.imApp.removeFriendMessages = async function(friendId, descriptors, option
 
     const descriptorList = Array.isArray(descriptors) ? descriptors : [descriptors];
     const previousMessages = window.imApp.cloneDataSnapshot(targetFriend.messages);
+    const previousPendingRegenerateContext = window.imApp.cloneDataSnapshot(targetFriend.pendingRegenerateContext || null);
+    const previousRecallPresentation = window.imApp.cloneDataSnapshot(targetFriend.memory?.recallPresentation || null);
+    const previousCurrentReplyText = window.imData.currentReplyText || null;
+    const previousCurrentReplyMessageId = window.imData.currentReplyMessageId || null;
     const removalIndexes = new Set();
 
     descriptorList.forEach((descriptor) => {
@@ -1727,11 +1780,63 @@ window.imApp.removeFriendMessages = async function(friendId, descriptors, option
 
     const sortedRemovalIndexes = Array.from(removalIndexes).sort((a, b) => a - b);
     const removedMessages = targetFriend.messages.filter((_, index) => removalIndexes.has(index));
+    const removedMessageIds = new Set(removedMessages.map(message => String(message?.id || '').trim()).filter(Boolean));
+    const removedApiRunIds = new Set(removedMessages.map(message => String(message?.apiRunId || '').trim()).filter(Boolean));
+    const removedReplyTexts = new Set();
+    const normalizeReplyReferenceText = value => String(value || '').replace(/\s+/g, ' ').trim();
+    removedMessages.forEach(message => {
+        [
+            message?.content,
+            message?.text,
+            message?.transcript,
+            message?.description,
+            message?.fakeLinkData?.title,
+            message?.fakeLinkData?.summary
+        ].forEach(value => {
+            const text = normalizeReplyReferenceText(value);
+            if (text) removedReplyTexts.add(text);
+        });
+        const primaryText = normalizeReplyReferenceText(message?.content || message?.text || message?.transcript || message?.description);
+        const translationText = normalizeReplyReferenceText(message?.translation);
+        if (primaryText && translationText) removedReplyTexts.add(`${primaryText} ${translationText}`);
+    });
+    let clearedReplyReference = false;
     const canDeleteWithoutReindex = sortedRemovalIndexes.every((index, removalOrder) => {
         return index === (previousMessages.length - sortedRemovalIndexes.length + removalOrder);
     });
 
+    if (window.imChat?.invalidateFriendConversation) {
+        window.imChat.invalidateFriendConversation(safeFriendId);
+    }
     targetFriend.messages = targetFriend.messages.filter((_, index) => !removalIndexes.has(index));
+    targetFriend.messages.forEach(message => {
+        if (!message) return;
+        const replyMessageId = String(message.replyToMessageId || '').trim();
+        const replyText = normalizeReplyReferenceText(message.replyTo);
+        if ((replyMessageId && removedMessageIds.has(replyMessageId)) || (replyText && removedReplyTexts.has(replyText))) {
+            delete message.replyToMessageId;
+            delete message.replyTo;
+            clearedReplyReference = true;
+        }
+    });
+
+    const recallPresentation = targetFriend.memory?.recallPresentation;
+    if (recallPresentation) {
+        const triggerUserMessageId = String(recallPresentation.triggerUserMessageId || '').trim();
+        const presentationRunId = String(recallPresentation.apiRunId || '').trim();
+        const triggerStillExists = !triggerUserMessageId || targetFriend.messages.some(message => (
+            message?.role === 'user' && String(message.id || '') === triggerUserMessageId
+        ));
+        const anchorStillExists = !presentationRunId || targetFriend.messages.some(message => (
+            message?.role === 'assistant' && String(message.apiRunId || '') === presentationRunId
+        ));
+        if ((triggerUserMessageId && removedMessageIds.has(triggerUserMessageId))
+            || (presentationRunId && removedApiRunIds.has(presentationRunId))
+            || !triggerStillExists
+            || !anchorStillExists) {
+            targetFriend.memory.recallPresentation = null;
+        }
+    }
     window.imApp.reindexFriendMessages(targetFriend);
     window.imApp.syncFriendMessageSummary(targetFriend);
     window.imApp.clearFriendRuntimeMessageContext(targetFriend);
@@ -1751,6 +1856,7 @@ window.imApp.removeFriendMessages = async function(friendId, descriptors, option
         await window.imApp.runFriendPersistenceTask(safeFriendId, async () => {
             if (
                 canDeleteWithoutReindex &&
+                !clearedReplyReference &&
                 removableIds.length === removedMessages.length &&
                 window.imStorage?.deleteFriendMessages
             ) {
@@ -1766,10 +1872,19 @@ window.imApp.removeFriendMessages = async function(friendId, descriptors, option
         });
 
         window.imApp.saveState.lastError = null;
+        if (removedApiRunIds.size > 0 && window.imChat?.purgeRegenerateRunSnapshots) {
+            window.imChat.purgeRegenerateRunSnapshots(safeFriendId, Array.from(removedApiRunIds));
+        }
         return true;
     } catch (e) {
         console.error('Failed to remove friend messages', e);
         targetFriend.messages = previousMessages;
+        if (previousPendingRegenerateContext) targetFriend.pendingRegenerateContext = previousPendingRegenerateContext;
+        else if (targetFriend.pendingRegenerateContext) delete targetFriend.pendingRegenerateContext;
+        targetFriend.memory = targetFriend.memory || window.imApp.createDefaultMemory();
+        targetFriend.memory.recallPresentation = previousRecallPresentation;
+        window.imData.currentReplyText = previousCurrentReplyText;
+        window.imData.currentReplyMessageId = previousCurrentReplyMessageId;
         window.imApp.reindexFriendMessages(targetFriend);
         window.imApp.syncFriendMessageSummary(targetFriend);
         window.imApp.syncActiveFriendReference(targetFriend);
@@ -1794,7 +1909,9 @@ window.imApp.resetFriendMessages = async function(friendId, options = {}) {
     }
 
     const previousMessages = window.imApp.cloneDataSnapshot(Array.isArray(targetFriend.messages) ? targetFriend.messages : []);
+    const previousRecallPresentation = window.imApp.cloneDataSnapshot(targetFriend.memory?.recallPresentation || null);
     targetFriend.messages = [];
+    if (targetFriend.memory) targetFriend.memory.recallPresentation = null;
     window.imApp.syncFriendMessageSummary(targetFriend);
     window.imApp.clearFriendRuntimeMessageContext(targetFriend);
     window.imApp.syncActiveFriendReference(targetFriend);
@@ -1817,6 +1934,7 @@ window.imApp.resetFriendMessages = async function(friendId, options = {}) {
     } catch (e) {
         console.error('Failed to reset friend messages', e);
         targetFriend.messages = previousMessages;
+        if (targetFriend.memory) targetFriend.memory.recallPresentation = previousRecallPresentation;
         window.imApp.reindexFriendMessages(targetFriend);
         window.imApp.syncFriendMessageSummary(targetFriend);
         window.imApp.syncActiveFriendReference(targetFriend);
@@ -4858,6 +4976,10 @@ document.addEventListener('DOMContentLoaded', () => {
             targetFriend.memory.shortTermEntries = window.imDataUtils?.removeShortTermSummaryEntry
                 ? window.imDataUtils.removeShortTermSummaryEntry(entries, entry.id)
                 : entries.filter(item => !item || String(item.id) !== String(entry.id));
+            const presentedEntries = targetFriend.memory.recallPresentation?.recall?.shortTermEntries;
+            if (Array.isArray(presentedEntries) && presentedEntries.some(item => String(item?.id) === String(entry.id))) {
+                targetFriend.memory.recallPresentation = null;
+            }
             if (window.imApp.clearFriendRuntimeMessageContext) {
                 window.imApp.clearFriendRuntimeMessageContext(targetFriend);
             }
@@ -4897,6 +5019,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function showMemoryEntryDetail(entry) {
         if (!entry || !memoryEntryDetailModal || !memoryEntryDetailBody) return;
         if (memoryEntryDetailTitle) memoryEntryDetailTitle.textContent = entry.title || '记忆详情';
+        const memoryTags = window.imChat?.getShortTermMemoryTags
+            ? window.imChat.getShortTermMemoryTags(entry)
+            : (Array.isArray(entry.memoryTags) ? entry.memoryTags : []);
         memoryEntryDetailBody.innerHTML = `
             <div class="memory-entry-field">
                 <div class="memory-entry-field-label">时间</div>
@@ -4907,8 +5032,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="memory-entry-field-value">${escapeMemoryHtml(entry.event || '')}</div>
             </div>
             <div class="memory-entry-field">
-                <div class="memory-entry-field-label">记忆点</div>
-                <div class="memory-entry-field-value">${escapeMemoryHtml(entry.memoryPoints || '')}</div>
+                <div class="memory-entry-field-label">记忆标签</div>
+                <div class="memory-entry-field-value" style="display:flex; flex-wrap:wrap; gap:6px;">${memoryTags.length > 0
+                    ? memoryTags.map(tag => `<span style="padding:3px 8px; border-radius:999px; background:#e8f2ff; color:#007aff; font-size:12px; font-weight:600;">${escapeMemoryHtml(tag)}</span>`).join('')
+                    : '暂无标签'}</div>
             </div>
             <div class="memory-entry-field">
                 <div class="memory-entry-field-label">记忆程度</div>

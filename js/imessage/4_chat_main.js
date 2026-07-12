@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let startX, startY;
         
         const startPress = (e) => {
+            if (window.imData.batchSelectMode) return;
             const row = e.target.closest('.chat-row');
             if (!row) return;
             
@@ -172,6 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             const text = clone.innerText || clone.textContent;
                             
                             window.imData.currentReplyText = text.trim();
+                            window.imData.currentReplyMessageId = row.getAttribute('data-message-id') || null;
                             
                             const page = document.querySelector('.active-chat-interface[style*="display: flex"]');
                             if (page) {
@@ -196,33 +198,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (action === 'select') {
                     if (window.imData.currentActiveRow) {
                         const row = window.imData.currentActiveRow;
-                        const ts = row.getAttribute('data-timestamp');
-                        
-                        window.imData.batchSelectMode = true;
-                        
                         const page = document.querySelector('.active-chat-interface[style*="display: flex"]');
-                        if (page) {
-                            const cancelBatchBtn = page.querySelector('.chat-cancel-batch-btn');
-                            const topMenuBtn = page.querySelector('.chat-menu-btn');
-                            const topCallBtn = page.querySelector('.chat-call-btn');
-                            const batchActionBar = page.querySelector('.chat-batch-action-bar');
-                            const inputWrapper = page.querySelector('.ins-chat-input-wrapper');
-                            
-                            if (cancelBatchBtn) cancelBatchBtn.style.display = 'block';
-                            if (topMenuBtn) topMenuBtn.style.display = 'none';
-                            if (topCallBtn) topCallBtn.style.display = 'none';
-                            if (batchActionBar) batchActionBar.style.display = 'flex';
-                            if (inputWrapper) inputWrapper.style.display = 'none';
-                            
-                            const checkboxes = page.querySelectorAll('.chat-checkbox-wrapper');
-                            checkboxes.forEach(cb => {
-                                cb.style.display = 'flex';
-                                const icon = cb.querySelector('i');
-                                if (icon && ts && icon.getAttribute('data-timestamp') === ts) {
-                                    icon.className = 'fas fa-check-circle chat-checkbox';
-                                    icon.style.color = '#007aff';
-                                }
-                            });
+                        const activeFriend = window.imData.currentActiveFriend;
+                        if (page && activeFriend && window.imChat.enterBatchSelectMode) {
+                            window.imChat.enterBatchSelectMode(activeFriend, row, page);
                         }
                     }
                     window.imChat.closeContextMenu();

@@ -188,6 +188,7 @@
     overflow-y: scroll;
     scroll-snap-type: y mandatory;
     scroll-behavior: smooth;
+    touch-action: pan-x;
     -webkit-overflow-scrolling: touch;
     -ms-overflow-style: none;  /* IE and Edge */
     scrollbar-width: none;  /* Firefox */
@@ -209,6 +210,7 @@
     align-items: center;
     background: #ffffff;
     scroll-snap-align: start;
+    scroll-snap-stop: always;
 }
 
 .tk-magic-btn-large {
@@ -239,6 +241,7 @@
     height: 100%;
     position: relative;
     scroll-snap-align: start;
+    scroll-snap-stop: always;
     background: #ffffff;
     display: flex;
     justify-content: center;
@@ -1340,10 +1343,10 @@
 }
 
 .tk-dm-translation {
-    margin-top: 6px;
-    padding-top: 6px;
+    margin-top: 4px;
+    padding-top: 4px;
     border-top: 1px solid rgba(142, 142, 147, 0.22);
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.4;
     color: #8e8e93;
     word-break: break-word;
@@ -1472,7 +1475,7 @@
     margin-top: 1px !important; /* Force tight gap for consecutive messages */
 }
 #tk-dm-messages-container .chat-row:not(.has-prev) {
-    margin-top: 8px !important; /* Larger gap when speaker changes or new group starts */
+    margin-top: 5px !important; /* Slight separation when the sender changes */
 }
 
 /* Force text-shadow and box-shadow removal across video views */
@@ -1608,6 +1611,29 @@
     width: 100%;
     margin: 0;
     box-sizing: border-box;
+}
+
+.tk-search-generate-count {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 46px;
+    padding: 0 14px;
+    border-radius: 14px;
+    background: #f1f1f2;
+    color: #111;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.tk-search-generate-count input {
+    width: 64px;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: #111;
+    font: inherit;
+    text-align: right;
 }
 
 .tk-dm-profile-intro {

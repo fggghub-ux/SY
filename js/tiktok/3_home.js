@@ -6,13 +6,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const feedContainer = document.getElementById('tk-feed-container');
     const apiGenBtn = document.getElementById('tk-api-generate-btn');
     let currentEditingVideoId = null;
-    const TK_HOME_INITIAL_RENDER_COUNT = 10;
-    const TK_HOME_LOAD_STEP = 5;
     const TK_COMMENT_RENDER_LIMIT = 50;
-    let tkHomeVisibleLimit = TK_HOME_INITIAL_RENDER_COUNT;
-    let tkHomeRenderKey = '';
-    let tkHomeHasMoreVideos = false;
-    let tkHomeIsAppending = false;
+    let tkFeedWheelLocked = false;
+    let tkFeedTouchStart = null;
 
     function tkEscapeHtml(value) {
         return String(value ?? '').replace(/[&<>"']/g, (char) => ({
@@ -1057,9 +1053,79 @@ ${wbContext}
         });
     }
 
-    window.tkResetHomeFeedLimit = function() {
-        tkHomeVisibleLimit = TK_HOME_INITIAL_RENDER_COUNT;
-    };
+    function tkGetFeedCards() {
+        return feedContainer ? Array.from(feedContainer.querySelectorAll('.tk-video-card')) : [];
+    }
+
+    function tkGetCurrentFeedCardIndex(cards) {
+        if (!feedContainer || cards.length === 0) return -1;
+        let closestIndex = 0;
+        let closestDistance = Number.POSITIVE_INFINITY;
+        cards.forEach((card, index) => {
+            const distance = Math.abs(card.offsetTop - feedContainer.scrollTop);
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closestIndex = index;
+            }
+        });
+        return closestIndex;
+    }
+
+    function tkPageHomeFeed(direction) {
+        const cards = tkGetFeedCards();
+        const currentIndex = tkGetCurrentFeedCardIndex(cards);
+        if (currentIndex < 0) return false;
+
+        const nextIndex = Math.min(cards.length - 1, Math.max(0, currentIndex + direction));
+        if (nextIndex === currentIndex) return false;
+        feedContainer.scrollTo({ top: cards[nextIndex].offsetTop, behavior: 'smooth' });
+        return true;
+    }
+
+    function tkBindSingleStepFeedPaging() {
+        if (!feedContainer || feedContainer.dataset.tkSingleStepPagingBound === 'true') return;
+        feedContainer.dataset.tkSingleStepPagingBound = 'true';
+
+        feedContainer.addEventListener('wheel', (event) => {
+            if (Math.abs(event.deltaY) <= Math.abs(event.deltaX) || event.deltaY === 0) return;
+            if (tkGetFeedCards().length < 2) return;
+            event.preventDefault();
+            if (tkFeedWheelLocked) return;
+
+            tkFeedWheelLocked = true;
+            tkPageHomeFeed(event.deltaY > 0 ? 1 : -1);
+            window.setTimeout(() => {
+                tkFeedWheelLocked = false;
+            }, 420);
+        }, { passive: false });
+
+        feedContainer.addEventListener('touchstart', (event) => {
+            const touch = event.touches[0];
+            tkFeedTouchStart = touch ? { x: touch.clientX, y: touch.clientY } : null;
+        }, { passive: true });
+
+        feedContainer.addEventListener('touchmove', (event) => {
+            if (!tkFeedTouchStart) return;
+            const touch = event.touches[0];
+            if (!touch) return;
+            const deltaX = touch.clientX - tkFeedTouchStart.x;
+            const deltaY = touch.clientY - tkFeedTouchStart.y;
+            if (Math.abs(deltaY) > 10 && Math.abs(deltaY) > Math.abs(deltaX)) event.preventDefault();
+        }, { passive: false });
+
+        feedContainer.addEventListener('touchend', (event) => {
+            if (!tkFeedTouchStart) return;
+            const touch = event.changedTouches[0];
+            const start = tkFeedTouchStart;
+            tkFeedTouchStart = null;
+            if (!touch) return;
+
+            const deltaX = touch.clientX - start.x;
+            const deltaY = touch.clientY - start.y;
+            if (Math.abs(deltaY) < 42 || Math.abs(deltaY) <= Math.abs(deltaX)) return;
+            tkPageHomeFeed(deltaY < 0 ? 1 : -1);
+        }, { passive: true });
+    }
 
     function tkSetRecommendTopbarActive() {
         const tabs = Array.from(document.querySelectorAll('.tk-topbar-tab'));
@@ -1077,8 +1143,6 @@ ${wbContext}
         if (tkView) tkView.classList.add('active');
 
         tkSetRecommendTopbarActive();
-        window.tkResetHomeFeedLimit();
-
         const homeNav = document.querySelector('.tk-bottom-nav .tk-nav-item[data-target="tk-home-tab"]');
         if (homeNav) {
             homeNav.click();
@@ -1108,8 +1172,6 @@ ${wbContext}
         // Determine active tab
         const activeTabEl = document.querySelector('.tk-topbar-tab.active');
         const isActiveTabFollowing = activeTabEl && activeTabEl.textContent === '关注';
-        const renderKey = isActiveTabFollowing ? 'following' : 'recommend';
-        tkHomeRenderKey = renderKey;
         
         // Filter videos based on tab
         let displayVideos = [];
@@ -1493,42 +1555,32 @@ ${wbContext}
                     coverEl.style.boxShadow = 'none';
                 }
 
-                if (video.cover) {
-                    if (coverEl) {
-                        coverEl.src = video.cover;
+                const visualUrl = video.cover || video.bgImage || video.imageUrl || '';
+                if (coverEl) {
+                    if (visualUrl) {
+                        coverEl.src = visualUrl;
                         coverEl.style.display = 'block';
+                    } else {
+                        coverEl.src = '';
+                        coverEl.style.display = 'none';
                     }
-                    fsVideoContainer.style.background = '#ffffff';
+                }
+
+                // Keep scene bubbles visible over both generated covers and plain-color videos.
+                fsVideoContainer.style.background = '#ffffff';
+                const fsBubbleFlowHtml = tkCreateBubbleFlowHtml(video, {
+                    background: visualUrl ? 'rgba(17,17,17,0.82)' : (video.bgColor ? '#111111' : '#111111')
+                });
+                if (fsBubbleFlowHtml) {
+                    textBubble.innerHTML = fsBubbleFlowHtml;
+                    textBubble.style.display = 'flex';
+                    textBubble.style.justifyContent = 'center';
+                    textBubble.style.alignItems = 'center';
+                    textBubble.style.width = '100%';
+                    textBubble.style.height = '100%';
+                } else {
                     textBubble.innerHTML = '';
                     textBubble.style.display = 'none';
-                } else {
-                    if (coverEl) {
-                        // Using cover element to display the background image, just like the actual cover
-                        if (video.bgImage) {
-                            coverEl.src = video.bgImage;
-                            coverEl.style.display = 'block';
-                        } else {
-                            coverEl.style.display = 'none';
-                        }
-                    }
-                    
-                    // Fullscreen container is always white, to support "no background places are white"
-                    fsVideoContainer.style.background = '#ffffff';
-                    
-                    const fsBubbleFlowHtml = tkCreateBubbleFlowHtml(video, {
-                        background: video.bgImage ? 'rgba(17,17,17,0.82)' : (video.bgColor ? '#111111' : '#111111')
-                    });
-                    if (fsBubbleFlowHtml) {
-                        textBubble.innerHTML = fsBubbleFlowHtml;
-                        textBubble.style.display = 'flex';
-                        textBubble.style.justifyContent = 'center';
-                        textBubble.style.alignItems = 'center';
-                        textBubble.style.width = '100%';
-                        textBubble.style.height = '100%';
-                    } else {
-                        textBubble.innerHTML = '';
-                        textBubble.style.display = 'none';
-                    }
                 }
             }
             
@@ -2415,15 +2467,11 @@ ${wbContext}
         }
     };
 
-    // Global variable for current user modal
-    window.currentCommentModalAuthorId = null;
-
     window.tkOpenCommentAuthorProfile = function(authorId, authorName, avatar, e) {
         if (e) e.stopPropagation();
         const safeId = authorId || `commenter_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
         const safeName = authorName || 'User';
 
-        window.closeView(document.getElementById('tk-comment-user-modal'));
         window.closeView(document.getElementById('tk-video-detail-sheet'));
 
         let char = window.tkGetChar(safeId);
@@ -2449,63 +2497,6 @@ ${wbContext}
         if (window.tkOpenSubProfile) window.tkOpenSubProfile(safeId);
     };
 
-    // Comment User Modal Logic
-    window.tkOpenCommentUserModal = function(authorId, authorName, e) {
-        if(e) e.stopPropagation();
-        const modal = document.getElementById('tk-comment-user-modal');
-        const nameEl = document.getElementById('tk-comment-modal-name');
-        const homeBtn = document.getElementById('tk-comment-modal-home-btn');
-        
-        if (!modal) return;
-        
-        nameEl.textContent = authorName;
-        window.currentCommentModalAuthorId = authorId;
-        window.currentCommentModalAuthorName = authorName;
-        
-        // Bind button once globally
-        if (!homeBtn.dataset.bound) {
-            homeBtn.dataset.bound = "true";
-            homeBtn.addEventListener('click', () => {
-                const aId = window.currentCommentModalAuthorId;
-                const aName = window.currentCommentModalAuthorName;
-                if(!aId) return;
-
-                window.closeView(modal);
-                window.closeView(document.getElementById('tk-video-detail-sheet'));
-                
-                let char = window.tkGetChar(aId);
-                if (!char) {
-                    if (window.tkGenerateCharVideos) {
-                        window.tkGenerateCharVideos(aId, () => {
-                            window.tkOpenSubProfile(aId);
-                        });
-                    } else {
-                        window.tkSaveChar({
-                            id: aId,
-                            name: aName,
-                            handle: aId,
-                            persona: '谢谢你的关注',
-                            isFollowed: false
-                        });
-                        window.tkOpenSubProfile(aId);
-                    }
-                } else {
-                    window.tkOpenSubProfile(aId);
-                }
-            });
-        }
-        
-        // Blank area close for modal (Bind once)
-        if (!modal.dataset.boundClose) {
-            modal.dataset.boundClose = "true";
-            modal.addEventListener('click', (ev) => {
-                if (ev.target === modal) window.closeView(modal);
-            });
-        }
-        
-        window.openView(modal);
-    };
-
     function tkEnsureSearchGenerateSheet() {
         let sheet = document.getElementById('tk-search-generate-sheet');
         if (sheet) return sheet;
@@ -2522,6 +2513,10 @@ ${wbContext}
                         <i class="fas fa-search"></i>
                         <input id="tk-search-generate-input" type="text" placeholder="想看什么？留空随机生成">
                     </div>
+                    <label class="tk-search-generate-count" for="tk-search-generate-count-input">
+                        <span>生成数量</span>
+                        <input id="tk-search-generate-count-input" type="number" min="1" max="10" step="1" value="3" inputmode="numeric" aria-label="生成视频数量">
+                    </label>
                     <div class="sheet-action confirm-action" id="tk-search-generate-confirm">生成</div>
                     <div class="sheet-action" id="tk-search-generate-cancel">取消</div>
                 </div>
@@ -2535,15 +2530,18 @@ ${wbContext}
         sheet.querySelector('#tk-search-generate-cancel')?.addEventListener('click', () => window.closeView(sheet));
         sheet.querySelector('#tk-search-generate-confirm')?.addEventListener('click', () => {
             const query = sheet.querySelector('#tk-search-generate-input')?.value.trim() || '';
+            const countInput = sheet.querySelector('#tk-search-generate-count-input');
+            const count = Math.min(10, Math.max(1, Number.parseInt(countInput?.value, 10) || 3));
+            if (countInput) countInput.value = String(count);
             window.closeView(sheet);
-            window.tkGenerateSearchVideos(query);
+            window.tkGenerateSearchVideos(query, count);
         });
-        sheet.querySelector('#tk-search-generate-input')?.addEventListener('keydown', (event) => {
+        sheet.querySelectorAll('#tk-search-generate-input, #tk-search-generate-count-input').forEach(input => input.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
                 event.preventDefault();
                 sheet.querySelector('#tk-search-generate-confirm')?.click();
             }
-        });
+        }));
 
         return sheet;
     }
@@ -2552,7 +2550,9 @@ ${wbContext}
         if (e) e.stopPropagation();
         const sheet = tkEnsureSearchGenerateSheet();
         const input = sheet.querySelector('#tk-search-generate-input');
+        const countInput = sheet.querySelector('#tk-search-generate-count-input');
         if (input) input.value = '';
+        if (countInput) countInput.value = '3';
         window.openView(sheet);
         setTimeout(() => input?.focus(), 80);
     };
@@ -2565,13 +2565,14 @@ ${wbContext}
         apiGenBtn.addEventListener('click', window.tkOpenSearchGenerateSheet);
     }
 
-    window.tkGenerateSearchVideos = async function(query = '') {
+    window.tkGenerateSearchVideos = async function(query = '', requestedCount = 3) {
         if (!window.apiConfig || !window.apiConfig.endpoint || !window.apiConfig.apiKey) {
             window.showToast('请在系统设置中配置 API');
             return;
         }
 
         const topic = String(query || '').trim();
+        const targetCount = Math.min(10, Math.max(1, Number.parseInt(requestedCount, 10) || 3));
         const contextText = topic || '随机 TikTok 视频流';
         const wbContext = window.tkBuildWorldBookContext ? window.tkBuildWorldBookContext(contextText) : '';
         const userPersonaContext = window.tkBuildWorldActorPrompt
@@ -2583,13 +2584,13 @@ ${wbContext}
             : '';
 
         const prompt = `
-你是 TikTok For You 内容流 JSON 生成器。根据用户想看的主题、世界书和 user 人设关键词触发信息，一次生成 2-5 条完整 TikTok 内容，内容可以是短视频，也可以是图片帖。
+你是 TikTok For You 内容流 JSON 生成器。根据用户想看的主题、世界书和 user 人设关键词触发信息，一次生成恰好 ${targetCount} 条完整 TikTok 内容，内容可以是短视频，也可以是图片帖。
 你可以是这个世界观里的任何非 user 创作者/路人/账号；只有主题确实需要时才提到 user，且永远不能扮演 user。
 
 用户主题：${topic || '留空，随机生成但要具体、有生活感'}
 
 硬性要求：
-1. 返回严格 JSON 数组，数组长度 2-5，不要 markdown，不要解释文字。
+1. 返回严格 JSON 数组，数组长度必须恰好为 ${targetCount}，不要 markdown，不要解释文字。
 2. 每条内容必须有 mediaType，值只能是 "video" 或 "image"；video 像真实短视频，image 像真实图片帖/随手拍/截图梗图。
 3. 每条内容必须有 opening、middle、ending 三段；每段不少于 40 个字符，建议 40-80 字，分别呈现开头、中间、结尾，适合在画面中央逐条气泡显示。原文可以使用符合作者国籍、世界观和内容语境的任意语言。
 4. image 内容必须额外提供 imagePrompt，描述图片主体、构图、光线、质感；可选 bgImage、cover 或 imageUrl，如果没有真实 URL 就留空。
@@ -2680,8 +2681,11 @@ ${userPersonaContext}
             if (!Array.isArray(parsedVideos) || parsedVideos.length === 0) throw new Error('JSON content is not an array');
 
             const normalizedVideos = parsedVideos
-                .slice(0, 5)
+                .slice(0, targetCount)
                 .map(video => window.tkNormalizeVideoPayload(video));
+            if (normalizedVideos.length < targetCount) {
+                throw new Error(`Expected ${targetCount} videos but received ${normalizedVideos.length}`);
+            }
             normalizedVideos.slice().reverse().forEach(video => {
                 tkState.videos.unshift(video);
             });
@@ -2718,174 +2722,13 @@ ${userPersonaContext}
         tab.addEventListener('click', () => {
             topTabs.forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
-            if (window.tkResetHomeFeedLimit) window.tkResetHomeFeedLimit();
             
             // Re-render home feed based on active tab
             window.tkRenderHome();
         });
     });
 
-    // API Logic
-    async function generateVideos() {
-        if (!window.apiConfig || !window.apiConfig.endpoint || !window.apiConfig.apiKey) {
-            window.showToast('请在系统设置中配置 API');
-            return;
-        }
+    tkBindSingleStepFeedPaging();
 
-        window.showToast('正在生成内容...');
-        
-        // Collect World Book info if any exist globally
-        let wbContext = window.tkBuildWorldBookContext
-            ? `${window.tkBuildWorldBookContext('随机 TikTok 视频流')}\n\n`
-            : '';
-        
-        // 1. 全局世界书
-        if (window.getWorldBooks) {
-            const allWb = window.getWorldBooks();
-            const globalWb = allWb.filter(b => b.isGlobal);
-            if (globalWb.length > 0) {
-                wbContext += "世界观背景设定:\n";
-                globalWb.forEach(b => {
-                    b.entries.forEach(e => {
-                        wbContext += `- ${e.keyword}: ${e.content}\n`;
-                    });
-                });
-                wbContext += "\n";
-            }
-        }
-
-        // 2. 内置世界书
-        if (window.getBuiltinWorldBooks) {
-            const builtinWb = window.getBuiltinWorldBooks().filter(b => b.isGlobal);
-            if (builtinWb.length > 0) {
-                wbContext += "内置设定:\n";
-                builtinWb.forEach(b => {
-                    b.entries.forEach(e => {
-                        wbContext += `- ${e.keyword}: ${e.content}\n`;
-                    });
-                });
-                wbContext += "\n";
-            }
-        }
-
-        // 3. (首页随机流暂不需要特定角色记忆，但可以预留)
-
-        // user 人设只作为世界观/关键词触发，不强制内容围绕 user。
-        const userPersonaContext = window.tkBuildWorldActorPrompt
-            ? window.tkBuildWorldActorPrompt({
-                includeUserIdentity: false,
-                purpose: 'TikTok 首页随机内容流',
-                triggerText: '随机 TikTok 视频流'
-            })
-            : '';
-
-        const prompt = `
-你现在是一个 TikTok 视频内容生成器。请根据挂载的世界书与 user 人设关键词触发信息，生成 3-5 条 TikTok 视频数据。
-你可以是这个世界观中的任何非 user 账号；没有必要时不要提到 user，禁止扮演 user。
-要求：
-1. 整体风格符合世界观，仿真实tk网络视频，内容多样化，文案具有网感。
-2. 视频内容由 opening、middle、ending 三个气泡字段组成，必须以第三人称视角描述环境氛围、动作和语言；每个气泡不少于 40 个字符，建议 40-80 字。原文可以使用符合作者国籍、世界观和内容语境的任意语言。
-3. 务必为每个视频生成不少于 10 条相关评论，具有活人感与网感，可以玩梗。强烈建议在评论正文中加入艾特 (@好友名字) 增强真实感。
-4. 每条评论都必须带 \`replies\` 数组；每个视频的楼中楼 replies 总数不少于 10 条，可以分布在多条评论下。
-5. 国际化翻译规则：opening/middle/ending 如果不是中文，必须分别填写 openingTranslationZh/middleTranslationZh/endingTranslationZh；评论或 replies 的 text 如果不是中文，必须填写 translationZh；如果原文是中文，对应翻译字段必须是空字符串。
-6. 禁止扮演user的身份发抖音和评论，你只能是除了user以外的人。
-7. 返回严格的 JSON 格式（不要有 markdown 代码块标记，不要多余文字），格式如下：
-[
-  {
-    "authorName": "用户昵称",
-    "handle": "user_id",
-    "authorAvatar": "",
-    "desc": "视频文案（简短，带0-3个tag，活人感）",
-    "opening": "傍晚的咖啡馆里暖黄色灯光洒在桌面，镜头先扫过排队的人群，再停在窗边那个低头发呆的人身上。",
-    "openingTranslationZh": "",
-    "middle": "他围着棕色围巾一边搅拌拿铁一边叹气，说下班高峰堵到怀疑人生，旁边朋友忍不住笑出声。",
-    "middleTranslationZh": "",
-    "ending": "镜头最后切到窗外排队的车灯，他突然接到消息又站起来，评论区都在猜这通电话是谁打来的。",
-    "endingTranslationZh": "",
-    "likes": 1234,
-    "commentsCount": 20,
-    "shares": 12,
-    "comments": [
-      { 
-        "authorName": "评论者A", 
-        "authorAvatar": "", 
-        "text": "真的！@回复者B", 
-        "translationZh": "",
-        "likes": 12,
-        "replies": [
-           {
-             "authorName": "回复者B",
-             "authorAvatar": "",
-             "text": "我也觉得！",
-             "translationZh": "",
-             "likes": 3
-           }
-        ]
-      }
-    ]
-  }
-]
-
-最终输出前请自检：每条视频至少 10 条 comments，replies 总数至少 10 条，opening、middle、ending 每段都不少于 40 个字符；如果原文不是中文，对应 TranslationZh 字段必须给出中文翻译。
-
-${wbContext}
-${userPersonaContext}
-`;
-
-        try {
-            let endpoint = window.apiConfig.endpoint;
-            if(endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-            if(!endpoint.endsWith('/chat/completions')) {
-                endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
-            }
-
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${window.apiConfig.apiKey}`
-                },
-                body: JSON.stringify({
-                    model: window.apiConfig.model || 'gpt-3.5-turbo',
-                    messages: [
-                        { role: 'system', content: 'You are a helpful JSON data generator.' },
-                        { role: 'user', content: prompt }
-                    ],
-                    temperature: parseFloat(window.apiConfig.temperature) || 0.8
-                })
-            });
-
-            if (!response.ok) throw new Error(`API Error: ${response.status}`);
-            
-            const data = await response.json();
-            let aiReply = data.choices[0].message.content;
-            
-            const parsedVideos = tkParseAiJson(aiReply);
-            
-            if (Array.isArray(parsedVideos)) {
-                const normalizedVideos = parsedVideos
-                    .slice(0, 5)
-                    .map(v => window.tkNormalizeVideoPayload(v));
-                normalizedVideos.slice().reverse().forEach(video => {
-                    tkState.videos.unshift(video);
-                });
-                const latestVideoId = normalizedVideos[0]?.id || null;
-                
-                if (window.tkPersistState) window.tkPersistState();
-                if (window.tkShowLatestGeneratedVideo) {
-                    window.tkShowLatestGeneratedVideo(latestVideoId);
-                } else {
-                    window.tkRenderHome();
-                }
-                window.showToast('内容生成成功');
-            } else {
-                throw new Error('JSON is not an array');
-            }
-
-        } catch (error) {
-            console.error('Gen Error:', error);
-            window.showToast('生成失败，请检查 API 配置或返回格式');
-        }
-    }
 
 });

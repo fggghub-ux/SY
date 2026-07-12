@@ -903,7 +903,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const memory = normalizedFriend.memory || window.imApp.createDefaultMemory();
         const messageCount = Array.isArray(normalizedFriend.messages) ? normalizedFriend.messages.length : 0;
         const shortTermEntries = Array.isArray(memory.shortTermEntries) ? memory.shortTermEntries : [];
-        const longTermEntries = Array.isArray(memory.cherishedEntries) ? memory.cherishedEntries : [];
+        const longTermEntries = [
+            ...(Array.isArray(memory.longTermEntries) ? memory.longTermEntries : []),
+            ...(Array.isArray(memory.cherishedEntries) ? memory.cherishedEntries : [])
+        ];
         const socialAccounts = Array.isArray(memory.socialAccounts) ? memory.socialAccounts : [];
         const schedule = memory.schedule || {};
             
@@ -2579,6 +2582,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         let entries = Array.isArray(targetFriend.memory.cherishedEntries) ? targetFriend.memory.cherishedEntries : [];
                         entries = entries.filter(item => String(item.id) !== String(entryId));
                         targetFriend.memory.cherishedEntries = entries;
+                        const presentedEntries = targetFriend.memory.recallPresentation?.recall?.cherishedEntries;
+                        if (Array.isArray(presentedEntries) && presentedEntries.some(item => String(item?.id) === String(entryId))) {
+                            targetFriend.memory.recallPresentation = null;
+                        }
                         
                         entries.forEach(entry => {
                             const parts = [
@@ -3139,7 +3146,7 @@ document.addEventListener('DOMContentLoaded', () => {
             `标题: ${entry.title || '对话总结'}`,
             `时间: ${entry.time || ''}`,
             `事件: ${entry.event || ''}`,
-            `记忆点: ${entry.memoryPoints || ''}`,
+            `记忆标签: ${(window.imChat?.getShortTermMemoryTags ? window.imChat.getShortTermMemoryTags(entry) : (entry.memoryTags || entry.triggerKeywords || [])).join('、')}`,
             `记忆程度: ${entry.degree || '高'}`
         ].join('\n')).join('\n\n');
     }
@@ -3159,6 +3166,9 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 memoryPoints = String(memoryPointsData);
             }
+            const memoryTags = window.imChat?.normalizeMemoryTriggerKeywords
+                ? window.imChat.normalizeMemoryTriggerKeywords(summaryPayload.memoryTags || summaryPayload['记忆标签'] || [])
+                : (Array.isArray(summaryPayload.memoryTags) ? summaryPayload.memoryTags : []);
 
             return {
                 activatedEntryIds: Array.isArray(parsed.activatedEntryIds) ? parsed.activatedEntryIds.map(String) : [],
@@ -3166,6 +3176,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 time: summaryPayload.time || summaryPayload['时间'] || '',
                 event: summaryPayload.event || summaryPayload['事件'] || '',
                 memoryPoints,
+                memoryTags,
+                triggerKeywords: window.imChat?.normalizeMemoryTriggerKeywords
+                    ? window.imChat.normalizeMemoryTriggerKeywords(memoryTags.length > 0 ? memoryTags : (summaryPayload.triggerKeywords || summaryPayload['触发词'] || []))
+                    : (memoryTags.length > 0 ? memoryTags : (Array.isArray(summaryPayload.triggerKeywords) ? summaryPayload.triggerKeywords : [])),
                 degree: summaryPayload.degree || summaryPayload['记忆程度'] || '高',
                 raw: rawText
             };
@@ -3180,6 +3194,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 time: pick('时间'),
                 event: pick('事件'),
                 memoryPoints: pick('记忆点'),
+                memoryTags: window.imChat?.normalizeMemoryTriggerKeywords
+                    ? window.imChat.normalizeMemoryTriggerKeywords(pick('记忆标签'))
+                    : [],
+                triggerKeywords: window.imChat?.normalizeMemoryTriggerKeywords
+                    ? window.imChat.normalizeMemoryTriggerKeywords(pick('记忆标签') || pick('触发词'))
+                    : [],
                 degree: pick('记忆程度') || '高',
                 raw: rawText
             };
@@ -3220,6 +3240,11 @@ document.addEventListener('DOMContentLoaded', () => {
             ? `查看已有的群聊总结，将与本次需要总结的公开群聊内容相关的记忆条目激活（记忆程度改为高）。\n\n已有群聊总结：\n${existingSummariesText}\n\n你是群聊记录整理员。请用第三人称总结群聊「${charName}」中的公开聊天，把以下${batch.selectedRounds}轮、共${sourceMessages.length}条公开消息整合成一件完整的事情，必须说清楚前因、过程和结果。\n\n当前真实总结时间：${nowString}\nUser 名称：${userName}\n\n严格限制：\n- 只总结当前群聊里公开发生的消息。\n- 不要写入、推断或复述任何群成员给 User 的私信内容。\n- 不要写入、推断或复述任何群成员与自己好友/私有联系人的私信内容。\n- 如果记录里只有“有人发了私信”这类系统提示，也只能当作不可展开的背景事件，不得编造私信细节。\n\n必须只输出 JSON，不要 markdown，不要解释。JSON 字段如下：\n{\n  "activatedEntryIds": ["与本次群聊相关、需要激活的已有总结ID，没有则为空数组"],\n  "summary": {\n    "title": "10字内，事件名称",\n    "time": "真实总结时间，前端会覆盖为当前真实时间",\n    "event": "40-100字，第三人称，把公开群聊总结为一件完整的事，写清前因后果",\n    "memoryPoints": "纯文本字符串，概括公开群聊里的关键参与者、矛盾/目标、情绪变化、结果或悬而未决点",\n    "degree": "高"\n  }\n}\n\nsummary.degree 只可输出“高”。activatedEntryIds 只能使用已有群聊总结中的 ID。\n\n公开群聊：\n${dialogueText}\n\n查看已有总结，将所有记忆程度超过真实时间1天的高改成中，超过7天的改成低，超过30天的改成遗忘。`
             : `查看已有的总结，将与本次需要总结的对话的内容相关的记忆点的记忆条目激活（记忆程度改为高）。\n\n已有短期记忆总结：\n${existingSummariesText}\n\n你是${charName}，请站在${charName}的第一人称视角，将以下${batch.selectedRounds}轮、共${sourceMessages.length}条对话进行一次记忆总结，整合精炼成一件完整的事。\n\n当前真实总结时间：${nowString}\nUser 名称：${userName}\n\n必须只输出 JSON，不要 markdown，不要解释。JSON 字段如下：\n{\n  "activatedEntryIds": ["与本次对话相关、需要激活的已有记忆ID，没有则为空数组"],\n  "summary": {\n    "title": "10字内，事件名称",\n    "time": "真实时间，精确到总结时的年月日时",\n    "event": "20-50字，内容为一件完整的事",\n    "memoryPoints": "请输出纯文本字符串格式，必须包含情绪/声音/画面/气味/环境五个感官记忆，每个感官不超过10字，最好用一个词形容",\n    "degree": "高"\n  }\n}\n\nsummary.degree 只可输出“高”。activatedEntryIds 只能使用已有短期记忆总结中的 ID。\n\n对话：\n${dialogueText}\n\n查看已有的总结，将所有记忆程度超过真实时间1天的高改成中，超过7天的改成低，超过30天的改成遗忘。`;
 
+        const promptWithMemoryTags = prompt.replace(
+            /"memoryPoints": "[^"]*",/,
+            '"memoryTags": ["3-6个可单独触发的简短标签"],'
+        );
+        const promptWithMemoryTriggers = `${promptWithMemoryTags}\n\n标签规则：summary.memoryTags 是唯一的短期记忆召回字段，必须输出 3-6 个 2-16 字的简短具体标签；任意单个标签都应能独立触发对应记忆。标签只能是未来聊天中可能自然出现的主题、人物、地点、物品或感受，不要输出长句、键值文本或 memoryPoints；群聊标签只能来自公开内容。`;
         const endpoint = normalizeSummaryApiEndpoint(currentApiConfig);
         const response = await fetch(endpoint, {
             method: 'POST',
@@ -3228,7 +3253,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 model: currentApiConfig.model || '',
                 messages: [
                     { role: 'system', content: '你只输出可解析 JSON。' },
-                    { role: 'user', content: prompt }
+                    { role: 'user', content: promptWithMemoryTriggers }
                 ],
                 temperature: parseFloat(currentApiConfig.temperature) || 0.7
             })

@@ -139,6 +139,20 @@ document.addEventListener('DOMContentLoaded', () => {
         return true;
     }
 
+    function purgeRegenerateRunSnapshots(friendOrId, apiRunIds = []) {
+        const friendKey = getFriendKey(friendOrId);
+        const runIds = new Set((Array.isArray(apiRunIds) ? apiRunIds : [apiRunIds])
+            .map(value => String(value || '').trim())
+            .filter(Boolean));
+        if (!friendKey || runIds.size === 0) return 0;
+        let removedCount = 0;
+        runIds.forEach(runId => {
+            const snapshotKey = getRegenerateRunSnapshotKey(friendKey, runId);
+            if (snapshotKey && regenerateRunSnapshots.delete(snapshotKey)) removedCount += 1;
+        });
+        return removedCount;
+    }
+
     function normalizeAutonomousTask(task) {
         return window.imApp?.normalizeAutonomousTask
             ? window.imApp.normalizeAutonomousTask(task)
@@ -244,30 +258,317 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
             : `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     }
 
-    function isMemoryEntryTriggered(entry, recentText) {
-        if (!entry) return false;
+    const GENERIC_MEMORY_TITLES = new Set(['对话总结', '未命名词条', '珍视回忆', '长期记忆', '记忆', 'memory']);
+
+    function normalizeMemoryTriggerKeywords(value, limit = 6) {
+        const source = Array.isArray(value) ? value : [value];
+        const keywords = [];
+        source.forEach(item => {
+            String(item || '')
+                .split(/[，,、；;\n|/。.!！?？]+/)
+                .map(keyword => keyword.trim().replace(/^[\-•·\s]+|[。.!！?？\s]+$/g, ''))
+                .filter(keyword => keyword.length >= 2 && keyword.length <= 32)
+                .forEach(keyword => {
+                    const normalized = keyword.toLocaleLowerCase();
+                    if (!keywords.some(existing => existing.toLocaleLowerCase() === normalized)) keywords.push(keyword);
+                });
+        });
+        return keywords.slice(0, limit);
+    }
+
+    function getMemoryEntryTriggerKeywords(entry) {
+        if (!entry) return [];
+        const memoryTags = normalizeMemoryTriggerKeywords(entry.memoryTags || []);
+        if (memoryTags.length > 0) return memoryTags;
+        const explicit = normalizeMemoryTriggerKeywords([
+            ...(Array.isArray(entry.triggerKeywords) ? entry.triggerKeywords : []),
+            entry.keyword || ''
+        ]);
+        if (explicit.length > 0) return explicit;
+
+        const legacyTags = getShortTermMemoryTags(entry);
+        if (legacyTags.length > 0) return legacyTags;
+
         const title = String(entry.title || '').trim();
-        const memoryPoints = String(entry.memoryPoints || '').trim();
-        const keyword = String(entry.keyword || '').trim();
-        
-        if (keyword && recentText.includes(keyword)) return true;
-        if (title && title !== '对话总结' && title !== '未命名词条' && title !== '珍视回忆' && title !== '长期记忆' && recentText.includes(title)) return true;
-        if (memoryPoints && recentText.includes(memoryPoints)) return true;
-        return false;
+        const fallback = [];
+        if (title && !GENERIC_MEMORY_TITLES.has(title.toLocaleLowerCase())) fallback.push(title);
+        fallback.push(entry.memoryPoints || '');
+        fallback.push(entry.event || entry.content || '');
+        return normalizeMemoryTriggerKeywords(fallback);
+    }
+
+    function getShortTermMemoryTags(entry) {
+        if (!entry) return [];
+        const savedTags = normalizeMemoryTriggerKeywords(entry.memoryTags || []);
+        if (savedTags.length > 0) return savedTags;
+        const legacyPoints = String(entry.memoryPoints || '');
+        if (!legacyPoints) return [];
+        const legacyTags = legacyPoints
+            .split(/[，,、；;\n|/。.!！?？]+/)
+            .map(part => String(part || '').split(/[：:]/).pop().trim())
+            .filter(Boolean);
+        return normalizeMemoryTriggerKeywords(legacyTags);
+    }
+
+    function isMemoryEntryTriggered(entry, recentText) {
+        const context = String(recentText || '').toLocaleLowerCase();
+        if (!entry || !context) return false;
+        return getMemoryEntryTriggerKeywords(entry)
+            .some(keyword => context.includes(keyword.toLocaleLowerCase()));
+    }
+
+    function resolveActiveMemoryRecall(friend, recentText = null) {
+        const normalizedFriend = window.imApp.normalizeFriendData(friend || {});
+        const memory = normalizedFriend.memory || {};
+        const contextText = recentText == null ? getCurrentUserRecallSource(normalizedFriend).text : String(recentText || '');
+        const pickTriggered = (entries) => (Array.isArray(entries) ? entries : [])
+            .filter(entry => entry && (entry.title || entry.event || entry.content || entry.memoryPoints || entry.memoryTags || entry.detail))
+            .filter(entry => isMemoryEntryTriggered(entry, contextText))
+            .slice(-8);
+        const shortTermEntries = pickTriggered(memory.shortTermEntries);
+        const isGroupChat = normalizedFriend.type === 'group';
+        const longTermEntries = isGroupChat ? [] : pickTriggered(memory.longTermEntries);
+        const cherishedEntries = isGroupChat ? [] : pickTriggered(memory.cherishedEntries);
+
+        return {
+            friendId: String(normalizedFriend.id || ''),
+            isGroupChat,
+            shortTermEntries,
+            longTermEntries,
+            cherishedEntries,
+            entries: [
+                ...shortTermEntries.map(entry => ({ type: 'short', entry })),
+                ...longTermEntries.map(entry => ({ type: 'long', entry })),
+                ...cherishedEntries.map(entry => ({ type: 'cherished', entry }))
+            ]
+        };
+    }
+
+    imChat.normalizeMemoryTriggerKeywords = normalizeMemoryTriggerKeywords;
+    imChat.getMemoryEntryTriggerKeywords = getMemoryEntryTriggerKeywords;
+    imChat.getShortTermMemoryTags = getShortTermMemoryTags;
+    imChat.resolveActiveMemoryRecall = resolveActiveMemoryRecall;
+
+    function getMessageRecallText(message) {
+        if (message && message.type === 'fake_link') {
+            const link = message.fakeLinkData || {};
+            return [link.title || message.content || '', link.summary || '', String(link.bodyText || '').slice(0, 5000)]
+                .filter(Boolean)
+                .join('\n');
+        }
+        return String(message && (message.content || message.text) || '');
+    }
+
+    function getCurrentUserRecallSource(friend) {
+        const messages = Array.isArray(friend?.messages) ? friend.messages : [];
+        const message = messages.slice().reverse().find(item => item?.role === 'user') || null;
+        return { message, text: getMessageRecallText(message) };
     }
 
     function getRecentContextText(friend) {
         if (!Array.isArray(friend.messages)) return '';
-        return friend.messages.slice(-10).map(m => {
-            if (m && m.type === 'fake_link') {
-                const link = m.fakeLinkData || {};
-                return [link.title || m.content || '', link.summary || '', String(link.bodyText || '').slice(0, 5000)]
-                    .filter(Boolean)
-                    .join('\n');
-            }
-            return String(m && (m.content || m.text) || '');
-        }).join('\n');
+        return friend.messages.slice(-10).map(getMessageRecallText).join('\n');
     }
+
+    function ensureMemoryRecallUi() {
+        let overlay = document.getElementById('im-memory-recall-overlay');
+        if (overlay) {
+            return { overlay, content: overlay.querySelector('#im-memory-recall-content') };
+        }
+
+        overlay = document.createElement('div');
+        overlay.id = 'im-memory-recall-overlay';
+        overlay.className = 'im-memory-recall-overlay';
+        const card = document.createElement('section');
+        card.className = 'im-memory-recall-modal';
+        card.setAttribute('role', 'dialog');
+        card.setAttribute('aria-modal', 'true');
+        card.setAttribute('aria-label', '本轮已回忆的记忆');
+        const header = document.createElement('div');
+        header.className = 'im-memory-recall-modal-header';
+        const title = document.createElement('div');
+        title.textContent = '本轮回忆';
+        title.className = 'im-memory-recall-modal-title';
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.textContent = '关闭';
+        close.className = 'im-memory-recall-modal-close';
+        const content = document.createElement('div');
+        content.id = 'im-memory-recall-content';
+        header.append(title, close);
+        card.append(header, content);
+        overlay.append(card);
+        (document.getElementById('app') || document.body).appendChild(overlay);
+
+        const hideOverlay = () => { overlay.style.display = 'none'; };
+        close.addEventListener('click', hideOverlay);
+        overlay.addEventListener('click', event => {
+            if (event.target === overlay) hideOverlay();
+        });
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && overlay.style.display === 'flex') hideOverlay();
+        });
+        return { overlay, content };
+    }
+
+    function appendMemoryRecallField(container, label, value) {
+        const text = String(value || '').trim();
+        if (!text) return;
+        const field = document.createElement('div');
+        field.style.cssText = 'margin-top:7px;font-size:13px;line-height:1.5;color:#555;white-space:pre-wrap;overflow-wrap:anywhere;';
+        const labelEl = document.createElement('strong');
+        labelEl.textContent = `${label}：`;
+        labelEl.style.color = '#303038';
+        field.append(labelEl, document.createTextNode(text));
+        container.appendChild(field);
+    }
+
+    function appendMemoryRecallTags(container, tags) {
+        const cleanTags = normalizeMemoryTriggerKeywords(tags || []);
+        if (cleanTags.length === 0) return;
+        const field = document.createElement('div');
+        field.className = 'im-memory-recall-tags';
+        const label = document.createElement('strong');
+        label.textContent = '标签：';
+        field.appendChild(label);
+        cleanTags.forEach(tag => {
+            const chip = document.createElement('span');
+            chip.className = 'im-memory-recall-tag';
+            chip.textContent = tag;
+            field.appendChild(chip);
+        });
+        container.appendChild(field);
+    }
+
+    function renderMemoryRecallModal(recall, content) {
+        content.replaceChildren();
+        const groups = [
+            { label: '短期记忆', entries: recall.shortTermEntries, type: 'short' },
+            { label: '长期记忆', entries: recall.longTermEntries, type: 'long' },
+            { label: '珍视回忆', entries: recall.cherishedEntries, type: 'cherished' }
+        ];
+        groups.forEach(group => {
+            if (!group.entries.length) return;
+            const section = document.createElement('section');
+            section.style.cssText = 'margin-top:16px;';
+            const label = document.createElement('div');
+            label.textContent = group.label;
+            label.style.cssText = 'margin-bottom:8px;font-size:13px;font-weight:700;color:#007aff;';
+            section.appendChild(label);
+            group.entries.forEach(entry => {
+                const item = document.createElement('article');
+                item.style.cssText = 'padding:12px;margin-top:8px;border-radius:14px;background:#f7f7fa;';
+                const entryTitle = document.createElement('div');
+                entryTitle.textContent = entry.title || (group.type === 'short' ? '对话总结' : '长期记忆');
+                entryTitle.style.cssText = 'font-size:15px;font-weight:700;color:#1c1c1e;';
+                item.appendChild(entryTitle);
+                if (group.type === 'short') {
+                    appendMemoryRecallField(item, '事件', entry.event || entry.content);
+                    appendMemoryRecallTags(item, getShortTermMemoryTags(entry));
+                    appendMemoryRecallField(item, '权重', entry.degree);
+                } else {
+                    appendMemoryRecallField(item, '内容', entry.content);
+                    appendMemoryRecallField(item, '细节', entry.detail);
+                    appendMemoryRecallField(item, '想记住的原因', entry.reason);
+                    appendMemoryRecallField(item, '时间', entry.createdAt || entry.time);
+                }
+                section.appendChild(item);
+            });
+            content.appendChild(section);
+        });
+    }
+
+    function openMemoryRecallModal(recall) {
+        const ui = ensureMemoryRecallUi();
+        if (!ui?.content) return;
+        renderMemoryRecallModal(recall, ui.content);
+        ui.overlay.style.display = 'flex';
+    }
+
+    function createMemoryRecallSnapshot(recall) {
+        const copyEntries = entries => (Array.isArray(entries) ? entries : [])
+            .slice(-8)
+            .map(entry => ({ ...entry }));
+        const snapshot = {
+            friendId: String(recall?.friendId || ''),
+            isGroupChat: !!recall?.isGroupChat,
+            shortTermEntries: copyEntries(recall?.shortTermEntries),
+            longTermEntries: copyEntries(recall?.longTermEntries),
+            cherishedEntries: copyEntries(recall?.cherishedEntries)
+        };
+        snapshot.entries = [
+            ...snapshot.shortTermEntries.map(entry => ({ type: 'short', entry })),
+            ...snapshot.longTermEntries.map(entry => ({ type: 'long', entry })),
+            ...snapshot.cherishedEntries.map(entry => ({ type: 'cherished', entry }))
+        ];
+        return snapshot;
+    }
+
+    function createMemoryRecallPresentation(friend, recall, apiRunId, triggerUserMessage) {
+        return {
+            apiRunId: String(apiRunId || ''),
+            triggerUserMessageId: String(triggerUserMessage?.id || ''),
+            createdAt: Date.now(),
+            recall: createMemoryRecallSnapshot({ ...recall, friendId: friend?.id || recall?.friendId })
+        };
+    }
+
+    async function persistMemoryRecallPresentation(friend, presentation) {
+        if (!friend || !presentation?.apiRunId || !presentation?.recall?.entries?.length) return false;
+        if (!window.imApp?.commitScopedFriendChange) return false;
+        return window.imApp.commitScopedFriendChange(friend.id, targetFriend => {
+            targetFriend.memory = targetFriend.memory || window.imApp.createDefaultMemory();
+            const recall = createMemoryRecallSnapshot(presentation.recall);
+            delete recall.entries;
+            targetFriend.memory.recallPresentation = {
+                apiRunId: presentation.apiRunId,
+                triggerUserMessageId: presentation.triggerUserMessageId,
+                createdAt: presentation.createdAt,
+                recall
+            };
+        }, { silent: true, immediate: true, metaOnly: true, syncActive: true, syncSettings: true });
+    }
+
+    function showMemoryRecallNotice(friend, recall, container, beforeNode = null, apiRunId = '') {
+        const displayRecall = createMemoryRecallSnapshot(recall);
+        if (!friend || !displayRecall.entries.length) return;
+        const activeFriend = window.imData?.currentActiveFriend;
+        if (!activeFriend || String(activeFriend.id) !== String(friend.id)) return;
+        const messageContainer = container || document.querySelector(`#chat-interface-${friend.id} .ins-chat-messages`);
+        if (!messageContainer) return;
+
+        messageContainer.querySelectorAll('.memory-recall-narration').forEach(row => row.remove());
+        const row = document.createElement('div');
+        row.className = 'chat-row memory-recall-narration';
+        row.dataset.friendId = String(friend.id);
+        row.dataset.transient = 'true';
+        row.dataset.apiRunId = String(apiRunId || '');
+        const notice = document.createElement('span');
+        notice.className = 'memory-recall-narration-pill';
+        notice.textContent = '回忆起了一些事';
+        notice.setAttribute('role', 'button');
+        notice.tabIndex = 0;
+        notice.setAttribute('aria-label', '查看本轮回忆');
+        notice.addEventListener('click', () => openMemoryRecallModal(displayRecall));
+        notice.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                openMemoryRecallModal(displayRecall);
+            }
+        });
+        row.appendChild(notice);
+
+        if (beforeNode?.parentNode === messageContainer) messageContainer.insertBefore(row, beforeNode);
+        else messageContainer.appendChild(row);
+        if (window.imChat?.scrollToBottom) window.imChat.scrollToBottom(messageContainer);
+    }
+
+    imChat.showMemoryRecallNotice = showMemoryRecallNotice;
+    imChat.renderMemoryRecallPresentation = function(friend, container, presentation = friend?.memory?.recallPresentation) {
+        if (!presentation?.apiRunId || !presentation?.recall) return false;
+        showMemoryRecallNotice(friend, presentation.recall, container, null, presentation.apiRunId);
+        return true;
+    };
 
     function resolveMountedSticker(friend, categoryName, stickerName) {
         const mounted = Array.isArray(friend?.mountedStickers) ? friend.mountedStickers.map(String) : [];
@@ -374,13 +675,15 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
         }
 
         const replyToText = window.imData.currentReplyText || null;
+        const replyToMessageId = window.imData.currentReplyMessageId || null;
 
         const msgObj = {
             id: window.imChat.createMessageId('msg'),
             role: 'user',
             content: text,
             timestamp: now,
-            replyTo: replyToText
+            replyTo: replyToText,
+            replyToMessageId
         };
 
         window.imChat.renderUserBubble(text, container, now, replyToText, null, false, msgObj.id, liveFriend);
@@ -427,6 +730,7 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
         }
 
         window.imData.currentReplyText = null;
+        window.imData.currentReplyMessageId = null;
         const page = document.getElementById(`chat-interface-${friend.id}`);
         if (page) {
             const preview = page.querySelector('.reply-preview-container');
@@ -564,7 +868,8 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
                                 : (typeof eventItem?.time === 'string' ? eventItem.time.trim() : ''),
                             sourceThought: typeof eventItem.memoryPayload.sourceThought === 'string'
                                 ? eventItem.memoryPayload.sourceThought.trim()
-                                : ''
+                                : '',
+                            triggerKeywords: normalizeMemoryTriggerKeywords(eventItem.memoryPayload.triggerKeywords || [])
                         }
                         : null;
 
@@ -920,35 +1225,16 @@ ${userRequirementSection}
 
     function buildLinkedPromptMemorySections(friend) {
         const normalizedFriend = window.imApp.normalizeFriendData(friend || {});
-        const recentText = getRecentContextText(normalizedFriend);
-
-        const shortTermEntries = Array.isArray(normalizedFriend.memory?.shortTermEntries)
-            ? normalizedFriend.memory.shortTermEntries
-                .filter(entry => entry && (entry.title || entry.event || entry.memoryPoints) && isMemoryEntryTriggered(entry, recentText))
-                .slice(-8)
-                .map(entry => `<short_term_memory>\n<title>${entry.title || 'Memory'}</title>\n<content>${entry.event || entry.content || ''}</content>\n<memory_points>${entry.memoryPoints || ''}</memory_points>\n</short_term_memory>`)
-                .join('\n')
+        const recall = resolveActiveMemoryRecall(normalizedFriend);
+        const shortTermEntries = recall.shortTermEntries
+            .map(entry => `<short_term_memory>\n<title>${entry.title || 'Memory'}</title>\n<content>${entry.event || entry.content || ''}</content>\n<memory_tags>${getShortTermMemoryTags(entry).join('、')}</memory_tags>\n</short_term_memory>`)
+            .join('\n');
+        const longTermXml = recall.longTermEntries.length > 0
+            ? `<long_term_memories>\n${recall.longTermEntries.map(entry => `<memory>\n<title>${entry.title || ''}</title>\n<content>${entry.content || ''}</content>\n</memory>`).join('\n')}\n</long_term_memories>`
             : '';
-
-        let longTermXml = '';
-        if (Array.isArray(normalizedFriend.memory?.longTermEntries) && normalizedFriend.memory.longTermEntries.length > 0) {
-            const triggered = normalizedFriend.memory.longTermEntries.filter(e => isMemoryEntryTriggered(e, recentText));
-            if (triggered.length > 0) {
-                longTermXml = `<long_term_memories>\n${triggered.map(e => `<memory>\n<title>${e.title || ''}</title>\n<content>${e.content || ''}</content>\n</memory>`).join('\n')}\n</long_term_memories>`;
-            }
-        } else if (normalizedFriend.memory?.longTerm) {
-            longTermXml = `<long_term_memories>\n${normalizedFriend.memory.longTerm}\n</long_term_memories>`;
-        }
-
-        let cherishedXml = '';
-        if (Array.isArray(normalizedFriend.memory?.cherishedEntries) && normalizedFriend.memory.cherishedEntries.length > 0) {
-            const triggered = normalizedFriend.memory.cherishedEntries.filter(e => isMemoryEntryTriggered(e, recentText));
-            if (triggered.length > 0) {
-                cherishedXml = `<cherished_memories>\n${triggered.map(e => `<memory>\n<title>${e.title || ''}</title>\n<content>${e.content || ''}</content>\n<detail>${e.detail || ''}</detail>\n<reason>${e.reason || ''}</reason>\n<time>${e.createdAt || ''}</time>\n</memory>`).join('\n')}\n</cherished_memories>`;
-            }
-        } else if (normalizedFriend.memory?.cherished) {
-            cherishedXml = `<cherished_memories>\n${normalizedFriend.memory.cherished}\n</cherished_memories>`;
-        }
+        const cherishedXml = recall.cherishedEntries.length > 0
+            ? `<cherished_memories>\n${recall.cherishedEntries.map(entry => `<memory>\n<title>${entry.title || ''}</title>\n<content>${entry.content || ''}</content>\n<detail>${entry.detail || ''}</detail>\n<reason>${entry.reason || ''}</reason>\n<time>${entry.createdAt || ''}</time>\n</memory>`).join('\n')}\n</cherished_memories>`
+            : '';
 
         const linkedFriendMemory = window.imApp.buildLinkedAccountMemoryContext
             ? window.imApp.buildLinkedAccountMemoryContext(normalizedFriend)
@@ -1583,6 +1869,7 @@ ${latestMessages || 'None'}
 
         const isSleeping = window.imApp.isCharacterSleeping(friend);
         const recentText = getRecentContextText(friend);
+        const currentUserRecallSource = getCurrentUserRecallSource(friend);
 
         function formatDetailedTime(timestamp) {
             if (!timestamp) return '';
@@ -1702,21 +1989,17 @@ ${latestMessages || 'None'}
                 `  <title>${entry.title || '对话总结'}</title>`,
                 `  <time>${entry.time || ''}</time>`,
                 `  <event>${entry.event || ''}</event>`,
-                `  <memory_points>${entry.memoryPoints || ''}</memory_points>`,
+                `  <memory_tags>${getShortTermMemoryTags(entry).join('、')}</memory_tags>`,
                 `  <degree>${normalizeShortTermMemoryDegree(entry.degree)}</degree>`,
                 `</short_term_memory>`
             ].join('\n');
         }
 
-        function buildShortTermMemoryContext(friend) {
+        function buildShortTermMemoryContext(friend, recall) {
             const isGroupChat = friend.type === 'group';
-            const entries = Array.isArray(friend.memory?.shortTermEntries)
-                ? friend.memory.shortTermEntries.filter(entry => entry && (entry.event || entry.memoryPoints || entry.title))
+            const triggeredEntries = Array.isArray(recall?.shortTermEntries)
+                ? recall.shortTermEntries
                 : [];
-            
-            const triggeredEntries = isGroupChat
-                ? entries.slice(-12)
-                : entries.filter(entry => isMemoryEntryTriggered(entry, recentText));
             if (triggeredEntries.length === 0) return '';
 
             const buckets = {
@@ -1831,15 +2114,14 @@ ${latestMessages || 'None'}
             }
         }
 
-        let longTermXml = '';
-        if (Array.isArray(friend.memory?.longTermEntries) && friend.memory.longTermEntries.length > 0) {
-            const triggered = friend.memory.longTermEntries.filter(e => isMemoryEntryTriggered(e, recentText));
-            if (triggered.length > 0) {
-                longTermXml = `<long_term_memories>\n${triggered.map(e => `<memory>\n<title>${e.title || ''}</title>\n<content>${e.content || ''}</content>\n</memory>`).join('\n')}\n</long_term_memories>`;
-            }
-        } else if (friend.memory?.longTerm) {
-            longTermXml = `<long_term_memories>\n${friend.memory.longTerm}\n</long_term_memories>`;
-        }
+        const hasUserTriggeredRecallSource = !['autonomous', 'left_group_continue'].includes(options.source);
+        const memoryRecall = resolveActiveMemoryRecall(
+            friend,
+            hasUserTriggeredRecallSource ? currentUserRecallSource.text : ''
+        );
+        const longTermXml = memoryRecall.longTermEntries.length > 0
+            ? `<long_term_memories>\n${memoryRecall.longTermEntries.map(entry => `<memory>\n<title>${entry.title || ''}</title>\n<content>${entry.content || ''}</content>\n</memory>`).join('\n')}\n</long_term_memories>`
+            : '';
 
         const groupChatMemoryContext = await buildGroupChatMemoryContext(friend);
 
@@ -1847,7 +2129,7 @@ ${latestMessages || 'None'}
             friend.memory.overview ? `<core_memory_overview>\n${friend.memory.overview}\n</core_memory_overview>` : '',
             longTermXml,
             friend.memory.context?.notes ? `<extra_context_notes>\n${friend.memory.context.notes}\n</extra_context_notes>` : '',
-            buildShortTermMemoryContext(friend),
+            buildShortTermMemoryContext(friend, memoryRecall),
             scheduleSection,
             `<relationship_network>\n${relationshipText}\n</relationship_network>`,
             window.imApp.buildLinkedAccountMemoryContext
@@ -1912,7 +2194,9 @@ ${latestMessages || 'None'}
             const langName = languageNames[targetLanguage] || targetLanguage;
             languageRequirement = `\n\n【!!! CRITICAL LANGUAGE RULE / 绝对最高优先级语言指令 !!!】:\n- [ABSOLUTE REQUIREMENT]: You MUST speak ONLY in ${langName} for the "text" field. This overrides ALL persona and memory settings.\n- Even if your persona is Chinese or the user speaks in Chinese, your spoken "text" MUST be in ${langName}.\n- [TRANSLATION]: You MUST provide an accurate Chinese translation of your ${langName} "text" in the "translation" field.\n- [THOUGHT]: The "thought" field MUST remain in Chinese.`;
         }
-        const effectiveProfilePanelRequirement = profilePanelRequirement.replace('并在界面显示为中文', '');
+        const effectiveProfilePanelRequirement = friend.type === 'group'
+            ? ''
+            : `${profilePanelRequirement.replace('并在界面显示为中文', '')}\n- memory_request 的 memoryPayload 必须额外包含 triggerKeywords 数组，写入 3-6 个 2-16 字的具体触发词；它们应是以后聊天可能自然提到的主题、人物、地点、物品或感受。`;
 
         const rolePsychologyAndEvolutionPrompt = `一、 核心心理 & 行为模式
 人格基石: [3-5个核心关键词，例如：温柔稳定、责任感强、细腻敏感但能自我调节]
@@ -2365,15 +2649,9 @@ Never truncate OUTPUT(x)
         }
 
         const trailingContexts = [];
-        let cherishedXml = '';
-        if (Array.isArray(friend.memory?.cherishedEntries) && friend.memory.cherishedEntries.length > 0) {
-            const triggered = friend.memory.cherishedEntries.filter(e => isMemoryEntryTriggered(e, recentText));
-            if (triggered.length > 0) {
-                cherishedXml = `<cherished_memories>\n${triggered.map(e => `<memory>\n<title>${e.title || ''}</title>\n<content>${e.content || ''}</content>\n<detail>${e.detail || ''}</detail>\n<reason>${e.reason || ''}</reason>\n<time>${e.createdAt || ''}</time>\n</memory>`).join('\n')}\n</cherished_memories>`;
-            }
-        } else if (friend.memory && friend.memory.cherished && String(friend.memory.cherished).trim()) {
-            cherishedXml = `<cherished_memories>\n${friend.memory.cherished}\n</cherished_memories>`;
-        }
+        const cherishedXml = memoryRecall.cherishedEntries.length > 0
+            ? `<cherished_memories>\n${memoryRecall.cherishedEntries.map(entry => `<memory>\n<title>${entry.title || ''}</title>\n<content>${entry.content || ''}</content>\n<detail>${entry.detail || ''}</detail>\n<reason>${entry.reason || ''}</reason>\n<time>${entry.createdAt || ''}</time>\n</memory>`).join('\n')}\n</cherished_memories>`
+            : '';
 
         if (cherishedXml) {
             trailingContexts.push(cherishedXml);
@@ -2838,7 +3116,8 @@ Never truncate OUTPUT(x)
                                                     reason: eventItem.memoryPayload.reason || '',
                                                     sourceEventId: eventItem.memoryPayload.sourceEventId || String(safeId),
                                                     createdAt: eventItem.memoryPayload.createdAt || eventItem?.time || '',
-                                                    sourceThought: eventItem.memoryPayload.sourceThought || nextProfilePanel.thought || ''
+                                                    sourceThought: eventItem.memoryPayload.sourceThought || nextProfilePanel.thought || '',
+                                                    triggerKeywords: normalizeMemoryTriggerKeywords(eventItem.memoryPayload.triggerKeywords || [])
                                                 }
                                                 : null
                                         };
@@ -3142,10 +3421,37 @@ Never truncate OUTPUT(x)
             }
 
             let lastGroupSpeaker = null;
+            let recallPresentationCommitted = false;
+
+            async function ensureRecallPresentationBeforeCharReply() {
+                if (recallPresentationCommitted || !memoryRecall?.entries?.length) return true;
+                const presentation = createMemoryRecallPresentation(
+                    friend,
+                    memoryRecall,
+                    apiRunId,
+                    currentUserRecallSource.message
+                );
+                const saved = await persistMemoryRecallPresentation(friend, presentation);
+                if (!saved) return false;
+                recallPresentationCommitted = true;
+
+                const liveFriend = getLiveFriendById(friend.id) || friend;
+                const liveContainer = getSafeContainer();
+                if (liveContainer && window.imData.currentActiveFriend
+                    && String(window.imData.currentActiveFriend.id) === String(liveFriend.id)) {
+                    showMemoryRecallNotice(liveFriend, presentation.recall, liveContainer, null, apiRunId);
+                }
+                return true;
+            }
 
             async function processNextSentence() {
                 if (!isConversationCurrent()) return false;
                 const currentItem = queueItems[qIndex] || {};
+
+                if (!['recall', 'action_narration', 'call', 'music_control', 'sticker'].includes(currentItem.kind)) {
+                    await ensureRecallPresentationBeforeCharReply();
+                    if (!isConversationCurrent()) return false;
+                }
 
                 if (currentItem.kind === 'recall') {
                     const activeFriend = getLiveFriendById(friend.id) || friend;
@@ -3593,6 +3899,8 @@ Never truncate OUTPUT(x)
                         qIndex++;
                         return true;
                     }
+                    await ensureRecallPresentationBeforeCharReply();
+                    if (!isConversationCurrent()) return false;
                 }
 
                 const delay = Math.max(500, Math.min(2000, text.length * 50));
@@ -4197,6 +4505,7 @@ Never truncate OUTPUT(x)
     window.imChat.normalizeProfilePanelPayload = normalizeProfilePanelPayload;
     window.imChat.handleAiReply = handleAiReply;
     window.imChat.invalidateFriendConversation = invalidateFriendConversation;
+    window.imChat.purgeRegenerateRunSnapshots = purgeRegenerateRunSnapshots;
     window.imChat.regenerateLastAiReply = regenerateLastAiReply;
     window.imChat.runLinkedAccountBotNow = runLinkedAccountBotNow;
     window.imChat.runAutonomousActivityForFriend = runAutonomousActivityForFriend;

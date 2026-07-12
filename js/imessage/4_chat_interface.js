@@ -12,6 +12,102 @@ document.addEventListener('DOMContentLoaded', () => {
     let androidViewportWidth = 0;
     let androidKeyboardWasOpen = false;
 
+    function getBatchRowDescriptor(row) {
+        if (!row || !row.classList?.contains('chat-row') || row.classList.contains('memory-recall-narration')) return null;
+        const id = String(row.getAttribute('data-message-id') || '').trim();
+        const timestamp = String(row.getAttribute('data-timestamp') || '').trim();
+        if (!id && !timestamp) return null;
+        return {
+            key: id ? `id:${id}` : `timestamp:${timestamp}`,
+            id: id || null,
+            timestamp: timestamp || null
+        };
+    }
+
+    function ensureBatchSelectionMap() {
+        if (!(window.imData.batchSelectedMessages instanceof Map)) {
+            window.imData.batchSelectedMessages = new Map();
+        }
+        return window.imData.batchSelectedMessages;
+    }
+
+    function syncBatchSelectionUi(friend, page = null) {
+        const friendId = String(friend?.id || window.imData.currentActiveFriend?.id || '');
+        const activePage = page || document.getElementById(`chat-interface-${friendId}`);
+        if (!activePage) return;
+        const isActiveSelection = !!window.imData.batchSelectMode
+            && String(window.imData.batchSelectionFriendId || '') === friendId;
+        const selection = ensureBatchSelectionMap();
+
+        const topBar = activePage.querySelector('.chat-top-bar');
+        const batchHeader = activePage.querySelector('.chat-batch-header');
+        const batchActionBar = activePage.querySelector('.chat-batch-action-bar');
+        const inputWrapper = activePage.querySelector('.ins-chat-input-wrapper');
+        if (topBar) topBar.style.display = isActiveSelection ? 'none' : 'flex';
+        if (batchHeader) batchHeader.style.display = isActiveSelection ? 'flex' : 'none';
+        if (batchActionBar) batchActionBar.style.display = isActiveSelection ? 'flex' : 'none';
+        if (inputWrapper) inputWrapper.style.display = isActiveSelection ? 'none' : 'flex';
+
+        activePage.querySelectorAll('.chat-checkbox-wrapper').forEach(wrapper => {
+            const row = wrapper.closest('.chat-row');
+            const descriptor = getBatchRowDescriptor(row);
+            const selected = !!descriptor && selection.has(descriptor.key);
+            wrapper.style.display = isActiveSelection ? 'flex' : 'none';
+            const icon = wrapper.querySelector('i');
+            if (!icon) return;
+            icon.className = selected ? 'fas fa-check-circle chat-checkbox' : 'far fa-circle chat-checkbox';
+            icon.style.color = selected ? '#111111' : '#c7c7cc';
+        });
+
+        const selectedCount = isActiveSelection ? selection.size : 0;
+        const count = activePage.querySelector('.chat-batch-selection-count');
+        if (count) count.textContent = `已选择 ${selectedCount} 条`;
+        const deleteButton = activePage.querySelector('.batch-delete-btn');
+        if (deleteButton) {
+            deleteButton.disabled = selectedCount === 0;
+            deleteButton.style.opacity = selectedCount === 0 ? '0.4' : '1';
+        }
+    }
+
+    function exitBatchSelectMode(friend = window.imData.currentActiveFriend, page = null) {
+        const friendId = String(friend?.id || window.imData.batchSelectionFriendId || '');
+        window.imData.batchSelectMode = false;
+        window.imData.batchSelectionFriendId = '';
+        ensureBatchSelectionMap().clear();
+        syncBatchSelectionUi({ id: friendId }, page);
+    }
+
+    function enterBatchSelectMode(friend, row, page = null) {
+        const friendId = String(friend?.id || '');
+        const descriptor = getBatchRowDescriptor(row);
+        if (!friendId || !descriptor) return false;
+        const selection = ensureBatchSelectionMap();
+        selection.clear();
+        selection.set(descriptor.key, descriptor);
+        window.imData.batchSelectMode = true;
+        window.imData.batchSelectionFriendId = friendId;
+        syncBatchSelectionUi(friend, page);
+        return true;
+    }
+
+    function toggleBatchRowSelection(friend, row, page = null) {
+        const friendId = String(friend?.id || '');
+        if (!window.imData.batchSelectMode || String(window.imData.batchSelectionFriendId || '') !== friendId) return false;
+        const descriptor = getBatchRowDescriptor(row);
+        if (!descriptor) return false;
+        const selection = ensureBatchSelectionMap();
+        if (selection.has(descriptor.key)) selection.delete(descriptor.key);
+        else selection.set(descriptor.key, descriptor);
+        syncBatchSelectionUi(friend, page);
+        return true;
+    }
+
+    imChat.getBatchRowDescriptor = getBatchRowDescriptor;
+    imChat.syncBatchSelectionUi = syncBatchSelectionUi;
+    imChat.enterBatchSelectMode = enterBatchSelectMode;
+    imChat.exitBatchSelectMode = exitBatchSelectMode;
+    imChat.toggleBatchRowSelection = toggleBatchRowSelection;
+
     function formatStatusLabel(value, isSleeping = false) {
         if (isSleeping) return 'offline';
         const raw = String(value || 'online').trim();
@@ -335,6 +431,10 @@ async function openChatTab(friend) {
             item => String(item.id) === String(friend.id)
         ) || friend;
 
+        if (window.imData.batchSelectMode
+            && String(window.imData.batchSelectionFriendId || '') !== String(activeFriend.id)) {
+            exitBatchSelectMode(window.imData.currentActiveFriend);
+        }
         window.imData.currentActiveFriend = activeFriend;
         friend = activeFriend;
         if (window.imApp.clearFriendUnread) {
@@ -423,15 +523,12 @@ async function openChatTab(friend) {
                         <div class="group-header-right-avatar-inner">${avatarHtml}</div>
                    </div>`;
             } else if (friend.type === 'official') {
-                groupRightAvatarHtml = `<div class="chat-menu-btn im-chat-icon-btn"><i class="fas fa-bars"></i></div>
-                   <div class="chat-cancel-batch-btn im-chat-cancel-batch-btn" style="display:none;">取消</div>`;
+                groupRightAvatarHtml = `<div class="chat-menu-btn im-chat-icon-btn"><i class="fas fa-bars"></i></div>`;
             } else if (isNpcChat) {
-                groupRightAvatarHtml = `<div class="chat-menu-btn im-chat-icon-btn"><i class="fas fa-bars"></i></div>
-                   <div class="chat-cancel-batch-btn im-chat-cancel-batch-btn" style="display:none;">取消</div>`;
+                groupRightAvatarHtml = `<div class="chat-menu-btn im-chat-icon-btn"><i class="fas fa-bars"></i></div>`;
             } else {
                 groupRightAvatarHtml = `<div class="chat-call-btn im-chat-icon-btn"><i class="fas fa-phone-alt"></i></div>
-                   <div class="chat-menu-btn im-chat-icon-btn"><i class="fas fa-bars"></i></div>
-                   <div class="chat-cancel-batch-btn im-chat-cancel-batch-btn" style="display:none;">取消</div>`;
+                   <div class="chat-menu-btn im-chat-icon-btn"><i class="fas fa-bars"></i></div>`;
             }
 
             const backBtnHtml = isGroupChat
@@ -472,6 +569,11 @@ async function openChatTab(friend) {
             page.innerHTML = `
                 <div class="chat-sticky-container ${isGroupChat ? 'is-group' : 'is-friend'}">
                     ${topBarHtml}
+                    <div class="chat-batch-header" style="display:none; align-items:center; justify-content:space-between; min-height:46px; padding:0 14px; color:#111; pointer-events:auto;">
+                        <button type="button" class="chat-cancel-batch-btn im-chat-cancel-batch-btn">取消</button>
+                        <div class="chat-batch-selection-count" style="font-size:16px; font-weight:600;">已选择 0 条</div>
+                        <span aria-hidden="true" style="width:42px;"></span>
+                    </div>
                 </div>
                 <div class="ins-chat-messages"></div>
                 <div class="ins-chat-input-container">
@@ -505,10 +607,8 @@ async function openChatTab(friend) {
                         </div>
                     </div>
                     ` : ''}
-                    <div class="chat-batch-action-bar" style="display:none; justify-content: space-between; align-items: center; padding: 15px 40px; padding-bottom: 15px; background: rgba(242, 242, 247, 0.95);   border-top: 1px solid rgba(0,0,0,0.1); position: absolute; bottom: 0; left: 0; width: 100%; z-index: 100; box-sizing: border-box;">
-                        <i class="fas fa-share batch-forward-btn" style="font-size: 22px; color: #8e8e93; cursor: pointer;"></i>
-                        <i class="far fa-star batch-star-btn" style="font-size: 22px; color: #8e8e93; cursor: pointer;"></i>
-                        <i class="far fa-trash-alt batch-delete-btn" style="font-size: 22px; color: #ff3b30; cursor: pointer;"></i>
+                    <div class="chat-batch-action-bar" style="display:none; justify-content:center; align-items:center; padding:12px 20px max(12px, env(safe-area-inset-bottom)); background:rgba(242,242,247,0.96); border-top:1px solid rgba(0,0,0,0.1); position:absolute; bottom:0; left:0; width:100%; z-index:100; box-sizing:border-box;">
+                        <button type="button" class="batch-delete-btn" style="min-width:132px; height:42px; border:0; border-radius:21px; background:#fff; color:#ff3b30; font-size:15px; font-weight:700; cursor:pointer;"><i class="far fa-trash-alt" style="margin-right:7px;"></i>删除所选</button>
                     </div>
                 </div>
             `;
@@ -528,6 +628,7 @@ async function openChatTab(friend) {
                         const latestFriend = window.imApp.getFriendById(friend) || friend;
                         window.imChat.hideProfilePanel(latestFriend, profilePanelOverlay);
                     }
+                    if (window.imData.batchSelectMode) imChat.exitBatchSelectMode(friend, page);
                     window.imData.currentActiveFriend = null;
                     window.imChat.updateChatsView();
                 });
@@ -541,22 +642,7 @@ async function openChatTab(friend) {
             const batchDeleteBtn = page.querySelector('.batch-delete-btn');
 
             function exitBatchSelectMode() {
-                window.imData.batchSelectMode = false;
-                if (cancelBatchBtn) cancelBatchBtn.style.display = 'none';
-                if (menuBtn) menuBtn.style.display = 'block';
-                if (callBtn) callBtn.style.display = 'block';
-                if (batchActionBar) batchActionBar.style.display = 'none';
-                if (inputWrapper) inputWrapper.style.display = 'flex';
-
-                const checkboxes = page.querySelectorAll('.chat-checkbox-wrapper');
-                checkboxes.forEach(cb => {
-                    cb.style.display = 'none';
-                    const icon = cb.querySelector('i');
-                    if (icon) {
-                        icon.className = 'far fa-circle';
-                        icon.style.color = '#c7c7cc';
-                    }
-                });
+                imChat.exitBatchSelectMode(friend, page);
             }
 
             window.imChat.ensureTransferDetailOverlayForExistingPage(page, friend);
@@ -644,16 +730,11 @@ async function openChatTab(friend) {
 
             if (batchDeleteBtn) {
                 batchDeleteBtn.addEventListener('click', () => {
-                    const selectedIcons = page.querySelectorAll('.chat-checkbox-wrapper i.fa-check-circle');
-                    const selectedDescriptors = Array.from(selectedIcons)
-                        .map((icon) => {
-                            const row = icon.closest('.chat-row');
-                            return {
-                                id: row?.getAttribute('data-message-id') || null,
-                                timestamp: icon.getAttribute('data-timestamp') || row?.getAttribute('data-timestamp') || null
-                            };
-                        })
-                        .filter((descriptor) => descriptor.id || descriptor.timestamp);
+                    if (String(window.imData.batchSelectionFriendId || '') !== String(friend.id)) return;
+                    const selection = ensureBatchSelectionMap();
+                    const selectedDescriptors = Array.from(selection.values())
+                        .map(descriptor => ({ id: descriptor.id || null, timestamp: descriptor.timestamp || null }))
+                        .filter(descriptor => descriptor.id || descriptor.timestamp);
                     if (selectedDescriptors.length === 0) {
                         if(window.showToast) window.showToast('请选择要删除的消息');
                         return;
@@ -664,6 +745,8 @@ async function openChatTab(friend) {
                             message: `确定要删除选中的 ${selectedDescriptors.length} 条消息吗？`,
                             confirmText: '删除',
                             cancelText: '取消',
+                            isDestructive: true,
+                            confirmTone: 'dark',
                             onConfirm: async () => {
                                 const saved = window.imApp.removeFriendMessages
                                     ? await window.imApp.removeFriendMessages(
@@ -691,6 +774,7 @@ async function openChatTab(friend) {
                                         const failedFriend = window.imApp.getFriendById ? (window.imApp.getFriendById(friend.id) || friend) : friend;
                                         window.imChat.renderChatHistory(failedFriend, failedContainer);
                                         window.imChat.scrollToBottom(failedContainer);
+                                        imChat.syncBatchSelectionUi(failedFriend, page);
                                     }
                                     return;
                                 }
@@ -717,18 +801,7 @@ async function openChatTab(friend) {
                     if (window.imData.batchSelectMode) {
                         e.stopPropagation();
                         e.preventDefault();
-                        if (row) {
-                            const icon = row.querySelector('.chat-checkbox-wrapper i');
-                            if (icon) {
-                                if (icon.classList.contains('fa-circle')) {
-                                    icon.className = 'fas fa-check-circle';
-                                    icon.style.color = '#393939';
-                                } else {
-                                    icon.className = 'far fa-circle';
-                                    icon.style.color = '#c7c7cc';
-                                }
-                            }
-                        }
+                        if (row) imChat.toggleBatchRowSelection(friend, row, page);
                         return;
                     }
 
@@ -740,6 +813,7 @@ async function openChatTab(friend) {
             if (replyCancelBtn) {
                 replyCancelBtn.addEventListener('click', () => {
                     window.imData.currentReplyText = null;
+                    window.imData.currentReplyMessageId = null;
                     const preview = page.querySelector('.reply-preview-container');
                     if(preview) preview.style.display = 'none';
                 });
