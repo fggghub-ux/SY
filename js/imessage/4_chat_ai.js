@@ -810,6 +810,145 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
         }
     }
 
+    function normalizeStructuredChatItems(structuredItems) {
+        if (!Array.isArray(structuredItems)) return [];
+
+        return structuredItems.map(item => {
+            if (!item || typeof item !== 'object') return null;
+
+            const itemType = typeof item.type === 'string' ? item.type.trim().toLowerCase() : '';
+            if (itemType === 'call') return { kind: 'call' };
+
+            if (itemType === 'music_control') {
+                const action = typeof item.action === 'string' ? item.action.trim().toLowerCase() : '';
+                if (!['next', 'previous', 'play_track'].includes(action)) return null;
+                return {
+                    kind: 'music_control',
+                    action,
+                    trackId: typeof item.trackId === 'string' ? item.trackId.trim() : ''
+                };
+            }
+
+            if (itemType === 'action_narration' || itemType === 'dynamic_action' || itemType === 'action_notice') {
+                const text = typeof item.text === 'string'
+                    ? item.text.trim()
+                    : (typeof item.description === 'string'
+                        ? item.description.trim()
+                        : (typeof item.action === 'string' ? item.action.trim() : ''));
+                if (!text) return null;
+                return {
+                    kind: 'action_narration',
+                    text: text.slice(0, 60),
+                    speaker: typeof item.speaker === 'string' ? item.speaker.trim() : ''
+                };
+            }
+
+            if (itemType === 'recall') {
+                const text = typeof item.text === 'string' ? item.text.trim() : '';
+                if (!text) return null;
+                return {
+                    kind: 'recall',
+                    text,
+                    speaker: typeof item.speaker === 'string' ? item.speaker.trim() : ''
+                };
+            }
+
+            if (itemType === 'voice') {
+                const text = typeof item.text === 'string' ? item.text.trim() : '';
+                if (!text) return null;
+                return {
+                    kind: 'voice',
+                    text,
+                    thought: typeof item.thought === 'string' ? item.thought.trim() : '',
+                    translation: typeof item.translation === 'string'
+                        ? item.translation.trim()
+                        : (typeof item.trans === 'string' ? item.trans.trim() : ''),
+                    replyTo: typeof item.quote === 'string' ? item.quote.trim() : '',
+                    speaker: typeof item.speaker === 'string' ? item.speaker.trim() : ''
+                };
+            }
+
+            if (itemType === 'sticker') {
+                const name = typeof item.name === 'string' ? item.name.trim() : '';
+                if (!name) return null;
+                return {
+                    kind: 'sticker',
+                    text: name,
+                    stickerName: name,
+                    stickerCategory: typeof item.category === 'string' ? item.category.trim() : '',
+                    thought: typeof item.thought === 'string' ? item.thought.trim() : '',
+                    speaker: typeof item.speaker === 'string' ? item.speaker.trim() : ''
+                };
+            }
+
+            if (itemType === 'image') {
+                const description = typeof item.description === 'string'
+                    ? item.description.trim()
+                    : (typeof item.text === 'string' ? item.text.trim() : '');
+                if (!description) return null;
+                return {
+                    kind: 'image',
+                    text: description,
+                    description,
+                    thought: typeof item.thought === 'string' ? item.thought.trim() : '',
+                    speaker: typeof item.speaker === 'string' ? item.speaker.trim() : '',
+                    offlineScene: typeof item.scene === 'string' ? item.scene.trim() : '',
+                    offlineAction: typeof item.action === 'string' ? item.action.trim() : ''
+                };
+            }
+
+            if (itemType === 'red_packet') {
+                const amount = Number(item.amount);
+                const count = parseInt(item.count, 10) || 5;
+                if (!Number.isFinite(amount) || amount <= 0) return null;
+                return {
+                    kind: 'red_packet',
+                    amount,
+                    count,
+                    description: typeof item.description === 'string' ? item.description.trim() || '恭喜发财' : '恭喜发财',
+                    speaker: typeof item.speaker === 'string' ? item.speaker.trim() : ''
+                };
+            }
+
+            if (itemType === 'payment' || item.paymentAction) {
+                const amount = Number(item.amount);
+                if (!Number.isFinite(amount) || amount <= 0) return null;
+                let paymentAction = 'receive';
+                if (item.paymentAction === 'transfer') paymentAction = 'transfer';
+                if (item.paymentAction === 'reject') paymentAction = 'reject';
+                if (item.paymentAction === 'pay_for_friend') paymentAction = 'pay_for_friend';
+                if (item.paymentAction === 'family_card') paymentAction = 'family_card';
+                if (item.paymentAction === 'family_card_increase') paymentAction = 'family_card_increase';
+                return {
+                    kind: 'payment',
+                    paymentAction,
+                    amount,
+                    description: typeof item.description === 'string' ? item.description.trim() || '转账' : '转账'
+                };
+            }
+
+            const text = typeof item.text === 'string' ? item.text.trim() : '';
+            if (!text) return null;
+            return {
+                kind: 'text',
+                text,
+                thought: typeof item.thought === 'string' ? item.thought.trim() : '',
+                translation: typeof item.translation === 'string'
+                    ? item.translation.trim()
+                    : (typeof item.trans === 'string' ? item.trans.trim() : ''),
+                replyTo: typeof item.quote === 'string' ? item.quote.trim() : '',
+                speaker: typeof item.speaker === 'string' ? item.speaker.trim() : ''
+            };
+        }).filter(Boolean);
+    }
+
+    function hasPrimaryChatBubble(queueItems) {
+        return Array.isArray(queueItems) && queueItems.some(item => (
+            item
+            && !['music_control', 'recall', 'call'].includes(String(item.kind || 'text'))
+        ));
+    }
+
     function normalizeProfilePanelPayload(rawText) {
         if (!rawText || typeof rawText !== 'string') return null;
 
@@ -926,6 +1065,22 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
         if (typeof firstChoice.delta?.content === 'string') return firstChoice.delta.content;
 
         return '';
+    }
+
+    function getAiResponseFinishReason(data) {
+        const firstChoice = Array.isArray(data?.choices) ? data.choices[0] : null;
+        if (!firstChoice || typeof firstChoice !== 'object') return '';
+        return String(
+            firstChoice.finish_reason
+            || firstChoice.finishReason
+            || firstChoice.stop_reason
+            || firstChoice.stopReason
+            || ''
+        ).trim().toLowerCase();
+    }
+
+    function isLengthFinishReason(reason) {
+        return ['length', 'max_tokens', 'max_output_tokens', 'max_completion_tokens'].includes(String(reason || '').trim().toLowerCase());
     }
 
     async function fetchChatCompletionWithTimeout(endpoint, apiConfig, messages, timeoutMs = 60000, externalController = null) {
@@ -2117,6 +2272,11 @@ Output only valid JSON with this exact shape:
         const chatBubbleFormatGuardPrompt = `\n【防掉格式规则】：
 当前聊天以多气泡独立渲染。每一段独立对话、动作、反应或语义切换，都必须拆成 <chat_json> JSON 数组中的独立对象；严禁把多条气泡合并进同一个 text 字段，严禁输出 JSON 数组以外的正文、解释、Markdown 或分隔符。
 如果内容较长，必须主动拆成多个 text/voice/image 等合法对象，而不是用换行、斜杠、序号或连续长段落硬塞进一个气泡。`;
+        const chatOutputPriorityPrompt = `\n【严格输出顺序｜聊天气泡最高优先级】：
+1. 回复的第一个非空白字符必须是 <chat_json> 的“<”；禁止在 <chat_json> 前输出状态、解释、思考、Markdown 或任何其他标签。
+2. 必须先完整输出并闭合 <chat_json>...</chat_json>，其中至少包含 1 条有效聊天气泡，然后才能输出任何附加标签。
+3. 单聊的 <profile_panel>、<loves_moment>、<loves_schedule>，以及群聊的 <group_private_messages>、<group_friend_private_chats>，全部只能放在 </chat_json> 之后。
+4. 如果预计输出空间不足，优先缩短气泡并省略可选附加内容；绝对不能省略、截断或延后 <chat_json>。`;
 
 
         const profilePanelRequirement = friend.type === 'group'
@@ -2177,6 +2337,7 @@ Output only valid JSON with this exact shape:
         const rolePsychologyAndEvolutionPrompt = buildRolePsychologyAndEvolutionPrompt();
 
         let systemPrompt = '';
+        let temporalContext = '';
         let isGroupAfterUserLeft = false;
         let groupExitPrompt = '';
         const dynamicActionNarrationEnabled = !!friend.dynamicActionNarrationEnabled;
@@ -2372,7 +2533,7 @@ Output only valid JSON with this exact shape:
                     return infoStr;
                 }).join('\n\n')
                 : 'None';
-            const groupTimeRequirement = buildGroupTimeRequirement(friend, groupMembers);
+            temporalContext = buildGroupTimeRequirement(friend, groupMembers);
 
             systemPrompt = `${systemDepthWorldBookContext ? `系统深度规则（最高优先级）：\n${systemDepthWorldBookContext}\n\n` : ''}${beforeRoleWorldBookContext ? `角色前规则：\n${beforeRoleWorldBookContext}\n\n` : ''}你正在模拟一个名为 "${friend.nickname}" 的群聊。${groupExitPrompt}
 ${isGroupAfterUserLeft ? `${currentUserState.name || 'User'} 曾在这个群聊中，其人设为: ${effectiveUserPersona || '一个普通用户'}。` : `你正在与 ${currentUserState.name || 'User'} 聊天，其人设为: ${effectiveUserPersona || '一个普通用户'}。`}
@@ -2385,7 +2546,7 @@ ${membersInfo}
 ${allowedSpeakerNames.length > 0 ? allowedSpeakerNames.join('、') : 'None'}
 
 群成员可私聊的好友候选（优先关系网，其次复用角色已有私有联系人；只有 canGeneratePrivateFriend 为 true 时才允许按人设生成新好友）：
-${JSON.stringify(memberFriendChatCandidates)}${memberLanguageRequirement}${groupTimeRequirement}${afterRoleWorldBookContext ? `\n\n角色后规则：\n${afterRoleWorldBookContext}` : ''}
+            ${JSON.stringify(memberFriendChatCandidates)}${memberLanguageRequirement}${afterRoleWorldBookContext ? `\n\n角色后规则：\n${afterRoleWorldBookContext}` : ''}
 
 群成员心理、关系与聊天风格规则：
 每个群成员都必须按自己的 Persona、Overview、挂载单聊记忆、关系网和当前群聊上下文分别套用以下规则；不要把一个成员的心理、关系进展或私聊记忆套到其他成员身上。
@@ -2398,6 +2559,7 @@ ${rolePsychologyAndEvolutionPrompt}
 4. 回复时优先承接最近几条消息中的具体对象、话题、称呼、问题和情绪，不要只对最后一条做泛泛回应。
 5. 【强限制】：严禁使用名单之外的名字发言，严禁虚构新成员，严禁让 User 冒充群成员发言。
 ${chatBubbleFormatGuardPrompt}
+${chatOutputPriorityPrompt}
 6. 【输出格式】：必须把聊天气泡放在 <chat_json> 和 </chat_json> 标签内，标签内只能是合法 JSON 数组，不能有 markdown 代码块，不能有解释文字。
 7. 【重要】如果群员想要发红包，或者你觉得气氛到了该发红包了，可以输出红包对象格式：{"type":"red_packet","speaker":"发红包的成员名","amount":100,"count":5,"description":"红包封面语"}。
 8. 普通文本气泡格式必须为 {"type":"text","speaker":"成员名","text":"气泡内容","thought":"该成员此刻的心理活动，10-30字心声，基于当前聊天上下文","translation":"中文翻译或空字符串","quote":"被引用内容或空字符串"}。
@@ -2490,6 +2652,7 @@ ${commonMemorySections || 'None'}${dynamicActionNarrationRequirement}`;
   3. 这段时间你可能在做什么？
 - 然后，将这些感受自然融入你的台词、动作和情绪中，如果距离上一次聊天很久，会有“你昨天怎么没回我”的情绪；如果user的消息中断了一段时间，你（char）会在回来时告诉你离线了多久，开会让你略有点小埋怨；一整天的失联则可能让你生气或担忧。如果双方间隔都很短，就不要刻意提时间，只把当前时间作为背景感知。`;
             }
+            temporalContext = timeRequirement;
             
             const sleepPrompt = isSleeping ? `\n【作息限制】：角色当前正在睡觉。如果用户发来消息，你必须强制保持离线状态并在所有回复内容（text 字段）的开头添加 "[自动回复] " 前缀，模拟已睡着或离线时的自动响应。心声和面板状态也要符合睡着的情境。` : '';
 
@@ -2511,7 +2674,7 @@ ${singleChatRolePsychologyPrompt}
 【核心设定/Core Persona】：${friend.persona || 'No specific persona'}。
 You are talking to ${currentUserState.name || 'User'}, whose persona is: ${effectiveUserPersona || 'A normal user'}。
 现在认为与 User 的关系是：${userRelationship}
-${userInputModalityRule}${singleChatHumanPrompt}${timeRequirement}${afterRoleWorldBookContext ? `\n\nAfter Role Rules:\n${afterRoleWorldBookContext}` : ''}${sleepPrompt}${busyPrompt}
+${userInputModalityRule}${singleChatHumanPrompt}${afterRoleWorldBookContext ? `\n\nAfter Role Rules:\n${afterRoleWorldBookContext}` : ''}${sleepPrompt}${busyPrompt}
 Reply naturally as your character in a chat app.
 - 角色的回复应该被拆分成2-8条条独立的短消息，模拟真实聊天的断续感，就像你在思考和打字一样。
 - 避免一次性写出长篇大论。（超过60中文字/70外文的段落应被强制分段）
@@ -2521,6 +2684,7 @@ Reply naturally as your character in a chat app.
 1. 【重要限制】：如果用户仅仅是口头提到“转账”，但系统并没有提示“[用户刚刚向你转账...]”，绝对禁止输出收下转账或退回转账的指令。
 2. 如果系统提示用户向你发起了一笔真实转账，你可以额外输出 1 个支付对象，选择“收下转账”或“退回转账”；如果你想主动给用户转账，也可以输出 1 个支付对象。
 ${chatBubbleFormatGuardPrompt}
+${chatOutputPriorityPrompt}
 3. 【输出格式】必须把聊天气泡放在 <chat_json> 和 </chat_json> 标签内，标签内只能是合法 JSON 数组，不能有 markdown 代码块，不能有解释文字。
 4. JSON 数组中的每一个对象都严格对应“一个独立气泡”或“一个独立支付卡片”，绝对禁止把多条气泡合并到同一个 text 字段里。
 5. 普通文本对象格式必须为 {"type":"text","text":"气泡内容","translation":"该条气泡的中文翻译或空字符串","quote":"被引用内容或空字符串"}。
@@ -2621,17 +2785,21 @@ Never truncate OUTPUT(x)
             || options.source === 'empty_user_continue'
             || options.source === 'left_group_continue'
             || (!!latestDialogueMessage && latestDialogueMessage.role !== 'user');
-
+        let responseTriggerMessage = null;
         if (shouldStartFirstMessage) {
-            messages.push({
+            responseTriggerMessage = {
                 role: 'user',
                 content: buildFirstMessagePrompt(friend)
-            });
+            };
         } else if (shouldContinueWithoutUser) {
-            messages.push({
+            responseTriggerMessage = {
                 role: 'user',
                 content: buildContinueWithoutUserPrompt(friend, { isGroupAfterUserLeft })
-            });
+            };
+        } else if (latestDialogueMessage?.role === 'user') {
+            const triggerIndex = messages.lastIndexOf(latestDialogueMessage);
+            if (triggerIndex >= 0) messages.splice(triggerIndex, 1);
+            responseTriggerMessage = latestDialogueMessage;
         }
 
         const trailingContexts = [];
@@ -2684,6 +2852,14 @@ Never truncate OUTPUT(x)
             });
         }
 
+        if (String(temporalContext || '').trim()) {
+            messages.push({
+                role: 'system',
+                content: `<temporal_context>\n${String(temporalContext).trim()}\n</temporal_context>\nTreat this as the authoritative time basis for the response immediately below.`
+            });
+        }
+        if (responseTriggerMessage) messages.push(responseTriggerMessage);
+
         // Skip API call and return immediately if chatting with official account
         if (friend.type === 'official') {
             if (typingRow && typingRow.parentNode) typingRow.remove();
@@ -2700,6 +2876,7 @@ Never truncate OUTPUT(x)
             const isRegenerateRequest = options.source === 'regenerate' || !!pendingRegenerateContext;
             const requestApiConfig = getRegenerateRequestApiConfig(currentApiConfig, isRegenerateRequest);
             let fullReply = '';
+            let responseFinishReason = '';
             let regenerateSimilarityCheck = null;
             for (let regenerateAttempt = 0; regenerateAttempt < 2; regenerateAttempt++) {
                 const attemptMessages = regenerateAttempt === 0
@@ -2731,10 +2908,12 @@ Never truncate OUTPUT(x)
                 const data = await response.json();
                 if (!isConversationCurrent()) return;
                 fullReply = getAiResponseContent(data);
+                responseFinishReason = getAiResponseFinishReason(data);
 
                 console.log('[iMessage API] response received', {
                     hasChoices: Array.isArray(data?.choices),
                     contentLength: typeof fullReply === 'string' ? fullReply.length : 0,
+                    finishReason: responseFinishReason || 'unknown',
                     regenerateAttempt
                 });
 
@@ -2757,6 +2936,22 @@ Never truncate OUTPUT(x)
 
             if (!fullReply || typeof fullReply !== 'string') {
                 throw new Error('API 返回内容为空或格式不兼容');
+            }
+
+            const chatJsonBlock = window.imChat.extractTaggedBlock(fullReply, 'chat_json');
+            const structuredItems = chatJsonBlock
+                ? window.imChat.parseJsonArrayFromText(chatJsonBlock)
+                : null;
+            let queueItems = normalizeStructuredChatItems(structuredItems);
+            if (!hasPrimaryChatBubble(queueItems)) {
+                const reasonText = isLengthFinishReason(responseFinishReason)
+                    ? '模型输出被截断，未得到完整聊天气泡'
+                    : '模型未返回完整有效的 <chat_json> 聊天气泡';
+                throw new Error(reasonText);
+            }
+            fullReply = window.imChat.removeTaggedBlock(fullReply, 'chat_json');
+            if (isLengthFinishReason(responseFinishReason)) {
+                console.warn('[iMessage] response reached its output limit after a valid chat_json; incomplete auxiliary blocks will be ignored');
             }
 
             let groupPrivateMessageBatches = [];
@@ -3137,34 +3332,11 @@ Never truncate OUTPUT(x)
                 });
             }
 
-            if (!fullReply && groupPrivateMessageBatches.length === 0 && groupFriendPrivateChats.length === 0) {
-                if(btnEl) btnEl.style.opacity = '1';
-                await flushFriendPersistence(friend.id, { silent: true });
-                return;
-            }
-
-            let structuredItems = null;
-            const chatJsonBlock = window.imChat.extractTaggedBlock(fullReply, 'chat_json');
-            if (chatJsonBlock) {
-                structuredItems = window.imChat.parseJsonArrayFromText(chatJsonBlock);
-                fullReply = window.imChat.removeTaggedBlock(fullReply, 'chat_json');
-            }
-
-            if (!structuredItems) {
-                const directJsonArray = window.imChat.parseJsonArrayFromText(fullReply);
-                if (directJsonArray) {
-                    structuredItems = directJsonArray;
-                    fullReply = '';
-                }
-            }
-
             // 处理 Loves App 接受邀请
             if (inviteAccepted && isConversationCurrent() && window.lovesApp && typeof window.lovesApp.handleInviteAccepted === 'function') {
                 await window.lovesApp.handleInviteAccepted(friend);
                 if (!isConversationCurrent()) return;
             }
-
-            let queueItems = [];
 
             if (structuredItems && structuredItems.length > 0) {
                 queueItems = structuredItems.map(item => {
@@ -3304,60 +3476,6 @@ Never truncate OUTPUT(x)
                         speaker: typeof item.speaker === 'string' ? item.speaker.trim() : ''
                     };
                 }).filter(Boolean);
-            }
-
-            if (queueItems.length === 0) {
-                let fullTranslation = null;
-                const transRegex = /<translation>([\s\S]*?)<\/translation>/i;
-                const transMatch = fullReply.match(transRegex);
-                if (transMatch) {
-                    fullTranslation = transMatch[1].trim();
-                    fullReply = fullReply.replace(transRegex, '').trim();
-                }
-
-                let fullThinking = null;
-                const thinkRegex = /<thinking>([\s\S]*?)<\/thinking>/i;
-                const thinkMatch = fullReply.match(thinkRegex);
-                if (thinkMatch) {
-                    fullThinking = thinkMatch[1].trim();
-                    fullReply = fullReply.replace(thinkRegex, '').trim();
-                }
-
-                let sentences = [];
-                if (friend.type === 'group') {
-                    sentences = fullReply.split(/\n+/).map(s => s.replace(/^\s*(.*?)\s*$/, '$1')).filter(s => s.length > 0);
-                } else if (fullTranslation) {
-                    sentences = [fullReply];
-                } else {
-                    sentences = fullReply.split(/(?<=[。！？.!?])/).map(s => s.replace(/^\s*(.*?)\s*$/, '$1')).filter(s => s.length > 0);
-
-                    if (sentences.length > 7) {
-                        while (sentences.length > 7) {
-                            let minLen = Infinity;
-                            let minIdx = 0;
-                            for (let i = 0; i < sentences.length - 1; i++) {
-                                let len = sentences[i].length + sentences[i + 1].length;
-                                if (len < minLen) {
-                                    minLen = len;
-                                    minIdx = i;
-                                }
-                            }
-                            sentences[minIdx] = sentences[minIdx] + ' ' + sentences[minIdx + 1];
-                            sentences.splice(minIdx + 1, 1);
-                        }
-                    } else if (sentences.length < 3 && fullReply.length > 30) {
-                        sentences = fullReply.split(/(?<=[。！？.!?，,])/).map(s => s.replace(/^\s*(.*?)\s*$/, '$1')).filter(s => s.length > 0);
-                        if (sentences.length > 7) sentences = sentences.slice(0, 7);
-                    }
-                }
-
-                if (sentences.length === 0 && fullReply) sentences = [fullReply];
-
-                queueItems = sentences.map((text, index) => ({
-                    text,
-                    translation: fullTranslation || '',
-                    thought: (index === 0 && fullThinking) ? fullThinking : (typeof aiThought === 'string' ? aiThought : '')
-                }));
             }
 
             if (dynamicActionNarrationEnabled && !queueItems.some(item => item && item.kind === 'action_narration')) {

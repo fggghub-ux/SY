@@ -433,6 +433,35 @@ test('applies tuned relationship, personality, and time-gap rules to single and 
     assert.match(aiSource, /根据群聊最近一次互动距离现在的间隔调整承接方式/);
 });
 
+test('prioritizes complete chat bubbles and places temporal context immediately before the response trigger', async () => {
+    const aiSource = await fs.readFile(new URL('../js/imessage/4_chat_ai.js', import.meta.url), 'utf8');
+
+    assert.match(aiSource, /【严格输出顺序｜聊天气泡最高优先级】/);
+    assert.match(aiSource, /第一个非空白字符必须是 <chat_json>/);
+    assert.match(aiSource, /必须先完整输出并闭合 <chat_json>[\s\S]*?才能输出任何附加标签/);
+    assert.equal((aiSource.match(/\$\{chatOutputPriorityPrompt\}/g) || []).length, 2);
+    assert.doesNotMatch(aiSource, /\$\{timeRequirement\}/);
+    assert.doesNotMatch(aiSource, /\$\{groupTimeRequirement\}/);
+    assert.match(aiSource, /content: `<temporal_context>[\s\S]*?<\/temporal_context>[\s\S]*?if \(responseTriggerMessage\) messages\.push\(responseTriggerMessage\)/);
+    assert.match(aiSource, /const triggerIndex = messages\.lastIndexOf\(latestDialogueMessage\)[\s\S]*?messages\.splice\(triggerIndex, 1\)/);
+
+    assert.match(aiSource, /function getAiResponseFinishReason\(data\)/);
+    assert.match(aiSource, /isLengthFinishReason\(responseFinishReason\)/);
+    assert.match(aiSource, /function hasPrimaryChatBubble\(queueItems\)[\s\S]*?music_control[\s\S]*?recall[\s\S]*?call/);
+    assert.match(aiSource, /if \(!hasPrimaryChatBubble\(queueItems\)\)/);
+    assert.match(aiSource, /模型输出被截断，未得到完整聊天气泡/);
+    assert.doesNotMatch(aiSource, /directJsonArray/);
+
+    const primaryValidationIndex = aiSource.indexOf('let queueItems = normalizeStructuredChatItems(structuredItems);');
+    const groupAuxiliaryIndex = aiSource.indexOf("window.imChat.extractTaggedBlock(fullReply, 'group_private_messages')");
+    const profileCommitIndex = aiSource.indexOf("if (nextProfilePanel && friend.type !== 'group')");
+    const lovesMomentIndex = aiSource.indexOf("window.imChat.extractTaggedBlock(fullReply, 'loves_moment')");
+    assert.ok(primaryValidationIndex > -1);
+    assert.ok(groupAuxiliaryIndex > primaryValidationIndex);
+    assert.ok(profileCommitIndex > primaryValidationIndex);
+    assert.ok(lovesMomentIndex > primaryValidationIndex);
+});
+
 test('uses visible keyword-triggered memory recall for single and group chats', async () => {
     const [aiSource, coreSource, settingsSource, statusSource, bubblesSource, cssSource, indexSource] = await Promise.all([
         fs.readFile(new URL('../js/imessage/4_chat_ai.js', import.meta.url), 'utf8'),
@@ -476,7 +505,7 @@ test('uses visible keyword-triggered memory recall for single and group chats', 
     assert.match(settingsSource, /summaryPayload\.memoryTags/);
     assert.match(statusSource, /triggerKeywords = window\.imChat\?\.normalizeMemoryTriggerKeywords/);
     assert.match(cssSource, /\.memory-recall-narration-pill/);
-    assert.match(indexSource, /4_chat_ai\.js\?v=20260713-offline-time-awareness-v2/);
+    assert.match(indexSource, /4_chat_ai\.js\?v=20260713-chat-priority-time-context-v3/);
     assert.match(indexSource, /4_chat_bubbles\.js\?v=20260713-offline-summary-modal-v3/);
     assert.match(indexSource, /5_settings\.js\?v=20260713-offline-memory-v1/);
 });
@@ -508,7 +537,7 @@ test('uses per-member group languages, content-sized private bubbles, and fresh 
     assert.match(coreSource, /getApiContextFingerprint\(targetMessage\) !== previousContextFingerprint/);
     assert.match(coreSource, /window\.imApp\.clearFriendRuntimeMessageContext\(targetFriend\)/);
     assert.match(indexSource, /js\/imessage\/2_core\.js\?v=20260713-offline-memory-v1/);
-    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260713-offline-time-awareness-v2/);
+    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260713-chat-priority-time-context-v3/);
     assert.match(indexSource, /js\/imessage\/4_chat_main\.js\?v=20260712-reply-single-tap-v1/);
 });
 
