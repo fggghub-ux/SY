@@ -1,4 +1,7 @@
 (function() {
+    // Temporary product switch: the current login is only a local mock gate.
+    // Keep the implementation and public API intact so the gate can be restored later.
+    const AUTH_GATE_ENABLED = false;
     const AUTH_SESSION_STORAGE_KEY = 'u2_authSession';
     let cachedDom = null;
     let cachedSession = null;
@@ -90,6 +93,12 @@
     function showLoginScreen(options = {}) {
         const dom = cachedDom || collectDom();
         if (!dom.screen) return;
+        if (!AUTH_GATE_ENABLED) {
+            dom.screen.classList.add('is-hidden');
+            dom.screen.setAttribute('aria-hidden', 'true');
+            setLoginLocked(false);
+            return;
+        }
         if (dom.noticeAccepted) dom.noticeAccepted.checked = false;
         dom.noticeRow?.classList.remove('is-invalid');
         dom.screen.classList.remove('is-hidden');
@@ -145,7 +154,11 @@
         authStateStatus = 'ready';
         setCredentialInputsDisabled(false);
         setSubmitState('idle');
-        showLoginScreen({ focus: true });
+        if (AUTH_GATE_ENABLED) {
+            showLoginScreen({ focus: true });
+        } else {
+            hideLoginScreen();
+        }
         emitAuthChanged(null);
         return true;
     }
@@ -335,6 +348,7 @@
     }
 
     window.u2Auth = {
+        isGateEnabled: AUTH_GATE_ENABLED,
         ready: authReady,
         login,
         logout,
@@ -344,7 +358,12 @@
         hideLoginScreen
     };
 
-    if (document.readyState === 'loading') {
+    if (!AUTH_GATE_ENABLED) {
+        authStateStatus = 'ready';
+        cachedSession = safeLoadSession();
+        hideLoginScreen();
+        settleAuthReady();
+    } else if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => initLoginScreen().catch(authReadyReject), { once: true });
     } else {
         initLoginScreen().catch(authReadyReject);

@@ -85,7 +85,7 @@
         // 兜底：最长 5 秒后强制移除
         setTimeout(window.removeSplashScreen, 5000);
     </script>
-    <div id="u2-login-screen" class="u2-login-screen" aria-hidden="false">
+    <div id="u2-login-screen" class="u2-login-screen is-hidden" aria-hidden="true">
         <div class="u2-login-shell">
             <main class="u2-login-panel" aria-labelledby="u2-login-title">
                 <section class="u2-login-brand">
@@ -2488,7 +2488,7 @@
                             </span>
                         </button>
                         <input type="file" id="import-data-file" accept=".json" style="display:none;">
-                        <button type="button" class="data-management-action u2-auth-sign-out-action" id="u2-auth-sign-out-btn">
+                        <button type="button" class="data-management-action u2-auth-sign-out-action" id="u2-auth-sign-out-btn" hidden aria-hidden="true">
                             <span class="data-management-action-icon warning"><i class="fas fa-arrow-right-from-bracket"></i></span>
                             <span class="data-management-action-copy">
                                 <strong>Sign Out / 退出登录</strong>
@@ -7449,7 +7449,7 @@
     <script src="js/app_state_bridge.js?v=20260710-bstage-chat-recovery-v1"></script>
     <script src="js/bootstrap_globals.js"></script>
     <script src="js/about_info_modal.js?v=20260712-login-notice-v1"></script>
-    <script src="js/login.js?v=20260713-auth-fast-v1"></script>
+    <script src="js/login.js?v=20260713-auth-disabled-v1"></script>
     <script src="js/mobile_input_compat.js?v=20260713-bstage-enter-v1"></script>
     <script src="js/background_activity.js"></script>
     <script src="js/system_notifications.js"></script>
