@@ -266,7 +266,7 @@ test('restores saved iMessage theme CSS after contact data hydration and chat pa
 
     assert.ok((interfaceSource.match(/window\.imApp\.applyFriendCss\(friend\)/g) || []).length >= 2);
     assert.match(indexSource, /js\/imessage\/4_chat_interface\.js\?v=20260712-longpress-context-cleanup-v1/);
-    assert.match(indexSource, /js\/imessage\/5_settings\.js\?v=20260712-memory-recall-presentation-v2/);
+    assert.match(indexSource, /js\/imessage\/5_settings\.js\?v=20260713-offline-bound-id-v1/);
 });
 
 test('keeps iOS modal, theme preset, stickers, and private-chat safeguards', async () => {
@@ -412,6 +412,25 @@ test('keeps group time awareness, role recall toggle, Chinese generated thoughts
     assert.match(settingsSource, /targetFriend\.relationship\s*=\s*relationshipInput \? relationshipInput\.value : ''/);
 });
 
+test('applies tuned relationship, personality, and time-gap rules to single and group chats', async () => {
+    const aiSource = await fs.readFile(new URL('../js/imessage/4_chat_ai.js', import.meta.url), 'utf8');
+
+    assert.doesNotMatch(aiSource, /【关系与记忆使用方式】/);
+    assert.match(aiSource, /人格基石: \[3-5个核心关键词，例如：温柔稳定、责任感强、细腻敏感、阳光幽默\]/);
+    assert.match(aiSource, /当前关系: \$\{isSingleChat \? \(relationship \|\| '未填写'\)/);
+    assert.match(aiSource, /\*\*外向\/敏感\*\* ：回复快，主动开启话题并很爱分享感受/);
+    assert.match(aiSource, /\*\*内向\/温柔\*\* ：回复偏慢，用词柔软且有分寸/);
+    assert.match(aiSource, /现在的时间段是：\$\{currentTimePeriod\}/);
+    assert.match(aiSource, /\*\*间隔 < 2小时\*\*/);
+    assert.match(aiSource, /\*\*间隔 2-8小时\*\*/);
+    assert.match(aiSource, /\*\*隔夜（跨越了凌晨）\*\*/);
+    assert.match(aiSource, /\*\*间隔 > 24小时\*\*/);
+    assert.match(aiSource, /const rolePsychologyAndEvolutionPrompt = buildRolePsychologyAndEvolutionPrompt\(\)/);
+    assert.match(aiSource, /isSingleChat: true,[\s\S]*?relationship: userRelationship/);
+    assert.match(aiSource, /与 User 的关系: \$\{String\(member\.relationship/);
+    assert.match(aiSource, /根据群聊最后一条公开消息距离现在的间隔调整承接方式/);
+});
+
 test('uses visible keyword-triggered memory recall for single and group chats', async () => {
     const [aiSource, coreSource, settingsSource, statusSource, bubblesSource, cssSource, indexSource] = await Promise.all([
         fs.readFile(new URL('../js/imessage/4_chat_ai.js', import.meta.url), 'utf8'),
@@ -455,9 +474,9 @@ test('uses visible keyword-triggered memory recall for single and group chats', 
     assert.match(settingsSource, /summaryPayload\.memoryTags/);
     assert.match(statusSource, /triggerKeywords = window\.imChat\?\.normalizeMemoryTriggerKeywords/);
     assert.match(cssSource, /\.memory-recall-narration-pill/);
-    assert.match(indexSource, /4_chat_ai\.js\?v=20260712-longpress-context-cleanup-v1/);
+    assert.match(indexSource, /4_chat_ai\.js\?v=20260713-moments-i18n-unread-v1/);
     assert.match(indexSource, /4_chat_bubbles\.js\?v=20260712-longpress-context-cleanup-v1/);
-    assert.match(indexSource, /5_settings\.js\?v=20260712-memory-recall-presentation-v2/);
+    assert.match(indexSource, /5_settings\.js\?v=20260713-offline-bound-id-v1/);
 });
 
 test('uses per-member group languages, content-sized private bubbles, and fresh edited-message context', async () => {
@@ -486,9 +505,9 @@ test('uses per-member group languages, content-sized private bubbles, and fresh 
     assert.match(coreSource, /const getApiContextFingerprint = \(message\) => JSON\.stringify/);
     assert.match(coreSource, /getApiContextFingerprint\(targetMessage\) !== previousContextFingerprint/);
     assert.match(coreSource, /window\.imApp\.clearFriendRuntimeMessageContext\(targetFriend\)/);
-    assert.match(indexSource, /js\/imessage\/2_core\.js\?v=20260712-longpress-context-cleanup-v1/);
-    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260712-longpress-context-cleanup-v1/);
-    assert.match(indexSource, /js\/imessage\/4_chat_main\.js\?v=20260712-longpress-context-cleanup-v1/);
+    assert.match(indexSource, /js\/imessage\/2_core\.js\?v=20260713-moments-i18n-unread-v1/);
+    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260713-moments-i18n-unread-v1/);
+    assert.match(indexSource, /js\/imessage\/4_chat_main\.js\?v=20260712-reply-single-tap-v1/);
 });
 
 test('uses stable long-press selection and purges deleted chat context without selecting narration', async () => {
@@ -526,5 +545,5 @@ test('uses stable long-press selection and purges deleted chat context without s
     assert.match(narrationRenderer, /row\.className = 'chat-system-row'/);
     assert.doesNotMatch(narrationRenderer, /chat-checkbox-wrapper/);
     assert.match(cssSource, /\.im-chat-cancel-batch-btn\s*\{[\s\S]*?color:\s*#111111/);
-    assert.match(indexSource, /css\/imessage\.css\?v=20260712-longpress-context-cleanup-v1/);
+    assert.match(indexSource, /css\/imessage\.css\?v=20260713-moments-comment-delete-v3/);
 });

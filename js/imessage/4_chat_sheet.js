@@ -22,6 +22,76 @@ async function commitSheetFriendChange(friendOrId, mutator, options = {}) {
         }, options);
     }
 
+    function getOfflineBoundAccountForFriend(friend) {
+        const latestFriend = friend?.id != null ? (window.imApp?.getFriendById?.(friend.id) || friend) : friend;
+        if (!latestFriend || latestFriend.type === 'group' || !latestFriend.boundAccountId) return null;
+        if (window.imApp?.getBoundAccountByFriend) {
+            return window.imApp.getBoundAccountByFriend(latestFriend);
+        }
+        const accounts = typeof window.getAccounts === 'function' ? window.getAccounts() : [];
+        return accounts.find(account => String(account?.id) === String(latestFriend.boundAccountId)) || null;
+    }
+
+    function getOfflineEffectiveUserProfile(friend, currentUserState = null) {
+        const fallback = currentUserState || (window.getUserState ? window.getUserState() : (window.userState || userState || {}));
+        const boundAccount = getOfflineBoundAccountForFriend(friend);
+        const source = boundAccount || fallback || {};
+        return {
+            name: String(source.name || source.realName || source.nickname || 'User').trim() || 'User',
+            avatarUrl: source.avatarUrl || source.avatar || '',
+            signature: String(source.signature || '').trim(),
+            persona: String(source.persona || '').trim(),
+            boundAccountId: boundAccount?.id ?? null
+        };
+    }
+
+    function refreshOfflineUserIdentity(friendOrId) {
+        const requestedId = typeof friendOrId === 'object' && friendOrId !== null ? friendOrId.id : friendOrId;
+        const activeFriend = window.imData?.currentActiveFriend;
+        if (!activeFriend || activeFriend.type === 'group' || String(activeFriend.id) !== String(requestedId)) return false;
+        const friend = window.imApp?.getFriendById?.(requestedId) || activeFriend;
+        const profile = getOfflineEffectiveUserProfile(friend);
+        const contentArea = document.getElementById('offline-tavern-content');
+        if (!contentArea) return false;
+
+        contentArea.querySelectorAll('.offline-tavern-bubble.user').forEach((bubble) => {
+            const nameEl = bubble.querySelector('.offline-tavern-name');
+            if (nameEl) nameEl.textContent = profile.name;
+
+            const avatarEl = bubble.querySelector('.offline-tavern-avatar');
+            if (avatarEl) {
+                avatarEl.replaceChildren();
+                if (profile.avatarUrl) {
+                    const img = document.createElement('img');
+                    img.src = profile.avatarUrl;
+                    img.alt = 'avatar';
+                    avatarEl.appendChild(img);
+                } else {
+                    const icon = document.createElement('i');
+                    icon.className = 'fas fa-user';
+                    avatarEl.appendChild(icon);
+                }
+            }
+
+            const header = bubble.querySelector('.offline-tavern-bubble-header');
+            let signEl = bubble.querySelector('.offline-tavern-sign');
+            if (!profile.signature) {
+                signEl?.remove();
+            } else if (signEl) {
+                signEl.textContent = profile.signature;
+            } else if (header) {
+                signEl = document.createElement('div');
+                signEl.className = 'offline-tavern-sign';
+                signEl.textContent = profile.signature;
+                const nameContainer = header.querySelector('.offline-tavern-name-container');
+                header.insertBefore(signEl, nameContainer?.nextSibling || header.firstChild);
+            }
+        });
+        return true;
+    }
+
+    imChat.refreshOfflineUserIdentity = refreshOfflineUserIdentity;
+
 function getChatImagePlaceholderUrl() {
         return window.imChat.CHAT_IMAGE_PLACEHOLDER_URL || 'assets/imessage/chat-image-placeholder.jpg';
     }
@@ -2323,9 +2393,10 @@ function createAttachmentSheet(page) {
             };
             isUser = message.role === 'user';
 
-            const userName = isUser ? (window.userState?.name || '我') : (friend?.nickname || friend?.realName || 'TA');
-            const userSign = isUser ? (window.userState?.signature || '这是你的签名') : (friend?.signature || '');
-            const userAvatar = isUser ? (window.userState?.avatarUrl || '') : (friend?.avatarUrl || '');
+            const offlineUserProfile = getOfflineEffectiveUserProfile(friend);
+            const userName = isUser ? offlineUserProfile.name : (friend?.nickname || friend?.realName || 'TA');
+            const userSign = isUser ? offlineUserProfile.signature : (friend?.signature || '');
+            const userAvatar = isUser ? offlineUserProfile.avatarUrl : (friend?.avatarUrl || '');
             const floor = Number(options.floor) || 1;
             const depth = Number.isInteger(Number(options.depth)) ? Number(options.depth) : 0;
             const isReadOnly = !!options.readOnly;
@@ -3043,7 +3114,8 @@ function createAttachmentSheet(page) {
 
         const getOfflineIdentityContext = (activeFriend, currentUserState = null) => {
             const userState = currentUserState || (window.getUserState ? window.getUserState() : (window.userState || {}));
-            const userName = String(userState?.name || userState?.realName || userState?.nickname || 'User').trim() || 'User';
+            const userProfile = getOfflineEffectiveUserProfile(activeFriend, userState);
+            const userName = userProfile.name;
             const isGroup = activeFriend?.type === 'group';
             const groupMembers = isGroup ? getOfflineGroupMembers(activeFriend) : [];
             const memberNames = Array.from(new Set(groupMembers
@@ -3055,6 +3127,10 @@ function createAttachmentSheet(page) {
 
             return {
                 userName,
+                userPersona: userProfile.persona,
+                userAvatarUrl: userProfile.avatarUrl,
+                userSignature: userProfile.signature,
+                boundAccountId: userProfile.boundAccountId,
                 charName,
                 isGroup,
                 groupMembers
@@ -3124,7 +3200,7 @@ function createAttachmentSheet(page) {
             const worldBookContextText = [
                 ...historyMessages.map(m => m.content || ''),
                 activeFriend.persona || '',
-                currentUserState.persona || '',
+                identityContext.userPersona || '',
                 activeFriend.memory?.overview || ''
             ].filter(Boolean).join('\n');
             const worldBookContexts = getOfflineWorldBookContexts(activeFriend, worldBookContextText);
@@ -4131,7 +4207,7 @@ Keep the thinking concise, specific, and usable for drafting. The正文 must exe
         };
 
         const buildOfflineDataZoneContext = ({ activeFriend, currentUserState, userName, charName, identityContext, historyMessages, worldBookContexts }) => {
-            const userPersona = currentUserState?.persona || 'A normal user';
+            const userPersona = identityContext?.userPersona || 'A normal user';
             const charPersona = activeFriend?.persona || 'No specific persona';
             const historyText = formatOfflineHistoryForPrompt(historyMessages, userName, charName) || 'None';
             const contexts = worldBookContexts || {};

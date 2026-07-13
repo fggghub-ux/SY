@@ -78,7 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
             <div class="bstage-chat-input-wrapper">
-                <input type="text" id="bstage-chat-input" placeholder="Send a message..." style="color: #fff; background-color: transparent; border: none; outline: none;">
+                <input type="text" id="bstage-chat-input" inputmode="text" enterkeyhint="send" autocomplete="off" autocapitalize="sentences" placeholder="Send a message..." style="color: #fff; background-color: transparent; border: none; outline: none;">
                 <div id="bstage-chat-send-btn" class="bstage-chat-action-btn bstage-chat-send-btn" role="button" tabindex="0" aria-label="发送消息" title="发送消息">
                     <i class="fas fa-paper-plane"></i>
                 </div>
@@ -118,7 +118,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
             <div class="bstage-chat-input-wrapper">
-                <input type="text" id="bstage-fan-chat-input" placeholder="对粉丝说点什么..." style="color: #fff; background-color: transparent; border: none; outline: none;">
+                <input type="text" id="bstage-fan-chat-input" inputmode="text" enterkeyhint="send" autocomplete="off" autocapitalize="sentences" placeholder="对粉丝说点什么..." style="color: #fff; background-color: transparent; border: none; outline: none;">
                 <div id="bstage-fan-chat-send-btn" class="bstage-chat-action-btn bstage-chat-send-btn" role="button" tabindex="0" aria-label="发送消息" title="发送消息">
                     <i class="fas fa-paper-plane"></i>
                 </div>
@@ -854,7 +854,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                     </div>
                     <div class="bstage-user-avatar-small" id="bstage-comment-user-avatar"></div>
-                    <input type="text" class="bstage-comment-input" id="bstage-vid-comment-input" placeholder="添加评论..." style="color: #fff; background-color: transparent; border: none; outline: none; flex: 1;">
+                    <input type="text" class="bstage-comment-input" id="bstage-vid-comment-input" inputmode="text" enterkeyhint="send" autocomplete="off" autocapitalize="sentences" placeholder="添加评论..." style="color: #fff; background-color: transparent; border: none; outline: none; flex: 1;">
                     <i class="fas fa-paper-plane bstage-comment-send-btn disabled" id="bstage-vid-comment-send-btn" style="color: #aaa;"></i>
                 </div>
             </div>
@@ -939,8 +939,36 @@ document.addEventListener('DOMContentLoaded', () => {
         bubbleCss: []
     };
     let currentPresetTab = 'chatCss';
+    let activeCharacterChatInputCleanup = null;
 
     let autoActivityIntervals = {}; // { memberId: intervalId }
+
+    function registerBstageSendInput(input, onSend, options = {}) {
+        if (!input || typeof onSend !== 'function') return function() {};
+        if (window.mobileInputCompat?.register) {
+            return window.mobileInputCompat.register({
+                input,
+                root: options.root || null,
+                scrollContainer: options.scrollContainer || null,
+                onSend,
+                blurAfterSend: true,
+                enterKeyHint: 'send',
+                restoreWindowScroll: false,
+                onRestore: options.onRestore || null
+            });
+        }
+
+        const handleKeydown = (event) => {
+            if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || event.isComposing || event.keyCode === 229) return;
+            event.preventDefault();
+            if (!String(input.value || '').trim()) return;
+            onSend({ event, input, text: input.value.trim() });
+            input.blur();
+        };
+        input.setAttribute('enterkeyhint', 'send');
+        input.addEventListener('keydown', handleKeydown);
+        return () => input.removeEventListener('keydown', handleKeydown);
+    }
 
     // --- Logic ---
     function formatTimeBubble(timestamp) {
@@ -3574,14 +3602,12 @@ ${generationIntent}
             }
         });
 
-        // Handle Enter key on input
-        inputArea.onkeydown = (e) => {
-            if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.isComposing && e.keyCode !== 229) {
-                e.preventDefault();
-                sendMsg();
-                inputArea.blur();
-            }
-        };
+        // Keep one Android-aware Enter handler while switching between members.
+        if (activeCharacterChatInputCleanup) activeCharacterChatInputCleanup();
+        activeCharacterChatInputCleanup = registerBstageSendInput(inputArea, sendMsg, {
+            root: bstageChatView,
+            scrollContainer: content
+        });
 
         window.openView(document.getElementById('bstage-chat-view'));
     }
@@ -4869,7 +4895,7 @@ ${charInfo}
             }
         });
 
-        vidSendBtn.addEventListener('click', () => {
+        const sendVideoComment = () => {
             if (vidSendBtn.classList.contains('disabled')) return;
             
             const text = vidInput.value.trim();
@@ -4897,6 +4923,12 @@ ${charInfo}
                 
                 // Scroll to top of comments (optional, layout dependent)
             }
+        };
+
+        vidSendBtn.addEventListener('click', sendVideoComment);
+        registerBstageSendInput(vidInput, sendVideoComment, {
+            root: videoDetailModal,
+            scrollContainer: videoDetailModal.querySelector('.bstage-video-detail-scroll')
         });
     }
 
@@ -5764,12 +5796,9 @@ ${history}
     const fanChatSendBtn = document.getElementById('bstage-fan-chat-send-btn');
     const fanChatApiBtn = document.getElementById('bstage-fan-chat-api-btn');
     if (fanChatInput) {
-        fanChatInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.isComposing && e.keyCode !== 229) {
-                e.preventDefault();
-                sendFanChatMessage();
-                fanChatInput.blur();
-            }
+        registerBstageSendInput(fanChatInput, sendFanChatMessage, {
+            root: bstageFanChatView,
+            scrollContainer: document.getElementById('bstage-fan-chat-content')
         });
     }
     if (fanChatSendBtn) {

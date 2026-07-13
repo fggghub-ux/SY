@@ -40,6 +40,32 @@
         }[language] || language || 'Chinese';
     }
 
+    function normalizeLocalizedContent(value, language, options = {}) {
+        const normalizedLanguage = normalizeChatLanguage(language);
+        const source = value && typeof value === 'object'
+            ? value
+            : { text: value };
+        const text = String(source.text ?? source.content ?? '').trim();
+        let translation = String(source.translation ?? source.translationZh ?? source.trans ?? '').trim();
+        if (!text) return null;
+        if (normalizedLanguage === 'zh') translation = '';
+        if (normalizedLanguage !== 'zh' && options.requireTranslation !== false && !translation) return null;
+        return { text, translation, language: normalizedLanguage };
+    }
+
+    function hasLocalizedTranslation(value) {
+        return !!String(value?.translation ?? value?.translationZh ?? value?.trans ?? '').trim();
+    }
+
+    function buildLocalizedJsonContract(language, subject = 'content') {
+        const normalizedLanguage = normalizeChatLanguage(language);
+        const languageName = getChatLanguageName(normalizedLanguage);
+        if (normalizedLanguage === 'zh') {
+            return `${subject}.text must be natural Simplified Chinese and ${subject}.translation must be an empty string.`;
+        }
+        return `${subject}.text must be written only in ${languageName}; ${subject}.translation is mandatory and must be a natural accurate Simplified Chinese translation of that text.`;
+    }
+
     function parseBilingualDialogue(value, language) {
         const text = String(value || '').trim();
         if (!text) return { original: '', translation: '' };
@@ -269,6 +295,9 @@
         normalizeMessageLimit,
         normalizeChatLanguage,
         getChatLanguageName,
+        normalizeLocalizedContent,
+        hasLocalizedTranslation,
+        buildLocalizedJsonContract,
         parseBilingualDialogue,
         normalizeGroupChatContexts,
         getRecentPublicGroupMessages,

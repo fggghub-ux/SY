@@ -32,7 +32,7 @@
     <link rel="stylesheet" href="css/login.css?v=20260712-login-notice-v1">
     <link rel="stylesheet" href="css/home.css">
     <link rel="stylesheet" href="css/worldbook.css">
-    <link rel="stylesheet" href="css/imessage.css?v=20260712-longpress-context-cleanup-v1">
+    <link rel="stylesheet" href="css/imessage.css?v=20260713-moments-comment-delete-v3">
     <link rel="stylesheet" href="css/pay.css?v=20260705-safe-area-v1">
     <link rel="stylesheet" href="css/bstage.css">
     <link rel="stylesheet" href="css/tiktok.css?v=20260712-tiktok-feed-cleanup-v1">
@@ -1854,6 +1854,11 @@
                             <div class="user-moments-signature" id="main-moments-signature" style="color: #8e8e93; font-size: 13px; text-align: right; max-width: 70%; word-break: break-all; display: none;"></div>
                         </div>
 
+                        <button type="button" id="moments-new-message-bubble" class="moments-new-message-bubble" aria-label="打开朋友圈新消息" style="display:none;">
+                            <span class="moments-new-message-avatar"></span>
+                            <span class="moments-new-message-text"></span>
+                        </button>
+
                         <!-- Moments List -->
                         <div class="moments-list" id="moments-list" style="padding: 20px 0;">
                             <!-- Items injected via JS -->
@@ -3144,7 +3149,7 @@
                     <div id="voice-call-minimized-time" style="font-size: 11px; font-weight: 600; color: #fff;">00:00</div>
                 </div>
 
-                <div id="voice-call-main-content" style="position: relative; z-index: 1; display: flex; flex-direction: column; width: 100%; height: 100%; pointer-events: auto; transition: opacity 0.3s ease;">
+                <div id="voice-call-main-content" style="position: relative; z-index: 1; display: flex; flex-direction: column; width: 100%; height: 100%; min-width: 0; min-height: 0; pointer-events: auto; transition: opacity 0.3s ease;">
                     <!-- 顶部按钮 -->
                     <div id="voice-call-minimize-btn" style="position: absolute; top: max(16px, env(safe-area-inset-top, 16px)); left: 16px; width: 36px; height: 36px; background: rgba(255,255,255,0.15); border-radius: 18px; display: flex; justify-content: center; align-items: center; cursor: pointer; z-index: 10;">
                         <i class="fas fa-chevron-down" style="font-size: 16px;"></i>
@@ -3166,7 +3171,7 @@
                     </div>
 
                     <!-- Bottom Controls Area -->
-                    <div style="padding: 15px 20px max(30px, env(safe-area-inset-bottom, 20px)); display: flex; flex-direction: column; gap: 20px; background: rgba(0,0,0,0.3);">
+                    <div style="width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; flex-shrink: 0; padding: 15px 20px max(30px, env(safe-area-inset-bottom, 20px)); display: flex; flex-direction: column; gap: 20px; background: rgba(0,0,0,0.3);">
                         
                         <!-- Actions Row -->
                         <div style="display: flex; justify-content: space-evenly; align-items: center; width: 100%;" id="voice-call-actions-row">
@@ -3190,8 +3195,8 @@
                         </div>
 
                         <!-- Input Row -->
-                        <div id="voice-call-input-row" style="display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.15); border-radius: 24px; padding: 6px 6px 6px 16px; margin-top: 10px;">
-                            <input type="text" id="voice-call-input" placeholder="发消息..." style="flex: 1; height: 36px; border: none; background: transparent; color: #fff; outline: none; font-size: 15px; font-weight: 500;">
+                        <div id="voice-call-input-row" style="display: flex; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; align-items: center; gap: 12px; background: rgba(255,255,255,0.15); border-radius: 24px; padding: 6px 6px 6px 16px; margin-top: 10px;">
+                            <input type="text" id="voice-call-input" inputmode="text" enterkeyhint="send" autocomplete="off" autocapitalize="sentences" placeholder="发消息..." style="flex: 1; width: 0; min-width: 0; height: 36px; border: none; background: transparent; color: #fff; outline: none; font-size: 15px; font-weight: 500;">
                             <div id="voice-call-ai-btn" style="width: 36px; height: 36px; background: transparent; display: flex; justify-content: center; align-items: center; cursor: pointer; color: #fff; flex-shrink: 0;" title="? AI ??">
                                 <i class="fas fa-chevron-down" style="font-size: 17px;"></i>
                             </div>
@@ -3633,7 +3638,7 @@
                 <!-- 纯深色背景 -->
                 <div id="group-call-bg" style="position: absolute; inset: 0; background-color: #111111; z-index: 0; transition: opacity 0.3s ease; pointer-events: auto;"></div>
                 
-                <div id="group-call-main-content" style="position: relative; z-index: 1; display: flex; flex-direction: column; width: 100%; height: 100%; pointer-events: auto; transition: opacity 0.3s ease;">
+                <div id="group-call-main-content" style="position: relative; z-index: 1; display: flex; flex-direction: column; width: 100%; height: 100%; min-width: 0; min-height: 0; pointer-events: auto; transition: opacity 0.3s ease;">
                 <div style="display: flex; justify-content: space-between; align-items: center; padding: max(20px, env(safe-area-inset-top)) 20px 10px;">
                     <div id="group-call-minimize-btn" style="width: 36px; height: 36px; border-radius: 18px; background: rgba(255,255,255,0.15); display: flex; justify-content: center; align-items: center; cursor: pointer;">
                         <i class="fas fa-chevron-down" style="font-size: 16px;"></i>
@@ -3655,9 +3660,9 @@
                 </div>
 
                 <!-- Bottom Controls -->
-                <div style="position: relative; z-index: 1; padding: 15px 20px max(30px, env(safe-area-inset-bottom, 20px)); display: flex; flex-direction: column; gap: 10px; background: rgba(0,0,0,0.3);">
-                    <div style="display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.15); border-radius: 24px; padding: 6px 6px 6px 16px;">
-                        <input type="text" id="group-call-input" placeholder="发消息参与通话..." style="flex: 1; height: 36px; border: none; background: transparent; color: #fff; outline: none; font-size: 15px; font-weight: 500;">
+                <div style="position: relative; z-index: 1; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; flex-shrink: 0; padding: 15px 20px max(30px, env(safe-area-inset-bottom, 20px)); display: flex; flex-direction: column; gap: 10px; background: rgba(0,0,0,0.3);">
+                    <div style="display: flex; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; align-items: center; gap: 12px; background: rgba(255,255,255,0.15); border-radius: 24px; padding: 6px 6px 6px 16px;">
+                        <input type="text" id="group-call-input" inputmode="text" enterkeyhint="send" autocomplete="off" autocapitalize="sentences" placeholder="发消息参与通话..." style="flex: 1; width: 0; min-width: 0; height: 36px; border: none; background: transparent; color: #fff; outline: none; font-size: 15px; font-weight: 500;">
                         <div id="group-call-ai-btn" style="width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,0.2); display: flex; justify-content: center; align-items: center; cursor: pointer; color: #fff; flex-shrink: 0;" title="调用群聊 API">
                             <i class="fas fa-magic"></i>
                         </div>
@@ -7438,20 +7443,20 @@
     </section>
 </div>
 
-<script src="js/storage/app_storage.js?v=20260710-storage-idb-only-v9"></script>
+<script src="js/storage/app_storage.js?v=20260713-auth-fast-v1"></script>
     <script src="js/storage/imessage_storage.js?v=20260710-storage-v8-idb1"></script>
     <script src="storage.js?v=20260710-storage-v7-cache1"></script>
     <script src="js/app_state_bridge.js?v=20260710-bstage-chat-recovery-v1"></script>
     <script src="js/bootstrap_globals.js"></script>
     <script src="js/about_info_modal.js?v=20260712-login-notice-v1"></script>
-    <script src="js/login.js?v=20260712-login-notice-v1"></script>
-    <script src="js/mobile_input_compat.js?v=20260709-android-input-v1"></script>
+    <script src="js/login.js?v=20260713-auth-fast-v1"></script>
+    <script src="js/mobile_input_compat.js?v=20260713-bstage-enter-v1"></script>
     <script src="js/background_activity.js"></script>
     <script src="js/system_notifications.js"></script>
     
     <!-- 引入 iMessage 模块分段代码 -->
-    <script src="js/imessage/data_utils.js?v=20260711-offline-bilingual-v1"></script>
-    <script src="js/imessage/2_core.js?v=20260712-longpress-context-cleanup-v1"></script>
+    <script src="js/imessage/data_utils.js?v=20260713-moments-i18n-unread-v1"></script>
+    <script src="js/imessage/2_core.js?v=20260713-moments-i18n-unread-v1"></script>
     <script src="js/imessage/3_contacts.js"></script>
     <script src="js/imessage/3_groups.js?v=20260711-summary-cursor-v1"></script>
     <script src="js/imessage/4_chat_common.js"></script>
@@ -7459,20 +7464,20 @@
     <script src="js/imessage/4_chat_payment.js?v=20260705-offline-identity-v2"></script>
     <script src="js/imessage/4_chat_bubbles.js?v=20260712-longpress-context-cleanup-v1"></script>
     <script src="js/imessage/minimax_tts.js"></script>
-    <script src="js/imessage/4_chat_ai.js?v=20260712-longpress-context-cleanup-v1"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260713-moments-i18n-unread-v1"></script>
     <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
-    <script src="js/imessage/4_chat_sheet.js?v=20260711-offline-bilingual-v3"></script>
+    <script src="js/imessage/4_chat_sheet.js?v=20260713-offline-bound-id-v1"></script>
     <script src="js/imessage/4_chat_link.js?v=20260706-bugfix-v1"></script>
     <script src="js/imessage/4_chat_list.js"></script>
     <script src="js/imessage/4_chat_interface.js?v=20260712-longpress-context-cleanup-v1"></script>
-    <script src="js/imessage/4_chat_voice_call.js"></script>
-    <script src="js/imessage/4_chat_main.js?v=20260712-longpress-context-cleanup-v1"></script>
-    <script src="js/imessage/5_settings.js?v=20260712-memory-recall-presentation-v2"></script>
-    <script src="js/imessage/6_moments.js"></script>
+    <script src="js/imessage/4_chat_voice_call.js?v=20260713-android-viewport-v2"></script>
+    <script src="js/imessage/4_chat_main.js?v=20260712-reply-single-tap-v1"></script>
+    <script src="js/imessage/5_settings.js?v=20260713-offline-bound-id-v1"></script>
+    <script src="js/imessage/6_moments.js?v=20260713-moments-comment-delete-v4"></script>
 
     <!-- 引入其他应用模块 -->
     <script src="js/pay.js?v=20260710-storage-ready-v1"></script>
-    <script src="js/bstage.js?v=20260710-bstage-idb-only-v4"></script>
+    <script src="js/bstage.js?v=20260713-android-enter-v1"></script>
     <!-- 引入世界书核心模块脚本 -->
     <script src="js/builtin_worldbook.js?v=20260712-enable-override-limit-v1"></script>
     <script src="https://unpkg.com/mammoth@1.8.0/mammoth.browser.min.js"></script>

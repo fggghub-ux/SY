@@ -209,6 +209,56 @@ test('offline meeting state is mutated only inside the persisted friend transact
     assert.match(source, /if \(!savedSession\)[\s\S]*?Failed to save offline meeting session/);
 });
 
+test('offline single chat follows the bound account identity and refreshes visible user bubbles', async () => {
+    const [source, settingsSource, html] = await Promise.all([
+        fs.readFile(new URL('../js/imessage/4_chat_sheet.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/5_settings.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../index.html', import.meta.url), 'utf8')
+    ]);
+
+    assert.match(source, /function getOfflineBoundAccountForFriend\(friend\)[\s\S]*?getFriendById\?\.\(friend\.id\)[\s\S]*?latestFriend\.type === 'group'[\s\S]*?latestFriend\.boundAccountId/);
+    assert.match(source, /function getOfflineEffectiveUserProfile\(friend, currentUserState = null\)[\s\S]*?const boundAccount = getOfflineBoundAccountForFriend\(friend\)[\s\S]*?const source = boundAccount \|\| fallback/);
+    assert.match(source, /const offlineUserProfile = getOfflineEffectiveUserProfile\(friend\)[\s\S]*?offlineUserProfile\.name[\s\S]*?offlineUserProfile\.signature[\s\S]*?offlineUserProfile\.avatarUrl/);
+    assert.match(source, /userPersona: userProfile\.persona/);
+    assert.match(source, /identityContext\.userPersona \|\| ''/);
+    assert.match(source, /const userPersona = identityContext\?\.userPersona \|\| 'A normal user'/);
+    assert.match(source, /function refreshOfflineUserIdentity\(friendOrId\)[\s\S]*?querySelectorAll\('\.offline-tavern-bubble\.user'\)[\s\S]*?nameEl\.textContent = profile\.name[\s\S]*?signEl\.textContent = profile\.signature/);
+    assert.match(source, /imChat\.refreshOfflineUserIdentity = refreshOfflineUserIdentity/);
+    assert.match(settingsSource, /window\.imChat\?\.refreshOfflineUserIdentity[\s\S]*?window\.imChat\.refreshOfflineUserIdentity\(friend\)/);
+    assert.match(settingsSource, /updateChatBindIdLabel\(window\.imData\.currentSettingsFriend\);[\s\S]*?refreshChatPageForFriend\(window\.imData\.currentSettingsFriend\);/);
+    assert.match(html, /4_chat_sheet\.js\?v=20260713-offline-bound-id-v1/);
+    assert.match(html, /5_settings\.js\?v=20260713-offline-bound-id-v1/);
+});
+
+test('Char moment images use external grayscale photos and reveal descriptions only in detail', async () => {
+    const [source, html] = await Promise.all([
+        fs.readFile(new URL('../js/imessage/6_moments.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../index.html', import.meta.url), 'utf8')
+    ]);
+
+    assert.match(source, /function createMomentExternalImageUrl\(image, fallbackSeed = ''\)[\s\S]*?picsum\.photos[\s\S]*?grayscale/);
+    assert.match(source, /function getMomentImageSource\(image\)[\s\S]*?image\.kind === 'external'[\s\S]*?createMomentExternalImageUrl/);
+    assert.match(source, /function openMomentImageDetail\(image, moment\)[\s\S]*?moment-image-detail-description/);
+    assert.match(source, /const desc = normalizeMomentImageDescription\(image\?\.description \|\| image\?\.desc \|\| ''\)[\s\S]*?kind: 'external'/);
+    assert.match(source, /Every images\[\]\.description must be written only in natural Simplified Chinese/);
+    assert.equal((source.match(/getMomentImageSource\(/g) || []).length >= 5, true);
+    assert.doesNotMatch(source, /createMomentDescriptionImageUrl|drawMomentImageDescription/);
+    assert.match(html, /6_moments\.js\?v=20260713-moments-comment-delete-v4/);
+});
+
+test('moment-generated private chat follows the friend language and stores Chinese translations', async () => {
+    const [source, html] = await Promise.all([
+        fs.readFile(new URL('../js/imessage/6_moments.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../index.html', import.meta.url), 'utf8')
+    ]);
+
+    assert.match(source, /function parseAutoMomentResponse\(aiResponse, language\)[\s\S]*?normalizeMomentLocalizedContent\(reply, language\)/);
+    assert.match(source, /const targetLanguage = normalizeMomentLanguage\(friend\.language \|\| 'zh'\)/);
+    assert.match(source, /buildMomentLanguageContract\(targetLanguage, 'every chatReplies item'\)/);
+    assert.match(source, /content: cleanReplies\[index\]\.text[\s\S]*?msgObj\.translation = cleanReplies\[index\]\.translation[\s\S]*?msgObj\.showTranslation = false/);
+    assert.match(html, /6_moments\.js\?v=20260713-moments-comment-delete-v4/);
+});
+
 test('offline chat dialogue and settings use the fullscreen studio presentation', async () => {
     const [html, source, css] = await Promise.all([
         fs.readFile(new URL('../index.html', import.meta.url), 'utf8'),

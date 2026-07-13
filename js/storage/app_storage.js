@@ -65,6 +65,49 @@
     };
     let storageReadyPromise = null;
 
+    function isTransientIndexedDbError(error) {
+        const name = String(error?.name || '');
+        const message = String(error?.message || error || '');
+        return name === 'AbortError' ||
+            name === 'InvalidStateError' ||
+            name === 'TransactionInactiveError' ||
+            /connection|closing|closed|transaction.*inactive|database.*not open/i.test(message);
+    }
+
+    async function resetDbConnection() {
+        const pendingDb = dbPromise;
+        dbPromise = null;
+        if (!pendingDb) return;
+        try {
+            const db = await pendingDb;
+            db?.close();
+        } catch (error) {}
+    }
+
+    function delay(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    async function withAuthStorageRetry(operation, options = {}) {
+        const attempts = Math.max(1, Number(options.attempts) || 3);
+        let lastError;
+        for (let attempt = 0; attempt < attempts; attempt += 1) {
+            try {
+                return await operation();
+            } catch (error) {
+                lastError = error;
+                if (!isTransientIndexedDbError(error) || attempt === attempts - 1) throw error;
+                const name = String(error?.name || '');
+                const message = String(error?.message || error || '');
+                if (name === 'InvalidStateError' || /connection|closing|closed|database.*not open/i.test(message)) {
+                    await resetDbConnection();
+                }
+                await delay(60 * (attempt + 1));
+            }
+        }
+        throw lastError;
+    }
+
     function cloneDeep(value) {
         if (typeof structuredClone === 'function') {
             return structuredClone(value);
@@ -1213,8 +1256,19 @@
         return putRecord(STORES.settings, { key, value: sanitizePersistentValue(cloneDeep(value)) });
     }
 
+    async function waitForAuthStorage() {
+        return withAuthStorageRetry(async () => {
+            const db = await openDb();
+            if (!db.objectStoreNames.contains(STORES.authSessions)) {
+                throw new DOMException('Authentication storage is unavailable.', 'InvalidStateError');
+            }
+            return true;
+        });
+    }
+
     async function getAuthSession() {
-        const record = await getRecord(STORES.authSessions, AUTH_SESSION_ID);
+        await waitForAuthStorage();
+        const record = await withAuthStorageRetry(() => getRecord(STORES.authSessions, AUTH_SESSION_ID));
         return record?.session && typeof record.session === 'object'
             ? cloneDeep(record.session)
             : null;
@@ -1222,20 +1276,22 @@
 
     async function setAuthSession(session) {
         if (!session || typeof session !== 'object') {
-            await deleteRecord(STORES.authSessions, AUTH_SESSION_ID);
+            await clearAuthSession();
             return null;
         }
         const safeSession = sanitizePersistentValue(cloneDeep(session));
-        await putRecord(STORES.authSessions, {
+        await waitForAuthStorage();
+        await withAuthStorageRetry(() => putRecord(STORES.authSessions, {
             id: AUTH_SESSION_ID,
             session: safeSession,
             updatedAt: Date.now()
-        });
+        }));
         return cloneDeep(safeSession);
     }
 
     async function clearAuthSession() {
-        await deleteRecord(STORES.authSessions, AUTH_SESSION_ID);
+        await waitForAuthStorage();
+        await withAuthStorageRetry(() => deleteRecord(STORES.authSessions, AUTH_SESSION_ID));
         return true;
     }
 
@@ -4118,6 +4174,7 @@
         getAuthSession,
         setAuthSession,
         clearAuthSession,
+        waitForAuthStorage,
         saveGlobalData,
         loadGlobalData,
         collectBackupSnapshot,
@@ -4190,6 +4247,14 @@
         configurable: false,
         get() {
             return storageReadyPromise;
+        }
+    });
+
+    Object.defineProperty(window.appStorage, 'authReady', {
+        enumerable: true,
+        configurable: false,
+        get() {
+            return waitForAuthStorage();
         }
     });
 

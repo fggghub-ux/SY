@@ -855,16 +855,20 @@ document.addEventListener('DOMContentLoaded', () => {
             : friendOrId;
         if (!friend) return false;
 
-        const page = document.getElementById(`chat-interface-${friend.id}`);
-        if (!page) return false;
+        let refreshed = false;
 
-        const msgContainer = page.querySelector('.ins-chat-messages');
+        const page = document.getElementById(`chat-interface-${friend.id}`);
+        const msgContainer = page?.querySelector('.ins-chat-messages');
         if (msgContainer && window.imChat?.rerenderChatContainer) {
             window.imChat.rerenderChatContainer(friend, msgContainer, { scroll: false });
-            return true;
+            refreshed = true;
         }
 
-        return false;
+        if (window.imChat?.refreshOfflineUserIdentity) {
+            refreshed = window.imChat.refreshOfflineUserIdentity(friend) || refreshed;
+        }
+
+        return refreshed;
     }
 
     function refreshChatPagesBoundToAccount(accountId) {
@@ -2071,6 +2075,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             updateChatBindIdLabel(window.imData.currentSettingsFriend);
             if (window.updateBindRoleEntryPoints) window.updateBindRoleEntryPoints();
+            refreshChatPageForFriend(window.imData.currentSettingsFriend);
             showToast(window.imData.currentSettingsFriend.boundAccountId ? '角色绑定ID已更新' : '已取消绑定ID');
             closeView(bindAccountSheet);
         });

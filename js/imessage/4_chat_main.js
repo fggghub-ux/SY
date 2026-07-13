@@ -151,54 +151,92 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function getActiveChatPageForContextMenu() {
+        const activeFriend = window.imData.currentActiveFriend;
+        if (activeFriend?.id != null) {
+            const page = document.getElementById(`chat-interface-${activeFriend.id}`);
+            if (page && page.classList.contains('active-chat-interface')) return page;
+        }
+        return document.querySelector('.active-chat-interface[style*="display: flex"], .active-chat-interface[style*="display:flex"]');
+    }
+
+    function prepareReplyFromCurrentContextRow() {
+        const row = window.imData.currentActiveRow;
+        if (!row) return false;
+
+        const bubble = row.querySelector('.chat-bubble');
+        if (!bubble) return false;
+
+        const clone = bubble.cloneNode(true);
+        clone.querySelectorAll('.bubble-meta, .msg-translation, .msg-reply-quote, .bubble-reaction-icon').forEach(node => node.remove());
+
+        const text = (clone.innerText || clone.textContent || '').trim();
+        if (!text) return false;
+
+        window.imData.currentReplyText = text;
+        window.imData.currentReplyMessageId = row.getAttribute('data-message-id') || null;
+
+        const page = getActiveChatPageForContextMenu();
+        if (page) {
+            const previewContainer = page.querySelector('.reply-preview-container');
+            const previewText = page.querySelector('.reply-preview-text');
+            const input = page.querySelector('.chat-input');
+
+            if (previewContainer && previewText) {
+                previewText.textContent = text;
+                previewContainer.style.display = 'block';
+            }
+            if (input) {
+                input.focus();
+            }
+        }
+
+        return true;
+    }
+
     // Use event delegation for menu items (since HTML structure changed)
     if (msgContextMenu) {
+        let suppressReplyClickUntil = 0;
+
+        const commitReplyMenuAction = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            suppressReplyClickUntil = Date.now() + 700;
+            prepareReplyFromCurrentContextRow();
+            window.imChat.closeContextMenu();
+        };
+
+        const handleReplyPointerCommit = (e) => {
+            const replyItem = e.target.closest('.msg-menu-item[data-action="reply"]');
+            if (!replyItem) return;
+            commitReplyMenuAction(e);
+        };
+
+        if (window.PointerEvent) {
+            msgContextMenu.addEventListener('pointerup', handleReplyPointerCommit);
+        } else {
+            msgContextMenu.addEventListener('touchend', handleReplyPointerCommit);
+        }
+
         msgContextMenu.addEventListener('click', async (e) => {
             const menuItem = e.target.closest('.msg-menu-item');
             if (menuItem) {
                 const action = menuItem.getAttribute('data-action');
                 
                 if (action === 'reply') {
-                    if (window.imData.currentActiveRow) {
-                        const bubble = window.imData.currentActiveRow.querySelector('.chat-bubble');
-                        if (bubble) {
-                            const clone = bubble.cloneNode(true);
-                            const meta = clone.querySelector('.bubble-meta');
-                            if(meta) meta.remove();
-                            const quote = clone.querySelector('.msg-reply-quote');
-                            if(quote) quote.remove();
-                            const reaction = clone.querySelector('.bubble-reaction-icon');
-                            if(reaction) reaction.remove();
-
-                            const text = clone.innerText || clone.textContent;
-                            
-                            window.imData.currentReplyText = text.trim();
-                            window.imData.currentReplyMessageId = window.imData.currentActiveRow.getAttribute('data-message-id') || null;
-                            
-                            const page = document.querySelector('.active-chat-interface[style*="display: flex"]');
-                            if (page) {
-                                const previewContainer = page.querySelector('.reply-preview-container');
-                                const previewText = page.querySelector('.reply-preview-text');
-                                const input = page.querySelector('.chat-input');
-                                
-                                if (previewContainer && previewText) {
-                                    previewText.textContent = text.trim();
-                                    previewContainer.style.display = 'block';
-                                }
-                                if (input) {
-                                    input.focus();
-                                }
-                            }
-                        }
+                    if (Date.now() < suppressReplyClickUntil) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return;
                     }
-                    window.imChat.closeContextMenu();
+                    commitReplyMenuAction(e);
                     return;
                 }
 
                 if (action === 'select') {
                     if (window.imData.currentActiveRow) {
                         const row = window.imData.currentActiveRow;
-                        const page = document.querySelector('.active-chat-interface[style*="display: flex"]');
+                        const page = getActiveChatPageForContextMenu();
                         const activeFriend = window.imData.currentActiveFriend;
                         if (page && activeFriend && window.imChat.enterBatchSelectMode) {
                             window.imChat.enterBatchSelectMode(activeFriend, row, page);

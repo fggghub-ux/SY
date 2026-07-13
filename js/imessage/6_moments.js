@@ -15,6 +15,54 @@ document.addEventListener('DOMContentLoaded', async () => {
         'If the output format contains speakerId/name/commenter/liker, it must not refer to User, me, self, or the user persona.',
         'This rule overrides any other instruction that would allow User to like, comment, or reply.'
     ].join('\n');
+    const momentsUtils = window.imDataUtils || {};
+
+    function normalizeMomentLanguage(value) {
+        return momentsUtils.normalizeChatLanguage
+            ? momentsUtils.normalizeChatLanguage(value)
+            : (String(value || '').trim().toLowerCase() || 'zh');
+    }
+
+    function getMomentLanguageName(value) {
+        return momentsUtils.getChatLanguageName
+            ? momentsUtils.getChatLanguageName(value)
+            : normalizeMomentLanguage(value);
+    }
+
+    function buildMomentLanguageContract(language, subject) {
+        return momentsUtils.buildLocalizedJsonContract
+            ? momentsUtils.buildLocalizedJsonContract(language, subject)
+            : `${subject}.text must follow the speaker language and include a Simplified Chinese translation when non-Chinese.`;
+    }
+
+    function normalizeMomentLocalizedContent(value, language, options = {}) {
+        if (momentsUtils.normalizeLocalizedContent) {
+            return momentsUtils.normalizeLocalizedContent(value, language, options);
+        }
+        const text = String(value?.text ?? value?.content ?? value ?? '').trim();
+        const translation = String(value?.translation ?? value?.translationZh ?? '').trim();
+        return text ? { text, translation, language: normalizeMomentLanguage(language) } : null;
+    }
+
+    function setTranslationExpanded(button, translationEl, expanded) {
+        if (!button || !translationEl) return;
+        translationEl.style.display = expanded ? 'block' : 'none';
+        button.textContent = expanded ? '收起' : '翻译';
+        button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    }
+
+    function bindTranslationButton(button, translationEl) {
+        if (!button || !translationEl) return;
+        const toggle = (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setTranslationExpanded(button, translationEl, translationEl.style.display !== 'block');
+        };
+        button.addEventListener('click', toggle);
+        button.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') toggle(event);
+        });
+    }
 
     if (window.imApp && window.imApp.ensureDataReady) {
         await window.imApp.ensureDataReady();
@@ -38,6 +86,70 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function hasCurrentMomentApiConfig(config = getCurrentMomentApiConfig()) {
         return Boolean(config?.endpoint && config?.apiKey);
+    }
+
+    function createMomentExternalImageUrl(image, fallbackSeed = '') {
+        const source = image && typeof image === 'object' ? image : {};
+        const seed = String(source.seed || source.desc || fallbackSeed || Date.now()).trim();
+        return `https://picsum.photos/seed/${encodeURIComponent(`moment_${seed}`)}/900/900?grayscale`;
+    }
+
+    function normalizeMomentImageDescription(value) {
+        const description = String(value || '').trim();
+        return /[\u3400-\u9fff]/.test(description) ? description : '';
+    }
+
+    function getMomentImageSource(image) {
+        if (!image || typeof image !== 'object') return image || '';
+        const description = String(image.desc || '').trim();
+        const isDescriptionImage = image.kind === 'description'
+            || (description && /^data:image\/png;base64,/i.test(String(image.src || '')));
+        return isDescriptionImage || image.kind === 'external'
+            ? createMomentExternalImageUrl(image, description)
+            : (image.src || '');
+    }
+
+    function openMomentImageDetail(image, moment) {
+        const src = getMomentImageSource(image);
+        if (!src) return;
+        let overlay = document.getElementById('moment-image-detail-overlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'moment-image-detail-overlay';
+            overlay.className = 'moment-image-detail-overlay';
+            overlay.innerHTML = `
+                <div class="moment-image-detail-card">
+                    <div class="moment-image-detail-header">
+                        <div class="moment-image-detail-author"></div>
+                        <span class="moment-image-detail-close" role="button" tabindex="0" aria-label="关闭"><i class="fas fa-times"></i></span>
+                    </div>
+                    <div class="moment-image-detail-media"><img src="" alt=""></div>
+                    <div class="moment-image-detail-copy">
+                        <div class="moment-image-detail-label">图片详情</div>
+                        <div class="moment-image-detail-description"></div>
+                    </div>
+                </div>`;
+            document.body.appendChild(overlay);
+            const close = () => {
+                overlay.classList.remove('active');
+                setTimeout(() => { overlay.style.display = 'none'; }, 180);
+            };
+            overlay.addEventListener('click', (event) => {
+                if (event.target === overlay || event.target.closest('.moment-image-detail-close')) close();
+            });
+            overlay.querySelector('.moment-image-detail-close')?.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') close();
+            });
+        }
+        overlay.querySelector('.moment-image-detail-media img').src = src;
+        overlay.querySelector('.moment-image-detail-author').textContent = moment?.name || moment?.userName || '';
+        const description = String(image?.desc || '').trim();
+        const copy = overlay.querySelector('.moment-image-detail-copy');
+        const descriptionEl = overlay.querySelector('.moment-image-detail-description');
+        if (descriptionEl) descriptionEl.textContent = description;
+        if (copy) copy.style.display = description ? 'block' : 'none';
+        overlay.style.display = 'flex';
+        requestAnimationFrame(() => overlay.classList.add('active'));
     }
 
     // --- Moments Main Logic ---
@@ -65,6 +177,57 @@ document.addEventListener('DOMContentLoaded', async () => {
             return window.imApp.saveMomentMessages({ silent: true });
         }
         return false;
+    }
+
+    function getUnreadMomentMessages() {
+        return getMomentMessages().filter((message) => message && message.read !== true);
+    }
+
+    function updateMomentsNewMessageBubble() {
+        const bubble = document.getElementById('moments-new-message-bubble');
+        if (!bubble) return;
+        const unreadMessages = getUnreadMomentMessages();
+        if (unreadMessages.length === 0) {
+            bubble.style.display = 'none';
+            return;
+        }
+
+        const latest = unreadMessages[0];
+        const author = getMomentMessageAuthor(latest);
+        const avatarEl = bubble.querySelector('.moments-new-message-avatar');
+        const textEl = bubble.querySelector('.moments-new-message-text');
+        if (avatarEl) {
+            avatarEl.replaceChildren();
+            if (author.avatar) {
+                const image = document.createElement('img');
+                image.src = author.avatar;
+                image.alt = '';
+                avatarEl.appendChild(image);
+            } else {
+                const icon = document.createElement('i');
+                icon.className = 'fas fa-user';
+                avatarEl.appendChild(icon);
+            }
+        }
+        if (textEl) textEl.textContent = `${unreadMessages.length}条新消息`;
+        bubble.style.display = 'flex';
+    }
+
+    async function markCurrentMomentMessagesRead() {
+        const unreadIds = new Set(getUnreadMomentMessages().map((message) => String(message.id)));
+        if (unreadIds.size === 0) return true;
+        const previousMessages = cloneSnapshot(getMomentMessages());
+        getMomentMessages().forEach((message) => {
+            if (message && unreadIds.has(String(message.id))) message.read = true;
+        });
+        const saved = await saveMomentMessagesNow();
+        if (!saved) {
+            window.imData.momentMessages = previousMessages;
+            updateMomentsNewMessageBubble();
+            return false;
+        }
+        updateMomentsNewMessageBubble();
+        return true;
     }
 
     function findMomentMessageIndex(targetMsg) {
@@ -240,12 +403,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (navMomentsBtn) {
         navMomentsBtn.addEventListener('click', async () => {
             await ensureMomentsModuleDataReady();
+            await ensureMomentMessagesModuleDataReady();
 
             if (window.imApp.hideAllTabs) window.imApp.hideAllTabs();
             if (momentsContent) {
                 momentsContent.style.display = 'flex';
                 momentsContent.style.flexDirection = 'column';
                 renderMoments();
+                updateMomentsNewMessageBubble();
 
                 if (imBottomNavContainer) imBottomNavContainer.style.display = 'flex';
 
@@ -436,11 +601,46 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (timeEl) {
             const d = new Date(m.time);
             timeEl.textContent = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+            let translateButton = document.getElementById('moment-detail-translate-btn');
+            if (!translateButton) {
+                translateButton = document.createElement('span');
+                translateButton.id = 'moment-detail-translate-btn';
+                translateButton.className = 'moment-translate-btn';
+                translateButton.setAttribute('role', 'button');
+                translateButton.tabIndex = 0;
+                translateButton.style.marginLeft = '8px';
+                timeEl.insertAdjacentElement('afterend', translateButton);
+            }
+            const translation = String(m.translation || '').trim();
+            translateButton.style.display = translation ? 'inline' : 'none';
+            translateButton.textContent = '翻译';
+            translateButton.setAttribute('aria-expanded', 'false');
         }
 
         if (textEl) {
             textEl.textContent = m.text || '';
             textEl.style.display = m.text ? 'block' : 'none';
+            let translationEl = document.getElementById('moment-detail-translation');
+            if (!translationEl) {
+                translationEl = document.createElement('div');
+                translationEl.id = 'moment-detail-translation';
+                translationEl.className = 'moment-translation';
+                textEl.insertAdjacentElement('afterend', translationEl);
+            }
+            translationEl.textContent = String(m.translation || '').trim();
+            translationEl.style.display = 'none';
+            const translateButton = document.getElementById('moment-detail-translate-btn');
+            if (translateButton && translationEl.textContent) {
+                const toggleDetailTranslation = (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setTranslationExpanded(translateButton, translationEl, translationEl.style.display !== 'block');
+                };
+                translateButton.onclick = toggleDetailTranslation;
+                translateButton.onkeydown = (event) => {
+                    if (event.key === 'Enter' || event.key === ' ') toggleDetailTranslation(event);
+                };
+            }
         }
 
         if (imagesEl) {
@@ -451,9 +651,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 else if (m.images.length === 2 || m.images.length === 4) imagesEl.classList.add('double');
                 else imagesEl.classList.add('grid');
 
-                m.images.forEach((img) => {
-                    const src = typeof img === 'object' ? img.src : img;
-                    imagesEl.innerHTML += `<div class="moment-detail-img-wrapper" style="width:100%; height:100%; overflow:hidden;"><img src="${src}" onerror="this.style.display='none'; this.parentElement.style.background='#ffebee'; this.parentElement.innerHTML='<div style=\\'font-size:10px;color:#ff3b30;padding:5px;text-align:center;height:100%;display:flex;justify-content:center;align-items:center;\\'>过期</div>';" style="width:100%; height:100%; object-fit:cover;"></div>`;
+                m.images.forEach((img, index) => {
+                    const src = getMomentImageSource(img);
+                    imagesEl.innerHTML += `<div class="moment-detail-img-wrapper" data-image-index="${index}" style="width:100%; height:100%; overflow:hidden; cursor:pointer;"><img src="${src}" onerror="this.style.display='none'; this.parentElement.style.background='#ffebee'; this.parentElement.innerHTML='<div style=\\'font-size:10px;color:#ff3b30;padding:5px;text-align:center;height:100%;display:flex;justify-content:center;align-items:center;\\'>过期</div>';" style="width:100%; height:100%; object-fit:cover;"></div>`;
+                });
+                imagesEl.querySelectorAll('.moment-detail-img-wrapper').forEach((wrapper) => {
+                    wrapper.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                        openMomentImageDetail(m.images[Number(wrapper.dataset.imageIndex)], m);
+                    });
                 });
                 imagesEl.style.display = 'grid';
             } else {
@@ -486,12 +692,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                         normalizedComments.forEach((c) => {
                             commentsListEl.innerHTML += renderMomentCommentHtml(c, 'moment-detail-comment');
                         });
-                        commentsListEl.querySelectorAll('.moment-detail-comment').forEach((commentEl) => {
-                            commentEl.addEventListener('click', (e) => {
-                                e.stopPropagation();
-                                openMomentCommentReply(m.id, commentEl.dataset.commentIndex);
-                            });
-                        });
+                        bindMomentCommentInteractions(
+                            commentsListEl,
+                            '.moment-detail-comment',
+                            (commentIndex) => openMomentCommentReply(m.id, commentIndex),
+                            (commentIndex) => deleteMomentComment(m.id, commentIndex)
+                        );
                         if (hasLikes) {
                             commentsListEl.style.borderTop = '1px solid #e5e5ea';
                             commentsListEl.style.paddingTop = '12px';
@@ -542,7 +748,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                         if (currentDetailMoment.images && currentDetailMoment.images.length > 0) {
                             const firstImg = currentDetailMoment.images[0];
-                            contentObj.img = typeof firstImg === 'object' ? firstImg.src : firstImg;
+                            contentObj.img = getMomentImageSource(firstImg);
                             contentObj.imgDesc = typeof firstImg === 'object' ? firstImg.desc : null;
                         }
 
@@ -972,7 +1178,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (typeof comment === 'string') {
                 const content = comment.trim();
-                if (content) normalized.push({ name: 'Unknown', content, index });
+                if (content) normalized.push({ name: 'Unknown', content, translation: '', language: 'zh', index });
                 return normalized;
             }
 
@@ -992,6 +1198,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     replyToName: comment.replyToName ?? comment.replyToUserName ?? null,
                     replyToContent: comment.replyToContent ?? null,
                     thought: comment.thought ?? '',
+                    thoughtTranslation: comment.thoughtTranslation ?? '',
+                    translation: comment.translation ?? comment.contentTranslation ?? comment.translationZh ?? '',
+                    language: normalizeMomentLanguage(comment.language || 'zh'),
                     index
                 });
             }
@@ -1012,7 +1221,69 @@ document.addEventListener('DOMContentLoaded', async () => {
         const replyPrefix = comment.replyToName
             ? ` <span style="color:#576b95;">回复 ${escapeMomentHtml(comment.replyToName)}</span>`
             : '';
-        return `<div class="${className}" data-comment-index="${comment.index}" style="font-size:15px; margin-bottom:4px; line-height:1.4; cursor:pointer;"><span class="${className}-name">${escapeMomentHtml(comment.name)}${replyPrefix}: </span>${escapeMomentHtml(comment.content)}</div>`;
+        const translation = String(comment.translation || '').trim();
+        const translationButton = translation
+            ? ` <span class="moment-translate-btn moment-comment-translate-btn" role="button" tabindex="0" aria-expanded="false">翻译</span>`
+            : '';
+        const translationHtml = translation
+            ? `<div class="moment-comment-translation">${escapeMomentHtml(translation)}</div>`
+            : '';
+        return `<div class="${className}" data-comment-index="${comment.index}" style="font-size:15px; margin-bottom:4px; line-height:1.4; cursor:pointer;"><div><span class="${className}-name">${escapeMomentHtml(comment.name)}${replyPrefix}: </span><span class="moment-comment-content">${escapeMomentHtml(comment.content)}</span>${translationButton} <span class="moment-comment-delete" role="button" tabindex="0">删除</span></div>${translationHtml}</div>`;
+    }
+
+    function bindMomentCommentInteractions(container, selector, onReply, onDelete) {
+        if (!container) return;
+        container.querySelectorAll(selector).forEach((commentEl) => {
+            bindTranslationButton(
+                commentEl.querySelector('.moment-comment-translate-btn'),
+                commentEl.querySelector('.moment-comment-translation')
+            );
+            const deleteButton = commentEl.querySelector('.moment-comment-delete');
+            const deleteComment = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onDelete(commentEl.dataset.commentIndex);
+            };
+            deleteButton?.addEventListener('click', deleteComment);
+            deleteButton?.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') deleteComment(event);
+            });
+            commentEl.addEventListener('click', (event) => {
+                if (event.target.closest('.moment-comment-translate-btn, .moment-comment-delete')) return;
+                event.stopPropagation();
+                onReply(commentEl.dataset.commentIndex);
+            });
+        });
+    }
+
+    function deleteMomentComment(momentId, commentIndex) {
+        const moment = findMomentById(momentId);
+        const index = Number(commentIndex);
+        if (!moment || !Array.isArray(moment.comments) || !Number.isInteger(index) || index < 0 || index >= moment.comments.length) return;
+
+        const removeComment = async () => {
+            const saved = await commitMomentsChange(momentId, () => {
+                const latestMoment = findMomentById(momentId);
+                if (!latestMoment || !Array.isArray(latestMoment.comments)) return;
+                latestMoment.comments.splice(index, 1);
+            });
+            if (!saved) return;
+            refreshViewsAfterMomentComment(momentId);
+            if (window.showToast) window.showToast('评论已删除');
+        };
+
+        if (!window.showCustomModal) {
+            removeComment();
+            return;
+        }
+        window.showCustomModal({
+            title: '删除评论',
+            message: '确定删除这条评论吗？',
+            confirmText: '删除',
+            confirmTone: 'dark',
+            isDestructive: true,
+            onConfirm: removeComment
+        });
     }
 
     function findFriendForMomentComment(comment) {
@@ -1098,6 +1369,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 realName: String(friend.realName || friend.nickname || '').trim(),
                 persona: String(friend.persona || friend.signature || '').trim(),
                 relation: String(relation || '').trim(),
+                language: normalizeMomentLanguage(friend.language || 'zh'),
                 friend,
                 role
             });
@@ -1156,19 +1428,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const target = targetById.get(speakerId);
                 if (!target || isUserLikeName(speakerId) || isUserLikeName(entry?.name || entry?.speakerName || '')) return null;
 
-                const comments = Array.isArray(entry?.comments)
-                    ? entry.comments
-                    : (entry?.comment ? [entry.comment] : []);
-                const cleanComments = comments
-                    .map((comment) => String(comment || '').trim())
+                const thought = normalizeMomentLocalizedContent(entry?.thought, target.language);
+                const cleanComments = (Array.isArray(entry?.comments) ? entry.comments : [])
+                    .map((comment) => normalizeMomentLocalizedContent(comment, target.language))
                     .filter(Boolean)
-                    .filter((comment) => !isUserLikeName(comment))
                     .slice(0, 3);
 
                 if (cleanComments.length === 0) return null;
                 return {
                     target,
-                    thought: String(entry?.thought || '').trim(),
+                    thought: thought?.text || '',
+                    thoughtTranslation: thought?.translation || '',
                     comments: cleanComments
                 };
             })
@@ -1183,7 +1453,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 `role: ${target.role}`,
                 `realName: ${target.realName || 'None'}`,
                 `persona: ${target.persona || 'None'}`,
-                `relationshipToMomentAuthor: ${target.relation || 'None'}`
+                `relationshipToMomentAuthor: ${target.relation || 'None'}`,
+                `language: ${target.language} (${getMomentLanguageName(target.language)})`
             ].join('\n');
         }).join('\n\n');
     }
@@ -1239,8 +1510,9 @@ Generate replies from every allowed speaker below. Each speaker should reply to 
 Allowed speakers:
 ${formatMomentReplyTargetsForPrompt(targets)}
 
+Each speaker's thought and comments must use that speaker's listed language. For every non-Chinese speaker, every text object must include an accurate Simplified Chinese translation; Chinese speakers must use an empty translation string.
 Output strict JSON only, with this exact shape:
-{"replies":[{"speakerId":"allowed speakerId","thought":"private thought around 20-45 Chinese characters","comments":["public reply 1","public reply 2 if needed","public reply 3 if needed"]}]}
+{"replies":[{"speakerId":"allowed speakerId","thought":{"text":"private thought","translation":"Chinese translation or empty string"},"comments":[{"text":"public reply","translation":"Chinese translation or empty string"}]}]}
 
 Do not output markdown, code fences, explanations, chain-of-thought, [Comment] tags, or any speaker not listed above.`;
 
@@ -1274,14 +1546,17 @@ Do not output markdown, code fences, explanations, chain-of-thought, [Comment] t
             entries.forEach((entry) => {
                 const target = entry.target;
                 const displayName = target.name || getDisplayNameForMomentSpeaker(target.friend);
-                entry.comments.forEach((content) => {
+                entry.comments.forEach((comment) => {
                     currentMoment.comments.push({
                         name: displayName,
                         userId: target.id,
-                        content,
+                        content: comment.text,
+                        translation: comment.translation,
+                        language: target.language,
                         replyToName: userComment.name,
                         replyToContent: userComment.content,
-                        thought: entry.thought || ''
+                        thought: entry.thought || '',
+                        thoughtTranslation: entry.thoughtTranslation || ''
                     });
                 });
             });
@@ -1290,8 +1565,14 @@ Do not output markdown, code fences, explanations, chain-of-thought, [Comment] t
 
         if (window.imApp.addMomentNotification) {
             for (const entry of entries) {
-                for (const content of entry.comments) {
-                    await window.imApp.addMomentNotification('comment', entry.target.friend, momentId, content, entry.thought || '');
+                for (const comment of entry.comments) {
+                    await window.imApp.addMomentNotification('comment', entry.target.friend, momentId, {
+                        content: comment.text,
+                        contentTranslation: comment.translation,
+                        thought: entry.thought || '',
+                        thoughtTranslation: entry.thoughtTranslation || '',
+                        language: entry.target.language
+                    });
                 }
             }
         }
@@ -1331,124 +1612,35 @@ Do not output markdown, code fences, explanations, chain-of-thought, [Comment] t
         }
     }
 
-    function parseAutoMomentResponse(aiResponse) {
-        const result = { thought: '', comment: '', chatReplies: [] };
-        if (!aiResponse || typeof aiResponse !== 'string') return result;
-
-        const fallbackLines = [];
-        aiResponse.split('\n').forEach((line) => {
-            const trimmedLine = line.trim();
-            if (!trimmedLine) return;
-
-            const thoughtMatch = trimmedLine.match(/^\[Thought:\s*(.*?)\]\s*$/i);
-            const commentMatch = trimmedLine.match(/^\[Comment:\s*(.*?)\]\s*$/i);
-            const chatMatch = trimmedLine.match(/^\[Chat:\s*(.*?)\]\s*$/i);
-
-            if (thoughtMatch) {
-                result.thought = thoughtMatch[1].trim();
-            } else if (commentMatch) {
-                result.comment = commentMatch[1].trim();
-            } else if (chatMatch) {
-                const reply = chatMatch[1].trim();
-                if (reply) result.chatReplies.push(reply);
-            } else if (!trimmedLine.match(/^\[Like:\s*.*?\]/i)) {
-                fallbackLines.push(trimmedLine);
-            }
-        });
-
-        if (!result.comment && fallbackLines.length > 0) {
-            result.comment = fallbackLines.shift().trim();
+    function parseMomentJsonObject(aiResponse) {
+        try {
+            return JSON.parse(cleanMomentApiJsonText(aiResponse));
+        } catch (error) {
+            console.warn('Moment JSON parse failed:', error);
+            return null;
         }
-
-        return result;
     }
 
-    function parseMomentCommentReplyResponse(aiResponse) {
-        const result = { thought: '', comments: [] };
-        if (!aiResponse || typeof aiResponse !== 'string') return result;
-
-        const fallbackLines = [];
-        aiResponse.split('\n').forEach((line) => {
-            const trimmedLine = line.trim();
-            if (!trimmedLine) return;
-
-            const thoughtMatch = trimmedLine.match(/^\[Thought:\s*(.*?)\]\s*$/i);
-            const commentMatch = trimmedLine.match(/^\[Comment:\s*(.*?)\]\s*$/i);
-            if (thoughtMatch) {
-                result.thought = thoughtMatch[1].trim();
-            } else if (commentMatch) {
-                const comment = commentMatch[1].trim();
-                if (comment) result.comments.push(comment);
-            } else if (!trimmedLine.match(/^\[(Chat|Like):\s*.*?\]/i)) {
-                fallbackLines.push(trimmedLine);
-            }
-        });
-
-        if (result.comments.length === 0 && fallbackLines.length > 0) {
-            result.comments = fallbackLines.slice(0, 3).map((line) => line.trim()).filter(Boolean);
+    function parseAutoMomentResponse(aiResponse, language) {
+        const result = { thought: '', thoughtTranslation: '', comment: '', commentTranslation: '', chatReplies: [] };
+        const payload = parseMomentJsonObject(aiResponse);
+        if (!payload) return result;
+        const thought = normalizeMomentLocalizedContent(payload.thought, language);
+        const comment = normalizeMomentLocalizedContent(payload.comment, language);
+        const chatReplies = (Array.isArray(payload.chatReplies) ? payload.chatReplies : [])
+            .map((reply) => normalizeMomentLocalizedContent(reply, language))
+            .filter(Boolean)
+            .slice(0, 3);
+        if (thought) {
+            result.thought = thought.text;
+            result.thoughtTranslation = thought.translation;
         }
-
-        result.comments = result.comments.slice(0, 3);
+        if (comment) {
+            result.comment = comment.text;
+            result.commentTranslation = comment.translation;
+        }
+        result.chatReplies = chatReplies;
         return result;
-    }
-
-    async function generateMomentCommentReply(moment, friend, targetComment, userReply) {
-        if (!moment || !friend || !hasCurrentMomentApiConfig()) return null;
-
-        const systemDepthWorldBookContext = window.getGlobalWorldBookContextByPosition
-            ? window.getGlobalWorldBookContextByPosition('system_depth')
-            : '';
-        const beforeRoleWorldBookContext = window.getGlobalWorldBookContextByPosition
-            ? window.getGlobalWorldBookContextByPosition('before_role')
-            : '';
-        const afterRoleWorldBookContext = window.getGlobalWorldBookContextByPosition
-            ? window.getGlobalWorldBookContextByPosition('after_role')
-            : '';
-
-        if (window.imApp?.ensureFriendMessagesLoaded) {
-            await window.imApp.ensureFriendMessagesLoaded(friend.id);
-        }
-
-        const contextFriend = (window.imData.friends || []).find((item) => String(item.id) === String(friend.id)) || friend;
-        const contextMessages = window.imApp.buildApiContextMessages
-            ? window.imApp.buildApiContextMessages(contextFriend, {
-                userName: window.userState?.name || 'User'
-            })
-            : [];
-        const imageDescriptions = getMomentImageDescriptions(moment);
-
-        const systemPrompt = `${systemDepthWorldBookContext ? `System Depth Rules (Highest Priority):\n${systemDepthWorldBookContext}\n\n` : ''}${beforeRoleWorldBookContext ? `Before Role Rules:\n${beforeRoleWorldBookContext}\n\n` : ''}You are roleplaying ${friend.realName || friend.nickname}.
-Role persona: ${friend.persona || 'ordinary user'}.
-User (${window.userState?.name || 'User'}) persona: ${window.userState?.persona || 'ordinary user'}.
-${afterRoleWorldBookContext ? `\nAfter Role Rules:\n${afterRoleWorldBookContext}\n` : ''}
-
-${NO_USER_SELF_COMMENT_RULE}
-
-The user replied to this character's public moment comment. Generate this character's private thought and 1 to 3 public reply comments.
-Use the attached worldbook/persona/chat context, current relationship, the original moment, the character's original comment, and the user's reply.
-Output only tagged lines:
-[Thought: about 30 Chinese characters, acceptable 20-45 characters]
-[Comment: public reply comment 1]
-[Comment: public reply comment 2 if needed]
-[Comment: public reply comment 3 if needed]
-Do not output private chat messages, [Chat], [Like], JSON, explanations, or chain-of-thought.`;
-
-        const userPromptParts = [
-            `Moment author: ${moment.name || moment.userName || 'User'}`,
-            `Moment text:\n${moment.text || '(no text)'}`,
-            imageDescriptions ? `Image descriptions:\n${imageDescriptions}` : '',
-            `Original character comment by ${targetComment.name}:\n${targetComment.content}`,
-            `User reply:\n${userReply}`
-        ].filter(Boolean);
-
-        const messages = [{ role: 'system', content: systemPrompt }];
-        if (Array.isArray(contextMessages) && contextMessages.length > 0) {
-            messages.push(...contextMessages);
-        }
-        messages.push({ role: 'user', content: userPromptParts.join('\n\n') });
-
-        const aiResponse = await requestMomentApiCompletion(messages, 0.8);
-        return parseMomentCommentReplyResponse(aiResponse);
     }
 
     function openMomentCommentReply(momentId, commentIndex) {
@@ -1470,6 +1662,7 @@ Do not output private chat messages, [Chat], [Like], JSON, explanations, or chai
             title: `回复 ${friend.nickname || friend.realName || targetComment.name}`,
             placeholder: '回复评论...',
             confirmText: '发送',
+            confirmTone: 'dark',
             onConfirm: async (text) => {
                 const replyText = String(text || '').trim();
                 if (!replyText) return;
@@ -1522,6 +1715,8 @@ Do not output private chat messages, [Chat], [Like], JSON, explanations, or chai
                         <button class="moment-thought-close" type="button" style="width:32px; height:32px; border:0; border-radius:50%; background:#f2f2f7; color:#555; display:flex; align-items:center; justify-content:center; cursor:pointer;"><i class="fas fa-times"></i></button>
                     </div>
                     <div class="moment-thought-content" style="font-size:16px; line-height:1.65; color:#1c1c1e; background:#f7f7fa; border-radius:14px; padding:14px 16px; white-space:pre-wrap;"></div>
+                    <span class="moment-translate-btn moment-thought-translate-btn" role="button" tabindex="0" aria-expanded="false" style="display:none; margin-top:10px;">翻译</span>
+                    <div class="moment-thought-translation" style="font-size:15px; margin-top:8px; background:#f7f7fa; border-radius:12px; padding:12px 14px;"></div>
                 </div>
             `;
             document.body.appendChild(sheet);
@@ -1544,6 +1739,8 @@ Do not output private chat messages, [Chat], [Like], JSON, explanations, or chai
         const nameEl = sheet.querySelector('.moment-thought-name');
         const typeEl = sheet.querySelector('.moment-thought-type');
         const contentEl = sheet.querySelector('.moment-thought-content');
+        const translationButton = sheet.querySelector('.moment-thought-translate-btn');
+        const translationEl = sheet.querySelector('.moment-thought-translation');
         const overlay = sheet.querySelector('.moment-thought-overlay');
         const panel = sheet.querySelector('.moment-thought-panel');
         const author = getMomentMessageAuthor(msg);
@@ -1556,6 +1753,25 @@ Do not output private chat messages, [Chat], [Like], JSON, explanations, or chai
         if (nameEl) nameEl.textContent = author.name;
         if (typeEl) typeEl.textContent = msg.type === 'like' ? 'Moment like thought' : 'Moment comment thought';
         if (contentEl) contentEl.textContent = msg.thought || '';
+        const thoughtTranslation = String(msg.thoughtTranslation || '').trim();
+        if (translationEl) {
+            translationEl.textContent = thoughtTranslation;
+            translationEl.style.display = 'none';
+        }
+        if (translationButton) {
+            translationButton.style.display = thoughtTranslation ? 'inline' : 'none';
+            translationButton.textContent = '翻译';
+            translationButton.setAttribute('aria-expanded', 'false');
+            const toggleThoughtTranslation = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setTranslationExpanded(translationButton, translationEl, translationEl.style.display !== 'block');
+            };
+            translationButton.onclick = toggleThoughtTranslation;
+            translationButton.onkeydown = (event) => {
+                if (event.key === 'Enter' || event.key === ' ') toggleThoughtTranslation(event);
+            };
+        }
 
         sheet.style.display = 'flex';
         void sheet.offsetWidth;
@@ -1567,8 +1783,16 @@ Do not output private chat messages, [Chat], [Like], JSON, explanations, or chai
         if (!friend || !Array.isArray(replies) || replies.length === 0) return;
 
         const cleanReplies = replies
-            .map((reply) => String(reply || '').trim())
-            .filter(Boolean)
+            .map((reply) => {
+                if (reply && typeof reply === 'object') {
+                    return {
+                        text: String(reply.text || '').trim(),
+                        translation: String(reply.translation || '').trim()
+                    };
+                }
+                return { text: String(reply || '').trim(), translation: '' };
+            })
+            .filter((reply) => reply.text)
             .slice(0, 3);
         if (cleanReplies.length === 0) return;
 
@@ -1583,9 +1807,13 @@ Do not output private chat messages, [Chat], [Like], JSON, explanations, or chai
             const msgObj = {
                 id: window.imChat?.createMessageId ? window.imChat.createMessageId('msg') : `auto-moment-${baseTime}-${index}`,
                 role: 'assistant',
-                content: cleanReplies[index],
+                content: cleanReplies[index].text,
                 timestamp: baseTime + index
             };
+            if (cleanReplies[index].translation) {
+                msgObj.translation = cleanReplies[index].translation;
+                msgObj.showTranslation = false;
+            }
 
             if (window.imApp.appendFriendMessage) {
                 await window.imApp.appendFriendMessage(liveFriend.id || friend.id, msgObj, { silent: true });
@@ -1641,9 +1869,9 @@ Do not output private chat messages, [Chat], [Like], JSON, explanations, or chai
             if (m.images.length === 1) layoutClass = 'single';
             if (m.images.length === 2 || m.images.length === 4) layoutClass = 'double';
 
-            const imgDivs = m.images.map((img) => {
-                const src = typeof img === 'object' ? img.src : img;
-                return `<div class="moment-img-wrapper"><img src="${src}" onerror="this.style.display='none'; this.parentElement.style.background='#ffebee'; this.parentElement.innerHTML='<div style=\\'font-size:10px;color:#ff3b30;padding:5px;text-align:center;\\'>过期</div>';" style="width:100%; height:100%; object-fit:cover;"></div>`;
+            const imgDivs = m.images.map((img, index) => {
+                const src = getMomentImageSource(img);
+                return `<div class="moment-img-wrapper" data-image-index="${index}" style="cursor:pointer;"><img src="${src}" onerror="this.style.display='none'; this.parentElement.style.background='#ffebee'; this.parentElement.innerHTML='<div style=\\'font-size:10px;color:#ff3b30;padding:5px;text-align:center;\\'>过期</div>';" style="width:100%; height:100%; object-fit:cover;"></div>`;
             }).join('');
             imagesHtml = `<div class="moment-images ${layoutClass}">${imgDivs}</div>`;
         }
@@ -1656,7 +1884,7 @@ Do not output private chat messages, [Chat], [Like], JSON, explanations, or chai
         if (hasLikes || hasComments) {
             let likesHtml = '';
             if (hasLikes) {
-                likesHtml = `<div class="moment-likes"><i class="far fa-heart" style="margin-top:2px;"></i> <span class="moment-likes-list">${m.likes.join(', ')}</span></div>`;
+                likesHtml = `<div class="moment-likes"><i class="far fa-heart" style="margin-top:2px;"></i> <span class="moment-likes-list">${m.likes.map(escapeMomentHtml).join(', ')}</span></div>`;
             }
 
             let commentsHtml = '';
@@ -1678,15 +1906,23 @@ Do not output private chat messages, [Chat], [Like], JSON, explanations, or chai
         const likeText = hasLiked ? '取消' : '赞';
 
         const timeStr = window.imApp.formatTime ? window.imApp.formatTime(m.time) : '';
+        const momentTranslation = String(m.translation || '').trim();
+        const translationHtml = momentTranslation
+            ? `<div class="moment-translation">${escapeMomentHtml(momentTranslation)}</div>`
+            : '';
+        const translationButtonHtml = momentTranslation
+            ? '<span class="moment-translate-btn moment-post-translate-btn" role="button" tabindex="0" aria-expanded="false">翻译</span>'
+            : '';
 
         item.innerHTML = `
             <div class="moment-avatar" style="cursor: pointer;">${avatarHtml}</div>
             <div class="moment-main">
-                <div class="moment-name">${currentName}</div>
-                <div class="moment-text">${m.text}</div>
+                <div class="moment-name">${escapeMomentHtml(currentName || '')}</div>
+                <div class="moment-text">${escapeMomentHtml(m.text || '')}</div>
+                ${translationHtml}
                 ${imagesHtml}
                 <div class="moment-footer">
-                    <span class="moment-time">${timeStr}</span>
+                    <div class="moment-time-actions"><span class="moment-time">${escapeMomentHtml(timeStr)}</span>${translationButtonHtml}</div>
                     <div class="moment-action-btn"><i class="fas fa-ellipsis-h" style="transform: scale(0.8)"></i></div>
                     <div class="moment-action-menu">
                         <div class="moment-action-item like-btn"><i class="far fa-heart"></i> ${likeText}</div>
@@ -1704,10 +1940,20 @@ Do not output private chat messages, [Chat], [Like], JSON, explanations, or chai
             if (e.target.closest('.moment-action-btn') || e.target.closest('.moment-action-menu')) return;
         });
 
-        item.querySelectorAll('.moment-comment').forEach((commentEl) => {
-            commentEl.addEventListener('click', (e) => {
-                e.stopPropagation();
-                openMomentCommentReply(momentId, commentEl.dataset.commentIndex);
+        bindTranslationButton(
+            item.querySelector('.moment-post-translate-btn'),
+            item.querySelector('.moment-translation')
+        );
+        bindMomentCommentInteractions(
+            item,
+            '.moment-comment',
+            (commentIndex) => openMomentCommentReply(momentId, commentIndex),
+            (commentIndex) => deleteMomentComment(momentId, commentIndex)
+        );
+        item.querySelectorAll('.moment-img-wrapper').forEach((wrapper) => {
+            wrapper.addEventListener('click', (event) => {
+                event.stopPropagation();
+                openMomentImageDetail(m.images[Number(wrapper.dataset.imageIndex)], m);
             });
         });
 
@@ -1856,7 +2102,7 @@ Do not output private chat messages, [Chat], [Like], JSON, explanations, or chai
 
                     if (m.images && m.images.length > 0) {
                         const firstImg = m.images[0];
-                        contentObj.img = typeof firstImg === 'object' ? firstImg.src : firstImg;
+                        contentObj.img = getMomentImageSource(firstImg);
                         contentObj.imgDesc = typeof firstImg === 'object' ? firstImg.desc : null;
                     }
 
@@ -1916,19 +2162,23 @@ Do not output private chat messages, [Chat], [Like], JSON, explanations, or chai
     const mainMomentsMessageBtn = document.getElementById('main-moments-message-btn');
     const momentsMessageView = document.getElementById('moments-message-view');
     const momentsMessageBack = document.getElementById('moments-message-back');
+    const momentsNewMessageBubble = document.getElementById('moments-new-message-bubble');
+
+    async function openMomentsMessageCenter() {
+        await ensureMomentMessagesModuleDataReady();
+        await markCurrentMomentMessagesRead();
+        if (momentsMessageView) {
+            renderMomentsMessages();
+            momentsMessageView.style.display = 'flex';
+            void momentsMessageView.offsetWidth;
+            momentsMessageView.classList.add('active');
+        }
+    }
 
     if (mainMomentsMessageBtn) {
-        mainMomentsMessageBtn.addEventListener('click', async () => {
-            await ensureMomentMessagesModuleDataReady();
-
-            if (momentsMessageView) {
-                renderMomentsMessages();
-                momentsMessageView.style.display = 'flex';
-                void momentsMessageView.offsetWidth;
-                momentsMessageView.classList.add('active');
-            }
-        });
+        mainMomentsMessageBtn.addEventListener('click', openMomentsMessageCenter);
     }
+    if (momentsNewMessageBubble) momentsNewMessageBubble.addEventListener('click', openMomentsMessageCenter);
 
     if (momentsMessageBack) {
         momentsMessageBack.addEventListener('click', () => {
@@ -2018,6 +2268,7 @@ Do not output private chat messages, [Chat], [Like], JSON, explanations, or chai
                             return;
                         }
                         renderMomentsMessages();
+                        updateMomentsNewMessageBubble();
                     }
                 });
             });
@@ -2122,25 +2373,33 @@ Do not output private chat messages, [Chat], [Like], JSON, explanations, or chai
     function getAutoLikeFallbackThought(friend) {
         const lastChatTime = getLastChatTimestampWithUser(friend);
         const hasRecentChat = lastChatTime > 0 && (Date.now() - lastChatTime) <= 12 * 60 * 60 * 1000;
-        return hasRecentChat
-            ? '看见这条动态有些在意，先点个赞，等合适的时候再私下聊聊。'
-            : '觉得这条动态有点意思，但关系还不太熟，先默默点个赞不打扰。';
+        const language = normalizeMomentLanguage(friend?.language || 'zh');
+        const translations = hasRecentChat
+            ? {
+                zh: '看见这条动态有些在意，先点个赞，等合适的时候再私下聊聊。',
+                en: 'This caught my attention. I will leave a like and talk about it privately when the timing feels right.',
+                ja: 'この投稿が少し気になった。まずはいいねをして、タイミングを見てあとで話そう。',
+                ko: '이 게시물이 조금 신경 쓰인다. 일단 좋아요를 누르고 적당할 때 따로 이야기해야겠다.',
+                fr: 'Cette publication m’interpelle. Je vais laisser un j’aime et en parler en privé au bon moment.'
+            }
+            : {
+                zh: '觉得这条动态有点意思，但关系还不太熟，先默默点个赞不打扰。',
+                en: 'This is interesting, but we are not close enough yet. I will quietly leave a like without intruding.',
+                ja: '少し気になるけれど、まだそこまで親しくない。邪魔せず静かにいいねだけしておこう。',
+                ko: '조금 흥미롭지만 아직 많이 친하지는 않다. 방해하지 말고 조용히 좋아요만 눌러야겠다.',
+                fr: 'C’est intéressant, mais nous ne sommes pas encore assez proches. Je vais simplement laisser un j’aime.'
+            };
+        const text = translations[language] || translations.zh;
+        return {
+            text,
+            translation: language === 'zh' ? '' : translations.zh,
+            language
+        };
     }
 
     function parseAutoLikeThought(aiResponse, friend) {
-        if (!aiResponse || typeof aiResponse !== 'string') return getAutoLikeFallbackThought(friend);
-
-        const thoughtLine = aiResponse
-            .split('\n')
-            .map((line) => line.trim())
-            .find(Boolean) || '';
-        const thoughtMatch = thoughtLine.match(/^\[Thought:\s*(.*?)\]\s*$/i);
-        const thought = (thoughtMatch ? thoughtMatch[1] : thoughtLine)
-            .replace(/^\[Thought:\s*/i, '')
-            .replace(/\]\s*$/, '')
-            .trim();
-
-        return thought || getAutoLikeFallbackThought(friend);
+        const payload = parseMomentJsonObject(aiResponse);
+        return normalizeMomentLocalizedContent(payload?.thought, friend?.language || 'zh') || getAutoLikeFallbackThought(friend);
     }
 
     async function generateAutoLikeThoughtForMoment(moment, friend) {
@@ -2180,11 +2439,11 @@ ${afterRoleWorldBookContext ? `\nAfter Role Rules:\n${afterRoleWorldBookContext}
 ${NO_USER_SELF_COMMENT_RULE}
 
 The user just posted a moment. This character will like it but will not leave a public comment.
-Generate only this character's private thought about liking silently.
-The thought must be about 30 Chinese characters, acceptable range 20-45 Chinese characters, and fit the relationship and recent chat context.
+Generate only this character's private thought about liking silently. Keep it concise and fit the relationship and recent chat context.
 If they are not close to the user, reflect being interested but not familiar enough to comment.
-Output exactly one line: [Thought: private thought]
-Do not output comments, private chat replies, JSON, explanations, or chain-of-thought.`;
+${buildMomentLanguageContract(friend.language || 'zh', 'thought')}
+Output strict JSON only: {"thought":{"text":"private thought","translation":"Chinese translation or empty string"}}
+Do not output comments, private chat replies, markdown, explanations, or chain-of-thought.`;
 
             const userPromptParts = [
                 `User moment text:\n${moment.text || '(no text)'}`,
@@ -2232,20 +2491,19 @@ Do not output comments, private chat replies, JSON, explanations, or chain-of-th
         const lastChatTime = getLastChatTimestampWithUser(friend);
         const hasRecentChat = lastChatTime > 0 && (Date.now() - lastChatTime) <= 12 * 60 * 60 * 1000;
         const imageDescriptions = getMomentImageDescriptions(moment);
+        const targetLanguage = normalizeMomentLanguage(friend.language || 'zh');
 
         const autoCommentOutputContract = [
             'Output contract override:',
             '1. Generate exactly one short natural public comment for the user moment.',
-            '2. Generate one private thought around 30 Chinese characters. Acceptable length is 20-45 Chinese characters. It must fit this character and the recent chat context.',
+            '2. Generate one concise private thought that fits this character and the recent chat context.',
             '3. Generate 1 to 3 private chat replies this character would send to the user about this moment.',
-            '4. Output only these tagged lines, in this order:',
-            '[Thought: private thought]',
-            '[Comment: public moment comment]',
-            '[Chat: private chat reply 1]',
-            '[Chat: private chat reply 2 if needed]',
-            '[Chat: private chat reply 3 if needed]',
-            '5. Do not output [Like] or decide whether to like the moment. Likes are handled by the frontend.',
-            '6. Do not output JSON, labels other than the required tags, explanations, or chain-of-thought.'
+            `4. ${buildMomentLanguageContract(targetLanguage, 'thought')}`,
+            `5. ${buildMomentLanguageContract(targetLanguage, 'comment')}`,
+            `6. ${buildMomentLanguageContract(targetLanguage, 'every chatReplies item')}`,
+            '7. Output strict JSON only with this shape:',
+            '{"thought":{"text":"private thought","translation":"Chinese translation or empty string"},"comment":{"text":"public comment","translation":"Chinese translation or empty string"},"chatReplies":[{"text":"private chat reply","translation":"Chinese translation or empty string"}]}',
+            '8. Do not decide likes, output markdown, labels, explanations, or chain-of-thought.'
         ].join('\n');
 
         const autoCommentRolePrompt = `${systemDepthWorldBookContext ? `System Depth Rules (Highest Priority):\n${systemDepthWorldBookContext}\n\n` : ''}${beforeRoleWorldBookContext ? `Before Role Rules:\n${beforeRoleWorldBookContext}\n\n` : ''}You are roleplaying ${friend.realName || friend.nickname}.
@@ -2285,10 +2543,10 @@ If you chatted with the user recently, the public comment and private replies ca
         });
     }
 
-    async function addMomentNotificationOnce(type, friend, momentId, content = '', thought = '') {
+    async function addMomentNotificationOnce(type, friend, momentId, payload = {}) {
         if (!window.imApp.addMomentNotification) return false;
         if (hasMomentNotification(type, friend, momentId)) return true;
-        return window.imApp.addMomentNotification(type, friend, momentId, content, thought);
+        return window.imApp.addMomentNotification(type, friend, momentId, payload);
     }
 
     async function triggerAutoCommentsForMyMoment(momentId) {
@@ -2311,18 +2569,25 @@ If you chatted with the user recently, the public comment and private replies ca
                 const aiResponse = await generateAutoCommentForMoment(latestMoment, friend);
                 if (!aiResponse) continue;
 
-                const parsedResponse = parseAutoMomentResponse(aiResponse);
+                const language = normalizeMomentLanguage(friend.language || 'zh');
+                const parsedResponse = parseAutoMomentResponse(aiResponse, language);
                 if (!parsedResponse.comment.trim()) {
-                    nonCommentThoughts.set(String(friend.id), parsedResponse.thought || getAutoLikeFallbackThought(friend));
+                    nonCommentThoughts.set(String(friend.id), parsedResponse.thought
+                        ? { text: parsedResponse.thought, translation: parsedResponse.thoughtTranslation, language }
+                        : getAutoLikeFallbackThought(friend));
                     continue;
                 }
 
+                const fallbackThought = getAutoLikeFallbackThought(friend);
                 const displayName = friend.nickname || friend.realName || 'Friend';
                 generatedInteractions.push({
                     friend,
                     name: displayName,
                     content: parsedResponse.comment.trim(),
-                    thought: parsedResponse.thought || getAutoLikeFallbackThought(friend),
+                    translation: parsedResponse.commentTranslation,
+                    language,
+                    thought: parsedResponse.thought || fallbackThought.text,
+                    thoughtTranslation: parsedResponse.thought ? parsedResponse.thoughtTranslation : fallbackThought.translation,
                     chatReplies: parsedResponse.chatReplies
                 });
             } catch (e) {
@@ -2347,14 +2612,16 @@ If you chatted with the user recently, the public comment and private replies ca
             if (!latestMoment) break;
 
             const friendId = String(friend.id);
-            const thought = commentCandidateIds.has(friendId)
+            const thoughtPayload = commentCandidateIds.has(friendId)
                 ? (nonCommentThoughts.get(friendId) || getAutoLikeFallbackThought(friend))
                 : await generateAutoLikeThoughtForMoment(latestMoment, friend);
             likeInteractions.push({
                 friend,
                 name: friend.nickname || friend.realName || 'Friend',
                 content: '',
-                thought,
+                language: normalizeMomentLanguage(friend.language || 'zh'),
+                thought: thoughtPayload.text,
+                thoughtTranslation: thoughtPayload.translation,
                 chatReplies: []
             });
         }
@@ -2378,7 +2645,10 @@ If you chatted with the user recently, the public comment and private replies ca
                         name: entry.name,
                         userId: entry.friend.id,
                         content: entry.content,
-                        thought: entry.thought
+                        translation: entry.translation,
+                        language: entry.language,
+                        thought: entry.thought,
+                        thoughtTranslation: entry.thoughtTranslation
                     });
                 }
             });
@@ -2393,10 +2663,20 @@ If you chatted with the user recently, the public comment and private replies ca
         if (!saved) return;
 
         for (const entry of generatedInteractions) {
-            await addMomentNotificationOnce('comment', entry.friend, momentId, entry.content, entry.thought);
+            await addMomentNotificationOnce('comment', entry.friend, momentId, {
+                content: entry.content,
+                contentTranslation: entry.translation,
+                thought: entry.thought,
+                thoughtTranslation: entry.thoughtTranslation,
+                language: entry.language
+            });
         }
         for (const entry of likeInteractions) {
-            await addMomentNotificationOnce('like', entry.friend, momentId, '', entry.thought);
+            await addMomentNotificationOnce('like', entry.friend, momentId, {
+                thought: entry.thought,
+                thoughtTranslation: entry.thoughtTranslation,
+                language: entry.language
+            });
         }
 
         for (const entry of generatedInteractions) {
@@ -2407,151 +2687,114 @@ If you chatted with the user recently, the public comment and private replies ca
         refreshViewsForMomentUser(latestMoment);
     }
 
-    async function triggerAiMomentPost(friend, isBatch = false) {
+    async function generateAndPublishMoment(friend, options = {}) {
+        const normalizedOptions = typeof options === 'boolean' ? { silent: options } : options;
+        const silent = normalizedOptions.silent === true;
+        const includeEngagement = normalizedOptions.includeEngagement !== false;
+        const allowImages = normalizedOptions.allowImages !== false;
         const currentApiConfig = getCurrentMomentApiConfig();
         if (!currentApiConfig.endpoint || !currentApiConfig.apiKey) {
-            if (!isBatch) showToast('请先配置 API');
+            if (!silent) showToast('请先配置 API');
             return false;
         }
-        if (!isBatch) showToast('正在编写朋友圈内容...');
-
-        const systemDepthWorldBookContext = window.getGlobalWorldBookContextByPosition
-            ? window.getGlobalWorldBookContextByPosition('system_depth')
-            : '';
-        const beforeRoleWorldBookContext = window.getGlobalWorldBookContextByPosition
-            ? window.getGlobalWorldBookContextByPosition('before_role')
-            : '';
-        const afterRoleWorldBookContext = window.getGlobalWorldBookContextByPosition
-            ? window.getGlobalWorldBookContextByPosition('after_role')
-            : '';
-
-        const availableFriends = (window.imData.friends || [])
-            .filter(f => f.id !== friend.id && f.type !== 'group' && f.type !== 'official')
-            .map(f => f.nickname || f.realName)
-            .filter(Boolean);
-        
-        let friendsContext = '';
-        if (availableFriends.length > 0) {
-            friendsContext = `你的关系网包含以下角色: [${availableFriends.join(', ')}]。\n生成评论时，评论者的名字必须严格从这个列表中选择，不要自己捏造其他人名。`;
-        }
-
-        const systemPrompt = `${systemDepthWorldBookContext ? `System Depth Rules (Highest Priority):\n${systemDepthWorldBookContext}\n\n` : ''}${beforeRoleWorldBookContext ? `Before Role Rules:\n${beforeRoleWorldBookContext}\n\n` : ''}你正在扮演 ${friend.realName || friend.nickname}。
-你的人设: ${friend.persona || '普通用户'}。
-用户(${window.userState.name})的人设: ${window.userState.persona || '普通用户'}。
-${friendsContext}
-${afterRoleWorldBookContext ? `\n\nAfter Role Rules:\n${afterRoleWorldBookContext}` : ''}
-
-${NO_USER_SELF_COMMENT_RULE}
-
-请根据上下文发1条朋友圈，并附带生成1-2条该角色朋友圈底下的其他角色的点赞和评论。
-格式要求：
-1. 可以输出纯文字朋友圈，表达char当下的心情/见闻/感受等。
-2. 可以根据上下文输出图片，如果是图片，请在文字后换行并单独占一行注明 [Image: 图片描述]，可给图片配文，符合图片描述内容。
-3. 请为这条朋友圈生成 1-2 条其他角色的评论，格式为单独占一行 [Comment: 评论者名字: 评论内容]。比如：[Comment: 李四: 拍得真好！] (评论者必须来自上面的关系网列表)
-4. 请为这条朋友圈生成几个其他角色的点赞，格式为单独占一行 [Like: 点赞者名字]。比如：[Like: 王五] (点赞者必须来自上面的关系网列表，也可以包含用户(${window.userState.name}))
-5. 语气自然，简短，符合人设。
-只要输出回复的话，禁止输出思维链（例如：<tool_call>...<tool_call> 或类似的内容），直接给出回复即可。`;
-
-        const messages = [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: '请发朋友圈，并生成1-2条关系网内其他人的点赞和评论。' }
-        ];
+        if (!silent) showToast('正在编写朋友圈内容...');
 
         try {
-            let endpoint = currentApiConfig.endpoint;
-            if (endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-            if (!endpoint.endsWith('/chat/completions')) {
-                endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
+            if (window.imApp?.ensureFriendMessagesLoaded) {
+                await window.imApp.ensureFriendMessagesLoaded(friend.id);
             }
-
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${currentApiConfig.apiKey}` },
-                body: JSON.stringify({
-                    model: currentApiConfig.model || '',
-                    messages: messages,
-                    temperature: parseFloat(currentApiConfig.temperature) || 0.8
-                })
-            });
-
-            if (!response.ok) {
-                let errorMsg = `${response.status} ${response.statusText}`;
-                try {
-                    const errorBody = await response.text();
-                    if (errorBody) errorMsg = errorBody;
-                } catch (_) {}
-                throw new Error(errorMsg);
+            const liveFriend = (window.imData.friends || []).find((item) => String(item.id) === String(friend.id)) || friend;
+            const targetLanguage = normalizeMomentLanguage(liveFriend.language || 'zh');
+            const allowedFriends = (window.imData.friends || [])
+                .filter((candidate) => candidate && candidate.id !== liveFriend.id && candidate.type !== 'group' && candidate.type !== 'official')
+                .map((candidate) => ({
+                    id: String(candidate.id),
+                    name: candidate.nickname || candidate.realName || String(candidate.id),
+                    language: normalizeMomentLanguage(candidate.language || 'zh')
+                }));
+            const allowedById = new Map(allowedFriends.map((candidate) => [candidate.id, candidate]));
+            const contextText = [liveFriend.persona, liveFriend.memory?.overview, liveFriend.signature].filter(Boolean).join('\n');
+            const getWorldBook = (position) => window.imApp?.getWorldBookContextForFriendByPosition
+                ? window.imApp.getWorldBookContextForFriendByPosition(position, liveFriend, contextText)
+                : (window.getGlobalWorldBookContextByPosition ? window.getGlobalWorldBookContextByPosition(position) : '');
+            const systemDepthWorldBookContext = getWorldBook('system_depth');
+            const beforeRoleWorldBookContext = getWorldBook('before_role');
+            const afterRoleWorldBookContext = getWorldBook('after_role');
+            const contextMessages = window.imApp.buildApiContextMessages
+                ? window.imApp.buildApiContextMessages(liveFriend, { userName: window.userState?.name || 'User' })
+                : [];
+            const engagementContract = includeEngagement
+                ? `Allowed engagement speakers (use speakerId exactly): ${JSON.stringify(allowedFriends)}\nGenerate 1-2 comments and a few likes only from this list. Each comment must follow its speaker's language and include a Chinese translation when non-Chinese.`
+                : 'Do not generate comments or likes; return empty arrays for both.';
+            const imageContract = allowImages
+                ? 'You may include zero or more concrete image descriptions in images. Every images[].description must be written only in natural Simplified Chinese, regardless of the character default language.'
+                : 'Do not generate images; return an empty images array.';
+            const systemPrompt = `${systemDepthWorldBookContext ? `System Depth Rules (Highest Priority):\n${systemDepthWorldBookContext}\n\n` : ''}${beforeRoleWorldBookContext ? `Before Role Rules:\n${beforeRoleWorldBookContext}\n\n` : ''}You are roleplaying ${liveFriend.realName || liveFriend.nickname} and creating one public iMessage Moments post.
+Role persona: ${liveFriend.persona || 'ordinary user'}.
+User persona: ${window.userState?.persona || 'ordinary user'}.
+${afterRoleWorldBookContext ? `After Role Rules:\n${afterRoleWorldBookContext}\n` : ''}
+${NO_USER_SELF_COMMENT_RULE}
+The post must feel like a public life update, not a private message asking User to reply.
+${buildMomentLanguageContract(targetLanguage, 'post')}
+${imageContract}
+${engagementContract}
+Output strict JSON only with this shape:
+{"post":{"text":"moment text","translation":"Chinese translation or empty string"},"images":[{"description":"image description"}],"comments":[{"speakerId":"allowed id","text":"comment","translation":"Chinese translation or empty string"}],"likes":["allowed speakerId"]}
+Do not output markdown, tagged lines, explanations, or chain-of-thought.`;
+            const messages = [{ role: 'system', content: systemPrompt }];
+            if (Array.isArray(contextMessages) && contextMessages.length > 0) messages.push(...contextMessages);
+            messages.push({ role: 'user', content: 'Generate the public moment now.' });
+            const reply = await requestMomentApiCompletion(messages, 0.8);
+            const payload = parseMomentJsonObject(reply);
+            const post = normalizeMomentLocalizedContent(payload?.post, targetLanguage);
+            if (!post) {
+                throw new Error('Invalid API response: localized post missing or incomplete');
             }
-
-            const data = await response.json();
-            const reply = data?.choices?.[0]?.message?.content;
-            if (typeof reply !== 'string' || !reply.trim()) {
-                throw new Error('Invalid API response: empty moment content');
-            }
-
-            const lines = reply.split('\n');
-            let text = '';
-            const images = [];
-            const generatedComments = [];
-            const generatedLikes = [];
-
-            lines.forEach((line) => {
-                const imgMatch = line.match(/\[Image:\s*(.*?)\]/i);
-                const commentMatch = line.match(/\[Comment:\s*(.*?):\s*(.*?)\]/i);
-                const likeMatch = line.match(/\[Like:\s*(.*?)\]/i);
-
-                if (imgMatch) {
-                    const desc = imgMatch[1];
-                    const canvas = document.createElement('canvas');
-                    canvas.width = 600;
-                    canvas.height = 600;
-                    const ctx = canvas.getContext('2d');
-                    ctx.fillStyle = '#f2f2f7';
-                    ctx.fillRect(0, 0, 600, 600);
-                    ctx.fillStyle = '#000';
-                    ctx.font = '24px sans-serif';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-
-                    ctx.fillText(desc.substring(0, 20) + (desc.length > 20 ? '...' : ''), 300, 300);
-
-                    images.push({
-                        src: canvas.toDataURL(),
-                        desc: desc
-                    });
-                } else if (commentMatch) {
-                    generatedComments.push({
-                        name: commentMatch[1].trim(),
-                        content: commentMatch[2].trim()
-                    });
-                } else if (likeMatch) {
-                    generatedLikes.push(likeMatch[1].trim());
-                } else {
-                    if (line.trim()) text += line + '\n';
-                }
-            });
-
-            const safeGeneratedComments = generatedComments.filter((comment) => {
-                return comment && !isUserLikeName(comment.name) && !isUserLikeName(comment.userId);
-            });
-            const safeGeneratedLikes = generatedLikes.filter((name) => !isUserLikeName(name));
-
+            const images = allowImages
+                ? (Array.isArray(payload?.images) ? payload.images : []).map((image, index) => {
+                    const desc = normalizeMomentImageDescription(image?.description || image?.desc || '');
+                    const generatedImage = desc ? {
+                        seed: `${liveFriend.id}_${Date.now()}_${index}_${desc}`,
+                        desc,
+                        kind: 'external'
+                    } : null;
+                    if (generatedImage) generatedImage.src = createMomentExternalImageUrl(generatedImage);
+                    return generatedImage;
+                }).filter(Boolean)
+                : [];
+            const safeGeneratedComments = includeEngagement
+                ? (Array.isArray(payload?.comments) ? payload.comments : []).map((comment) => {
+                    const speakerId = String(comment?.speakerId || '').trim();
+                    const speaker = allowedById.get(speakerId);
+                    const localized = speaker ? normalizeMomentLocalizedContent(comment, speaker.language) : null;
+                    return speaker && localized ? {
+                        name: speaker.name,
+                        userId: speaker.id,
+                        content: localized.text,
+                        translation: localized.translation,
+                        language: speaker.language
+                    } : null;
+                }).filter(Boolean).slice(0, 2)
+                : [];
+            const safeGeneratedLikes = includeEngagement
+                ? [...new Set((Array.isArray(payload?.likes) ? payload.likes : [])
+                    .map((speakerId) => allowedById.get(String(speakerId))?.name)
+                    .filter(Boolean))]
+                : [];
             const newMoment = {
                 id: Date.now(),
-                userId: friend.id,
-                name: friend.nickname,
-                avatar: friend.avatarUrl,
-                text: text.trim(),
-                images: images,
+                userId: liveFriend.id,
+                name: liveFriend.nickname || liveFriend.realName || 'Friend',
+                avatar: liveFriend.avatarUrl,
+                text: post.text,
+                translation: post.translation,
+                language: post.language,
+                images,
                 time: Date.now(),
                 likes: safeGeneratedLikes,
                 comments: safeGeneratedComments,
                 isPinned: false
             };
-
-            if (!newMoment.text && newMoment.images.length === 0) {
-                throw new Error('Invalid API response: no moment text or images');
-            }
 
             const saved = await commitMomentsChange(newMoment.id, () => {
                 window.imData.moments.unshift(newMoment);
@@ -2568,13 +2811,17 @@ ${NO_USER_SELF_COMMENT_RULE}
 
             if (momentsScrollContainer) momentsScrollContainer.scrollTop = 0;
 
-            if (!isBatch) showToast(`${friend.nickname} 发布了朋友圈`);
+            if (!silent) showToast(`${newMoment.name} 发布了朋友圈`);
             return true;
         } catch (e) {
             console.error(e);
-            if (!isBatch) showToast('发布失败');
+            if (!silent) showToast('发布失败');
             return false;
         }
+    }
+
+    async function triggerAiMomentPost(friend, isBatch = false) {
+        return generateAndPublishMoment(friend, { silent: isBatch, includeEngagement: true, allowImages: true });
     }
 
     // Expose Functions
@@ -2582,4 +2829,7 @@ ${NO_USER_SELF_COMMENT_RULE}
     window.imApp.renderMoments = renderMoments;
     window.imApp.renderMomentsMessages = renderMomentsMessages;
     window.imApp.refreshAllMomentsViews = refreshAllMomentsViews;
+    window.imApp.updateMomentsNewMessageBubble = updateMomentsNewMessageBubble;
+    window.imApp.generateAndPublishMoment = generateAndPublishMoment;
+    void ensureMomentMessagesModuleDataReady().then(updateMomentsNewMessageBubble);
 });

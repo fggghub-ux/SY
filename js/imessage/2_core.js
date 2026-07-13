@@ -3319,7 +3319,10 @@ window.imApp.formatTime = function(timestamp) {
       return `${date.getMonth() + 1}/${date.getDate()} ${hours}:${minutes}`;
   };
 
-window.imApp.addMomentNotification = async function(type, user, momentId, content = '', thought = '') {
+window.imApp.addMomentNotification = async function(type, user, momentId, contentOrPayload = '', thought = '') {
+    const payload = contentOrPayload && typeof contentOrPayload === 'object'
+        ? contentOrPayload
+        : { content: contentOrPayload, thought };
     const notif = {
         id: Date.now(),
         type: type,
@@ -3329,8 +3332,13 @@ window.imApp.addMomentNotification = async function(type, user, momentId, conten
         momentId: momentId,
         momentImg: null,
         momentText: null,
-        content: content,
-        thought: thought,
+        content: String(payload.content || '').trim(),
+        contentTranslation: String(payload.contentTranslation || payload.translation || '').trim(),
+        thought: String(payload.thought || '').trim(),
+        thoughtTranslation: String(payload.thoughtTranslation || '').trim(),
+        language: window.imDataUtils?.normalizeChatLanguage
+            ? window.imDataUtils.normalizeChatLanguage(payload.language || user.language || 'zh')
+            : String(payload.language || user.language || 'zh'),
         time: Date.now(),
         read: false
     };
@@ -3355,11 +3363,14 @@ window.imApp.addMomentNotification = async function(type, user, momentId, conten
     if (!saved) {
         window.imData.momentMessages = previousMessages;
         if (window.imApp.renderMomentsMessages) window.imApp.renderMomentsMessages();
+        if (window.imApp.updateMomentsNewMessageBubble) window.imApp.updateMomentsNewMessageBubble();
         if (window.showToast) window.showToast('朋友圈消息保存失败');
         return false;
     }
 
     if (window.imApp.renderMomentsMessages) window.imApp.renderMomentsMessages();
+    if (window.imApp.updateMomentsNewMessageBubble) window.imApp.updateMomentsNewMessageBubble();
+    window.dispatchEvent(new CustomEvent('u2:moment-notification-added', { detail: { notificationId: notif.id } }));
     return true;
 };
 

@@ -16,8 +16,8 @@ test('b.stage waits for durable state before initializing subscriber growth', ()
     assert.doesNotMatch(bstageSource, /setTimeout\(initAllAutoActivities, 1000\)/);
     assert.match(bstageSource, /window\.addEventListener\('pagehide', flushBstageDataNow\)/);
     assert.match(bstageSource, /if \(document\.visibilityState === 'hidden'\) flushBstageDataNow\(\)/);
-    assert.match(indexSource, /js\/bstage\.js\?v=20260710-bstage-idb-only-v4/);
-    assert.match(indexSource, /js\/storage\/app_storage\.js\?v=20260710-storage-idb-only-v9/);
+    assert.match(indexSource, /js\/bstage\.js\?v=20260713-android-enter-v1/);
+    assert.match(indexSource, /js\/storage\/app_storage\.js\?v=20260713-auth-fast-v1/);
 });
 
 test('b.stage recovery signature includes member chat history changes', () => {

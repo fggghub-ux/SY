@@ -10,6 +10,112 @@
     let callMessages = [];
     let callMessageSeq = 0;
     let lastCallAiTurn = null;
+    let singleCallInputCleanup = null;
+    let groupCallInputCleanup = null;
+
+    function bindCallVisualViewport(input, root, options = {}) {
+        if (!window.mobileInputCompat?.isAndroid || !input || !root) return function() {};
+
+        const viewport = window.visualViewport;
+        const bottomControls = options.bottomControls || null;
+        const collapseElements = (options.collapseElements || []).filter(Boolean);
+        const originalRoot = {
+            height: root.style.height,
+            top: root.style.top,
+            bottom: root.style.bottom
+        };
+        const originalBottomPadding = bottomControls?.style.paddingBottom || '';
+        const originalDisplays = collapseElements.map((element) => element.style.display);
+        let restingHeight = Math.max(window.innerHeight || 0, viewport?.height || 0);
+
+        const applyViewport = () => {
+            const viewportHeight = Math.round(viewport?.height || window.innerHeight || 0);
+            const viewportTop = Math.round(viewport?.offsetTop || 0);
+            if (viewportHeight <= 0) return;
+
+            const focused = document.activeElement === input;
+            if (!focused) restingHeight = Math.max(restingHeight, viewportHeight);
+            const keyboardOpen = restingHeight - viewportHeight > 100 &&
+                (focused || root.classList.contains('im-call-keyboard-open'));
+
+            root.style.height = `${viewportHeight}px`;
+            root.style.top = `${viewportTop}px`;
+            root.style.bottom = 'auto';
+            root.classList.toggle('im-call-keyboard-open', keyboardOpen);
+
+            if (bottomControls) {
+                bottomControls.style.paddingBottom = keyboardOpen ? '10px' : originalBottomPadding;
+            }
+            collapseElements.forEach((element, index) => {
+                element.style.display = keyboardOpen ? 'none' : originalDisplays[index];
+            });
+            requestAnimationFrame(() => {
+                if (options.scrollContainer) {
+                    options.scrollContainer.scrollTop = options.scrollContainer.scrollHeight;
+                }
+            });
+        };
+
+        if (viewport) {
+            viewport.addEventListener('resize', applyViewport, { passive: true });
+            viewport.addEventListener('scroll', applyViewport, { passive: true });
+        }
+        input.addEventListener('focus', applyViewport);
+        input.addEventListener('blur', applyViewport);
+        applyViewport();
+
+        return () => {
+            viewport?.removeEventListener('resize', applyViewport);
+            viewport?.removeEventListener('scroll', applyViewport);
+            input.removeEventListener('focus', applyViewport);
+            input.removeEventListener('blur', applyViewport);
+            root.style.height = originalRoot.height;
+            root.style.top = originalRoot.top;
+            root.style.bottom = originalRoot.bottom;
+            root.classList.remove('im-call-keyboard-open');
+            if (bottomControls) bottomControls.style.paddingBottom = originalBottomPadding;
+            collapseElements.forEach((element, index) => {
+                element.style.display = originalDisplays[index];
+            });
+        };
+    }
+
+    function registerCallSendInput(input, options = {}) {
+        if (!input || typeof options.onSend !== 'function') return function() {};
+
+        const sendAndDismiss = () => {
+            const sent = options.onSend();
+            if (sent !== false) input.blur();
+            return sent;
+        };
+
+        if (window.mobileInputCompat?.register) {
+            const inputCleanup = window.mobileInputCompat.register({
+                input,
+                root: options.root || null,
+                scrollContainer: options.scrollContainer || null,
+                onSend: sendAndDismiss,
+                blurAfterSend: false,
+                enterKeyHint: 'send',
+                restoreWindowScroll: false
+            });
+            const viewportCleanup = bindCallVisualViewport(input, options.root, options);
+            return () => {
+                inputCleanup();
+                viewportCleanup();
+            };
+        }
+
+        const handleKeydown = (event) => {
+            if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || event.isComposing || event.keyCode === 229) return;
+            event.preventDefault();
+            if (!String(input.value || '').trim()) return;
+            sendAndDismiss();
+        };
+        input.setAttribute('enterkeyhint', 'send');
+        input.addEventListener('keydown', handleKeydown);
+        return () => input.removeEventListener('keydown', handleKeydown);
+    }
 
     function formatTime(seconds) {
         const m = Math.floor(seconds / 60).toString().padStart(2, '0');
@@ -268,6 +374,11 @@
         
         if (!view) return;
 
+        if (singleCallInputCleanup) {
+            singleCallInputCleanup();
+            singleCallInputCleanup = null;
+        }
+
         // Clean up old listeners by cloning
         const newView = view.cloneNode(true);
         view.parentNode.replaceChild(newView, view);
@@ -372,6 +483,10 @@
 
         function closeCall() {
             if (dialTimeout) clearTimeout(dialTimeout);
+            if (singleCallInputCleanup) {
+                singleCallInputCleanup();
+                singleCallInputCleanup = null;
+            }
             
             // Capture final duration BEFORE doing anything else
             const finalDuration = isConnected ? callSeconds : 0;
@@ -762,10 +877,15 @@ ${recentMessages}`;
         }
 
         if (newInput && newSendBtn) {
-            newInput.addEventListener('keydown', (e) => {
-                if (e.isComposing || e.keyCode === 229) return;
-                if (e.key === 'Enter' || e.keyCode === 13) {
+            singleCallInputCleanup = registerCallSendInput(newInput, {
+                root: newView,
+                scrollContainer: newMessagesArea,
+                bottomControls: newInputRow?.parentElement,
+                collapseElements: [infoArea, newActionsRow],
+                onSend: () => {
+                    if (!isConnected || !newInput.value.trim()) return false;
                     newSendBtn.click();
+                    return true;
                 }
             });
         }
@@ -861,6 +981,11 @@ ${recentMessages}`;
     window.imChat.openGroupVoiceCall = function(group, memberIds) {
         const view = document.getElementById('group-voice-call-view');
         if (!view) return;
+
+        if (groupCallInputCleanup) {
+            groupCallInputCleanup();
+            groupCallInputCleanup = null;
+        }
 
         // Clean up old listeners
         const newView = view.cloneNode(true);
@@ -998,6 +1123,10 @@ ${recentMessages}`;
         }, 1000);
 
         const closeGroupCall = () => {
+            if (groupCallInputCleanup) {
+                groupCallInputCleanup();
+                groupCallInputCleanup = null;
+            }
             const durationText = formatTime(groupCallSeconds);
             const finalMessages = [...groupCallMessages];
             const finalDuration = groupCallSeconds;
@@ -1103,10 +1232,17 @@ ${recentMessages}`;
             });
         }
 
-        if (inputEl) {
-            inputEl.addEventListener('keydown', (e) => {
-                if (e.isComposing || e.keyCode === 229) return;
-                if (e.key === 'Enter' || e.keyCode === 13) sendBtn.click();
+        if (inputEl && sendBtn) {
+            groupCallInputCleanup = registerCallSendInput(inputEl, {
+                root: newView,
+                scrollContainer: messagesArea,
+                bottomControls: inputEl.parentElement?.parentElement,
+                collapseElements: [avatarsGrid],
+                onSend: () => {
+                    if (!inputEl.value.trim()) return false;
+                    sendBtn.click();
+                    return true;
+                }
             });
         }
 

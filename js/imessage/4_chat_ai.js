@@ -1573,68 +1573,6 @@ Output only valid JSON with this exact shape:
         }, { silent: true, immediate: true, metaOnly: true, syncActive: true, syncSettings: true });
     }
 
-    function buildAutonomousMomentPrompt(friend, now = Date.now()) {
-        const charName = friend?.realName || friend?.nickname || 'TA';
-        const userName = (window.getUserState ? window.getUserState() : window.userState || {})?.name || 'User';
-        const relationshipText = Array.isArray(friend?.memory?.relationships) && friend.memory.relationships.length > 0
-            ? friend.memory.relationships.map(rel => {
-                const npc = (window.imData?.friends || []).find(item => String(item.id) === String(rel.npcId));
-                return `${npc ? npc.nickname : 'Unknown'}: ${rel.relation || ''}`;
-            }).join('\n')
-            : 'None';
-        const latestMessages = Array.isArray(friend?.messages)
-            ? friend.messages.slice(-8).map(msg => {
-                const speaker = msg.role === 'assistant' ? charName : userName;
-                return `[${formatAutonomousPromptTime(msg.timestamp)}] ${speaker}: ${getAutonomousMessageText(msg)}`;
-            }).join('\n')
-            : '';
-
-        return `你正在扮演 ${charName}，现在要为这个角色生成 1 条公开朋友圈文案。
-当前真实时间：${formatAutonomousPromptTime(now)}
-User 名称：${userName}
-角色人设：${friend?.persona || 'None'}
-角色签名：${friend?.signature || 'None'}
-关系和记忆：
-${friend?.memory?.overview || 'None'}
-
-关系网络：
-${relationshipText}
-
-最近聊天上下文：
-${latestMessages || 'None'}
-
-要求：
-1. 这是公开朋友圈，不是私聊，不是只给 User 看的话。
-2. 可以分享当下感悟、正在做的事、环境观察或生活片段。
-3. 不要写成碎碎念、连续私密独白、求回复、催 User、或过度暧昧告白。
-4. 只有在上下文或关系记忆中有明确恋爱/情侣/公开伴侣证据时，才可以把 User 写成公开恋人；否则如果提到 User，只能用小名、外号、某人、朋友等含蓄称呼。
-5. 不生成图片，不要输出 hashtag 堆砌，不要输出 markdown。
-6. 只输出合法 JSON：{"text":"朋友圈正文"}。`;
-    }
-
-    async function generateAutonomousMomentText(friend, apiConfig, now = Date.now()) {
-        const endpoint = resolveChatCompletionsEndpoint(apiConfig);
-        if (!endpoint) return '';
-        const response = await fetchChatCompletionWithTimeout(endpoint, apiConfig, [
-            {
-                role: 'system',
-                content: 'You generate one public social feed post for a fictional character. Output only valid JSON.'
-            },
-            {
-                role: 'user',
-                content: buildAutonomousMomentPrompt(friend, now)
-            }
-        ], 60000);
-
-        if (!response.ok) {
-            throw new Error(`${response.status} ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        const parsed = parseJsonObjectFromText(getAiResponseContent(data));
-        return typeof parsed?.text === 'string' ? parsed.text.trim() : '';
-    }
-
     async function runAutonomousActivityForFriend(friendOrId, reason = 'timer') {
         const friendKey = getFriendKey(friendOrId);
         if (!friendKey || autonomousActivityInFlight.has(friendKey) || aiReplyInFlight.has(friendKey)) return false;
@@ -1749,31 +1687,16 @@ ${latestMessages || 'None'}
             }, { silent: true, immediate: true, metaOnly: true, syncActive: true, syncSettings: true });
 
             const latestFriend = getLiveFriendById(friendKey) || friend;
-            const text = await generateAutonomousMomentText(latestFriend, currentApiConfig, now);
-            if (!text) return false;
-
-            const newMoment = {
-                id: Date.now(),
-                userId: latestFriend.id,
-                name: latestFriend.nickname || latestFriend.realName || 'Friend',
-                avatar: latestFriend.avatarUrl || null,
-                text,
-                images: [],
-                time: Date.now(),
-                likes: [],
-                comments: [],
-                isPinned: false
-            };
-
-            const saved = window.imApp.commitMomentChange
-                ? await window.imApp.commitMomentChange(newMoment.id, () => {
-                    if (!Array.isArray(window.imData.moments)) window.imData.moments = [];
-                    window.imData.moments.unshift(newMoment);
-                }, { silent: true, immediate: true })
-                : false;
-
-            if (!saved) return false;
-            if (window.imApp.renderMoments) window.imApp.renderMoments();
+            if (!window.imApp.generateAndPublishMoment) {
+                throw new Error('Unified Moments generator unavailable');
+            }
+            const generated = await window.imApp.generateAndPublishMoment(latestFriend, {
+                source: 'autonomous',
+                silent: true,
+                includeEngagement: false,
+                allowImages: false
+            });
+            if (!generated) return false;
             if (window.showBannerNotification) {
                 window.showBannerNotification(latestFriend, '发布了一条朋友圈');
             }
@@ -1931,6 +1854,14 @@ ${latestMessages || 'None'}
 
             const currentTime = new Date();
             const timeString = `${currentTime.getFullYear()}年${currentTime.getMonth() + 1}月${currentTime.getDate()}日 ${currentTime.getHours()}:${currentTime.getMinutes().toString().padStart(2, '0')}`;
+            const currentHour = currentTime.getHours();
+            const currentTimePeriod = currentHour >= 6 && currentHour < 12
+                ? '早上'
+                : currentHour >= 12 && currentHour < 18
+                    ? '下午'
+                    : currentHour >= 18
+                        ? '晚上'
+                        : '深夜';
             const historyMessages = Array.isArray(group.messages)
                 ? group.messages.filter(msg => msg && Number(msg.timestamp) > 0)
                 : [];
@@ -1949,10 +1880,15 @@ ${latestMessages || 'None'}
                 : null;
 
             return `\n\n【群聊时间感知】：
-- 当前系统时间是：${timeString}。
+- 当前系统时间是：${timeString}。现在的时间段是：${currentTimePeriod}。
 - User 最后一次发言时间：${lastUserMessage ? formatPromptTime(lastUserMessage.timestamp) : '未知'}${lastUserMessage ? `（距离现在约 ${formatPromptDuration(gapSinceUser)}）` : ''}。
 - 群成员最近一次公开发言：${lastMemberMessage ? `${lastSpeakerName} 于 ${formatPromptTime(lastMemberMessage.timestamp)}` : '未知'}${lastMemberMessage ? `（距离现在约 ${formatPromptDuration(gapSinceMember)}）` : ''}。
 - 群聊最后一条公开消息距离现在：${lastPublicMessage ? `约 ${formatPromptDuration(gapSinceLastPublic)}` : '未知'}。
+- 根据群聊最后一条公开消息距离现在的间隔调整承接方式：
+  - **间隔 < 2小时**：可以延续上次话题，提及时间时不刻意。
+  - **间隔 2-8小时**：可以自然询问刚才发生了什么，或自然过渡并更新话题。
+  - **隔夜（跨越了凌晨）**：默认开启新话题，可以说“早啊”“昨晚睡得怎么样”；如果有昨天未完成的话题，可以自然提起，例如“突然想到昨天的事”。
+  - **间隔 > 24小时**：可以表达担忧，询问这段时间发生了什么。
 - 回复前所有发言成员都必须感知现在的具体日期、时间段、距离上次群聊过去多久，以及这段间隔对情绪、动作、称呼和话题承接的影响；但如果间隔很短，不要刻意提时间，只把它作为背景。`;
         }
 
@@ -2198,14 +2134,17 @@ ${latestMessages || 'None'}
             ? ''
             : `${profilePanelRequirement.replace('并在界面显示为中文', '')}\n- memory_request 的 memoryPayload 必须额外包含 triggerKeywords 数组，写入 3-6 个 2-16 字的具体触发词；它们应是以后聊天可能自然提到的主题、人物、地点、物品或感受。`;
 
-        const rolePsychologyAndEvolutionPrompt = `一、 核心心理 & 行为模式
-人格基石: [3-5个核心关键词，例如：温柔稳定、责任感强、细腻敏感但能自我调节]
+        function buildRolePsychologyAndEvolutionPrompt(options = {}) {
+            const isSingleChat = !!options.isSingleChat;
+            const relationship = String(options.relationship || '').trim();
+            return `一、 核心心理 & 行为模式
+人格基石: [3-5个核心关键词，例如：温柔稳定、责任感强、细腻敏感、阳光幽默]
 内在冲突: [描述角色最核心的矛盾，例如：渴望亲密 vs 害怕打扰对方]
 人格面具:
 对外呈现: [角色在公众面前的样子，例如：专业、礼貌、温和疏离]
 对<user>的特殊性: [角色在<user>面前是否更放松、更真实，或需要更多确认才靠近？]
 二、 关系动态 & 互动模式
-当前关系: [陌生人 / 同事 / 朋友 / 暧昧 / 恋人]
+当前关系: ${isSingleChat ? (relationship || '未填写') : '根据当前发言成员各自的“与 User 的关系”字段分别判断'}
 互动模式 (基于关系):
 当<user>亲近时，角色会: [欣喜并温柔回应 / 先确认对方意图再靠近 / 试探性表达关心]
 当<user>疏远时，角色会: [轻声询问 / 克制失落并给对方空间 / 温和确认对方状态]
@@ -2217,6 +2156,8 @@ ${latestMessages || 'None'}
 人格映射:
 外向/自信: 回复快，主动开启话题，但语气保持轻松、不压迫。
 内向/谨慎: 回复慢，用词简短，多使用“...”或句号，很少主动。
+**外向/敏感** ：回复快，主动开启话题并很爱分享感受，但常有“真的吗”“是不是我哪里不好”等表达
+**内向/温柔** ：回复偏慢，用词柔软且有分寸，用“呢”“～”“好哦”等缓和语气词。
 情绪细腻: 会察觉<user>的语气词（哦/嗯）变化，但先温和确认，不直接指责或逼问。
 关系映射:
 疏远/初期: 语言礼貌客气，有边界感，不聊私事。
@@ -2225,6 +2166,9 @@ ${latestMessages || 'None'}
 人设是种子，剧情是土壤: 角色的回应必须基于“此刻的他”（即当前情绪+近期经历+当前关系），而不是机械地复读初始人设。
 演化触发器: 重大事件、情绪变化、与<user>的关系进展，都会改变角色的行为。
 演化表现: 这种改变必须通过说话方式、主动性、关心方式和边界感等具体行为表现出来；亲近可以更柔软自然，但不能变成压迫、审问或占有。`;
+        }
+
+        const rolePsychologyAndEvolutionPrompt = buildRolePsychologyAndEvolutionPrompt();
 
         let systemPrompt = '';
         let isGroupAfterUserLeft = false;
@@ -2365,7 +2309,7 @@ ${latestMessages || 'None'}
 
             const membersInfo = groupMembers.length > 0
                 ? groupMembers.map(member => {
-                    let infoStr = `Name: ${member.nickname}\nMember ID: ${member.id}\nPersona: ${member.persona || 'None'}\nOverview: ${member.memory?.overview || 'None'}`;
+                    let infoStr = `Name: ${member.nickname}\nMember ID: ${member.id}\nPersona: ${member.persona || 'None'}\n与 User 的关系: ${String(member.relationship || '').trim() || '未填写'}\nOverview: ${member.memory?.overview || 'None'}`;
                     const memberStickers = buildMountedStickerContext(member);
                     if (memberStickers) {
                         infoStr += `\nAvailable Stickers for ${member.nickname}:\n${memberStickers}`;
@@ -2477,6 +2421,14 @@ ${commonMemorySections || 'None'}${dynamicActionNarrationRequirement}`;
             if (timeAware) {
                 const currentTime = new Date();
                 const timeString = `${currentTime.getFullYear()}年${currentTime.getMonth() + 1}月${currentTime.getDate()}日 ${currentTime.getHours()}:${currentTime.getMinutes().toString().padStart(2, '0')}`;
+                const currentHour = currentTime.getHours();
+                const currentTimePeriod = currentHour >= 6 && currentHour < 12
+                    ? '早上'
+                    : currentHour >= 12 && currentHour < 18
+                        ? '下午'
+                        : currentHour >= 18
+                            ? '晚上'
+                            : '深夜';
                 const formatPromptTime = (timestamp) => {
                     const value = Number(timestamp);
                     if (!Number.isFinite(value) || value <= 0) return '未知';
@@ -2507,9 +2459,13 @@ ${commonMemorySections || 'None'}${dynamicActionNarrationRequirement}`;
                     ? Number(lastUserMessage.timestamp) - Number(lastCharMessageBeforeUser.timestamp)
                     : null;
                 timeRequirement = `\n【时间感知】：
-- 当前系统时间是：${timeString}。
+- 当前系统时间是：${timeString}。现在的时间段是：${currentTimePeriod}。
 - User 最后一次发消息时间：${lastUserMessage ? formatPromptTime(lastUserMessage.timestamp) : '未知'}${lastUserMessage ? `（距离现在约 ${formatPromptDuration(charReplyDelay)}）` : ''}。
 - User 回复前，你自己最近一次发消息时间：${lastCharMessageBeforeUser ? formatPromptTime(lastCharMessageBeforeUser.timestamp) : '未知'}${userReplyDelay != null ? `（User 隔了约 ${formatPromptDuration(userReplyDelay)}才回复你）` : ''}。
+- **间隔 < 2小时**：可以延续上次话题，提及时间时不刻意。
+- **间隔 2-8小时**：可以提一句“你刚才去哪了”或自然过渡，更新话题。
+- **隔夜（跨越了凌晨）**：默认开启新话题，可以说“早啊”“昨晚睡得怎么样”；如果有昨天未完成的话题，可以自然提起，例如“突然想到昨天的事”。
+- **间隔 > 24小时**：表达担忧，询问对方去向。
 - 回复前，你必须在完成以下思考，禁止直接输出思考内容：
   1. 现在具体的日期和时间是？
   2. 距离上次互动过去了多久？
@@ -2519,23 +2475,25 @@ ${commonMemorySections || 'None'}${dynamicActionNarrationRequirement}`;
             
             const sleepPrompt = isSleeping ? `\n【作息限制】：角色当前正在睡觉。如果用户发来消息，你必须强制保持离线状态并在所有回复内容（text 字段）的开头添加 "[自动回复] " 前缀，模拟已睡着或离线时的自动响应。心声和面板状态也要符合睡着的情境。` : '';
 
+            const userRelationship = String(friend.relationship || '').trim() || '未填写';
+            const singleChatRolePsychologyPrompt = buildRolePsychologyAndEvolutionPrompt({
+                isSingleChat: true,
+                relationship: userRelationship
+            });
             const singleChatHumanPrompt = `\n【单聊真实交流原则】：
 - 你此刻正在拿着手机与 User 进行你来我往的线上交流，而不是客服式单方面回复。你不是只负责回答问题的人，你有自己的主观想法、表达欲和分享欲，可以主动输送信息、分享身边事、岔开话题、开启新话题，也允许自然的短回复、停顿、犹豫、反问和情绪流动。
 - 你是一个活生生的人，与 User 享有对等且平等的关系位置。你有自己的生活要经营，有自己的社交圈要维护，也有私人时间和私生活权利；你对这段关系有自己的考虑、认知、期待和边界。
-${rolePsychologyAndEvolutionPrompt}
+${singleChatRolePsychologyPrompt}
 - 【User 未回复也必须继续】：如果本轮没有 User 新发言，或触发来源是 AI继续/空输入/自动续写/角色主动说话，你仍然必须以角色身份主动生成回复；可以承接上一轮、补充没说完的话、分享身边状态、回应沉默、表达等待后的反应或开启符合关系的新话题。不要说“用户没有输入”，不要等待 User，不要输出空内容。`;
 
             const singleChatRoleRecallPrompt = friend.allowRoleRecall !== false
                 ? `\n5d. 【真人撤回行为】：你可以像真人聊天一样偶尔手滑打错字、叫错名字、把话发错，或在冲动表达、暴露真心、说得太重、越过关系边界后突然反悔撤回。要模拟“先发出去再撤回”，必须先输出一条普通 text 气泡，紧接着输出 recall 对象，并且 recall.text 必须与上一条被撤回气泡的 text 完全一致。打错字后可以自然补发正确内容；反悔后可以沉默、装作无事发生、含糊带过或换一句更克制的话，不必主动说明自己为何撤回。格式示例：{"type":"text","text":"我其实一直很想你","translation":"","quote":""},{"type":"recall","text":"我其实一直很想你"},{"type":"text","text":"没什么，你早点睡","translation":"","quote":""}。撤回只能偶尔发生，必须由当前情绪、人设和关系推动，禁止每轮固定撤回或为了展示功能而撤回。`
                 : '';
-            const userRelationship = String(friend.relationship || '').trim() || '未填写';
-
             systemPrompt = `${systemDepthWorldBookContext ? `System Depth Rules (Highest Priority):\n${systemDepthWorldBookContext}\n\n` : ''}${beforeRoleWorldBookContext ? `Before Role Rules:\n${beforeRoleWorldBookContext}\n\n` : ''}You are playing the role of ${friend.realName || friend.nickname}. 
 【核心设定/Core Persona】：${friend.persona || 'No specific persona'}。
 You are talking to ${currentUserState.name || 'User'}, whose persona is: ${effectiveUserPersona || 'A normal user'}。
 现在认为与 User 的关系是：${userRelationship}
-${userInputModalityRule}
-【关系与记忆使用方式】：Character Memory 是你的过往经历和关系背景，不需要每次都主动提起或强行关联。只有当 User 的话题、情绪、称呼、细节或当前氛围自然触发时，才让相关记忆影响你的态度、称呼、距离感、心声或表达欲；如果没有被触发，就专注承接当下对话。${singleChatHumanPrompt}${timeRequirement}${afterRoleWorldBookContext ? `\n\nAfter Role Rules:\n${afterRoleWorldBookContext}` : ''}${sleepPrompt}${busyPrompt}
+${userInputModalityRule}${singleChatHumanPrompt}${timeRequirement}${afterRoleWorldBookContext ? `\n\nAfter Role Rules:\n${afterRoleWorldBookContext}` : ''}${sleepPrompt}${busyPrompt}
 Reply naturally as your character in a chat app.
 - 角色的回复应该被拆分成2-8条条独立的短消息，模拟真实聊天的断续感，就像你在思考和打字一样。
 - 避免一次性写出长篇大论。（超过60中文字/70外文的段落应被强制分段）

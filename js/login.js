@@ -1,6 +1,9 @@
 (function() {
     let cachedDom = null;
     let cachedSession = null;
+    let authStateStatus = 'initializing';
+    let authReadySettled = false;
+    let loginDomBound = false;
     let authReadyResolve;
     let authReadyReject;
     const authReady = new Promise((resolve, reject) => {
@@ -16,8 +19,12 @@
 
     async function safeLoadSession() {
         try {
-            if (!window.appStorage?.getAuthSession) return null;
-            await window.appStorage.ready;
+            if (!window.appStorage?.getAuthSession) throw new Error('IndexedDB auth storage unavailable');
+            if (typeof window.appStorage.waitForAuthStorage === 'function') {
+                await window.appStorage.waitForAuthStorage();
+            } else {
+                await window.appStorage.authReady;
+            }
             const session = await window.appStorage.getAuthSession();
             return session && typeof session === 'object' && session.account ? session : null;
         } catch (error) {
@@ -29,8 +36,15 @@
     async function safeSaveSession(session) {
         try {
             if (!window.appStorage?.setAuthSession) throw new Error('IndexedDB auth storage unavailable');
-            await window.appStorage.ready;
-            cachedSession = await window.appStorage.setAuthSession(session);
+            if (typeof window.appStorage.waitForAuthStorage === 'function') {
+                await window.appStorage.waitForAuthStorage();
+            }
+            await window.appStorage.setAuthSession(session);
+            const verified = await window.appStorage.getAuthSession();
+            if (!verified || verified.account !== session.account || verified.loginAt !== session.loginAt) {
+                throw new Error('Authentication session verification failed');
+            }
+            cachedSession = verified;
             return cachedSession;
         } catch (error) {
             console.warn('[u2Auth] Failed to save session:', error);
@@ -41,7 +55,9 @@
     async function safeRemoveSession() {
         try {
             if (!window.appStorage?.clearAuthSession) throw new Error('IndexedDB auth storage unavailable');
-            await window.appStorage.ready;
+            if (typeof window.appStorage.waitForAuthStorage === 'function') {
+                await window.appStorage.waitForAuthStorage();
+            }
             await window.appStorage.clearAuthSession();
             cachedSession = null;
         } catch (error) {
@@ -128,6 +144,9 @@
 
     async function logout() {
         await safeRemoveSession();
+        authStateStatus = 'ready';
+        setCredentialInputsDisabled(false);
+        setSubmitState('idle');
         showLoginScreen({ focus: true });
         emitAuthChanged(null);
         return true;
@@ -156,6 +175,75 @@
         if (dom.error) dom.error.textContent = message || '';
     }
 
+    function setSubmitState(state) {
+        const dom = cachedDom || collectDom();
+        if (!dom.submitButton) return;
+        const label = dom.submitButton.querySelector('span');
+        const icon = dom.submitButton.querySelector('i');
+        const busy = state === 'loading' || state === 'submitting';
+        dom.submitButton.disabled = busy;
+        dom.submitButton.setAttribute('aria-busy', busy ? 'true' : 'false');
+        if (label) {
+            label.textContent = state === 'loading'
+                ? 'Restoring session / 正在恢复'
+                : state === 'retry'
+                    ? 'Retry session / 重试'
+                    : state === 'submitting'
+                        ? 'Signing in / 正在登录'
+                        : 'Continue / 继续';
+        }
+        if (icon) {
+            icon.className = busy ? 'fas fa-spinner fa-spin' : (state === 'retry' ? 'fas fa-rotate-right' : 'fas fa-arrow-right');
+        }
+    }
+
+    function setCredentialInputsDisabled(disabled) {
+        const dom = cachedDom || collectDom();
+        [dom.accountInput, dom.passwordInput, dom.noticeAccepted].forEach((input) => {
+            if (input) input.disabled = !!disabled;
+        });
+    }
+
+    function settleAuthReady() {
+        if (authReadySettled) return;
+        authReadySettled = true;
+        authReadyResolve(true);
+    }
+
+    async function restoreInitialAuthState() {
+        const dom = cachedDom || collectDom();
+        authStateStatus = 'initializing';
+        showLoginScreen();
+        setError('');
+        setCredentialInputsDisabled(true);
+        setSubmitState('loading');
+
+        try {
+            cachedSession = await safeLoadSession();
+        } catch (error) {
+            authStateStatus = 'error';
+            setCredentialInputsDisabled(true);
+            setSubmitState('retry');
+            setError('Unable to restore login session. Tap retry / 无法恢复登录状态，请重试');
+            return false;
+        }
+
+        authStateStatus = 'ready';
+        settleAuthReady();
+        if (cachedSession) {
+            hideLoginScreen();
+            emitAuthChanged(cachedSession);
+            return true;
+        }
+
+        setCredentialInputsDisabled(false);
+        setSubmitState('idle');
+        showLoginScreen();
+        emitAuthChanged(null);
+        dom.accountInput?.focus();
+        return true;
+    }
+
     function clearInvalidState() {
         const dom = cachedDom || collectDom();
         dom.accountField?.classList.remove('is-invalid');
@@ -173,6 +261,11 @@
 
     async function handleSubmit(event) {
         event.preventDefault();
+        if (authStateStatus === 'initializing') return;
+        if (authStateStatus === 'error') {
+            await restoreInitialAuthState();
+            return;
+        }
         const dom = cachedDom || collectDom();
         const account = dom.accountInput ? dom.accountInput.value.trim() : '';
         const password = dom.passwordInput ? dom.passwordInput.value : '';
@@ -196,18 +289,22 @@
         }
 
         clearInvalidState();
+        setSubmitState('submitting');
         let result;
         try {
             result = await login({ account, password });
         } catch (error) {
             setError('Unable to save login session / 无法保存登录状态');
+            setSubmitState('idle');
             return;
         }
         if (!result.ok) {
             setError(result.error || 'Unable to sign in.');
+            setSubmitState('idle');
             return;
         }
 
+        setSubmitState('idle');
         if (dom.passwordInput) dom.passwordInput.value = '';
         if (dom.noticeAccepted) dom.noticeAccepted.checked = false;
         if (typeof window.showToast === 'function') {
@@ -249,21 +346,13 @@
         const dom = collectDom();
         if (!dom.screen || !dom.form) return;
 
-        dom.form.addEventListener('submit', handleSubmit);
-        bindPasswordToggle();
-        bindInputReset();
-
-        cachedSession = await safeLoadSession();
-        authReadyResolve(true);
-        const session = getSession();
-        if (session) {
-            hideLoginScreen();
-            emitAuthChanged(session);
-            return;
+        if (!loginDomBound) {
+            loginDomBound = true;
+            dom.form.addEventListener('submit', handleSubmit);
+            bindPasswordToggle();
+            bindInputReset();
         }
-
-        showLoginScreen();
-        emitAuthChanged(null);
+        await restoreInitialAuthState();
     }
 
     window.u2Auth = {
