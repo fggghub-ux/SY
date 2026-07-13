@@ -229,12 +229,10 @@ test('keeps offline meeting summary third-person and context bubble theme scopin
         settingsSource.indexOf('function applyAllSavedCss')
     );
 
-    assert.doesNotMatch(summarySource, /first-person summary/);
     assert.doesNotMatch(summarySource, /Char 的第一视角/);
-    assert.match(summarySource, /third-person summary/);
-    assert.match(summarySource, /Char's perspective/);
-    assert.match(summarySource, /saw, heard, said, did, noticed/);
-    assert.match(summarySource, /只描述 Char 看到、听到、说出、做出、注意到或能合理推断/);
+    assert.match(summarySource, /meetingSummary 必须使用第三人称 Char 限定视角/);
+    assert.match(summarySource, /shortTermMemory\.event 要作为 \$\{charName\} 自己的短期记忆/);
+    assert.match(summarySource, /只(?:描述|写) Char 看到、听到、说出、做出、注意到或能合理推断/);
 
     assert.match(interfaceSource, /setAttribute\('data-current-friend-id'/);
     assert.match(interfaceSource, /msg-context-row-clone/);
@@ -266,7 +264,7 @@ test('restores saved iMessage theme CSS after contact data hydration and chat pa
 
     assert.ok((interfaceSource.match(/window\.imApp\.applyFriendCss\(friend\)/g) || []).length >= 2);
     assert.match(indexSource, /js\/imessage\/4_chat_interface\.js\?v=20260712-longpress-context-cleanup-v1/);
-    assert.match(indexSource, /js\/imessage\/5_settings\.js\?v=20260713-offline-bound-id-v1/);
+    assert.match(indexSource, /js\/imessage\/5_settings\.js\?v=20260713-offline-memory-v1/);
 });
 
 test('keeps iOS modal, theme preset, stickers, and private-chat safeguards', async () => {
@@ -360,6 +358,10 @@ test('keeps group time awareness, role recall toggle, Chinese generated thoughts
 
     assert.match(aiSource, /buildGroupTimeRequirement/);
     assert.match(aiSource, /【群聊时间感知】/);
+    assert.match(aiSource, /const lastOfflineMeeting = historyMessages[\s\S]*?msg\.type === 'offline_meeting_record'/);
+    assert.match(aiSource, /线下见面与公开消息同样算作一次群聊互动/);
+    assert.match(aiSource, /线下见面与线上消息同样算作一次互动/);
+    assert.match(aiSource, /lastCharOrMeetingBeforeUser/);
     assert.match(aiSource, /thought 字段必须使用自然中文/);
     assert.match(aiSource, /【中文强制】thought、location、action、mood、expression、events 以及 memoryPayload/);
     assert.match(aiSource, /memberProfiles\[memberProfileKey\]/);
@@ -428,7 +430,7 @@ test('applies tuned relationship, personality, and time-gap rules to single and 
     assert.match(aiSource, /const rolePsychologyAndEvolutionPrompt = buildRolePsychologyAndEvolutionPrompt\(\)/);
     assert.match(aiSource, /isSingleChat: true,[\s\S]*?relationship: userRelationship/);
     assert.match(aiSource, /与 User 的关系: \$\{String\(member\.relationship/);
-    assert.match(aiSource, /根据群聊最后一条公开消息距离现在的间隔调整承接方式/);
+    assert.match(aiSource, /根据群聊最近一次互动距离现在的间隔调整承接方式/);
 });
 
 test('uses visible keyword-triggered memory recall for single and group chats', async () => {
@@ -474,9 +476,9 @@ test('uses visible keyword-triggered memory recall for single and group chats', 
     assert.match(settingsSource, /summaryPayload\.memoryTags/);
     assert.match(statusSource, /triggerKeywords = window\.imChat\?\.normalizeMemoryTriggerKeywords/);
     assert.match(cssSource, /\.memory-recall-narration-pill/);
-    assert.match(indexSource, /4_chat_ai\.js\?v=20260713-moments-i18n-unread-v1/);
-    assert.match(indexSource, /4_chat_bubbles\.js\?v=20260712-longpress-context-cleanup-v1/);
-    assert.match(indexSource, /5_settings\.js\?v=20260713-offline-bound-id-v1/);
+    assert.match(indexSource, /4_chat_ai\.js\?v=20260713-offline-time-awareness-v2/);
+    assert.match(indexSource, /4_chat_bubbles\.js\?v=20260713-offline-summary-modal-v3/);
+    assert.match(indexSource, /5_settings\.js\?v=20260713-offline-memory-v1/);
 });
 
 test('uses per-member group languages, content-sized private bubbles, and fresh edited-message context', async () => {
@@ -505,8 +507,8 @@ test('uses per-member group languages, content-sized private bubbles, and fresh 
     assert.match(coreSource, /const getApiContextFingerprint = \(message\) => JSON\.stringify/);
     assert.match(coreSource, /getApiContextFingerprint\(targetMessage\) !== previousContextFingerprint/);
     assert.match(coreSource, /window\.imApp\.clearFriendRuntimeMessageContext\(targetFriend\)/);
-    assert.match(indexSource, /js\/imessage\/2_core\.js\?v=20260713-moments-i18n-unread-v1/);
-    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260713-moments-i18n-unread-v1/);
+    assert.match(indexSource, /js\/imessage\/2_core\.js\?v=20260713-offline-memory-v1/);
+    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260713-offline-time-awareness-v2/);
     assert.match(indexSource, /js\/imessage\/4_chat_main\.js\?v=20260712-reply-single-tap-v1/);
 });
 

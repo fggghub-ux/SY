@@ -569,6 +569,8 @@ window.imApp.normalizeFriendData = function(friend) {
                     : (Array.isArray(entry?.memoryTags)
                         ? entry.memoryTags.map(tag => String(tag || '').trim()).filter(Boolean)
                         : (entry?.keyword ? [String(entry.keyword).trim()] : [])),
+                sourceType: String(entry?.sourceType || '').trim(),
+                sourceId: String(entry?.sourceId || '').trim(),
                 raw: entry?.raw || '',
                 sourceCount: Math.max(0, Number(entry?.sourceCount) || 0),
                 sourceRoundCount: Math.max(0, Number(entry?.sourceRoundCount) || 0),
@@ -637,6 +639,80 @@ window.imApp.normalizeFriendData = function(friend) {
     return normalized;
 };
 
+window.imApp.applyGeneratedShortTermMemory = function(friend, entry, options = {}) {
+    if (!friend || !entry) return null;
+    friend.memory = window.imApp.normalizeFriendData(friend).memory;
+    if (!Array.isArray(friend.memory.shortTermEntries)) friend.memory.shortTermEntries = [];
+
+    const now = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
+    const pad = value => String(value).padStart(2, '0');
+    const nowString = options.nowString || `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日 ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const activatedIds = new Set((Array.isArray(options.activatedEntryIds) ? options.activatedEntryIds : [])
+        .map(String)
+        .filter(Boolean));
+    const parseMemoryDate = (value) => {
+        if (!value) return null;
+        if (typeof value === 'number') {
+            const date = new Date(value);
+            return Number.isNaN(date.getTime()) ? null : date;
+        }
+        const normalized = String(value).trim()
+            .replace(/年/g, '-')
+            .replace(/月/g, '-')
+            .replace(/日/g, ' ')
+            .replace(/\./g, '-')
+            .replace(/\//g, '-');
+        const date = new Date(normalized);
+        return Number.isNaN(date.getTime()) ? null : date;
+    };
+
+    friend.memory.shortTermEntries.forEach((existing) => {
+        if (!existing) return;
+        if (activatedIds.has(String(existing.id))) {
+            existing.degree = '高';
+            existing.lastActivatedAt = nowString;
+            return;
+        }
+        const anchorDate = parseMemoryDate(existing.lastActivatedAt || existing.time || existing.createdAt || '');
+        if (!anchorDate) return;
+        const ageDays = (now.getTime() - anchorDate.getTime()) / (24 * 60 * 60 * 1000);
+        if (ageDays > 30) existing.degree = '遗忘';
+        else if (ageDays > 7) existing.degree = '低';
+        else if (ageDays > 1 && existing.degree === '高') existing.degree = '中';
+    });
+
+    const normalizedEntry = {
+        ...entry,
+        id: entry.id || `stm-${Date.now()}`,
+        time: entry.time || nowString,
+        degree: '高',
+        lastActivatedAt: nowString,
+        sourceType: String(entry.sourceType || '').trim(),
+        sourceId: String(entry.sourceId || '').trim()
+    };
+    const sourceIndex = normalizedEntry.sourceType && normalizedEntry.sourceId
+        ? friend.memory.shortTermEntries.findIndex(existing => (
+            String(existing?.sourceType || '') === normalizedEntry.sourceType
+            && String(existing?.sourceId || '') === normalizedEntry.sourceId
+        ))
+        : -1;
+    if (sourceIndex >= 0) {
+        normalizedEntry.id = friend.memory.shortTermEntries[sourceIndex]?.id || normalizedEntry.id;
+        friend.memory.shortTermEntries[sourceIndex] = {
+            ...friend.memory.shortTermEntries[sourceIndex],
+            ...normalizedEntry
+        };
+    } else {
+        friend.memory.shortTermEntries.push(normalizedEntry);
+    }
+
+    if (options.updateSummaryCursor !== false) {
+        friend.memory.lastSummaryMessageCount = Number(entry.sourceEndMessageCount)
+            || (Array.isArray(friend.messages) ? friend.messages.length : 0);
+    }
+    return normalizedEntry;
+};
+
 window.imApp.createGroupMemberSnapshot = function(group) {
     if (!group || group.type !== 'group') return [];
     const memberIds = Array.isArray(group.members) ? group.members : [];
@@ -668,6 +744,30 @@ window.imApp.getRecentContextMessages = function(friend) {
     const contextLimit = window.imApp.getContextLimit(normalizedFriend);
     const allMessages = Array.isArray(normalizedFriend.messages) ? normalizedFriend.messages : [];
     return contextLimit > 0 ? allMessages.slice(-contextLimit) : [];
+};
+
+window.imApp.formatOfflineMeetingRecordForContext = function(message) {
+    if (!message || message.type !== 'offline_meeting_record') return '';
+    const dateText = String(message.dateText || '').trim() || '未知';
+    const title = String(message.title || '').trim() || '见面记录';
+    const summary = String(message.summary || message.content || '').trim();
+    if (!summary) return '';
+    return [
+        '<offline_meeting>',
+        `<ended_at>${dateText}</ended_at>`,
+        `<title>${title}</title>`,
+        `<summary>${summary}</summary>`,
+        '</offline_meeting>'
+    ].join('\n');
+};
+
+window.imApp.buildOfflineMeetingContext = function(friend) {
+    const records = window.imApp.getRecentContextMessages(friend)
+        .filter(message => message?.type === 'offline_meeting_record')
+        .map(window.imApp.formatOfflineMeetingRecordForContext)
+        .filter(Boolean);
+    if (records.length === 0) return '';
+    return `<offline_meeting_context>\n${records.join('\n')}\n</offline_meeting_context>\nUse these completed face-to-face meeting summaries as known history for the current online chat.`;
 };
 
 window.imApp.getGroupChatMemoryCandidates = function(friend) {
@@ -990,6 +1090,7 @@ window.imApp.buildApiContextMessages = function(friend, options = {}) {
     });
 
     return recentMessages
+        .filter(message => !(options.excludeOfflineMeetingRecords && message?.type === 'offline_meeting_record'))
         .map((message, index) => window.imApp.formatMessageForApiContext(message, normalizedFriend, {
             ...options,
             expandLinkContent: message && message.type === 'fake_link' ? index === latestLinkIndex : options.expandLinkContent

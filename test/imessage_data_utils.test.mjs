@@ -113,6 +113,54 @@ test('parses offline bilingual dialogue for display while keeping Minimax source
     });
 });
 
+test('parses one-shot offline meeting artifacts and guarantees recallable memory tags', () => {
+    const parsed = utils.parseOfflineMeetingArtifacts(JSON.stringify({
+        meetingSummary: {
+            title: '雨天见面',
+            summary: 'Char 在咖啡馆见到 User，两人聊完近期安排后一同离开。'
+        },
+        shortTermMemory: {
+            title: '咖啡馆之约',
+            event: '我在咖啡馆见到 User，并记住了当天的雨声。',
+            memoryPoints: '雨声、咖啡香、安心',
+            memoryTags: ['咖啡馆', 'User'],
+            degree: '低'
+        },
+        activatedEntryIds: ['old-memory', 'old-memory']
+    }), {
+        dateText: '2026年07月13日 12:30',
+        userName: 'User',
+        charName: 'Char',
+        isGroup: false
+    });
+
+    assert.equal(parsed.meetingSummary.title, '雨天见面');
+    assert.equal(parsed.shortTermMemory.degree, '高');
+    assert.equal(parsed.shortTermMemory.time, '2026年07月13日 12:30');
+    assert.equal(parsed.shortTermMemory.memoryTags[0], '线下见面');
+    assert.equal(parsed.shortTermMemory.memoryTags.includes('咖啡馆'), true);
+    assert.deepEqual(parsed.activatedEntryIds, ['old-memory']);
+    assert.equal(parsed.usedMemoryFallback, false);
+});
+
+test('builds a local short-term memory when offline artifact memory is missing', () => {
+    const parsed = utils.parseOfflineMeetingArtifacts(JSON.stringify({
+        meetingSummary: {
+            title: '散步',
+            summary: 'Char 和 User 在河边散步，最后约定下次再见。'
+        }
+    }), {
+        dateText: '2026年07月13日 20:00',
+        userName: 'User',
+        charName: 'Char'
+    });
+
+    assert.equal(parsed.usedMemoryFallback, true);
+    assert.equal(parsed.shortTermMemory.event, parsed.meetingSummary.summary);
+    assert.equal(parsed.shortTermMemory.memoryTags.includes('线下见面'), true);
+    assert.equal(utils.parseOfflineMeetingArtifacts('{"meetingSummary":{"title":"空","summary":""}}'), null);
+});
+
 test('deleting short-term summaries keeps the covered conversation out of the unsummarized queue', () => {
     const messages = [];
     for (let round = 1; round <= 10; round += 1) {
@@ -206,7 +254,38 @@ test('offline meeting state is mutated only inside the persisted friend transact
     assert.doesNotMatch(source, /activeFriend\.offlineRegexScripts\s*=/);
     assert.match(source, /const saved = await commitSheetFriendChange\(activeFriend\.id,[\s\S]*?targetFriend\.offlineMessages = normalized/);
     assert.match(source, /if \(!saved\) throw new Error\('Failed to persist offline meeting messages'\)/);
-    assert.match(source, /if \(!savedSession\)[\s\S]*?Failed to save offline meeting session/);
+    assert.match(source, /if \(!savedSession\)[\s\S]*?Failed to save offline meeting artifacts/);
+    assert.match(source, /onRollback: \(\) => \{[\s\S]*?window\.imData\.currentActiveFriend = restoredFriend/);
+});
+
+test('offline meeting completion persists one online context record and one linked memory', async () => {
+    const [sheetSource, coreSource, storageSource, bubblesSource] = await Promise.all([
+        fs.readFile(new URL('../js/imessage/4_chat_sheet.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/2_core.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/storage/app_storage.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_bubbles.js', import.meta.url), 'utf8')
+    ]);
+
+    assert.match(sheetSource, /"meetingSummary"[\s\S]*?"shortTermMemory"[\s\S]*?"activatedEntryIds"/);
+    assert.match(sheetSource, /shortTermMemory\.event 必须使用第三人称公开记录视角/);
+    assert.match(sheetSource, /sourceType: 'offline_meeting'[\s\S]*?sourceId: String\(sessionId\)/);
+    assert.match(sheetSource, /applyGeneratedShortTermMemory\(targetFriend, memoryEntry,[\s\S]*?updateSummaryCursor: false/);
+    assert.match(sheetSource, /targetFriend\.messages = targetFriend\.messages\.filter[\s\S]*?targetFriend\.messages\.push\(recordMsg\)[\s\S]*?targetFriend\.offlineMeetingSessions/);
+    assert.doesNotMatch(sheetSource, /meetingMessages: session\.messages/);
+    assert.match(sheetSource, /linkedMemory\.event = summaryText/);
+    assert.match(sheetSource, /entry\?\.sourceType === 'offline_meeting'[\s\S]*?String\(entry\.sourceId \|\| ''\) === sessionId/);
+
+    assert.match(coreSource, /buildOfflineMeetingContext = function/);
+    assert.match(coreSource, /excludeOfflineMeetingRecords/);
+    assert.match(coreSource, /sourceType: String\(entry\?\.sourceType/);
+    assert.match(storageSource, /offlineSessionId: typeof safe\.offlineSessionId/);
+    assert.match(storageSource, /rawSummary: typeof safe\.rawSummary/);
+    assert.match(storageSource, /offlineSessionId: row\.offlineSessionId/);
+    assert.match(bubblesSource, /resolveOfflineMeetingDetailMessage[\s\S]*?friend\?\.offlineMeetingSessions/);
+    assert.match(bubblesSource, /modal\.className = 'bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay'/);
+    assert.match(bubblesSource, /const dateText = msg\.dateText \|\| formatOfflineMeetingTimestamp\(timestamp\);[\s\S]*?aria-label="查看见面总结"[\s\S]*?fa-user-friends[\s\S]*?escapeHtml\(title\)[\s\S]*?escapeHtml\(dateText\)/);
+    assert.doesNotMatch(bubblesSource, /offline-meeting-record-card[\s\S]{0,500}?escapeHtml\(summaryText\)/);
+    assert.doesNotMatch(bubblesSource, /没有逐楼记录|>楼层</);
 });
 
 test('offline single chat follows the bound account identity and refreshes visible user bubbles', async () => {
@@ -226,8 +305,8 @@ test('offline single chat follows the bound account identity and refreshes visib
     assert.match(source, /imChat\.refreshOfflineUserIdentity = refreshOfflineUserIdentity/);
     assert.match(settingsSource, /window\.imChat\?\.refreshOfflineUserIdentity[\s\S]*?window\.imChat\.refreshOfflineUserIdentity\(friend\)/);
     assert.match(settingsSource, /updateChatBindIdLabel\(window\.imData\.currentSettingsFriend\);[\s\S]*?refreshChatPageForFriend\(window\.imData\.currentSettingsFriend\);/);
-    assert.match(html, /4_chat_sheet\.js\?v=20260713-offline-bound-id-v1/);
-    assert.match(html, /5_settings\.js\?v=20260713-offline-bound-id-v1/);
+    assert.match(html, /4_chat_sheet\.js\?v=20260713-offline-memory-v1/);
+    assert.match(html, /5_settings\.js\?v=20260713-offline-memory-v1/);
 });
 
 test('Char moment images use external grayscale photos and reveal descriptions only in detail', async () => {

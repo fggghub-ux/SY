@@ -268,6 +268,104 @@
         return safeEntries.filter(entry => !entry || String(entry.id) !== String(entryId));
     }
 
+    function normalizeOfflineMemoryTags(value, fallbackCandidates = []) {
+        const tags = [];
+        const pushTag = (candidate) => {
+            String(candidate || '')
+                .split(/[，,、；;\n|/。.!！?？]+/)
+                .map(tag => tag.trim().replace(/^[\-•·\s]+|[。.!！?？\s]+$/g, ''))
+                .filter(tag => tag.length >= 2 && tag.length <= 32)
+                .forEach((tag) => {
+                    const key = tag.toLocaleLowerCase();
+                    if (!tags.some(existing => existing.toLocaleLowerCase() === key)) tags.push(tag);
+                });
+        };
+        pushTag('线下见面');
+        (Array.isArray(fallbackCandidates) ? fallbackCandidates : [fallbackCandidates]).forEach(pushTag);
+        (Array.isArray(value) ? value : [value]).forEach(pushTag);
+        return tags.slice(0, 6);
+    }
+
+    function parseLegacyOfflineMeetingSummary(rawText) {
+        const raw = String(rawText || '').trim();
+        if (!raw) return null;
+        const lines = raw
+            .split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(Boolean);
+        let title = '';
+        let summary = '';
+        const titleIndex = lines.findIndex(line => /^标题[:：]/.test(line));
+        const contentIndex = lines.findIndex(line => /^(?:见面内容|总结)[:：]/.test(line));
+        if (titleIndex >= 0) title = lines[titleIndex].replace(/^标题[:：]\s*/, '').trim();
+        if (contentIndex >= 0) {
+            const firstLine = lines[contentIndex].replace(/^(?:见面内容|总结)[:：]\s*/, '').trim();
+            summary = [firstLine, ...lines.slice(contentIndex + 1)].filter(Boolean).join('\n\n');
+        } else {
+            summary = lines.filter((_, index) => index !== titleIndex).join('\n\n').trim();
+        }
+        if (!summary) return null;
+        return { title: title || '见面记录', summary };
+    }
+
+    function parseOfflineMeetingArtifacts(rawText, options = {}) {
+        const raw = String(rawText || '').trim();
+        if (!raw) return null;
+        const cleanText = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+        let parsed = null;
+        try {
+            parsed = JSON.parse(cleanText);
+        } catch (_) {
+            parsed = null;
+        }
+
+        const meetingPayload = parsed?.meetingSummary && typeof parsed.meetingSummary === 'object'
+            ? parsed.meetingSummary
+            : null;
+        const legacyMeeting = meetingPayload ? null : parseLegacyOfflineMeetingSummary(cleanText);
+        const title = String(meetingPayload?.title || legacyMeeting?.title || '').trim();
+        const summary = String(meetingPayload?.summary || meetingPayload?.content || legacyMeeting?.summary || '').trim();
+        if (!summary) return null;
+
+        const memoryPayload = parsed?.shortTermMemory && typeof parsed.shortTermMemory === 'object'
+            ? parsed.shortTermMemory
+            : null;
+        const hasModelMemory = !!String(memoryPayload?.event || '').trim();
+        const fallbackCandidates = [
+            title,
+            options.charName,
+            options.userName
+        ];
+        const memoryTitle = String(hasModelMemory ? (memoryPayload.title || title) : title).trim() || '线下见面';
+        const memoryEvent = String(hasModelMemory ? memoryPayload.event : summary).trim() || summary;
+        const memoryPoints = String(hasModelMemory ? (memoryPayload.memoryPoints || memoryEvent) : summary).trim();
+        const memoryTags = normalizeOfflineMemoryTags(
+            hasModelMemory ? memoryPayload.memoryTags : [],
+            fallbackCandidates
+        );
+
+        return {
+            meetingSummary: {
+                title: title || '见面记录',
+                summary
+            },
+            shortTermMemory: {
+                title: memoryTitle,
+                time: String(options.dateText || '').trim(),
+                event: memoryEvent,
+                memoryPoints,
+                memoryTags,
+                triggerKeywords: memoryTags.slice(),
+                degree: '高',
+                raw
+            },
+            activatedEntryIds: Array.isArray(parsed?.activatedEntryIds)
+                ? Array.from(new Set(parsed.activatedEntryIds.map(String).filter(Boolean)))
+                : [],
+            usedMemoryFallback: !hasModelMemory
+        };
+    }
+
     function parseStickerManifestText(text) {
         const items = [];
         const invalidLines = [];
@@ -306,6 +404,8 @@
         normalizeSchedule,
         getSummaryBatch,
         removeShortTermSummaryEntry,
+        normalizeOfflineMemoryTags,
+        parseOfflineMeetingArtifacts,
         parseStickerManifestText
     };
 });

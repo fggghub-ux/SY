@@ -3334,6 +3334,13 @@ document.addEventListener('DOMContentLoaded', () => {
     async function commitGeneratedSummary(friend, summary) {
         if (!friend || !summary) return false;
         return commitNamedFriendChange(friend, (targetFriend) => {
+            if (window.imApp.applyGeneratedShortTermMemory) {
+                window.imApp.applyGeneratedShortTermMemory(targetFriend, summary, {
+                    activatedEntryIds: summary.activatedEntryIds,
+                    updateSummaryCursor: true
+                });
+                return;
+            }
             targetFriend.memory = window.imApp.normalizeFriendData(targetFriend).memory;
             if (!Array.isArray(targetFriend.memory.shortTermEntries)) targetFriend.memory.shortTermEntries = [];
             const now = new Date();

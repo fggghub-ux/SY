@@ -1363,6 +1363,16 @@ function createAttachmentSheet(page) {
                     };
                 });
 
+                targetFriend.memory = window.imApp.normalizeFriendData(targetFriend).memory;
+                const linkedMemory = (targetFriend.memory.shortTermEntries || []).find(entry => (
+                    entry?.sourceType === 'offline_meeting'
+                    && String(entry.sourceId || '') === sessionId
+                ));
+                if (linkedMemory) {
+                    linkedMemory.title = session.title || linkedMemory.title || '线下见面';
+                    linkedMemory.event = summaryText;
+                }
+
                 if (Array.isArray(targetFriend.messages)) {
                     targetFriend.messages.forEach((message) => {
                         if (!isOfflineMeetingRecordForSession(message, session)) return;
@@ -1398,6 +1408,11 @@ function createAttachmentSheet(page) {
                 if (!targetFriend) return;
                 targetFriend.offlineMeetingSessions = (Array.isArray(targetFriend.offlineMeetingSessions) ? targetFriend.offlineMeetingSessions : [])
                     .filter(item => String(item?.id || '') !== sessionId);
+                targetFriend.memory = window.imApp.normalizeFriendData(targetFriend).memory;
+                targetFriend.memory.shortTermEntries = (targetFriend.memory.shortTermEntries || []).filter(entry => !(
+                    entry?.sourceType === 'offline_meeting'
+                    && String(entry.sourceId || '') === sessionId
+                ));
 
                 if (Array.isArray(targetFriend.messages)) {
                     targetFriend.messages = targetFriend.messages.filter(message => !isOfflineMeetingRecordForSession(message, session));
@@ -3355,44 +3370,19 @@ function createAttachmentSheet(page) {
             }).join('\n\n');
         };
 
-        const parseOfflineMeetingSummary = (rawText, endedAt) => {
-            const raw = String(rawText || '').trim();
-            const generatedDatePattern = /^(?:(?:日期|时间|当前时间|见面时间|结束时间)[:：]\s*)?(?:\d{4}年\d{1,2}月\d{1,2}日|\d{4}[-/.]\d{1,2}[-/.]\d{1,2})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?\s*$/;
-            const lines = raw
-                .split(/\r?\n/)
-                .map(line => line.trim())
-                .filter(line => line && !generatedDatePattern.test(line));
-            const dateText = formatOfflineMeetingDate(endedAt);
-            let title = '见面记录';
-            let summary = lines.join('\n\n').trim();
-
-            const titleIndex = lines.findIndex(line => /^标题[:：]/.test(line));
-            if (titleIndex >= 0) {
-                title = lines[titleIndex].replace(/^标题[:：]\s*/, '').trim() || title;
-            } else if (lines.length > 1) {
-                const candidate = lines.find(line => !/^见面内容[:：]/.test(line));
-                if (candidate) title = candidate.replace(/^#+\s*/, '').trim() || title;
-            }
-
-            const contentIndex = lines.findIndex(line => /^见面内容[:：]/.test(line));
-            if (contentIndex >= 0) {
-                const firstContentLine = lines[contentIndex].replace(/^见面内容[:：]\s*/, '').trim();
-                summary = [firstContentLine, ...lines.slice(contentIndex + 1)].filter(Boolean).join('\n\n');
-            } else if (lines.length > 0) {
-                summary = lines
-                    .filter((_, index) => index !== titleIndex)
-                    .join('\n\n')
-                    .trim() || lines.join('\n\n').trim();
-            }
-
-            const normalizedSummary = summary || '本次见面暂无总结。';
-
-            return {
-                dateText,
-                title,
-                summary: normalizedSummary,
-                rawSummary: [`标题：${title}`, `见面内容：${normalizedSummary}`].join('\n')
-            };
+        const formatOfflineExistingMemories = (activeFriend) => {
+            const entries = Array.isArray(activeFriend?.memory?.shortTermEntries)
+                ? activeFriend.memory.shortTermEntries
+                : [];
+            if (entries.length === 0) return '无';
+            return entries.slice(-30).map(entry => [
+                `ID: ${entry.id || ''}`,
+                `标题: ${entry.title || '对话总结'}`,
+                `时间: ${entry.time || ''}`,
+                `事件: ${entry.event || ''}`,
+                `标签: ${(entry.memoryTags || entry.triggerKeywords || []).join('、')}`,
+                `记忆程度: ${entry.degree || '高'}`
+            ].join('\n')).join('\n\n');
         };
 
         const requestOfflineMeetingSummary = async (activeFriend, messages) => {
@@ -3410,6 +3400,48 @@ function createAttachmentSheet(page) {
             const identityContext = getOfflineIdentityContext(activeFriend);
             const charName = identityContext.charName;
             const transcript = formatOfflineMeetingTranscript(activeFriend, messages);
+            const existingMemories = formatOfflineExistingMemories(activeFriend);
+            const groupPrivacyRules = identityContext.isGroup
+                ? `
+- meetingSummary 和 shortTermMemory 都只能使用本次群体线下见面中公开发生的内容。
+- 不得写入、推断或复述任何群成员私信或其他私密联系中的内容。
+- shortTermMemory.event 必须使用第三人称公开记录视角。`
+                : `
+- shortTermMemory.event 要作为 ${charName} 自己的短期记忆，使用 Char 第一人称视角。
+- 不得进入 User 或其他人的私密内心，只能写 Char 观察、经历或能合理推断的事。`;
+            const artifactPrompt = `请把下方已结束的${identityContext.isGroup ? '群体线下见面' : '线下见面'}同时整理成“线上见面总结”和“短期记忆”。
+
+User 名称：${identityContext.userName}
+Char：${charName}
+
+已有短期记忆：
+${existingMemories}
+
+严格规则：
+- meetingSummary 必须使用第三人称 Char 限定视角，只写 Char 看到、听到、说出、做出、注意到或能合理推断的事情。
+- meetingSummary.title 不超过 10 字；meetingSummary.summary 说清前因、过程和结果，不得生成日期或时间。
+- shortTermMemory.memoryTags 输出 3-6 个 2-16 字、可独立触发的主题、人物、地点、物品或感受标签，必须包含“线下见面”。
+- shortTermMemory.degree 只能是“高”。
+- activatedEntryIds 只能使用上面已有短期记忆的 ID，没有相关记忆时输出空数组。${groupPrivacyRules}
+
+必须只输出可解析 JSON，不要 markdown，不要解释：
+{
+  "meetingSummary": {
+    "title": "见面事件标题",
+    "summary": "第三人称 Char 限定视角的完整见面总结"
+  },
+  "shortTermMemory": {
+    "title": "10字内的记忆标题",
+    "event": "本次见面形成的可召回记忆",
+    "memoryPoints": "关键参与者、目标或矛盾、情绪变化、结果或未决点",
+    "memoryTags": ["线下见面", "具体主题", "具体人物"],
+    "degree": "高"
+  },
+  "activatedEntryIds": []
+}
+
+线下见面全部楼层：
+${transcript}`;
             const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
@@ -3423,11 +3455,11 @@ function createAttachmentSheet(page) {
                     messages: [
                         {
                             role: 'system',
-                            content: `Write a concise third-person summary of one completed face-to-face ${identityContext.isGroup ? 'group meeting' : 'meeting'} involving ${charName}. Do not roleplay a new scene. The summary must be limited to Char's perspective: only describe what Char saw, heard, said, did, noticed, or could reasonably infer. Do not use first-person "I" for Char. Do not enter User's or other people's private thoughts. Output exactly two sections in Chinese: first line starts with 标题：, then 见面内容： followed by the summary. Never output any date, time, timestamp, or time-related heading.`
+                            content: '你只输出严格、可解析的 JSON，不要 markdown，不要解释。'
                         },
                         {
                             role: 'user',
-                            content: `请以第三人称、Char 限定视角总结以下${identityContext.isGroup ? '群体线下见面' : '线下见面'}的所有楼层。只描述 Char 看到、听到、说出、做出、注意到或能合理推断的事情；不要写 Char 的第一人称“我”，不要进入 User 或其他人的内心。只生成标题和见面内容，不要生成日期或时间。\n\n${transcript}`
+                            content: artifactPrompt
                         }
                     ]
                 })
@@ -3459,65 +3491,112 @@ function createAttachmentSheet(page) {
             try {
                 if (window.showToast) window.showToast('正在生成见面总结...');
                 const rawSummary = await requestOfflineMeetingSummary(activeFriend, messages);
-                const parsed = parseOfflineMeetingSummary(rawSummary, endedAt);
+                const identityContext = getOfflineIdentityContext(activeFriend);
+                const dateText = formatOfflineMeetingDate(endedAt);
+                const parsed = window.imDataUtils?.parseOfflineMeetingArtifacts
+                    ? window.imDataUtils.parseOfflineMeetingArtifacts(rawSummary, {
+                        dateText,
+                        userName: identityContext.userName,
+                        charName: identityContext.charName,
+                        isGroup: identityContext.isGroup
+                    })
+                    : null;
+                if (!parsed?.meetingSummary?.summary) {
+                    throw new Error('Invalid offline meeting artifacts');
+                }
+                if (window.imApp?.ensureFriendMessagesLoaded) {
+                    await window.imApp.ensureFriendMessagesLoaded(activeFriend);
+                }
                 const sessionId = activeFriend.offlineCurrentSessionId || createOfflineTavernId('offline-session');
+                const meetingSummary = parsed.meetingSummary;
                 const session = {
                     id: sessionId,
                     startedAt: Number(activeFriend.offlineMeetingStartedAt) || messages[0]?.timestamp || endedAt,
                     endedAt,
                     messages: cloneOfflineMeetingMessages(messages),
-                    dateText: parsed.dateText,
-                    title: parsed.title,
-                    summary: parsed.summary,
-                    rawSummary: parsed.rawSummary
+                    dateText,
+                    title: meetingSummary.title,
+                    summary: meetingSummary.summary,
+                    rawSummary: [`标题：${meetingSummary.title}`, `见面内容：${meetingSummary.summary}`].join('\n')
                 };
-                const recordContent = [parsed.dateText, parsed.title, parsed.summary].filter(Boolean).join('\n\n');
+                const memoryEntry = {
+                    ...parsed.shortTermMemory,
+                    id: `stm-offline-${sessionId}`,
+                    time: dateText,
+                    degree: '高',
+                    sourceType: 'offline_meeting',
+                    sourceId: String(sessionId)
+                };
+                const recordContent = [dateText, meetingSummary.title, meetingSummary.summary].filter(Boolean).join('\n\n');
                 const recordMsg = {
                     id: createOfflineTavernId('meeting'),
                     role: 'system',
                     type: OFFLINE_MEETING_RECORD_TYPE,
                     offlineSessionId: sessionId,
                     endedAt,
-                    dateText: parsed.dateText,
-                    title: parsed.title,
-                    summary: parsed.summary,
-                    rawSummary: parsed.rawSummary,
-                    meetingMessages: session.messages,
+                    dateText,
+                    title: meetingSummary.title,
+                    summary: meetingSummary.summary,
+                    rawSummary: session.rawSummary,
                     content: recordContent,
-                    text: `见面记录：${parsed.title}`,
+                    text: `见面记录：${meetingSummary.title}`,
                     timestamp: endedAt
                 };
 
-                let savedRecord = true;
-                if (window.imApp?.appendFriendMessage) {
-                    savedRecord = await window.imApp.appendFriendMessage(activeFriend.id, recordMsg, { silent: true });
-                } else {
-                    savedRecord = await commitSheetFriendChange(activeFriend, (targetFriend) => {
-                        if (!Array.isArray(targetFriend.messages)) targetFriend.messages = [];
-                        targetFriend.messages.push(recordMsg);
-                    }, { silent: true });
-                }
-                if (!savedRecord) {
-                    throw new Error('Failed to save offline meeting record');
-                }
-
-                const sessions = normalizeOfflineMeetingSessions(activeFriend).concat(session);
                 const savedSession = await commitSheetFriendChange(activeFriend.id, (targetFriend) => {
-                    targetFriend.offlineMeetingSessions = sessions;
+                    if (!Array.isArray(targetFriend.messages)) targetFriend.messages = [];
+                    targetFriend.messages = targetFriend.messages.filter(message => !(
+                        (message?.type === 'system_notice' && message.noticeKind === OFFLINE_ACTIVE_NOTICE_KIND)
+                        || (message?.type === OFFLINE_MEETING_RECORD_TYPE && String(message.offlineSessionId || '') === String(sessionId))
+                    ));
+                    targetFriend.messages.push(recordMsg);
+                    if (window.imApp?.reindexFriendMessages) window.imApp.reindexFriendMessages(targetFriend);
+                    if (window.imApp?.syncFriendMessageSummary) window.imApp.syncFriendMessageSummary(targetFriend);
+
+                    targetFriend.offlineMeetingSessions = (Array.isArray(targetFriend.offlineMeetingSessions) ? targetFriend.offlineMeetingSessions : [])
+                        .filter(item => String(item?.id || '') !== String(sessionId))
+                        .concat(session);
+                    window.imApp.applyGeneratedShortTermMemory(targetFriend, memoryEntry, {
+                        activatedEntryIds: parsed.activatedEntryIds,
+                        now: new Date(endedAt),
+                        nowString: dateText,
+                        updateSummaryCursor: false
+                    });
                     targetFriend.offlineMessages = [];
                     targetFriend.offlineMeetingActive = false;
                     targetFriend.offlineCurrentSessionId = null;
                     targetFriend.offlineMeetingStartedAt = null;
-                }, { silent: true, metaOnly: true });
+                    if (window.imApp?.clearFriendRuntimeMessageContext) window.imApp.clearFriendRuntimeMessageContext(targetFriend);
+                    if (window.imApp?.syncActiveFriendReference) window.imApp.syncActiveFriendReference(targetFriend);
+                    if (window.imApp?.syncSettingsFriendReference) window.imApp.syncSettingsFriendReference(targetFriend);
+                }, {
+                    silent: true,
+                    includeMessages: true,
+                    immediate: true,
+                    onRollback: () => {
+                        const restoredFriend = window.imApp?.getFriendById?.(activeFriend.id);
+                        if (!restoredFriend) return;
+                        if (window.imData?.currentActiveFriend
+                            && String(window.imData.currentActiveFriend.id) === String(restoredFriend.id)) {
+                            window.imData.currentActiveFriend = restoredFriend;
+                        }
+                        if (window.imApp?.syncActiveFriendReference) window.imApp.syncActiveFriendReference(restoredFriend);
+                        if (window.imApp?.syncSettingsFriendReference) window.imApp.syncSettingsFriendReference(restoredFriend);
+                    }
+                });
                 if (!savedSession) {
-                    throw new Error('Failed to save offline meeting session');
+                    throw new Error('Failed to save offline meeting artifacts');
                 }
 
                 const latestFriend = window.imApp?.getFriendById?.(activeFriend.id) || activeFriend;
-                await removeOfflineMeetingActiveNotice(latestFriend);
                 renderOfflineCurrentMessages(latestFriend);
                 rerenderOnlineChatForFriend(latestFriend, { scroll: true });
-                if (window.showToast) window.showToast('见面记录已生成');
+                if (window.imApp?.renderMemoryView) window.imApp.renderMemoryView();
+                if (window.showToast) {
+                    window.showToast(parsed.usedMemoryFallback
+                        ? '见面记录已生成，短期记忆使用基础版本'
+                        : '见面记录与短期记忆已生成');
+                }
             } catch (error) {
                 console.error('End offline meeting failed', error);
                 if (window.showToast) {

@@ -1868,9 +1868,13 @@ Output only valid JSON with this exact shape:
             const lastUserMessage = historyMessages.slice().reverse().find(msg => msg.role === 'user') || null;
             const lastMemberMessage = historyMessages.slice().reverse().find(msg => msg.role === 'assistant') || null;
             const lastPublicMessage = historyMessages.slice().reverse().find(msg => msg.role === 'user' || msg.role === 'assistant') || null;
+            const lastOfflineMeeting = historyMessages.slice().reverse().find(msg => msg.type === 'offline_meeting_record') || null;
+            const lastInteraction = [lastPublicMessage, lastOfflineMeeting]
+                .filter(Boolean)
+                .reduce((latest, item) => (!latest || Number(item.timestamp) > Number(latest.timestamp) ? item : latest), null);
             const lastSpeakerName = lastMemberMessage ? getGroupMessageSpeakerName(lastMemberMessage, groupMembers) : '未知';
-            const gapSinceLastPublic = lastPublicMessage
-                ? currentTime.getTime() - Number(lastPublicMessage.timestamp)
+            const gapSinceLastInteraction = lastInteraction
+                ? currentTime.getTime() - Number(lastInteraction.timestamp)
                 : null;
             const gapSinceUser = lastUserMessage
                 ? currentTime.getTime() - Number(lastUserMessage.timestamp)
@@ -1883,8 +1887,10 @@ Output only valid JSON with this exact shape:
 - 当前系统时间是：${timeString}。现在的时间段是：${currentTimePeriod}。
 - User 最后一次发言时间：${lastUserMessage ? formatPromptTime(lastUserMessage.timestamp) : '未知'}${lastUserMessage ? `（距离现在约 ${formatPromptDuration(gapSinceUser)}）` : ''}。
 - 群成员最近一次公开发言：${lastMemberMessage ? `${lastSpeakerName} 于 ${formatPromptTime(lastMemberMessage.timestamp)}` : '未知'}${lastMemberMessage ? `（距离现在约 ${formatPromptDuration(gapSinceMember)}）` : ''}。
-- 群聊最后一条公开消息距离现在：${lastPublicMessage ? `约 ${formatPromptDuration(gapSinceLastPublic)}` : '未知'}。
-- 根据群聊最后一条公开消息距离现在的间隔调整承接方式：
+- 最近一次线下见面：${lastOfflineMeeting ? `${formatPromptTime(lastOfflineMeeting.timestamp)} 结束（${lastOfflineMeeting.title || '见面记录'}）` : '无'}。
+- 群聊最近一次互动：${lastInteraction ? `${lastInteraction.type === 'offline_meeting_record' ? '线下见面' : '线上消息'}，发生于 ${formatPromptTime(lastInteraction.timestamp)}（距离现在约 ${formatPromptDuration(gapSinceLastInteraction)}）` : '未知'}。
+- 线下见面与公开消息同样算作一次群聊互动；如果线下见面更新，必须从见面结束时间计算间隔，不得因更早的线上发言而误判成员长期失联。
+- 根据群聊最近一次互动距离现在的间隔调整承接方式：
   - **间隔 < 2小时**：可以延续上次话题，提及时间时不刻意。
   - **间隔 2-8小时**：可以自然询问刚才发生了什么，或自然过渡并更新话题。
   - **隔夜（跨越了凌晨）**：默认开启新话题，可以说“早啊”“昨晚睡得怎么样”；如果有昨天未完成的话题，可以自然提起，例如“突然想到昨天的事”。
@@ -2450,18 +2456,30 @@ ${commonMemorySections || 'None'}${dynamicActionNarrationRequirement}`;
                 };
                 const historyMessages = Array.isArray(friend.messages) ? friend.messages : [];
                 const lastUserMessage = historyMessages.slice().reverse().find(msg => msg && msg.role === 'user' && Number(msg.timestamp) > 0) || null;
+                const lastOnlineInteraction = historyMessages.slice().reverse().find(msg => msg && (msg.role === 'user' || msg.role === 'assistant') && Number(msg.timestamp) > 0) || null;
+                const lastOfflineMeeting = historyMessages.slice().reverse().find(msg => msg && msg.type === 'offline_meeting_record' && Number(msg.timestamp) > 0) || null;
+                const lastInteraction = [lastOnlineInteraction, lastOfflineMeeting]
+                    .filter(Boolean)
+                    .reduce((latest, item) => (!latest || Number(item.timestamp) > Number(latest.timestamp) ? item : latest), null);
                 const messagesBeforeLastUser = lastUserMessage
                     ? historyMessages.filter(msg => msg && Number(msg.timestamp) > 0 && Number(msg.timestamp) < Number(lastUserMessage.timestamp))
                     : historyMessages;
-                const lastCharMessageBeforeUser = messagesBeforeLastUser.slice().reverse().find(msg => msg && msg.role === 'assistant' && Number(msg.timestamp) > 0) || null;
-                const charReplyDelay = lastUserMessage ? currentTime.getTime() - Number(lastUserMessage.timestamp) : null;
-                const userReplyDelay = lastUserMessage && lastCharMessageBeforeUser
-                    ? Number(lastUserMessage.timestamp) - Number(lastCharMessageBeforeUser.timestamp)
+                const lastCharOrMeetingBeforeUser = messagesBeforeLastUser.slice().reverse().find(msg => (
+                    msg
+                    && (msg.role === 'assistant' || msg.type === 'offline_meeting_record')
+                    && Number(msg.timestamp) > 0
+                )) || null;
+                const gapSinceLastInteraction = lastInteraction ? currentTime.getTime() - Number(lastInteraction.timestamp) : null;
+                const userReplyDelay = lastUserMessage && lastCharOrMeetingBeforeUser
+                    ? Number(lastUserMessage.timestamp) - Number(lastCharOrMeetingBeforeUser.timestamp)
                     : null;
                 timeRequirement = `\n【时间感知】：
 - 当前系统时间是：${timeString}。现在的时间段是：${currentTimePeriod}。
-- User 最后一次发消息时间：${lastUserMessage ? formatPromptTime(lastUserMessage.timestamp) : '未知'}${lastUserMessage ? `（距离现在约 ${formatPromptDuration(charReplyDelay)}）` : ''}。
-- User 回复前，你自己最近一次发消息时间：${lastCharMessageBeforeUser ? formatPromptTime(lastCharMessageBeforeUser.timestamp) : '未知'}${userReplyDelay != null ? `（User 隔了约 ${formatPromptDuration(userReplyDelay)}才回复你）` : ''}。
+- User 最后一次发消息时间：${lastUserMessage ? formatPromptTime(lastUserMessage.timestamp) : '未知'}。
+- 最近一次线下见面：${lastOfflineMeeting ? `${formatPromptTime(lastOfflineMeeting.timestamp)} 结束（${lastOfflineMeeting.title || '见面记录'}）` : '无'}。
+- 最近一次互动：${lastInteraction ? `${lastInteraction.type === 'offline_meeting_record' ? '线下见面' : lastInteraction.role === 'user' ? 'User 线上消息' : 'Char 线上消息'}，发生于 ${formatPromptTime(lastInteraction.timestamp)}（距离现在约 ${formatPromptDuration(gapSinceLastInteraction)}）` : '未知'}。
+- User 回复前最近一次 Char/线下互动：${lastCharOrMeetingBeforeUser ? `${lastCharOrMeetingBeforeUser.type === 'offline_meeting_record' ? '线下见面结束' : 'Char 发消息'}于 ${formatPromptTime(lastCharOrMeetingBeforeUser.timestamp)}` : '未知'}${userReplyDelay != null ? `（User 隔了约 ${formatPromptDuration(userReplyDelay)}才回复）` : ''}。
+- 线下见面与线上消息同样算作一次互动；如果线下见面更新，必须从见面结束时间计算间隔，不得因更早的线上消息而误判 User 长期失联或未回复。
 - **间隔 < 2小时**：可以延续上次话题，提及时间时不刻意。
 - **间隔 2-8小时**：可以提一句“你刚才去哪了”或自然过渡，更新话题。
 - **隔夜（跨越了凌晨）**：默认开启新话题，可以说“早啊”“昨晚睡得怎么样”；如果有昨天未完成的话题，可以自然提起，例如“突然想到昨天的事”。
@@ -2552,6 +2570,15 @@ Never truncate OUTPUT(x)
 </GEMINI_OVERRIDE_CORE>`;
 
         const messages = [{ role: 'system', content: systemPrompt }];
+        const offlineMeetingContext = window.imApp.buildOfflineMeetingContext
+            ? window.imApp.buildOfflineMeetingContext(friend)
+            : '';
+        if (offlineMeetingContext) {
+            messages.push({
+                role: 'system',
+                content: offlineMeetingContext
+            });
+        }
         if (groupChatMemoryContext && friend.type !== 'group') {
             messages.push({
                 role: 'system',
@@ -2560,7 +2587,8 @@ Never truncate OUTPUT(x)
         }
         if (window.imApp.buildApiContextMessages) {
             const contextMessages = window.imApp.buildApiContextMessages(friend, {
-                userName: currentUserState.name || 'User'
+                userName: currentUserState.name || 'User',
+                excludeOfflineMeetingRecords: true
             });
 
             if (Array.isArray(contextMessages) && contextMessages.length > 0) {
