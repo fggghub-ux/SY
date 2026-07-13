@@ -303,8 +303,7 @@ function decodeBuiltinWorldBookPayload(payload) {
 window.builtinWorldBookEntries = decodeBuiltinWorldBookPayload(BUILTIN_WB_PAYLOAD);
 const ENABLED_BUILTIN_WORLD_BOOK_ENTRY_IDS = new Set([
     'builtin-living-vibe-1-0',
-    'builtin-punctuation-usage-rules',
-    'builtin-override-limit'
+    'builtin-punctuation-usage-rules'
 ]);
 
 window.getBuiltinWorldBookEntries = function() {

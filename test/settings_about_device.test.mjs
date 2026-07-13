@@ -40,15 +40,15 @@ test('disclaimer contains author identity and required usage notices', () => {
 test('reusable About modal switches isolated content and restores focus', () => {
     const openBody = getFunctionBody(modalSource, 'open');
     assert.match(openBody, /mode === 'changelog'/);
-    assert.match(openBody, /aboutDisclaimerContent\.hidden = showChangelog/);
-    assert.match(openBody, /aboutChangelogContent\.hidden = !showChangelog/);
-    assert.match(openBody, /aboutInfoCloseBtn\?\.focus\(\)/);
+    assert.match(openBody, /disclaimerContent\.hidden = showChangelog/);
+    assert.match(openBody, /changelogContent\.hidden = !showChangelog/);
+    assert.match(openBody, /closeButton\?\.focus\(\)/);
     assert.match(html, /id="about-changelog-content"[^>]*hidden/);
     assert.match(html, /暂无更新日志/);
 
     const closeBody = getFunctionBody(modalSource, 'close');
-    assert.match(closeBody, /aboutInfoReturnFocus\.focus\(\)/);
-    assert.match(closeBody, /aboutInfoPreviousBodyOverflow/);
+    assert.match(closeBody, /returnFocus\.focus\(\)/);
+    assert.match(closeBody, /previousBodyOverflow/);
 });
 
 test('About modal closes from its controls, backdrop, and Escape key', () => {

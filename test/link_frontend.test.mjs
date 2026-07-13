@@ -383,8 +383,8 @@ test('keeps group time awareness, role recall toggle, Chinese generated thoughts
         builtinWorldBookSource.indexOf('window.getBuiltinWorldBookEntries')
     );
     assert.doesNotMatch(enabledBuiltinWorldBookSource, /builtin-anti-format-drop-1-0/);
-    assert.match(enabledBuiltinWorldBookSource, /builtin-override-limit/);
-    assert.match(indexSource, /js\/builtin_worldbook\.js\?v=20260712-enable-override-limit-v1/);
+    assert.doesNotMatch(enabledBuiltinWorldBookSource, /builtin-override-limit/);
+    assert.match(indexSource, /js\/builtin_worldbook\.js\?v=20260713-disable-override-limit-v2/);
 
     assert.match(interfaceSource, /window\.imApp\.getFriendById\(friend\.id\)/);
     assert.match(interfaceSource, /hasHistoricalThought/);
@@ -505,7 +505,7 @@ test('uses visible keyword-triggered memory recall for single and group chats', 
     assert.match(settingsSource, /summaryPayload\.memoryTags/);
     assert.match(statusSource, /triggerKeywords = window\.imChat\?\.normalizeMemoryTriggerKeywords/);
     assert.match(cssSource, /\.memory-recall-narration-pill/);
-    assert.match(indexSource, /4_chat_ai\.js\?v=20260713-chat-priority-time-context-v3/);
+    assert.match(indexSource, /4_chat_ai\.js\?v=20260713-single-chat-respect-v4/);
     assert.match(indexSource, /4_chat_bubbles\.js\?v=20260713-offline-summary-modal-v3/);
     assert.match(indexSource, /5_settings\.js\?v=20260713-offline-memory-v1/);
 });
@@ -537,7 +537,7 @@ test('uses per-member group languages, content-sized private bubbles, and fresh 
     assert.match(coreSource, /getApiContextFingerprint\(targetMessage\) !== previousContextFingerprint/);
     assert.match(coreSource, /window\.imApp\.clearFriendRuntimeMessageContext\(targetFriend\)/);
     assert.match(indexSource, /js\/imessage\/2_core\.js\?v=20260713-offline-memory-v1/);
-    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260713-chat-priority-time-context-v3/);
+    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260713-single-chat-respect-v4/);
     assert.match(indexSource, /js\/imessage\/4_chat_main\.js\?v=20260712-reply-single-tap-v1/);
 });
 
