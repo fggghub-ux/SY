@@ -65,7 +65,7 @@ test('notice text opens the shared disclaimer without changing the checkbox', ()
 
 test('shared modal loads before login and remains interactive above the lock screen', () => {
     const modalScriptAt = html.indexOf('js/about_info_modal.js?v=20260712-login-notice-v1');
-    const loginScriptAt = html.indexOf('js/login.js?v=20260713-auth-fast-v1');
+    const loginScriptAt = html.indexOf('js/login.js?v=20260713-auth-local-v1');
     assert.ok(modalScriptAt > 0 && modalScriptAt < loginScriptAt);
     assert.match(html, /css\/login\.css\?v=20260712-login-notice-v1/);
     assert.match(html, /css\/settings\.css\?v=20260712-login-notice-v1/);

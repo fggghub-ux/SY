@@ -1,4 +1,5 @@
 (function() {
+    const AUTH_SESSION_STORAGE_KEY = 'u2_authSession';
     let cachedDom = null;
     let cachedSession = null;
     let authStateStatus = 'initializing';
@@ -17,52 +18,49 @@
         return JSON.parse(JSON.stringify(value));
     }
 
-    async function safeLoadSession() {
+    function isValidSession(session) {
+        return !!session
+            && typeof session === 'object'
+            && typeof session.account === 'string'
+            && !!session.account.trim()
+            && typeof session.displayName === 'string'
+            && Number.isFinite(session.loginAt)
+            && session.loginAt > 0;
+    }
+
+    function safeLoadSession() {
         try {
-            if (!window.appStorage?.getAuthSession) throw new Error('IndexedDB auth storage unavailable');
-            if (typeof window.appStorage.waitForAuthStorage === 'function') {
-                await window.appStorage.waitForAuthStorage();
-            } else {
-                await window.appStorage.authReady;
-            }
-            const session = await window.appStorage.getAuthSession();
-            return session && typeof session === 'object' && session.account ? session : null;
+            const rawSession = window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY);
+            if (!rawSession) return null;
+            const session = JSON.parse(rawSession);
+            if (isValidSession(session)) return session;
+            window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+            return null;
         } catch (error) {
             console.warn('[u2Auth] Failed to load session:', error);
+            try {
+                window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+            } catch (removeError) {}
             return null;
         }
     }
 
-    async function safeSaveSession(session) {
+    function safeSaveSession(session) {
+        cachedSession = clonePlainData(session);
         try {
-            if (!window.appStorage?.setAuthSession) throw new Error('IndexedDB auth storage unavailable');
-            if (typeof window.appStorage.waitForAuthStorage === 'function') {
-                await window.appStorage.waitForAuthStorage();
-            }
-            await window.appStorage.setAuthSession(session);
-            const verified = await window.appStorage.getAuthSession();
-            if (!verified || verified.account !== session.account || verified.loginAt !== session.loginAt) {
-                throw new Error('Authentication session verification failed');
-            }
-            cachedSession = verified;
-            return cachedSession;
+            window.localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(session));
         } catch (error) {
-            console.warn('[u2Auth] Failed to save session:', error);
-            throw error;
+            console.warn('[u2Auth] Session will only last for this page:', error);
         }
+        return cachedSession;
     }
 
-    async function safeRemoveSession() {
+    function safeRemoveSession() {
+        cachedSession = null;
         try {
-            if (!window.appStorage?.clearAuthSession) throw new Error('IndexedDB auth storage unavailable');
-            if (typeof window.appStorage.waitForAuthStorage === 'function') {
-                await window.appStorage.waitForAuthStorage();
-            }
-            await window.appStorage.clearAuthSession();
-            cachedSession = null;
+            window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
         } catch (error) {
             console.warn('[u2Auth] Failed to remove session:', error);
-            throw error;
         }
     }
 
@@ -133,7 +131,7 @@
             displayName: resolveDisplayName(account),
             loginAt: Date.now()
         };
-        await safeSaveSession(session);
+        safeSaveSession(session);
         hideLoginScreen();
         emitAuthChanged(session);
         return {
@@ -143,7 +141,7 @@
     }
 
     async function logout() {
-        await safeRemoveSession();
+        safeRemoveSession();
         authStateStatus = 'ready';
         setCredentialInputsDisabled(false);
         setSubmitState('idle');
@@ -218,15 +216,7 @@
         setCredentialInputsDisabled(true);
         setSubmitState('loading');
 
-        try {
-            cachedSession = await safeLoadSession();
-        } catch (error) {
-            authStateStatus = 'error';
-            setCredentialInputsDisabled(true);
-            setSubmitState('retry');
-            setError('Unable to restore login session. Tap retry / 无法恢复登录状态，请重试');
-            return false;
-        }
+        cachedSession = safeLoadSession();
 
         authStateStatus = 'ready';
         settleAuthReady();
@@ -262,10 +252,6 @@
     async function handleSubmit(event) {
         event.preventDefault();
         if (authStateStatus === 'initializing') return;
-        if (authStateStatus === 'error') {
-            await restoreInitialAuthState();
-            return;
-        }
         const dom = cachedDom || collectDom();
         const account = dom.accountInput ? dom.accountInput.value.trim() : '';
         const password = dom.passwordInput ? dom.passwordInput.value : '';
@@ -290,14 +276,7 @@
 
         clearInvalidState();
         setSubmitState('submitting');
-        let result;
-        try {
-            result = await login({ account, password });
-        } catch (error) {
-            setError('Unable to save login session / 无法保存登录状态');
-            setSubmitState('idle');
-            return;
-        }
+        const result = await login({ account, password });
         if (!result.ok) {
             setError(result.error || 'Unable to sign in.');
             setSubmitState('idle');
