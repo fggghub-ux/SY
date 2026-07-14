@@ -2,12 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 
-const [youtubeCoreSource, youtubeCommunitySource, librarySource, indexSource, libraryCssSource] = await Promise.all([
+const [youtubeCoreSource, youtubeCommunitySource, librarySource, indexSource, libraryCssSource, storageSource, libraryWorkerSource] = await Promise.all([
     fs.readFile(new URL('../js/youtube/2_core.js', import.meta.url), 'utf8'),
     fs.readFile(new URL('../js/youtube/6_community.js', import.meta.url), 'utf8'),
     fs.readFile(new URL('../js/library.js', import.meta.url), 'utf8'),
     fs.readFile(new URL('../index.html', import.meta.url), 'utf8'),
-    fs.readFile(new URL('../css/library.css', import.meta.url), 'utf8')
+    fs.readFile(new URL('../css/library.css', import.meta.url), 'utf8'),
+    fs.readFile(new URL('../js/storage/app_storage.js', import.meta.url), 'utf8'),
+    fs.readFile(new URL('../js/library_book_worker.js', import.meta.url), 'utf8')
 ]);
 
 test('YouTube state is rehydrated after IndexedDB-backed global data becomes ready', () => {
@@ -52,7 +54,7 @@ test('Library reader uses horizontal paged navigation', () => {
     assert.match(librarySource, /state\.readerMetrics = \{ \.\.\.geometry, contentWidth, maxOffset, pageCount \}/);
     assert.match(librarySource, /updateReaderProgress\(true, null, \{ immediate: true \}\)/);
     assert.match(librarySource, /const savedProgress = clampReaderProgress\(Number\(book\.progress\) \|\| 0\)/);
-    assert.match(librarySource, /setReaderPage\(0, \{ animate: false, save: false, updateProgress: false \}\)/);
+    assert.match(librarySource, /setReaderPage\(targetPage, \{ animate: false, save: false, updateProgress: false \}\)/);
     assert.match(librarySource, /restoreReaderProgress\(savedProgress\)/);
     assert.match(librarySource, /nextPage \* metrics\.pageStep/);
     assert.match(librarySource, /state\.readerPage \* metrics\.pageStep/);
@@ -65,7 +67,7 @@ test('Library reader uses horizontal paged navigation', () => {
     assert.doesNotMatch(librarySource, /scrollWidth - scroll\.clientWidth/);
     assert.doesNotMatch(librarySource, /reader_scroll\.addEventListener\('scroll'/);
     assert.match(librarySource, /function handleReaderPointerUp\(event\)/);
-    assert.match(librarySource, /setReaderPage\(start\.page \+ \(dx < 0 \? 1 : -1\)/);
+    assert.match(librarySource, /turnReaderPage\(dx < 0 \? 1 : -1, \{ save: true \}\)/);
     assert.match(librarySource, /event\.key === 'ArrowRight'/);
     assert.match(librarySource, /event\.key === 'ArrowLeft'/);
     assert.match(librarySource, /getVisibleReaderText[\s\S]*getClientRects\(\)/);
@@ -87,4 +89,24 @@ test('Library reader uses horizontal paged navigation', () => {
     assert.match(libraryCssSource, /\.library-reader-scroll article\s*\{[\s\S]*padding:\s*0/);
     assert.doesNotMatch(libraryCssSource, /width:\s*max-content/);
     assert.doesNotMatch(libraryCssSource, /padding:\s*38px 24px 120px/);
+});
+
+test('Library shelf keeps content lazy and reader streams indexed chunks', () => {
+    assert.match(storageSource, /const DB_VERSION = 7/);
+    assert.match(storageSource, /libraryBookContent: 'library_book_content'/);
+    assert.match(storageSource, /delete record\.text;[\s\S]*delete record\.chapterIndex;[\s\S]*delete record\.chunks/);
+    assert.match(storageSource, /async function loadLibraryBookContent\(bookId\)/);
+    assert.match(librarySource, /async function openReaderAsync\(book\)/);
+    assert.match(librarySource, /setReaderLoading\(true\)/);
+    assert.match(librarySource, /await loadReaderContent\(book\)/);
+    assert.match(librarySource, /function renderReaderChunk\(chunkIndex, localProgress = 0\)/);
+    assert.doesNotMatch(librarySource, /function renderReaderDocument\(text\)/);
+    assert.doesNotMatch(librarySource, /renderReaderDocument\(book\.text/);
+    assert.match(librarySource, /scheduleReaderChunkPrefetch\(index\)/);
+    assert.match(librarySource, /type: 'index-content'/);
+    assert.match(libraryWorkerSource, /type !== 'parse-book' && type !== 'index-content'/);
+    assert.match(libraryWorkerSource, /buildContentIndex\(text\)/);
+    assert.match(indexSource, /id="library-reader-loading"/);
+    assert.match(indexSource, /js\/library\.js\?v=20260715-reader-streaming-v1/);
+    assert.match(indexSource, /js\/storage\/app_storage\.js\?v=20260715-library-content-store-v1/);
 });

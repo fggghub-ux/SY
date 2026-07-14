@@ -291,6 +291,29 @@ input, textarea, [contenteditable] {
     font-size: 19px;
 }
 
+.assistive-api-ball.has-custom-image {
+    background: transparent;
+    border-color: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+.assistive-api-ball.has-custom-image .assistive-api-ball-inner {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+    background: transparent;
+}
+
+.assistive-api-ball-image {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    opacity: var(--assistive-ball-opacity);
+    pointer-events: none;
+}
+
 .assistive-api-panel {
     position: absolute;
     inset: 0;
@@ -429,6 +452,62 @@ input, textarea, [contenteditable] {
     font-size: 14px;
     text-align: right;
     flex-shrink: 0;
+}
+
+.assistive-ball-image-settings {
+    padding-bottom: 12px;
+}
+
+.assistive-ball-image-url-row,
+.assistive-ball-image-actions {
+    display: flex;
+    gap: 10px;
+    padding: 12px 16px 0;
+}
+
+.assistive-ball-image-url-row input {
+    min-width: 0;
+    flex: 1;
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--separator-color);
+    border-radius: 10px;
+    background: #f2f2f7;
+    color: #1c1c1e;
+    font-size: 14px;
+}
+
+.assistive-ball-image-url-row button,
+.assistive-ball-image-action {
+    height: 40px;
+    border: 0;
+    border-radius: 10px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.assistive-ball-image-url-row button {
+    padding: 0 15px;
+    background: var(--blue-color);
+    color: #fff;
+}
+
+.assistive-ball-image-action {
+    flex: 1;
+}
+
+.assistive-ball-image-action i {
+    margin-right: 5px;
+}
+
+.assistive-ball-image-action.upload {
+    background: #f2f2f7;
+    color: var(--blue-color);
+}
+
+.assistive-ball-image-action.reset {
+    background: #ffebee;
+    color: #ff3b30;
 }
 
 /* Global Textarea for Persona, Bios, Descriptions */

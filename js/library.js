@@ -7,6 +7,9 @@
     const NETEASE_PLAYLIST_MAX_ATTEMPTS = 3;
     const NETEASE_PLAYLIST_RETRY_DELAYS = [400, 1200];
     const NETEASE_PLAYLIST_REQUEST_TIMEOUT = 12000;
+    const BOOK_WORKER_URL = 'js/library_book_worker.js?v=20260715-reader-worker-v1';
+    const READER_CHUNK_TARGET_CHARS = 16000;
+    const READER_CONTENT_CACHE_LIMIT = 3;
     const TABS = ['books', 'music', 'overview'];
     const DEFAULT_PREFERENCES = {
         activeTab: 'books',
@@ -16,12 +19,14 @@
         rankingRange: 'week'
     };
     const BOOK_PALETTES = [
-        ['#c9d4c8', '#415147'],
-        ['#d7d0c5', '#514940'],
-        ['#c8d1dc', '#3f4c5c'],
-        ['#d6c9c6', '#5b4542'],
-        ['#d6d4bd', '#50513f'],
-        ['#c9d4d2', '#3f5350']
+        ['linear-gradient(145deg, #b9c1ad, #929d87)', '#273029'],
+        ['linear-gradient(145deg, #c6b5aa, #a69287)', '#352b27'],
+        ['linear-gradient(145deg, #aebdca, #8f9eac)', '#27323d'],
+        ['linear-gradient(145deg, #c6aca8, #a88e8a)', '#382a29'],
+        ['linear-gradient(145deg, #c2ba9d, #a69d80)', '#363329'],
+        ['linear-gradient(145deg, #adbbb5, #8d9d97)', '#293532'],
+        ['linear-gradient(145deg, #b8b0c3, #9c93ad)', '#302c39'],
+        ['linear-gradient(145deg, #c4bbb0, #a79d91)', '#342f2a']
     ];
 
     const state = {
@@ -52,6 +57,11 @@
         readerPage: 0,
         readerPageCount: 1,
         readerMetrics: null,
+        readerContent: null,
+        readerChunkIndex: 0,
+        readerChunkStart: 0,
+        readerChunkEnd: 0,
+        readerOpenRequestId: 0,
         readerPointerStart: null,
         readerLastActivityAt: 0,
         readerProgressSaveTimer: null,
@@ -75,6 +85,11 @@
     audio.playsInline = true;
     let togetherListeningEventTimer = null;
     let lastTogetherListeningEventAt = 0;
+    const readerContentCache = new Map();
+    const readerChunkHtmlCache = new Map();
+    let bookWorker = null;
+    let bookWorkerSequence = 0;
+    const bookWorkerRequests = new Map();
 
     function $(id) {
         return document.getElementById(id);
@@ -94,7 +109,7 @@
             'library-reader-progress-label', 'library-reader-settings', 'library-reader-toc-button',
             'library-reader-together',
             'library-reader-toc', 'library-reader-toc-close', 'library-reader-toc-list', 'library-reader-scroll',
-            'library-reader-content', 'library-reader-panel', 'library-playlist-view',
+            'library-reader-content', 'library-reader-loading', 'library-reader-panel', 'library-playlist-view',
             'library-playlist-back', 'library-playlist-delete', 'library-playlist-cover',
             'library-playlist-title', 'library-playlist-meta', 'library-play-all',
             'library-track-list', 'library-player-view', 'library-player-close',
@@ -555,6 +570,99 @@
         };
     }
 
+    function getBookWorker() {
+        if (bookWorker) return bookWorker;
+        if (typeof Worker !== 'function') return null;
+        try {
+            bookWorker = new Worker(BOOK_WORKER_URL);
+            bookWorker.addEventListener('message', (event) => {
+                const pending = bookWorkerRequests.get(event.data?.id);
+                if (!pending) return;
+                bookWorkerRequests.delete(event.data.id);
+                if (event.data.ok) pending.resolve(event.data.book);
+                else pending.reject(new Error(event.data.error || '书籍解析失败'));
+            });
+            bookWorker.addEventListener('error', (event) => {
+                const error = new Error(event.message || '书籍解析 Worker 运行失败');
+                bookWorkerRequests.forEach((pending) => pending.reject(error));
+                bookWorkerRequests.clear();
+                bookWorker?.terminate();
+                bookWorker = null;
+            });
+            return bookWorker;
+        } catch (error) {
+            bookWorker = null;
+            return null;
+        }
+    }
+
+    function parseBookInWorker(file) {
+        const worker = getBookWorker();
+        if (!worker) return Promise.reject(new Error('BOOK_WORKER_UNAVAILABLE'));
+        return file.arrayBuffer().then((buffer) => new Promise((resolve, reject) => {
+            const id = `book-worker-${Date.now()}-${++bookWorkerSequence}`;
+            bookWorkerRequests.set(id, { resolve, reject });
+            worker.postMessage({ id, type: 'parse-book', name: file.name, buffer }, [buffer]);
+        }));
+    }
+
+    function indexReaderContentInWorker(text) {
+        const worker = getBookWorker();
+        if (!worker) return Promise.reject(new Error('BOOK_WORKER_UNAVAILABLE'));
+        return new Promise((resolve, reject) => {
+            const id = `book-index-${Date.now()}-${++bookWorkerSequence}`;
+            bookWorkerRequests.set(id, { resolve, reject });
+            worker.postMessage({ id, type: 'index-content', text: String(text || '') });
+        });
+    }
+
+    function buildReaderContentIndex(text) {
+        const source = String(text || '');
+        const chapters = [{ title: '开始阅读', start: 0 }];
+        let offset = 0;
+        source.split('\n').forEach((line) => {
+            if (offset > 0 && isChapterHeading(line)) {
+                chapters.push({ title: line.trim().replace(/^#{1,3}\s*/, ''), start: offset });
+            }
+            offset += line.length + 1;
+        });
+        const chapterIndex = chapters.map((chapter, index) => ({
+            ...chapter,
+            end: index + 1 < chapters.length ? chapters[index + 1].start : source.length
+        }));
+        const chunks = [];
+        let start = 0;
+        while (start < source.length) {
+            const target = Math.min(source.length, start + READER_CHUNK_TARGET_CHARS);
+            let end = target;
+            if (target < source.length) {
+                const nextChapter = chapterIndex.find((chapter) => chapter.start > start + 4000 && chapter.start <= target + 4000);
+                if (nextChapter) end = nextChapter.start;
+                else {
+                    const paragraphBreak = source.lastIndexOf('\n\n', target);
+                    const lineBreak = source.lastIndexOf('\n', target);
+                    const candidate = paragraphBreak > start + 8000 ? paragraphBreak + 2 : lineBreak + 1;
+                    if (candidate > start + 4000) end = candidate;
+                }
+            }
+            if (end <= start) end = Math.min(source.length, start + READER_CHUNK_TARGET_CHARS);
+            chunks.push({ start, end });
+            start = end;
+        }
+        return { chapterIndex, chunks: chunks.length ? chunks : [{ start: 0, end: 0 }] };
+    }
+
+    async function parseBookForImport(file) {
+        try {
+            return await parseBookInWorker(file);
+        } catch (workerError) {
+            console.warn('[Library] Worker parsing unavailable, using main-thread fallback.', workerError);
+            const parsed = await readBookFile(file);
+            const text = String(parsed?.text || '');
+            return { ...parsed, ...buildReaderContentIndex(text) };
+        }
+    }
+
     async function importBook(file) {
         if (!file) return;
         const lower = String(file.name || '').toLowerCase();
@@ -564,7 +672,7 @@
         }
         toast('正在整理书籍…');
         try {
-            const parsedBook = await readBookFile(file);
+            const parsedBook = await parseBookForImport(file);
             const text = String(parsedBook?.text || '');
             if (!text.trim()) throw new Error('文件内容为空');
             const now = Date.now();
@@ -572,16 +680,25 @@
                 id: uid('book'),
                 title: String(parsedBook.title || fileBaseName(file.name)).slice(0, 100),
                 sourceType: parsedBook.sourceType || (lower.endsWith('.docx') ? 'DOCX' : (lower.endsWith('.epub') ? 'EPUB' : 'TXT')),
-                text,
                 author: String(parsedBook.author || '未知作者').slice(0, 80),
                 synopsis: String(parsedBook.synopsis || '暂无简介').slice(0, 2000),
                 progress: 0,
                 createdAt: now,
                 updatedAt: now,
-                lastOpenedAt: 0
+                lastOpenedAt: 0,
+                text,
+                chapterIndex: parsedBook.chapterIndex || [],
+                chunks: parsedBook.chunks || []
             };
-            await storage().saveLibraryBook(book);
-            state.books.push(book);
+            const savedBook = await storage().saveLibraryBook(book);
+            rememberReaderContent(savedBook.id, {
+                id: savedBook.id,
+                text,
+                chapterIndex: book.chapterIndex,
+                chunks: book.chunks,
+                updatedAt: savedBook.updatedAt
+            });
+            state.books.push(savedBook);
             renderBooks();
             toast('书籍已放入书架');
         } catch (error) {
@@ -808,17 +925,66 @@
         return saveReaderProgress(pendingBook, true);
     }
 
+    function rememberReaderContent(bookId, content) {
+        const key = String(bookId || '');
+        if (!key || !content) return content;
+        readerContentCache.delete(key);
+        readerContentCache.set(key, content);
+        while (readerContentCache.size > READER_CONTENT_CACHE_LIMIT) {
+            readerContentCache.delete(readerContentCache.keys().next().value);
+        }
+        return content;
+    }
+
+    async function loadReaderContent(book) {
+        const key = String(book?.id || '');
+        if (!key) throw new Error('书籍不存在');
+        if (readerContentCache.has(key)) return rememberReaderContent(key, readerContentCache.get(key));
+        let content = await storage().loadLibraryBookContent(key);
+        if (!content && typeof book.text === 'string') {
+            content = { id: key, text: book.text, chapterIndex: book.chapterIndex || [], chunks: book.chunks || [] };
+        }
+        if (!content || typeof content.text !== 'string') throw new Error('书籍正文不存在');
+        if (!Array.isArray(content.chapterIndex) || !content.chapterIndex.length || !Array.isArray(content.chunks) || !content.chunks.length) {
+            let index;
+            try {
+                index = await indexReaderContentInWorker(content.text);
+            } catch (workerError) {
+                console.warn('[Library] Worker indexing unavailable, using main-thread fallback.', workerError);
+                index = buildReaderContentIndex(content.text);
+            }
+            content = { ...content, ...index, updatedAt: Number(book.updatedAt) || Date.now() };
+            await storage().saveLibraryBook({ ...book, text: content.text, chapterIndex: content.chapterIndex, chunks: content.chunks });
+        }
+        return rememberReaderContent(key, content);
+    }
+
+    function getCurrentReaderChunk() {
+        return state.readerContent?.chunks?.[state.readerChunkIndex] || { start: 0, end: state.readerContent?.text?.length || 0 };
+    }
+
+    function estimateReaderPagePosition(progress, page, pageCount) {
+        const chunkCount = Math.max(1, state.readerContent?.chunks?.length || 1);
+        const estimatedTotal = Math.max(1, pageCount * chunkCount);
+        const estimatedPage = clampReaderValue(Math.round(progress * (estimatedTotal - 1)), 0, estimatedTotal - 1);
+        return { page: estimatedPage, pageCount: estimatedTotal };
+    }
+
     function updateReaderProgress(save = false, forcedPage = null, options = {}) {
         const book = state.currentBook;
         if (!book || !dom.reader_scroll) return;
         const metrics = getReaderPageMetrics();
         const page = clampReaderValue(forcedPage == null ? state.readerPage : forcedPage, 0, metrics.pageCount - 1);
-        const progress = metrics.pageCount > 1 ? clampReaderProgress(page / (metrics.pageCount - 1)) : 1;
+        const chunk = getCurrentReaderChunk();
+        const localProgress = metrics.pageCount > 1 ? clampReaderProgress(page / (metrics.pageCount - 1)) : 0;
+        const textLength = Math.max(1, state.readerContent?.text?.length || chunk.end || 1);
+        const progress = clampReaderProgress((chunk.start + (chunk.end - chunk.start) * localProgress) / textLength);
         state.readerPage = page;
         state.readerPageCount = metrics.pageCount;
         book.progress = progress;
         book.updatedAt = Date.now();
-        dom.reader_progress_label.textContent = formatReaderProgressLabel(progress, page, metrics.pageCount);
+        const display = estimateReaderPagePosition(progress, page, metrics.pageCount);
+        dom.reader_progress_label.textContent = formatReaderProgressLabel(progress, display.page, display.pageCount);
         if (save) saveReaderProgress(book, !!options.immediate);
     }
 
@@ -838,9 +1004,15 @@
     }
 
     function restoreReaderProgress(progress = state.currentBook?.progress || 0) {
-        const metrics = getReaderPageMetrics();
-        const targetPage = Math.round(clampReaderProgress(progress) * (metrics.pageCount - 1));
-        setReaderPage(targetPage, { animate: false, save: false });
+        if (!state.readerContent) return;
+        const safeProgress = clampReaderProgress(progress);
+        const targetOffset = Math.round(safeProgress * state.readerContent.text.length);
+        const chunkIndex = Math.max(0, state.readerContent.chunks.findIndex((chunk, index) => (
+            targetOffset < chunk.end || index === state.readerContent.chunks.length - 1
+        )));
+        const chunk = state.readerContent.chunks[chunkIndex];
+        const localProgress = chunk.end > chunk.start ? clampReaderProgress((targetOffset - chunk.start) / (chunk.end - chunk.start)) : 0;
+        renderReaderChunk(chunkIndex, localProgress);
     }
 
     function getReaderElementPage(element) {
@@ -854,7 +1026,19 @@
     }
 
     function turnReaderPage(delta, options = {}) {
-        setReaderPage(state.readerPage + delta, { animate: true, save: options.save !== false });
+        const metrics = getReaderPageMetrics();
+        const nextPage = state.readerPage + delta;
+        if (nextPage >= metrics.pageCount && state.readerChunkIndex < (state.readerContent?.chunks?.length || 1) - 1) {
+            renderReaderChunk(state.readerChunkIndex + 1, 0);
+            if (options.save !== false) updateReaderProgress(true, 0);
+            return;
+        }
+        if (nextPage < 0 && state.readerChunkIndex > 0) {
+            renderReaderChunk(state.readerChunkIndex - 1, 1);
+            if (options.save !== false) updateReaderProgress(true, state.readerPage);
+            return;
+        }
+        setReaderPage(nextPage, { animate: true, save: options.save !== false });
     }
 
     function markReaderActivity() {
@@ -867,34 +1051,74 @@
         return /^(?:第[0-9零一二三四五六七八九十百千万两〇○]+[章节卷部篇回]|chapter\s+[0-9ivxlcdm]+\b|#{1,3}\s+|\d{1,3}[、.．]\s*\S+)/i.test(value);
     }
 
-    function renderReaderDocument(text) {
-        const lines = String(text || '').split('\n');
-        const chapters = [{ title: '开始阅读', anchorId: 'library-reader-start' }];
-        let chapterIndex = 0;
-        let textOffset = 0;
-        const html = lines.map((line, lineIndex) => {
+    function isReaderChapterHeading(line) {
+        const value = String(line || '').trim();
+        if (!value || value.length > 80) return false;
+        return /^(?:第[0-9零一二三四五六七八九十百千万两〇]+[章节卷部篇回]|chapter\s+[0-9ivxlcdm]+\b|#{1,3}\s+|\d{1,3}[、.．]\s*\S+)/i.test(value);
+    }
+
+    function buildReaderChunkHtml(text, offset = 0) {
+        let textOffset = Number(offset) || 0;
+        return String(text || '').split('\n').map((line, lineIndex) => {
             const start = textOffset;
             const end = start + line.length;
             textOffset = end + 1;
             let content = escapeHtml(line) || '&#8203;';
-            if (isChapterHeading(line)) {
-                chapterIndex += 1;
-                const anchorId = `library-reader-chapter-${chapterIndex}`;
-                chapters.push({ title: line.trim().replace(/^#{1,3}\s*/, ''), anchorId, lineIndex });
-                content = `<span class="library-reader-chapter" id="${anchorId}">${content}</span>`;
+            if (isReaderChapterHeading(line)) {
+                content = `<span class="library-reader-chapter" id="library-reader-offset-${start}">${content}</span>`;
             }
             return `<span class="library-reader-line" data-reader-line="${lineIndex}" data-text-start="${start}" data-text-end="${end}">${content}</span>`;
         }).join('');
-        dom.reader_content.innerHTML = `<span id="library-reader-start"></span>${html}`;
-        invalidateReaderMetrics();
+    }
+
+    function renderReaderToc() {
+        const chapters = state.readerContent?.chapterIndex || [{ title: '开始阅读', start: 0 }];
         state.chapters = chapters;
         dom.reader_toc_list.innerHTML = chapters.map((chapter, index) => `
-            <button type="button" data-chapter-anchor="${escapeHtml(chapter.anchorId)}">
+            <button type="button" data-chapter-offset="${Math.max(0, Number(chapter.start) || 0)}">
                 <span>${String(index + 1).padStart(2, '0')}</span>
-                <span>${escapeHtml(chapter.title)}</span>
+                <span>${escapeHtml(chapter.title || '未命名章节')}</span>
             </button>`).join('') + (chapters.length === 1
             ? '<p class="library-reader-toc-empty">未识别到明确章节标题。支持“第×章”、Chapter、Markdown 标题和数字标题。</p>'
             : '');
+    }
+
+    function scheduleReaderChunkPrefetch(chunkIndex) {
+        const nextIndex = chunkIndex + 1;
+        const next = state.readerContent?.chunks?.[nextIndex];
+        if (!next || !state.currentBook) return;
+        const key = `${state.currentBook.id}:${state.readerContent.updatedAt || state.currentBook.updatedAt || 0}:${nextIndex}`;
+        if (readerChunkHtmlCache.has(key)) return;
+        const prepare = () => {
+            if (!state.readerContent || readerChunkHtmlCache.has(key)) return;
+            readerChunkHtmlCache.set(key, buildReaderChunkHtml(state.readerContent.text.slice(next.start, next.end), next.start));
+            while (readerChunkHtmlCache.size > 12) readerChunkHtmlCache.delete(readerChunkHtmlCache.keys().next().value);
+        };
+        if (typeof requestIdleCallback === 'function') requestIdleCallback(prepare, { timeout: 500 });
+        else setTimeout(prepare, 40);
+    }
+
+    function renderReaderChunk(chunkIndex, localProgress = 0) {
+        if (!state.readerContent || !state.currentBook) return;
+        const index = clampReaderValue(Math.round(Number(chunkIndex) || 0), 0, state.readerContent.chunks.length - 1);
+        const chunk = state.readerContent.chunks[index];
+        state.readerChunkIndex = index;
+        state.readerChunkStart = chunk.start;
+        state.readerChunkEnd = chunk.end;
+        const cacheKey = `${state.currentBook.id}:${state.readerContent.updatedAt || state.currentBook.updatedAt || 0}:${index}`;
+        let html = readerChunkHtmlCache.get(cacheKey);
+        if (!html) {
+            html = buildReaderChunkHtml(state.readerContent.text.slice(chunk.start, chunk.end), chunk.start);
+            readerChunkHtmlCache.set(cacheKey, html);
+            while (readerChunkHtmlCache.size > 12) readerChunkHtmlCache.delete(readerChunkHtmlCache.keys().next().value);
+        }
+        dom.reader_content.innerHTML = `<span id="library-reader-start"></span>${html}`;
+        invalidateReaderMetrics();
+        const metrics = getReaderPageMetrics({ force: true });
+        const targetPage = Math.round(clampReaderProgress(localProgress) * (metrics.pageCount - 1));
+        setReaderPage(targetPage, { animate: false, save: false, updateProgress: false });
+        updateReaderProgress(false, targetPage);
+        scheduleReaderChunkPrefetch(index);
     }
 
     function getVisibleReaderText() {
@@ -913,30 +1137,55 @@
         if (visibleText && visibleText.length <= 6000) return visibleText;
         if (visibleText && visibleLines.length > 1) return visibleText.slice(0, 6000);
 
-        const fullText = String(book.text || '');
+        const fullText = String(state.readerContent?.text || '');
         if (!fullText) return '';
         const metrics = getReaderPageMetrics();
         const ratio = metrics.pageCount > 1 ? clampReaderProgress(state.readerPage / (metrics.pageCount - 1)) : 0;
-        const center = Math.round(fullText.length * ratio);
+        const chunk = getCurrentReaderChunk();
+        const center = Math.round(chunk.start + (chunk.end - chunk.start) * ratio);
         const start = Math.max(0, Math.min(fullText.length - 6000, center - 3000));
         return fullText.slice(start, start + 6000).trim();
     }
 
-    function openReader(book) {
+    function setReaderLoading(loading, message = '准备正文与阅读位置…') {
+        if (!dom.reader_loading) return;
+        dom.reader_loading.hidden = !loading;
+        const detail = dom.reader_loading.querySelector('small');
+        if (detail) detail.textContent = message;
+    }
+
+    async function openReaderAsync(book) {
         if (!book) return;
+        const requestId = ++state.readerOpenRequestId;
         const savedProgress = clampReaderProgress(Number(book.progress) || 0);
         state.currentBook = book;
+        state.readerContent = null;
         book.lastOpenedAt = Date.now();
         dom.reader_title.textContent = book.title || '未命名';
-        renderReaderDocument(book.text || '');
         applyReaderPreferences();
         dom.reader_view.classList.add('active');
         dom.reader_view.setAttribute('aria-hidden', 'false');
-        setReaderPage(0, { animate: false, save: false, updateProgress: false });
+        dom.reader_content.innerHTML = '';
+        setReaderLoading(true);
         markReaderActivity();
-        requestAnimationFrame(() => {
+        try {
+            const content = await loadReaderContent(book);
+            if (requestId !== state.readerOpenRequestId || state.currentBook !== book) return;
+            state.readerContent = content;
+            renderReaderToc();
+            await new Promise((resolve) => requestAnimationFrame(resolve));
             restoreReaderProgress(savedProgress);
-        });
+            setReaderLoading(false);
+        } catch (error) {
+            console.error('[Library] Reader content load failed', error);
+            if (requestId !== state.readerOpenRequestId) return;
+            setReaderLoading(false);
+            dom.reader_view.classList.remove('active');
+            dom.reader_view.setAttribute('aria-hidden', 'true');
+            state.currentBook = null;
+            state.readerContent = null;
+            toast(error?.message || '书籍打开失败');
+        }
     }
 
     async function flushReadingStats() {
@@ -948,18 +1197,25 @@
     }
 
     function closeReader() {
+        state.readerOpenRequestId += 1;
+        setReaderLoading(false);
         if (!state.currentBook) {
             dom.reader_view.classList.remove('active');
+            dom.reader_view.setAttribute('aria-hidden', 'true');
             return;
         }
         stopTogether();
-        updateReaderProgress(true, null, { immediate: true });
+        if (state.readerContent) updateReaderProgress(true, null, { immediate: true });
         flushReadingStats().catch(console.error);
         dom.reader_panel.hidden = true;
         dom.reader_toc.hidden = true;
         dom.reader_view.classList.remove('active');
         dom.reader_view.setAttribute('aria-hidden', 'true');
         state.currentBook = null;
+        state.readerContent = null;
+        state.readerChunkIndex = 0;
+        state.readerChunkStart = 0;
+        state.readerChunkEnd = 0;
         renderBooks();
     }
 
@@ -996,7 +1252,7 @@
         const elapsed = Date.now() - start.time;
 
         if (absX >= 45 && absX > absY * 1.2) {
-            setReaderPage(start.page + (dx < 0 ? 1 : -1), { animate: true, save: true });
+            turnReaderPage(dx < 0 ? 1 : -1, { save: true });
             markReaderActivity();
             return;
         }
@@ -1004,7 +1260,7 @@
         if (absX <= 8 && absY <= 8 && elapsed <= 350) {
             const rect = dom.reader_scroll.getBoundingClientRect();
             const ratio = (event.clientX - rect.left) / Math.max(1, rect.width);
-            setReaderPage(state.readerPage + (ratio < 0.5 ? -1 : 1), { animate: true, save: true });
+            turnReaderPage(ratio < 0.5 ? -1 : 1, { save: true });
             markReaderActivity();
         }
     }
@@ -2276,7 +2532,7 @@ ${xml(fullLyrics)}
             const book = state.detailBook;
             if (!book) return;
             closeAllModals();
-            openReader(book);
+            openReaderAsync(book);
         });
         dom.book_detail_edit.addEventListener('click', () => setBookDetailEditing(true));
         dom.book_detail_delete.addEventListener('click', () => requestDeleteBook(state.detailBook));
@@ -2320,12 +2576,13 @@ ${xml(fullLyrics)}
         });
         dom.reader_toc_close.addEventListener('click', () => { dom.reader_toc.hidden = true; });
         dom.reader_toc_list.addEventListener('click', (event) => {
-            const button = event.target.closest('[data-chapter-anchor]');
+            const button = event.target.closest('[data-chapter-offset]');
             if (!button) return;
-            const anchor = document.getElementById(button.dataset.chapterAnchor);
-            if (!anchor) return;
+            const textLength = Math.max(1, state.readerContent?.text?.length || 1);
+            const offset = clampReaderValue(Number(button.dataset.chapterOffset) || 0, 0, textLength);
             dom.reader_toc.hidden = true;
-            setReaderPage(getReaderElementPage(anchor), { animate: true, save: true });
+            restoreReaderProgress(offset / textLength);
+            updateReaderProgress(true, state.readerPage);
             markReaderActivity();
         });
         dom.reader_panel.addEventListener('click', (event) => {

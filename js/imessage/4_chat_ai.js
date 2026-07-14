@@ -810,6 +810,15 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
         }
     }
 
+    function consumeLovesInviteAcceptanceMarker(rawReply) {
+        const reply = String(rawReply == null ? '' : rawReply);
+        const accepted = reply.includes('[ACCEPT_INVITE]');
+        return {
+            accepted,
+            reply: accepted ? reply.replace(/\[ACCEPT_INVITE\]/g, '') : reply
+        };
+    }
+
     function normalizeStructuredChatItems(structuredItems) {
         if (!Array.isArray(structuredItems)) return [];
 
@@ -2940,12 +2949,18 @@ Never truncate OUTPUT(x)
                 throw new Error('API 返回内容为空或格式不兼容');
             }
 
+            // Strip the internal Loves acceptance marker before parsing chat JSON.
+            // Otherwise structuredItems retains the uncleaned text and renders the marker as a bubble.
+            const inviteAcceptance = consumeLovesInviteAcceptanceMarker(fullReply);
+            const inviteAccepted = inviteAcceptance.accepted;
+            fullReply = inviteAcceptance.reply;
+
             const chatJsonBlock = window.imChat.extractTaggedBlock(fullReply, 'chat_json');
             const structuredItems = chatJsonBlock
                 ? window.imChat.parseJsonArrayFromText(chatJsonBlock)
                 : null;
             let queueItems = normalizeStructuredChatItems(structuredItems);
-            if (!hasPrimaryChatBubble(queueItems)) {
+            if (!hasPrimaryChatBubble(queueItems) && !inviteAccepted) {
                 const reasonText = isLengthFinishReason(responseFinishReason)
                     ? '模型输出被截断，未得到完整聊天气泡'
                     : '模型未返回完整有效的 <chat_json> 聊天气泡';
@@ -3126,13 +3141,6 @@ Never truncate OUTPUT(x)
                         }).filter(Boolean);
                     }
                 }
-            }
-
-            // 拦截并移除邀请标记，确保它不会进入后续的 JSON 解析
-            let inviteAccepted = false;
-            if (fullReply.includes('[ACCEPT_INVITE]')) {
-                inviteAccepted = true;
-                fullReply = fullReply.replace(/\[ACCEPT_INVITE\]/g, '');
             }
 
             const profilePanelBlock = window.imChat.extractTaggedBlock(fullReply, 'profile_panel');

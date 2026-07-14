@@ -65,7 +65,7 @@ test('friend computer view exposes six Mac apps and versioned assets', async () 
     ['resume', 'mail', 'calendar', 'notes', 'files', 'settings'].forEach(app => {
         assert.match(html, new RegExp(`data-computer-app="${app}"`));
     });
-    assert.match(html, /css\/loves\.css\?v=20260712-friend-mac-v8/);
+    assert.match(html, /css\/loves\.css\?v=20260714-ios-neutral-pink-v1/);
     assert.match(html, /js\/loves\.js\?v=20260712-friend-mac-v8/);
     assert.match(css, /@media \(max-width: 620px\)/);
     assert.match(source, /friend\.computerData = this\.normalizeFriendComputerData/);

@@ -1353,14 +1353,16 @@
 #lovers-savings-deposit-sheet,
 #lovers-savings-withdraw-sheet,
 #lovers-savings-withdraw-result-modal {
-    --loves-bg: #f3f4f1;
-    --loves-surface: #fafaf7;
-    --loves-ink: #171918;
-    --loves-muted: #747973;
-    --loves-line: #e1e3de;
-    --loves-accent: #7e8d7b;
-    --loves-accent-soft: #e5eae3;
-    --loves-danger: #a36e67;
+    --loves-bg: #f2f2f7;
+    --loves-surface: #ffffff;
+    --loves-ink: #1c1c1e;
+    --loves-muted: #8e8e93;
+    --loves-line: #e5e5ea;
+    --loves-accent: #1c1c1e;
+    --loves-accent-soft: #f6e8eb;
+    --loves-pink: #edcfd4;
+    --loves-pink-ink: #8f5f67;
+    --loves-danger: #a14c56;
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
@@ -1445,7 +1447,7 @@
 .lovers-compose-field > span,
 .lovers-savings-kicker {
     display: block;
-    color: var(--loves-accent);
+    color: var(--loves-pink-ink);
     font-size: 9px;
     line-height: 1.2;
     font-weight: 800;
@@ -1491,8 +1493,8 @@
     min-height: 174px;
     padding: 24px;
     border-radius: 26px;
-    background: #1c1f1c;
-    color: #f7f8f4;
+    background: #1c1c1e;
+    color: #ffffff;
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
@@ -1512,7 +1514,7 @@
     box-shadow: 0 0 0 24px rgba(255,255,255,.02), 0 0 0 48px rgba(255,255,255,.015);
 }
 
-.loves-intro > span { color: #b6c1b3; }
+.loves-intro > span { color: var(--loves-pink); }
 
 .loves-intro h2 {
     max-width: 310px;
@@ -1526,7 +1528,7 @@
 .loves-intro p {
     max-width: 320px;
     margin: 8px 0 0;
-    color: rgba(247, 248, 244, .58);
+    color: rgba(255, 255, 255, .62);
     font-size: 12px;
     line-height: 1.55;
 }
@@ -1583,8 +1585,8 @@
     height: 52px;
     margin-right: 12px;
     border-radius: 17px;
-    background: #eceee9;
-    color: #b6bbb4;
+    background: #f2f2f7;
+    color: #aeaeb2;
 }
 
 .loves-note-avatar i { color: inherit; font-size: 20px; }
@@ -1605,9 +1607,9 @@
 }
 
 .loves-note-action-invite { background: var(--loves-accent); color: #fff; }
-.loves-note-action-enter { background: var(--loves-accent-soft); color: #556052; }
+.loves-note-action-enter { background: var(--loves-accent-soft); color: var(--loves-pink-ink); }
 .loves-note-action-invite:active,
-.loves-note-action-enter:active { background: #697765; }
+.loves-note-action-enter:active { background: var(--loves-pink); }
 
 .loves-placeholder {
     min-height: 210px;
@@ -1619,7 +1621,7 @@
     box-shadow: inset 0 0 0 1px var(--loves-line);
 }
 
-.loves-placeholder i { color: #aeb6ab; font-size: 30px; }
+.loves-placeholder i { color: var(--loves-pink-ink); font-size: 30px; }
 .loves-placeholder p { margin: 0; font-size: 13px; font-weight: 650; }
 
 /* Shared space */
@@ -1689,8 +1691,8 @@
     height: 58px;
     border: 3px solid var(--loves-surface);
     border-radius: 20px;
-    background: #e8ebe5;
-    color: #afb5ad;
+    background: #f2f2f7;
+    color: #aeaeb2;
     overflow: hidden;
     display: grid;
     place-items: center;
@@ -1715,7 +1717,7 @@
 }
 
 .lovers-space-days-card > span {
-    color: #566253;
+    color: var(--loves-pink-ink);
     font-size: 38px;
     line-height: 1;
     font-weight: 760;
@@ -1723,7 +1725,7 @@
     font-variant-numeric: tabular-nums;
 }
 
-.lovers-space-days-card small { padding-bottom: 4px; color: #6e7b6b; font-size: 8px; font-weight: 800; letter-spacing: .14em; }
+.lovers-space-days-card small { padding-bottom: 4px; color: var(--loves-muted); font-size: 8px; font-weight: 800; letter-spacing: .14em; }
 
 .lovers-space-tabs-container {
     min-height: 54px;
@@ -1806,7 +1808,7 @@
     height: 42px;
     border-radius: 14px;
     background: var(--loves-accent-soft);
-    color: #596456;
+    color: var(--loves-pink-ink);
     display: grid;
     place-items: center;
     flex-shrink: 0;
@@ -1816,9 +1818,9 @@
 .lovers-feature-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
 .lovers-feature-copy strong { overflow: hidden; font-size: 14px; font-weight: 750; white-space: nowrap; text-overflow: ellipsis; }
 .lovers-feature-copy small { overflow: hidden; color: var(--loves-muted); font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }
-.lovers-feature-chevron { color: #b8bcb6; font-size: 11px; }
+.lovers-feature-chevron { color: #aeaeb2; font-size: 11px; }
 .lovers-device-status { color: var(--loves-muted); font-size: 8px; font-weight: 800; letter-spacing: .1em; }
-.lovers-device-status.is-online { color: #687865; }
+.lovers-device-status.is-online { color: #636366; }
 
 .lovers-panel-empty {
     min-height: 290px;
@@ -1833,7 +1835,7 @@
     pointer-events: none;
 }
 
-.lovers-panel-empty i { margin-bottom: 6px; color: #adb5aa; font-size: 28px; }
+.lovers-panel-empty i { margin-bottom: 6px; color: var(--loves-pink-ink); font-size: 28px; }
 .lovers-panel-empty strong { color: var(--loves-ink); font-size: 15px; font-weight: 750; }
 .lovers-panel-empty span { font-size: 11px; }
 .lovers-more-panel { align-items: stretch; justify-content: center; }
@@ -1853,11 +1855,11 @@
     place-items: center;
     cursor: pointer;
     font-size: 18px;
-    box-shadow: 0 12px 28px rgba(77, 91, 74, .2);
+    box-shadow: 0 12px 28px rgba(28, 28, 30, .18);
     transition: transform 160ms ease, background 160ms ease;
 }
 
-#lovers-space-fab:active { transform: scale(.94); background: #6e7c6b; }
+#lovers-space-fab:active { transform: scale(.94); background: #3a3a3c; }
 
 #lovers-space-fab.is-savings-mode {
     display: grid;
@@ -1882,7 +1884,7 @@
 
 .loves-moment-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .loves-moment-author { min-width: 0; display: flex; align-items: center; gap: 10px; }
-.loves-moment-avatar { width: 40px; height: 40px; border-radius: 14px; background: #e9ebe7; color: #b3b8b1; overflow: hidden; display: grid; place-items: center; flex-shrink: 0; }
+.loves-moment-avatar { width: 40px; height: 40px; border-radius: 14px; background: #f2f2f7; color: #aeaeb2; overflow: hidden; display: grid; place-items: center; flex-shrink: 0; }
 .loves-moment-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .loves-moment-author-copy { min-width: 0; }
 .loves-moment-name { overflow: hidden; font-size: 14px; font-weight: 750; white-space: nowrap; text-overflow: ellipsis; }
@@ -1900,34 +1902,34 @@
     z-index: 15;
     display: none;
     background: var(--loves-surface);
-    box-shadow: 0 16px 38px rgba(23, 25, 24, .14), inset 0 0 0 1px var(--loves-line);
+    box-shadow: 0 16px 38px rgba(28, 28, 30, .14), inset 0 0 0 1px var(--loves-line);
 }
 
 .loves-moment-menu button { width: 100%; min-height: 40px; padding: 0 10px; border-radius: 11px; background: transparent; display: flex; align-items: center; gap: 9px; cursor: pointer; text-align: left; font-size: 12px; font-weight: 700; }
 .loves-moment-menu button:hover { background: var(--loves-accent-soft); }
 .loves-moment-menu button.is-danger { color: var(--loves-danger); }
-.loves-moment-body { color: #303330; font-size: 14px; line-height: 1.62; white-space: pre-wrap; word-break: break-word; }
+.loves-moment-body { color: #2c2c2e; font-size: 14px; line-height: 1.62; white-space: pre-wrap; word-break: break-word; }
 
 .loves-moment-images { margin-top: 12px; display: grid; gap: 5px; }
 .loves-moment-images.is-one { grid-template-columns: minmax(0, 1fr); }
 .loves-moment-images.is-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .loves-moment-images.is-many { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.loves-moment-images img { width: 100%; aspect-ratio: 1; border-radius: 13px; object-fit: cover; background: #e7e9e5; }
+.loves-moment-images img { width: 100%; aspect-ratio: 1; border-radius: 13px; object-fit: cover; background: #e5e5ea; }
 
 .loves-moment-toolbar { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--loves-line); display: flex; gap: 8px; }
 .loves-moment-toolbar button { min-width: 58px; min-height: 44px; padding: 0 12px; border-radius: 12px; background: var(--loves-bg); color: var(--loves-muted); display: flex; align-items: center; justify-content: center; gap: 7px; cursor: pointer; font-size: 12px; }
-.loves-moment-toolbar button.is-liked { background: var(--loves-accent-soft); color: #596456; }
+.loves-moment-toolbar button.is-liked { background: var(--loves-accent-soft); color: var(--loves-pink-ink); }
 
 .loves-moment-comments { margin-top: 12px; padding: 10px 12px; border-radius: 15px; background: var(--loves-bg); display: flex; flex-direction: column; gap: 8px; }
 .loves-moment-comment { display: flex; align-items: flex-start; gap: 10px; font-size: 12px; line-height: 1.5; }
 .loves-moment-comment.is-char { font-size: 14px; line-height: 1.62; }
 .loves-moment-comment-copy { flex: 1; min-width: 0; cursor: pointer; }
-.loves-moment-comment-author { color: #596456; font-weight: 750; }
+.loves-moment-comment-author { color: var(--loves-pink-ink); font-weight: 750; }
 .loves-moment-comment-delete { flex-shrink: 0; padding: 0; border-radius: 0; background: transparent; color: var(--loves-danger); cursor: pointer; font-size: 12px; line-height: 1.5; text-decoration: none; white-space: nowrap; }
 .loves-moment-comment-delete:hover { text-decoration: underline; }
 
 .loves-moment-composer { margin-top: 12px; padding: 7px; border-radius: 15px; background: var(--loves-bg); display: flex; align-items: center; gap: 8px; }
-.loves-moment-composer-avatar { width: 28px; height: 28px; border-radius: 10px; background: #e3e6e0; color: #a9afa7; overflow: hidden; display: grid; place-items: center; flex-shrink: 0; }
+.loves-moment-composer-avatar { width: 28px; height: 28px; border-radius: 10px; background: #f2f2f7; color: #aeaeb2; overflow: hidden; display: grid; place-items: center; flex-shrink: 0; }
 .loves-moment-composer-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .loves-moment-comment-input { flex: 1; min-width: 0; height: 32px; border: 0; outline: 0; background: transparent; color: var(--loves-ink); font-size: 12px; }
 .loves-moment-comment-send { min-width: 58px; height: 44px; padding: 0 12px; border-radius: 12px; background: var(--loves-accent); color: #fff; cursor: pointer; font-size: 11px; font-weight: 750; }
@@ -1936,7 +1938,7 @@
 .lovers-diary-heading { margin: 5px 2px 12px; position: relative; }
 #lovers-diary-year-month-display { display: flex; align-items: baseline; gap: 6px; }
 #lovers-diary-year-display { font-size: 25px; line-height: 1.1; font-weight: 780; letter-spacing: -.04em; }
-#lovers-diary-month-display { color: var(--loves-accent); font-size: 15px; font-weight: 750; }
+#lovers-diary-month-display { color: var(--loves-pink-ink); font-size: 15px; font-weight: 750; }
 #lovers-diary-year-month-display i { color: var(--loves-muted); font-size: 9px; }
 #lovers-diary-month-picker { width: 160px; height: 100%; position: absolute; inset: 0 auto auto 0; opacity: 0; cursor: pointer; }
 
@@ -1951,16 +1953,16 @@
 
 .lovers-diary-list { padding: 0 0 20px; position: relative; display: flex; flex-direction: column; gap: 10px; }
 .lovers-diary-empty { min-height: 170px; padding: 24px; border-radius: 20px; background: var(--loves-surface); color: var(--loves-muted); display: grid; place-items: center; text-align: center; gap: 8px; font-size: 12px; box-shadow: inset 0 0 0 1px var(--loves-line); }
-.lovers-diary-empty i { color: #aeb6ab; font-size: 28px; }
+.lovers-diary-empty i { color: var(--loves-pink-ink); font-size: 28px; }
 .lovers-diary-empty strong { color: var(--loves-ink); font-size: 15px; font-weight: 760; }
 .lovers-diary-item { min-height: 104px; display: grid; grid-template-columns: 48px 1fr; align-items: stretch; gap: 10px; position: relative; }
 .lovers-diary-time { padding-top: 16px; color: var(--loves-muted); font-size: 10px; line-height: 1.35; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
 .lovers-diary-card { min-width: 0; padding: 14px; border-radius: 18px; background: var(--loves-surface); position: relative; box-shadow: inset 0 0 0 1px var(--loves-line); }
-.lovers-diary-card::before { content: ""; width: 4px; border-radius: 4px; position: absolute; left: 0; top: 14px; bottom: 14px; background: var(--loves-accent); }
+.lovers-diary-card::before { content: ""; width: 4px; border-radius: 4px; position: absolute; left: 0; top: 14px; bottom: 14px; background: var(--loves-pink-ink); }
 .lovers-diary-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .lovers-diary-card-head strong { min-width: 0; display: block; overflow: hidden; font-size: 14px; font-weight: 750; white-space: nowrap; text-overflow: ellipsis; }
 .lovers-diary-location { margin-top: 7px; color: var(--loves-muted); display: flex; align-items: center; gap: 5px; font-size: 10px; }
-.lovers-diary-card p { margin: 11px 0 0; color: #303330; font-size: 13px; line-height: 1.62; white-space: pre-wrap; word-break: break-word; }
+.lovers-diary-card p { margin: 11px 0 0; color: #2c2c2e; font-size: 13px; line-height: 1.62; white-space: pre-wrap; word-break: break-word; }
 .lovers-diary-delete { flex-shrink: 0; padding: 0; border-radius: 0; background: transparent; color: var(--loves-danger); cursor: pointer; font-size: 12px; line-height: 1.5; text-decoration: none; white-space: nowrap; }
 .lovers-diary-delete:hover { text-decoration: underline; }
 .lovers-diary-end { margin-top: 10px; color: var(--loves-muted); font-size: 10px; text-align: center; }
@@ -1985,18 +1987,18 @@
 .lovers-savings-hero {
     padding: 23px;
     border-radius: 26px;
-    background: #1c1f1c;
-    color: #f7f8f4;
+    background: #1c1c1e;
+    color: #ffffff;
     box-shadow: none;
 }
 
-.lovers-savings-kicker { color: #b6c1b3; opacity: 1; }
+.lovers-savings-kicker { color: var(--loves-pink); opacity: 1; }
 .lovers-savings-total { margin-top: 10px; font-size: 40px; font-weight: 760; letter-spacing: -.05em; font-variant-numeric: tabular-nums; }
-.lovers-savings-jar { width: 54px; height: 54px; border-radius: 17px; background: rgba(255,255,255,.08); color: #bdc8ba; font-size: 21px; }
-.lovers-savings-goal-row { color: rgba(247,248,244,.68); font-size: 11px; opacity: 1; }
+.lovers-savings-jar { width: 54px; height: 54px; border-radius: 17px; background: rgba(255,255,255,.08); color: var(--loves-pink); font-size: 21px; }
+.lovers-savings-goal-row { color: rgba(255,255,255,.68); font-size: 11px; opacity: 1; }
 .lovers-savings-progress-track { height: 7px; background: rgba(255,255,255,.12); }
-.lovers-savings-progress-fill { background: #aab8a6; }
-.lovers-savings-left { color: rgba(247,248,244,.56); font-size: 10px; opacity: 1; }
+.lovers-savings-progress-fill { background: var(--loves-pink); }
+.lovers-savings-left { color: rgba(255,255,255,.58); font-size: 10px; opacity: 1; }
 
 .lovers-savings-person,
 .lovers-savings-day-totals div,
@@ -2006,7 +2008,7 @@
 .lovers-savings-person-dot.is-char,
 .lovers-savings-record-icon.is-user,
 .lovers-savings-record-icon.is-char { background: var(--loves-accent); }
-.lovers-savings-record.is-withdrawal .lovers-savings-record-icon { background: #8b9089; }
+.lovers-savings-record.is-withdrawal .lovers-savings-record-icon { background: #636366; }
 .lovers-savings-person-name,
 .lovers-savings-day-subtitle,
 .lovers-savings-day-totals span,
@@ -2014,7 +2016,7 @@
 .lovers-savings-section-title { font-size: 21px; font-weight: 780; letter-spacing: -.035em; }
 .lovers-savings-date-filter { min-height: 42px; background: var(--loves-surface); color: var(--loves-ink); box-shadow: inset 0 0 0 1px var(--loves-line); }
 .lovers-savings-record-icon { border-radius: 14px; }
-.lovers-savings-empty i { color: #aeb6ab; }
+.lovers-savings-empty i { color: var(--loves-pink-ink); }
 
 .lovers-savings-deposit-sheet { width: min(100%, 520px); margin: 0 auto; background: var(--loves-bg); }
 .lovers-savings-deposit-header button { min-height: 44px; color: var(--loves-accent); }
@@ -2048,7 +2050,7 @@
 }
 
 .lovers-diary-generator-sheet { height: auto; }
-.lovers-compose-sheet .sheet-handle { background: #c9ccc7; }
+.lovers-compose-sheet .sheet-handle { background: #c7c7cc; }
 
 .lovers-compose-header {
     min-height: 54px;
@@ -2075,11 +2077,11 @@
 .lovers-compose-field input { height: 36px; font-size: 14px; }
 
 .lovers-publish-images { margin-top: 12px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.lovers-publish-add { aspect-ratio: 1; border-radius: 17px; background: var(--loves-accent-soft); color: #657162; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; cursor: pointer; font-size: 18px; }
+.lovers-publish-add { aspect-ratio: 1; border-radius: 17px; background: var(--loves-accent-soft); color: var(--loves-pink-ink); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; cursor: pointer; font-size: 18px; }
 .lovers-publish-add small { font-size: 9px; font-weight: 750; }
-.lovers-publish-image { aspect-ratio: 1; border-radius: 17px; overflow: hidden; position: relative; background: #e7e9e5; }
+.lovers-publish-image { aspect-ratio: 1; border-radius: 17px; overflow: hidden; position: relative; background: #e5e5ea; }
 .lovers-publish-image img { width: 100%; height: 100%; object-fit: cover; }
-.lovers-publish-image button { width: 28px; height: 28px; padding: 0; border-radius: 10px; position: absolute; top: 5px; right: 5px; background: rgba(23,25,24,.72); color: #fff; cursor: pointer; font-size: 10px; }
+.lovers-publish-image button { width: 28px; height: 28px; padding: 0; border-radius: 10px; position: absolute; top: 5px; right: 5px; background: rgba(28,28,30,.72); color: #fff; cursor: pointer; font-size: 10px; }
 
 .lovers-diary-generator-summary { padding: 16px; border-radius: 19px; background: var(--loves-surface); box-shadow: inset 0 0 0 1px var(--loves-line); }
 .lovers-diary-generator-summary span { color: var(--loves-muted); font-size: 10px; font-weight: 800; letter-spacing: .12em; }

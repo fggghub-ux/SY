@@ -448,7 +448,7 @@ test('prioritizes complete chat bubbles and places temporal context immediately 
     assert.match(aiSource, /function getAiResponseFinishReason\(data\)/);
     assert.match(aiSource, /isLengthFinishReason\(responseFinishReason\)/);
     assert.match(aiSource, /function hasPrimaryChatBubble\(queueItems\)[\s\S]*?music_control[\s\S]*?recall[\s\S]*?call/);
-    assert.match(aiSource, /if \(!hasPrimaryChatBubble\(queueItems\)\)/);
+    assert.match(aiSource, /if \(!hasPrimaryChatBubble\(queueItems\) && !inviteAccepted\)/);
     assert.match(aiSource, /模型输出被截断，未得到完整聊天气泡/);
     assert.doesNotMatch(aiSource, /directJsonArray/);
 
@@ -505,7 +505,7 @@ test('uses visible keyword-triggered memory recall for single and group chats', 
     assert.match(settingsSource, /summaryPayload\.memoryTags/);
     assert.match(statusSource, /triggerKeywords = window\.imChat\?\.normalizeMemoryTriggerKeywords/);
     assert.match(cssSource, /\.memory-recall-narration-pill/);
-    assert.match(indexSource, /4_chat_ai\.js\?v=20260714-chat-bubble-format-v1/);
+    assert.match(indexSource, /4_chat_ai\.js\?v=20260714-loves-invite-card-v1/);
     assert.match(indexSource, /4_chat_bubbles\.js\?v=20260713-offline-summary-modal-v3/);
     assert.match(indexSource, /5_settings\.js\?v=20260713-offline-memory-v1/);
 });
@@ -537,7 +537,7 @@ test('uses per-member group languages, content-sized private bubbles, and fresh 
     assert.match(coreSource, /getApiContextFingerprint\(targetMessage\) !== previousContextFingerprint/);
     assert.match(coreSource, /window\.imApp\.clearFriendRuntimeMessageContext\(targetFriend\)/);
     assert.match(indexSource, /js\/imessage\/2_core\.js\?v=20260714-offline-global-theme-v8/);
-    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260714-chat-bubble-format-v1/);
+    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260714-loves-invite-card-v1/);
     assert.match(indexSource, /js\/imessage\/4_chat_main\.js\?v=20260712-reply-single-tap-v1/);
 });
 

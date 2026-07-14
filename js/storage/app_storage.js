@@ -7,7 +7,7 @@
 (function() {
     const DB_NAME = 'iiso_app_storage';
     const OPTIMIZATION_SHADOW_DB_NAME = 'iiso_app_storage_optimization_shadow_v8';
-    const DB_VERSION = 6;
+    const DB_VERSION = 7;
     const STORAGE_SCHEMA_VERSION = 8;
     const BACKUP_APP_NAME = 'u2phone';
     const AUTH_SESSION_ID = 'current';
@@ -29,6 +29,7 @@
         imMomentMessages: 'im_moment_messages',
         imStickers: 'im_stickers',
         libraryBooks: 'library_books',
+        libraryBookContent: 'library_book_content',
         libraryPlaylists: 'library_playlists',
         libraryTracks: 'library_tracks',
         libraryDailyStats: 'library_daily_stats',
@@ -631,6 +632,10 @@
                     booksStore.createIndex('updatedAt', 'updatedAt', { unique: false });
                 }
 
+                if (!db.objectStoreNames.contains(STORES.libraryBookContent)) {
+                    db.createObjectStore(STORES.libraryBookContent, { keyPath: 'id' });
+                }
+
                 if (!db.objectStoreNames.contains(STORES.libraryPlaylists)) {
                     const playlistsStore = db.createObjectStore(STORES.libraryPlaylists, { keyPath: 'id' });
                     playlistsStore.createIndex('updatedAt', 'updatedAt', { unique: false });
@@ -1121,19 +1126,71 @@
         return sanitizePersistentValue(cloneDeep(record || {}));
     }
 
+    function splitLibraryBookRecord(book) {
+        const record = sanitizeLibraryRecord(book);
+        const text = typeof record.text === 'string' ? record.text : null;
+        const chapterIndex = Array.isArray(record.chapterIndex) ? record.chapterIndex : null;
+        const chunks = Array.isArray(record.chunks) ? record.chunks : null;
+        delete record.text;
+        delete record.chapterIndex;
+        delete record.chunks;
+        return { record, text, chapterIndex, chunks };
+    }
+
     async function loadLibraryBooks() {
-        return cloneDeep(await getAllRecords(STORES.libraryBooks));
+        return withStore([STORES.libraryBooks, STORES.libraryBookContent], 'readwrite', async (stores) => {
+            const rows = await requestToPromise(stores[STORES.libraryBooks].getAll());
+            const books = [];
+            rows.forEach((row) => {
+                const { record, text, chapterIndex, chunks } = splitLibraryBookRecord(row);
+                if (!record.id) return;
+                if (text !== null || chapterIndex || chunks) {
+                    stores[STORES.libraryBookContent].put({
+                        id: record.id,
+                        text: text || '',
+                        chapterIndex: chapterIndex || [],
+                        chunks: chunks || [],
+                        updatedAt: Number(record.updatedAt) || Date.now()
+                    });
+                    stores[STORES.libraryBooks].put(record);
+                }
+                books.push(record);
+            });
+            return cloneDeep(books);
+        });
     }
 
     async function saveLibraryBook(book) {
-        const record = sanitizeLibraryRecord(book);
+        const { record, text, chapterIndex, chunks } = splitLibraryBookRecord(book);
         if (!record.id) throw new Error('Library book id is required.');
-        await putRecord(STORES.libraryBooks, record);
+        if (text !== null || chapterIndex || chunks) {
+            await withStore([STORES.libraryBooks, STORES.libraryBookContent], 'readwrite', (stores) => {
+                stores[STORES.libraryBooks].put(record);
+                stores[STORES.libraryBookContent].put({
+                    id: record.id,
+                    text: text || '',
+                    chapterIndex: chapterIndex || [],
+                    chunks: chunks || [],
+                    updatedAt: Number(record.updatedAt) || Date.now()
+                });
+            });
+        } else {
+            await putRecord(STORES.libraryBooks, record);
+        }
         return cloneDeep(record);
     }
 
+    async function loadLibraryBookContent(bookId) {
+        const record = await getRecord(STORES.libraryBookContent, String(bookId || ''));
+        return record ? cloneDeep(record) : null;
+    }
+
     async function deleteLibraryBook(bookId) {
-        return deleteRecord(STORES.libraryBooks, String(bookId || ''));
+        const safeBookId = String(bookId || '');
+        return withStore([STORES.libraryBooks, STORES.libraryBookContent], 'readwrite', (stores) => {
+            stores[STORES.libraryBooks].delete(safeBookId);
+            stores[STORES.libraryBookContent].delete(safeBookId);
+        });
     }
 
     async function loadLibraryPlaylists() {
@@ -2694,9 +2751,13 @@
                         ? Math.max(0.2, Math.min(1, parseFloat(safe.assistiveBallSettings.opacity) > 1
                             ? parseFloat(safe.assistiveBallSettings.opacity) / 100
                             : parseFloat(safe.assistiveBallSettings.opacity)))
-                        : 0.72
+                        : 0.72,
+                    imageUrl: typeof safe.assistiveBallSettings.imageUrl === 'string'
+                        && /^(https?:\/\/|data:image\/png;base64,)/i.test(safe.assistiveBallSettings.imageUrl.trim())
+                        ? safe.assistiveBallSettings.imageUrl.trim()
+                        : ''
                 }
-                : { enabled: false, x: null, y: null, opacity: 0.72 },
+                : { enabled: false, x: null, y: null, opacity: 0.72, imageUrl: '' },
             themeState: themeState || {
                 bgUrl: null,
                 fontMode: 'preset',
@@ -3407,6 +3468,7 @@
         xDms: 'X',
         assets: '图片资源',
         libraryBooks: '书库',
+        libraryBookContent: '书库',
         libraryPlaylists: '书库',
         libraryTracks: '书库',
         libraryDailyStats: '书库',
@@ -4226,6 +4288,7 @@
         saveMomentsCover,
         loadMomentsCoverUrl,
         loadLibraryBooks,
+        loadLibraryBookContent,
         saveLibraryBook,
         deleteLibraryBook,
         loadLibraryPlaylists,

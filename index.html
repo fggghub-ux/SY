@@ -28,12 +28,12 @@
             document.head.appendChild(manifestLink);
         }
     </script>
-    <link rel="stylesheet" href="css/global.css?v=20260709-android-input-v1">
+    <link rel="stylesheet" href="css/global.css?v=20260714-assistive-ball-image-v1">
     <link rel="stylesheet" href="css/login.css?v=20260712-login-notice-v1">
     <link rel="stylesheet" href="css/home.css">
     <link rel="stylesheet" href="css/worldbook.css">
     <link rel="stylesheet" href="css/imessage.css?v=20260714-offline-global-theme-v8">
-    <link rel="stylesheet" href="css/pay.css?v=20260705-safe-area-v1">
+    <link rel="stylesheet" href="css/pay.css?v=20260714-ios-neutral-v1">
     <link rel="stylesheet" href="css/bstage.css">
     <link rel="stylesheet" href="css/tiktok.css?v=20260712-tiktok-feed-cleanup-v1">
     <link rel="stylesheet" href="css/shopping.css">
@@ -42,8 +42,8 @@
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
-    <link rel="stylesheet" href="css/loves.css?v=20260712-friend-mac-v8">
-    <link rel="stylesheet" href="css/library.css?v=20260704-together-picker-border-v1">
+    <link rel="stylesheet" href="css/loves.css?v=20260714-ios-neutral-pink-v1">
+    <link rel="stylesheet" href="css/library.css?v=20260715-reader-streaming-v1">
     <!-- App Styles -->
     <link rel="stylesheet" href="css/settings.css?v=20260712-login-notice-v1">
     <link rel="stylesheet" href="css/youtube.css">
@@ -554,6 +554,11 @@
                     </span>
                 </header>
                 <div class="library-reader-scroll" id="library-reader-scroll"><article id="library-reader-content"></article></div>
+                <div class="library-reader-loading" id="library-reader-loading" role="status" aria-live="polite" hidden>
+                    <span class="library-reader-loading-spinner" aria-hidden="true"></span>
+                    <strong>正在打开书籍</strong>
+                    <small>准备正文与阅读位置…</small>
+                </div>
                 <aside class="library-reader-toc" id="library-reader-toc" hidden>
                     <div class="library-reader-toc-heading"><div><small>CONTENTS</small><strong>目录</strong></div><button type="button" id="library-reader-toc-close"><i class="fas fa-times"></i></button></div>
                     <div class="library-reader-toc-list" id="library-reader-toc-list"></div>
@@ -2765,7 +2770,7 @@
         </div>
 
         <div class="bottom-sheet-overlay detail-sheet-overlay" id="assistive-ball-settings-sheet" style="z-index: 560;">
-            <div class="bottom-sheet" style="height: auto; max-height: 55%;">
+            <div class="bottom-sheet" style="height: auto; max-height: 78%; overflow-y: auto;">
                 <div class="sheet-handle"></div>
                 <div class="sheet-title">悬浮球设置</div>
                 <div class="settings-group fully-rounded" style="margin: 0 16px 20px;">
@@ -2781,6 +2786,24 @@
                         <input type="range" id="assistive-ball-opacity-range" min="20" max="100" step="1" value="72" class="assistive-ball-opacity-range">
                         <span id="assistive-ball-opacity-value" class="assistive-ball-opacity-value">72%</span>
                     </div>
+                </div>
+                <div class="settings-group fully-rounded assistive-ball-image-settings" style="margin: 0 16px 20px;">
+                    <div class="settings-item" style="cursor: default; border-bottom: 1px solid var(--separator-color);">
+                        <div class="settings-text" style="font-weight: 600;">悬浮球样式</div>
+                    </div>
+                    <div class="assistive-ball-image-url-row">
+                        <input type="url" id="assistive-ball-image-url-input" inputmode="url" placeholder="粘贴图片 URL">
+                        <button type="button" id="assistive-ball-image-url-apply-btn">应用</button>
+                    </div>
+                    <div class="assistive-ball-image-actions">
+                        <button type="button" id="assistive-ball-image-upload-btn" class="assistive-ball-image-action upload">
+                            <i class="fas fa-image"></i> 上传 PNG
+                        </button>
+                        <button type="button" id="assistive-ball-image-reset-btn" class="assistive-ball-image-action reset">
+                            <i class="fas fa-undo"></i> 恢复默认
+                        </button>
+                    </div>
+                    <input type="file" id="assistive-ball-image-file-input" accept="image/png,.png" style="display: none;">
                 </div>
             </div>
         </div>
@@ -7443,7 +7466,7 @@
     </section>
 </div>
 
-<script src="js/storage/app_storage.js?v=20260713-offline-memory-v1"></script>
+<script src="js/storage/app_storage.js?v=20260715-library-content-store-v1"></script>
     <script src="js/storage/imessage_storage.js?v=20260710-storage-v8-idb1"></script>
     <script src="storage.js?v=20260710-storage-v7-cache1"></script>
     <script src="js/app_state_bridge.js?v=20260710-bstage-chat-recovery-v1"></script>
@@ -7464,7 +7487,7 @@
     <script src="js/imessage/4_chat_payment.js?v=20260705-offline-identity-v2"></script>
     <script src="js/imessage/4_chat_bubbles.js?v=20260713-offline-summary-modal-v3"></script>
     <script src="js/imessage/minimax_tts.js"></script>
-    <script src="js/imessage/4_chat_ai.js?v=20260714-chat-bubble-format-v1"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260714-loves-invite-card-v1"></script>
     <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
     <script src="js/imessage/4_chat_sheet.js?v=20260714-offline-global-theme-v8"></script>
     <script src="js/imessage/4_chat_link.js?v=20260706-bugfix-v1"></script>
@@ -7484,9 +7507,9 @@
     <script src="js/worldbook.js"></script>
     <!-- 引入核心 UI 管理与设置模块脚本 -->
     <script src="js/ui.js"></script>
-    <script src="js/settings.js?v=20260712-login-notice-v1"></script>
+    <script src="js/settings.js?v=20260714-assistive-ball-image-v1"></script>
     <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
-    <script src="js/library.js?v=20260707-hidden-focus-v1"></script>
+    <script src="js/library.js?v=20260715-reader-streaming-v1"></script>
     <script src="js/loves.js?v=20260712-friend-mac-v8"></script>
     <script src="js/tiktok/2_core.js?v=20260712-tiktok-feed-cleanup-v1"></script>
     <script src="js/tiktok/3_home.js?v=20260712-tiktok-feed-cleanup-v1"></script>

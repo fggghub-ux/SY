@@ -107,7 +107,8 @@
         enabled: false,
         x: null,
         y: null,
-        opacity: 0.72
+        opacity: 0.72,
+        imageUrl: ''
     };
     
     // 用于保存正在编辑的状态，避免未点保存就污染全局配置
@@ -301,6 +302,11 @@
         UI.inputs.assistiveBallToggle = document.getElementById('assistive-ball-toggle');
         UI.inputs.assistiveBallOpacity = document.getElementById('assistive-ball-opacity-range');
         UI.inputs.assistiveBallOpacityValue = document.getElementById('assistive-ball-opacity-value');
+        UI.inputs.assistiveBallImageUrl = document.getElementById('assistive-ball-image-url-input');
+        UI.inputs.assistiveBallImageUrlApply = document.getElementById('assistive-ball-image-url-apply-btn');
+        UI.inputs.assistiveBallImageUpload = document.getElementById('assistive-ball-image-upload-btn');
+        UI.inputs.assistiveBallImageFile = document.getElementById('assistive-ball-image-file-input');
+        UI.inputs.assistiveBallImageReset = document.getElementById('assistive-ball-image-reset-btn');
 
         function openApiConfigSheet() {
             openView(UI.overlays.apiConfig);
@@ -2946,6 +2952,88 @@
             return Math.max(0.2, Math.min(1, numeric > 1 ? numeric / 100 : numeric));
         }
 
+        function normalizeAssistiveBallImageUrl(value) {
+            const imageUrl = typeof value === 'string' ? value.trim() : '';
+            if (!imageUrl) return '';
+            if (/^data:image\/png;base64,/i.test(imageUrl)) return imageUrl;
+
+            try {
+                const parsed = new URL(imageUrl);
+                return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? imageUrl : '';
+            } catch (error) {
+                return '';
+            }
+        }
+
+        function preloadAssistiveBallImage(imageUrl) {
+            return new Promise((resolve, reject) => {
+                const image = new Image();
+                image.onload = () => resolve(imageUrl);
+                image.onerror = () => reject(new Error('Failed to load assistive ball image'));
+                image.src = imageUrl;
+            });
+        }
+
+        function renderDefaultAssistiveBallAppearance() {
+            if (!assistiveBallEl) return;
+            const inner = assistiveBallEl.querySelector('.assistive-api-ball-inner');
+            assistiveBallEl.classList.remove('has-custom-image');
+            if (inner) inner.innerHTML = '<i class="fas fa-circle-dot"></i>';
+        }
+
+        function applyAssistiveBallAppearance() {
+            if (!assistiveBallEl) return;
+            const inner = assistiveBallEl.querySelector('.assistive-api-ball-inner');
+            const imageUrl = normalizeAssistiveBallImageUrl(assistiveBallSettings.imageUrl);
+            if (!inner || !imageUrl) {
+                renderDefaultAssistiveBallAppearance();
+                return;
+            }
+
+            assistiveBallEl.classList.add('has-custom-image');
+            inner.innerHTML = '';
+            const image = document.createElement('img');
+            image.className = 'assistive-api-ball-image';
+            image.alt = '';
+            image.draggable = false;
+            image.addEventListener('error', () => {
+                if (normalizeAssistiveBallImageUrl(assistiveBallSettings.imageUrl) === imageUrl) {
+                    renderDefaultAssistiveBallAppearance();
+                }
+            }, { once: true });
+            image.src = imageUrl;
+            inner.appendChild(image);
+        }
+
+        function syncAssistiveBallImageControls() {
+            if (UI.inputs.assistiveBallImageUrl) {
+                UI.inputs.assistiveBallImageUrl.value = normalizeAssistiveBallImageUrl(assistiveBallSettings.imageUrl);
+            }
+        }
+
+        async function setAssistiveBallImage(imageUrl, successMessage) {
+            const normalizedImageUrl = normalizeAssistiveBallImageUrl(imageUrl);
+            if (!normalizedImageUrl) {
+                showToast('请输入有效的 http(s) 图片链接');
+                return false;
+            }
+
+            try {
+                await preloadAssistiveBallImage(normalizedImageUrl);
+            } catch (error) {
+                showToast('图片加载失败，请检查链接或图片文件');
+                return false;
+            }
+
+            assistiveBallSettings.imageUrl = normalizedImageUrl;
+            ensureAssistiveBallDom();
+            applyAssistiveBallAppearance();
+            syncAssistiveBallImageControls();
+            await saveGlobalData();
+            showToast(successMessage);
+            return true;
+        }
+
         function syncAssistiveBallOpacityControls() {
             assistiveBallSettings.opacity = normalizeAssistiveBallOpacity(assistiveBallSettings.opacity);
             const percent = Math.round(assistiveBallSettings.opacity * 100);
@@ -2982,6 +3070,7 @@
                 });
                 assistiveBallEl.addEventListener('pointerdown', startAssistiveBallDrag);
                 syncAssistiveBallOpacityControls();
+                applyAssistiveBallAppearance();
             }
 
             if (!assistiveBallPanelEl) {
@@ -3161,6 +3250,7 @@
 
             ensureAssistiveBallDom();
             syncAssistiveBallOpacityControls();
+            applyAssistiveBallAppearance();
             applyAssistiveBallPosition();
             assistiveBallEl.classList.toggle('visible', assistiveBallSettings.enabled);
             if (!assistiveBallSettings.enabled) {
@@ -3202,6 +3292,7 @@
             assistiveBallConfigBtn.addEventListener('click', () => {
                 setAssistiveBallEnabled(assistiveBallSettings.enabled);
                 syncAssistiveBallOpacityControls();
+                syncAssistiveBallImageControls();
                 openView(UI.overlays.assistiveBallSettings);
             });
         }
@@ -3223,6 +3314,59 @@
                 assistiveBallSettings.opacity = normalizeAssistiveBallOpacity(UI.inputs.assistiveBallOpacity.value);
                 syncAssistiveBallOpacityControls();
                 saveGlobalData();
+            });
+        }
+
+        if (UI.inputs.assistiveBallImageUrlApply) {
+            UI.inputs.assistiveBallImageUrlApply.addEventListener('click', () => {
+                setAssistiveBallImage(UI.inputs.assistiveBallImageUrl?.value, '悬浮球图片已更新');
+            });
+        }
+
+        if (UI.inputs.assistiveBallImageUrl) {
+            UI.inputs.assistiveBallImageUrl.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                setAssistiveBallImage(UI.inputs.assistiveBallImageUrl.value, '悬浮球图片已更新');
+            });
+        }
+
+        if (UI.inputs.assistiveBallImageUpload && UI.inputs.assistiveBallImageFile) {
+            UI.inputs.assistiveBallImageUpload.addEventListener('click', () => {
+                UI.inputs.assistiveBallImageFile.click();
+            });
+
+            UI.inputs.assistiveBallImageFile.addEventListener('change', async (event) => {
+                const file = event.target.files?.[0];
+                event.target.value = '';
+                if (!file) return;
+                if (file.type !== 'image/png') {
+                    showToast('请上传 PNG 图片');
+                    return;
+                }
+
+                try {
+                    const compressedImageUrl = await readImageAsCompressedDataUrl(file, {
+                        maxWidth: 256,
+                        maxHeight: 256,
+                        outputType: 'image/png'
+                    });
+                    await setAssistiveBallImage(compressedImageUrl, '悬浮球图片已压缩并更新');
+                } catch (error) {
+                    console.warn('Failed to compress assistive ball image:', error);
+                    showToast('图片压缩失败，请重试');
+                }
+            });
+        }
+
+        if (UI.inputs.assistiveBallImageReset) {
+            UI.inputs.assistiveBallImageReset.addEventListener('click', async () => {
+                assistiveBallSettings.imageUrl = '';
+                ensureAssistiveBallDom();
+                applyAssistiveBallAppearance();
+                syncAssistiveBallImageControls();
+                await saveGlobalData();
+                showToast('已恢复默认悬浮球');
             });
         }
 
