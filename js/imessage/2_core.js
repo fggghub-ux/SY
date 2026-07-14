@@ -14,6 +14,15 @@ window.imData = {
     isPublishing: false,
     currentEditImageIndex: -1,
     cssPresets: [],
+    offlineTheme: {
+        narrativeColor: '#111111',
+        dialogueColor: '#8B8B8B',
+        customCss: '',
+        customCssEnabled: false,
+        activePresetId: ''
+    },
+    offlineThemePresets: [],
+    offlineThemeInitialized: false,
     tempSelectedBookIds: [],
     tempRelationshipDrafts: [],
     isRelationshipPickerVisible: false,
@@ -192,6 +201,59 @@ window.imApp.scopeUserCss = function(css, scope) {
     }
 
     return scopeRules(String(css));
+};
+
+window.imApp.createDefaultOfflineThemeState = function() {
+    return {
+        narrativeColor: '#111111',
+        dialogueColor: '#8B8B8B',
+        customCss: '',
+        customCssEnabled: false,
+        activePresetId: ''
+    };
+};
+
+window.imApp.normalizeOfflineThemeState = function(theme) {
+    const defaults = window.imApp.createDefaultOfflineThemeState();
+    const source = theme && typeof theme === 'object' ? theme : {};
+    const normalizeColor = (value, fallback) => {
+        const color = String(value || '').trim();
+        return /^#[0-9a-fA-F]{6}$/.test(color) ? color.toUpperCase() : fallback;
+    };
+    const customCss = typeof source.customCss === 'string' ? source.customCss : '';
+
+    return {
+        narrativeColor: normalizeColor(source.narrativeColor, defaults.narrativeColor),
+        dialogueColor: normalizeColor(source.dialogueColor, defaults.dialogueColor),
+        customCss,
+        customCssEnabled: !!customCss.trim(),
+        activePresetId: String(source.activePresetId || '').trim()
+    };
+};
+
+window.imApp.normalizeOfflineThemePresets = function(presets) {
+    const source = Array.isArray(presets) ? presets : [];
+    const usedIds = new Set();
+    const usedNames = new Set();
+
+    return source.map((preset, index) => {
+        const item = preset && typeof preset === 'object' ? preset : {};
+        const theme = window.imApp.normalizeOfflineThemeState(item);
+        const name = String(item.name || '').trim() || `线下主题 ${index + 1}`;
+        const normalizedName = name.toLocaleLowerCase();
+        let id = String(item.id || '').trim() || `offline-theme-${index + 1}`;
+        while (usedIds.has(id)) id = `${id}-${index + 1}`;
+        if (usedNames.has(normalizedName)) return null;
+        usedIds.add(id);
+        usedNames.add(normalizedName);
+        return {
+            id,
+            name,
+            narrativeColor: theme.narrativeColor,
+            dialogueColor: theme.dialogueColor,
+            customCss: theme.customCss
+        };
+    }).filter(Boolean);
 };
 
 window.imApp.applyGlobalChatCss = function(themeState = window.u2ThemeState || {}) {
@@ -470,6 +532,7 @@ window.imApp.normalizeFriendData = function(friend) {
     normalized.showTimestamp = !!normalized.showTimestamp;
     normalized.timeAware = normalized.timeAware !== false;
     normalized.allowRoleRecall = normalized.allowRoleRecall !== false;
+    normalized.offlineStreamEnabled = normalized.offlineStreamEnabled !== false;
     normalized.dynamicActionNarrationEnabled = !!normalized.dynamicActionNarrationEnabled;
     normalized.timestampPosition = normalized.timestampPosition === 'outside' ? 'outside' : 'inside';
     normalized.boundBooks = Array.isArray(normalized.boundBooks) ? normalized.boundBooks : [];
@@ -3482,8 +3545,17 @@ window.imApp.getImessageUiState = function() {
     const safeState = rawState && typeof rawState === 'object' ? rawState : {};
     const uiState = safeState.uiState && typeof safeState.uiState === 'object' ? safeState.uiState : {};
 
+    const offlineThemePresets = window.imApp.normalizeOfflineThemePresets(uiState.offlineThemePresets);
+    const offlineTheme = window.imApp.normalizeOfflineThemeState(uiState.offlineTheme);
+    if (offlineTheme.activePresetId && !offlineThemePresets.some(preset => preset.id === offlineTheme.activePresetId)) {
+        offlineTheme.activePresetId = '';
+    }
+
     return {
-        cssPresets: Array.isArray(uiState.cssPresets) ? uiState.cssPresets : []
+        cssPresets: Array.isArray(uiState.cssPresets) ? uiState.cssPresets : [],
+        offlineTheme,
+        offlineThemePresets,
+        hasOfflineTheme: !!(uiState.offlineTheme && typeof uiState.offlineTheme === 'object')
     };
 };
 
@@ -3495,7 +3567,9 @@ window.imApp.saveImessageUiState = function() {
         ...currentState,
         uiState: {
             ...(currentState && currentState.uiState && typeof currentState.uiState === 'object' ? currentState.uiState : {}),
-            cssPresets: Array.isArray(window.imData.cssPresets) ? window.imData.cssPresets : []
+            cssPresets: Array.isArray(window.imData.cssPresets) ? window.imData.cssPresets : [],
+            offlineTheme: window.imApp.normalizeOfflineThemeState(window.imData.offlineTheme),
+            offlineThemePresets: window.imApp.normalizeOfflineThemePresets(window.imData.offlineThemePresets)
         }
     };
 
@@ -3559,8 +3633,11 @@ window.imApp.initializeData = async function() {
 
         const globalUiState = window.imApp.getImessageUiState
             ? window.imApp.getImessageUiState()
-            : { cssPresets: [] };
+            : { cssPresets: [], offlineTheme: window.imApp.createDefaultOfflineThemeState(), offlineThemePresets: [], hasOfflineTheme: false };
         window.imData.cssPresets = Array.isArray(globalUiState.cssPresets) ? globalUiState.cssPresets : [];
+        window.imData.offlineTheme = window.imApp.normalizeOfflineThemeState(globalUiState.offlineTheme);
+        window.imData.offlineThemePresets = window.imApp.normalizeOfflineThemePresets(globalUiState.offlineThemePresets);
+        window.imData.offlineThemeInitialized = !!globalUiState.hasOfflineTheme;
 
         window.imData.ready = true;
 

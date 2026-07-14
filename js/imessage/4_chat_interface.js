@@ -41,11 +41,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const topBar = activePage.querySelector('.chat-top-bar');
         const batchHeader = activePage.querySelector('.chat-batch-header');
-        const batchActionBar = activePage.querySelector('.chat-batch-action-bar');
         const inputWrapper = activePage.querySelector('.ins-chat-input-wrapper');
         if (topBar) topBar.style.display = isActiveSelection ? 'none' : 'flex';
         if (batchHeader) batchHeader.style.display = isActiveSelection ? 'flex' : 'none';
-        if (batchActionBar) batchActionBar.style.display = isActiveSelection ? 'flex' : 'none';
         if (inputWrapper) inputWrapper.style.display = isActiveSelection ? 'none' : 'flex';
 
         activePage.querySelectorAll('.chat-checkbox-wrapper').forEach(wrapper => {
@@ -572,7 +570,7 @@ async function openChatTab(friend) {
                     <div class="chat-batch-header" style="display:none; align-items:center; justify-content:space-between; min-height:46px; padding:0 14px; color:#111; pointer-events:auto;">
                         <button type="button" class="chat-cancel-batch-btn im-chat-cancel-batch-btn">取消</button>
                         <div class="chat-batch-selection-count" style="font-size:16px; font-weight:600;">已选择 0 条</div>
-                        <span aria-hidden="true" style="width:42px;"></span>
+                        <button type="button" class="batch-delete-btn" style="border:0; padding:5px; background:transparent; color:#ff3b30; font-size:16px; font-weight:600; cursor:pointer;">删除</button>
                     </div>
                 </div>
                 <div class="ins-chat-messages"></div>
@@ -607,9 +605,6 @@ async function openChatTab(friend) {
                         </div>
                     </div>
                     ` : ''}
-                    <div class="chat-batch-action-bar" style="display:none; justify-content:center; align-items:center; padding:12px 20px max(12px, env(safe-area-inset-bottom)); background:rgba(242,242,247,0.96); border-top:1px solid rgba(0,0,0,0.1); position:absolute; bottom:0; left:0; width:100%; z-index:100; box-sizing:border-box;">
-                        <button type="button" class="batch-delete-btn" style="min-width:132px; height:42px; border:0; border-radius:21px; background:#fff; color:#ff3b30; font-size:15px; font-weight:700; cursor:pointer;"><i class="far fa-trash-alt" style="margin-right:7px;"></i>删除所选</button>
-                    </div>
                 </div>
             `;
 
@@ -637,8 +632,6 @@ async function openChatTab(friend) {
             const cancelBatchBtn = page.querySelector('.chat-cancel-batch-btn');
             const menuBtn = page.querySelector('.chat-menu-btn');
             const callBtn = page.querySelector('.chat-call-btn');
-            const batchActionBar = page.querySelector('.chat-batch-action-bar');
-            const inputWrapper = page.querySelector('.ins-chat-input-wrapper');
             const batchDeleteBtn = page.querySelector('.batch-delete-btn');
 
             function exitBatchSelectMode() {

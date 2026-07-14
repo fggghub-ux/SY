@@ -2269,9 +2269,10 @@ Output only valid JSON with this exact shape:
 
         const pendingRegenerateContext = friend.pendingRegenerateContext || null;
         const userInputModalityRule = '\nUser 发送的内容/消息为线上打字发送的文字消息，除非上下文明确标注为“语音消息”的才为user发的语音';
-        const chatBubbleFormatGuardPrompt = `\n【防掉格式规则】：
-当前聊天以多气泡独立渲染。每一段独立对话、动作、反应或语义切换，都必须拆成 <chat_json> JSON 数组中的独立对象；严禁把多条气泡合并进同一个 text 字段，严禁输出 JSON 数组以外的正文、解释、Markdown 或分隔符。
-如果内容较长，必须主动拆成多个 text/voice/image 等合法对象，而不是用换行、斜杠、序号或连续长段落硬塞进一个气泡。`;
+        const chatBubbleFormatGuardPrompt = `\n【聊天气泡格式｜最高优先级】：
+当前聊天以多气泡独立渲染。<chat_json> JSON 数组中的每一个对象只对应一条原子消息：一句独立发言、一个动作、一个反应，或一次明确的语义切换；一个 text/voice/image 等对象绝不能承载多条消息。严禁把多条气泡合并进同一个 text 字段。
+只要回复包含两句及以上彼此独立的话、动作、反应、追问、转折或话题切换，就必须拆成两个及以上独立对象，按真实发送顺序排列；例如连续说三句不同的话，就输出三个 text 对象。只有“嗯”“好”“知道了”这类极短、单一的回应才允许只输出一个气泡。
+严禁把多条消息用换行、斜杠、序号、分号、连续长段落或引号塞进同一个 text 字段来伪装多气泡；宁可缩短每条消息，也必须保持每个对象只是一条自然、可单独发送的聊天气泡。严禁输出 JSON 数组以外的正文、解释、Markdown 或分隔符。`;
         const chatOutputPriorityPrompt = `\n【严格输出顺序｜聊天气泡最高优先级】：
 1. 回复的第一个非空白字符必须是 <chat_json> 的“<”；禁止在 <chat_json> 前输出状态、解释、思考、Markdown 或任何其他标签。
 2. 必须先完整输出并闭合 <chat_json>...</chat_json>，其中至少包含 1 条有效聊天气泡，然后才能输出任何附加标签。

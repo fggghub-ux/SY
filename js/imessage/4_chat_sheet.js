@@ -2944,6 +2944,7 @@ function createAttachmentSheet(page) {
                 <div class="offline-tavern-barrage-list" id="offline-tavern-barrage-list"></div>
             `;
             document.body.appendChild(view);
+            applyOfflineTavernTheme(window.imData.currentActiveFriend);
 
             const closeBtn = view.querySelector('#offline-tavern-barrage-close-btn');
             if (closeBtn) {
@@ -3264,6 +3265,7 @@ function createAttachmentSheet(page) {
                 throw new Error('API config missing');
             }
             const signal = options.signal || null;
+            const useStreaming = options.stream !== false;
 
             let endpoint = currentApiConfig.endpoint;
             if (endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
@@ -3278,6 +3280,14 @@ function createAttachmentSheet(page) {
                 return { content: finalText, tokens, aborted };
             };
 
+            const requestBody = {
+                model: currentApiConfig.model || '',
+                messages: apiMessages,
+                temperature: parseFloat(currentApiConfig.temperature) || 0.7,
+                stream: useStreaming
+            };
+            if (useStreaming) requestBody.stream_options = { include_usage: true };
+
             let response = null;
             try {
                 response = await fetch(endpoint, {
@@ -3286,13 +3296,7 @@ function createAttachmentSheet(page) {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${currentApiConfig.apiKey}`
                     },
-                    body: JSON.stringify({
-                        model: currentApiConfig.model || '',
-                        messages: apiMessages,
-                        temperature: parseFloat(currentApiConfig.temperature) || 0.7,
-                        stream: true,
-                        stream_options: { include_usage: true }
-                    }),
+                    body: JSON.stringify(requestBody),
                     signal: signal || undefined
                 });
             } catch (error) {
@@ -3304,6 +3308,14 @@ function createAttachmentSheet(page) {
 
             if (!response.ok) {
                 throw new Error(`HTTP Error: ${response.status}`);
+            }
+
+            if (!useStreaming) {
+                const data = await response.json();
+                const content = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || '';
+                const completionTokens = Number(data?.usage?.completion_tokens) || 0;
+                if (streamingBubble && content) streamingBubble.appendChunk(content);
+                return finishStream(content, completionTokens, false);
             }
 
             const reader = response.body.getReader();
@@ -3704,7 +3716,9 @@ ${transcript}`;
             try {
                 const contextMessages = messages.slice(0, targetIndex);
                 const apiMessages = buildOfflineApiMessages(activeFriend, contextMessages);
-                const { content, tokens } = await requestOfflineAssistantReply(apiMessages, streamingBubble);
+                const { content, tokens } = await requestOfflineAssistantReply(apiMessages, streamingBubble, {
+                    stream: activeFriend.offlineStreamEnabled !== false
+                });
                 const nextMessages = messages.slice();
                 nextMessages[targetIndex] = {
                     ...nextMessages[targetIndex],
@@ -3762,6 +3776,7 @@ ${transcript}`;
 
                 const activeFriend = window.imData.currentActiveFriend;
                 if (activeFriend) {
+                    applyOfflineTavernTheme(activeFriend);
                     await ensureOfflineMeetingState(activeFriend);
                     renderOfflineCurrentMessages(activeFriend);
                 }
@@ -3789,7 +3804,10 @@ ${transcript}`;
             '记忆系统': 'memory_system',
             '记忆区': 'memory_system',
             '格式示例': 'format_rules',
-            'COT': 'cot'
+            'COT': 'cot',
+            'COT前': 'cot_before',
+            'COT内容': 'cot_content',
+            'COT后': 'cot_after'
         };
 
         const OFFLINE_PROMPT_RENAMED_DEFAULT_NAME_BY_ID = {
@@ -3803,10 +3821,11 @@ ${transcript}`;
                 id: 'role_identity',
                 name: '身份定义',
                 enabled: true,
-                presetVersion: 2,
+                presetVersion: 3,
                 content: `<role_setting>
 You are U2, not a character inside the story. You are a skilled editor and director creating a fictional cinematic roleplay scene.
 {{user}} is the viewpoint center of the scene. {{char}} is the participating Char identity in a private scene, or the complete list of participating Char identities in a group scene.
+Output language: Simplified Chinese (plain text).
 Preserve their identities, relationship history, boundaries, and current emotional momentum. In a group scene, never treat the group itself as one speaking character.
 Write as narrative fiction, not as a real-world assistant. Do not explain your process, policies, or system messages in the final prose.
 Keep every scene grounded in concrete action, visible behavior, sensory detail, and continuity from the mounted context.
@@ -3995,20 +4014,37 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
                 deletable: false
             },
             {
-                id: 'cot',
-                name: 'COT',
+                id: 'cot_before',
+                name: 'COT前',
                 enabled: true,
-                presetVersion: 3,
-                content: `<thinking_instruction>
-Before every prose response, you must first output one <thinking>...</thinking> block.
-Inside <thinking>, think through the active world-book facts, personas, memories, recent online/offline context, scene goal, character motivation, narrative perspective, and a concise prose draft plan.
+                presetVersion: 1,
+                content: `You must think before outputting the content.
+<thinking>`,
+                editable: true,
+                deletable: false
+            },
+            {
+                id: 'cot_content',
+                name: 'COT内容',
+                enabled: true,
+                presetVersion: 1,
+                content: `Think through the active world-book facts, personas, memories, recent online/offline context, scene goal, character motivation, narrative perspective, and a concise prose draft plan.
 Read Char's Default Language from the mounted profile before drafting any spoken dialogue.
-Before closing <thinking>, audit every drafted Char dialogue line. Confirm that the original dialogue uses Char's Default Language and that every non-Chinese line is immediately followed by an accurate Chinese translation in the exact fixed format 「default-language dialogue（Chinese translation）」.
+Before finishing the reasoning, audit every drafted Char dialogue line. Confirm that the original dialogue uses Char's Default Language and that every non-Chinese line is immediately followed by an accurate Chinese translation in the exact fixed format 「default-language dialogue（Chinese translation）」.
 If Char's Default Language is Chinese, confirm that each dialogue line uses 「Chinese dialogue」 without a duplicate translation. Correct all language, translation, corner-quote, and full-width-parenthesis errors before writing the final prose.
-The <thinking> block must appear before the正文 and must be closed before any正文 begins.
-After </thinking>, output the final正文 only; do not continue thinking outside the tag.
+Complete the reasoning before any正文 begins.
+After the reasoning, output the final正文 only; do not continue thinking in the正文.
 Keep the thinking concise, specific, and usable for drafting. The正文 must execute the draft plan instead of ignoring it.
-</thinking_instruction>`,
+`,
+                editable: true,
+                deletable: false
+            },
+            {
+                id: 'cot_after',
+                name: 'COT后',
+                enabled: true,
+                presetVersion: 1,
+                content: `</thinking>`,
                 editable: true,
                 deletable: false
             }
@@ -4071,6 +4107,17 @@ Keep the thinking concise, specific, and usable for drafting. The正文 must exe
                 const prompt = rawPrompt && typeof rawPrompt === 'object' ? rawPrompt : {};
                 const rawName = String(prompt.name || '').trim();
                 const id = prompt.id || OFFLINE_LEGACY_PROMPT_ID_BY_NAME[rawName] || `custom-${slugOfflinePromptName(rawName)}-${index}`;
+                if (id === 'cot') {
+                    const legacyEnabled = prompt.enabled !== false;
+                    ['cot_before', 'cot_content', 'cot_after'].forEach(cotId => {
+                        if (usedIds.has(cotId)) return;
+                        const cotPrompt = cloneOfflinePrompt(defaultById.get(cotId));
+                        cotPrompt.enabled = legacyEnabled;
+                        normalized.push(cotPrompt);
+                        usedIds.add(cotId);
+                    });
+                    return;
+                }
                 const defaultPrompt = defaultById.get(id);
                 const isLegacyDefault = !prompt.id && !!defaultPrompt;
                 const isDuplicateDefault = defaultPrompt && usedIds.has(id);
@@ -4099,7 +4146,7 @@ Keep the thinking concise, specific, and usable for drafting. The正文 must exe
                     item.name = (!shouldUseDefaultName && prompt.id && rawName) ? rawName : defaultPrompt.name;
                     const sourcePresetVersion = Math.max(0, Number(prompt.presetVersion) || 0);
                     const targetPresetVersion = Math.max(0, Number(defaultPrompt.presetVersion) || 0);
-                    const shouldSyncPreset = ['role_identity', 'perspective_third', 'task_instruction', 'barrage_comments', 'player_choices', 'bilingual_dialogue', 'format_rules', 'cot'].includes(id) && sourcePresetVersion < targetPresetVersion;
+                    const shouldSyncPreset = ['role_identity', 'perspective_third', 'task_instruction', 'barrage_comments', 'player_choices', 'bilingual_dialogue', 'format_rules', 'cot_before', 'cot_content', 'cot_after'].includes(id) && sourcePresetVersion < targetPresetVersion;
                     item.content = item.systemManaged || shouldSyncPreset
                         ? defaultPrompt.content
                         : ((!isLegacyDefault && typeof prompt.content === 'string') ? prompt.content : defaultPrompt.content);
@@ -4139,59 +4186,301 @@ Keep the thinking concise, specific, and usable for drafting. The正文 must exe
                 }
             });
 
-            return groupOfflinePerspectivePrompts(normalized);
+            // Existing configurations are user ordered.  Only the first-time defaults
+            // use the grouped layout; later normalization may add missing defaults but
+            // must never move a custom entry back behind a built-in entry.
+            return normalized;
         };
 
         const serializeOfflinePrompts = (prompts) => JSON.stringify((prompts || []).map(prompt => cloneOfflinePrompt(prompt)));
         let offlinePromptSaveTimer = null;
 
-        const OFFLINE_THEME_DEFAULTS = Object.freeze({
-            narrativeColor: '#111111',
-            dialogueColor: '#8B8B8B'
-        });
-        const normalizeOfflineThemeColor = (value, fallback) => {
-            const color = String(value || '').trim();
-            return /^#[0-9a-fA-F]{6}$/.test(color) ? color.toUpperCase() : fallback;
+        const OFFLINE_THEME_DEFAULTS = Object.freeze(window.imApp?.createDefaultOfflineThemeState
+            ? window.imApp.createDefaultOfflineThemeState()
+            : {
+                narrativeColor: '#111111',
+                dialogueColor: '#8B8B8B',
+                customCss: '',
+                customCssEnabled: false,
+                activePresetId: ''
+            });
+        const OFFLINE_THEME_SCOPE = ':is(#offline-tavern-view, #offline-tavern-barrage-view)';
+        const OFFLINE_THEME_SOURCE_TEMPLATE = `/* 线下界面真实可编辑源码
+   :scope 会自动限定到线下主界面和弹幕详情页，不会影响其他应用。 */
+
+:scope {
+  --offline-tavern-narrative-color: #111111;
+  --offline-tavern-dialogue-color: #8B8B8B;
+  background: #ffffff;
+  color: #111111;
+}
+
+/* 顶栏 */
+.offline-tavern-header {
+  background: rgba(255, 255, 255, 0.94);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+.offline-tavern-back,
+.offline-tavern-settings {
+  color: #111111;
+}
+.offline-tavern-title {
+  color: #111111;
+  font-weight: 700;
+}
+
+/* 消息列表与楼层 */
+.offline-tavern-content {
+  background: #ffffff;
+}
+.offline-tavern-floor {
+  color: #8e8e93;
+}
+.offline-tavern-bubble {
+  border-bottom: 1px solid #eeeeee;
+}
+.offline-tavern-bubble.user {
+  background: #fafafa;
+}
+.offline-tavern-bubble.ai {
+  background: #ffffff;
+}
+.offline-tavern-bubble-header,
+.offline-tavern-bubble-body,
+.offline-tavern-bubble-footer {
+  color: inherit;
+}
+.offline-tavern-avatar {
+  border-radius: 50%;
+  background: #f2f2f7;
+}
+.offline-tavern-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.offline-tavern-name-container,
+.offline-tavern-name {
+  color: #111111;
+}
+.offline-tavern-sign,
+.offline-tavern-bubble-meta {
+  color: #8e8e93;
+}
+
+/* 正文、思考、对话和段落 */
+.offline-tavern-bubble-text,
+.offline-tavern-paragraph-wrap,
+.offline-tavern-paragraph {
+  color: var(--offline-tavern-narrative-color);
+}
+.offline-tavern-dialogue,
+.offline-tavern-speech {
+  color: var(--offline-tavern-dialogue-color);
+}
+.offline-tavern-thinking-icon {
+  color: #8e8e93;
+}
+.offline-tavern-thinking-content {
+  color: #636366;
+  background: #f7f7f7;
+  border-left: 3px solid #d1d1d6;
+}
+.offline-tavern-placeholder,
+.offline-tavern-reroll-placeholder {
+  color: #8e8e93;
+}
+
+/* 弹幕入口和玩家选项 */
+.offline-tavern-barrage-btn {
+  background: #f2f2f7;
+  color: #48484a;
+}
+.offline-tavern-choice-list {
+  display: grid;
+  gap: 8px;
+}
+.offline-tavern-choice-btn {
+  background: #ffffff;
+  color: #111111;
+  border: 1px solid #d8d8dc;
+}
+.offline-tavern-choice-index {
+  background: #111111;
+  color: #ffffff;
+}
+.offline-tavern-choice-text {
+  color: inherit;
+}
+
+/* 消息操作 */
+.offline-tavern-bubble-actions {
+  display: flex;
+  gap: 6px;
+}
+.offline-tavern-action-btn {
+  background: #f2f2f7;
+  color: #48484a;
+}
+.offline-tavern-action-btn.danger {
+  color: #ff3b30;
+}
+.offline-tavern-inline-editor {
+  background: #ffffff;
+  color: #111111;
+  border: 1px solid #d1d1d6;
+}
+
+/* 历史见面 */
+.offline-tavern-history-back,
+.offline-tavern-history-card,
+.offline-tavern-history-session,
+.offline-tavern-history-detail-summary {
+  background: #ffffff;
+  color: #111111;
+  border-color: #e5e5ea;
+}
+.offline-tavern-history-title,
+.offline-tavern-history-detail-summary-title {
+  color: #111111;
+}
+.offline-tavern-history-meta,
+.offline-tavern-history-summary,
+.offline-tavern-history-detail-summary-meta {
+  color: #8e8e93;
+}
+.offline-tavern-history-detail-summary-text,
+.offline-tavern-history-summary-textarea {
+  color: #333333;
+}
+.offline-tavern-history-delete,
+.offline-tavern-history-summary-cancel {
+  color: #ff3b30;
+}
+.offline-tavern-history-summary-edit,
+.offline-tavern-history-summary-save {
+  color: #007aff;
+}
+
+/* 输入区 */
+.offline-tavern-input-area {
+  background: rgba(255, 255, 255, 0.96);
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+.offline-tavern-input-bar {
+  background: #f2f2f7;
+  border: 1px solid #e5e5ea;
+}
+.offline-tavern-attachment,
+.offline-tavern-send {
+  color: #111111;
+}
+.offline-tavern-input {
+  color: #111111;
+  background: transparent;
+}
+
+/* 弹幕详情页 */
+:scope.offline-tavern-barrage-view {
+  background: #ffffff;
+}
+.offline-tavern-barrage-header {
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom: 1px solid #e5e5ea;
+}
+.offline-tavern-barrage-close,
+.offline-tavern-barrage-title {
+  color: #111111;
+}
+.offline-tavern-barrage-list {
+  background: #ffffff;
+}
+.offline-tavern-barrage-row {
+  border-bottom: 1px solid #eeeeee;
+}
+.offline-tavern-barrage-name {
+  color: #111111;
+}
+.offline-tavern-barrage-text {
+  color: #48484a;
+}
+.offline-tavern-barrage-likes,
+.offline-tavern-barrage-empty {
+  color: #8e8e93;
+}`.replaceAll('offline-tavern', 'offline-chat');
+        const resolveOfflineThemeCss = (css) => String(css || '')
+            .replaceAll('offline-chat', 'offline-tavern');
+        const normalizeOfflineTheme = (theme) => window.imApp?.normalizeOfflineThemeState
+            ? window.imApp.normalizeOfflineThemeState(theme)
+            : { ...OFFLINE_THEME_DEFAULTS, ...(theme || {}) };
+        const normalizeOfflineThemePresets = (presets) => window.imApp?.normalizeOfflineThemePresets
+            ? window.imApp.normalizeOfflineThemePresets(presets)
+            : (Array.isArray(presets) ? presets : []);
+        const ensureGlobalOfflineTheme = (legacyFriend = null) => {
+            if (!window.imData.offlineThemeInitialized) {
+                window.imData.offlineTheme = normalizeOfflineTheme(legacyFriend?.offlineTheme || OFFLINE_THEME_DEFAULTS);
+                window.imData.offlineThemeInitialized = true;
+                if (window.imApp?.saveImessageUiState) window.imApp.saveImessageUiState();
+            } else {
+                window.imData.offlineTheme = normalizeOfflineTheme(window.imData.offlineTheme);
+            }
+            window.imData.offlineThemePresets = normalizeOfflineThemePresets(window.imData.offlineThemePresets);
+            return window.imData.offlineTheme;
         };
-        const normalizeOfflineTheme = (theme) => ({
-            narrativeColor: normalizeOfflineThemeColor(theme?.narrativeColor, OFFLINE_THEME_DEFAULTS.narrativeColor),
-            dialogueColor: normalizeOfflineThemeColor(theme?.dialogueColor, OFFLINE_THEME_DEFAULTS.dialogueColor)
-        });
-        const applyOfflineTavernTheme = (friend) => {
-            const view = document.getElementById('offline-tavern-view');
-            const theme = normalizeOfflineTheme(friend?.offlineTheme);
-            if (view) {
+        const ensureOfflineThemeStyleTag = () => {
+            let styleTag = document.getElementById('offline-tavern-custom-theme-style');
+            if (!styleTag) {
+                styleTag = document.createElement('style');
+                styleTag.id = 'offline-tavern-custom-theme-style';
+                document.head.appendChild(styleTag);
+            }
+            return styleTag;
+        };
+        const applyOfflineTavernTheme = (legacyFriend = null) => {
+            const theme = ensureGlobalOfflineTheme(legacyFriend);
+            ['offline-tavern-view', 'offline-tavern-barrage-view'].forEach((id) => {
+                const view = document.getElementById(id);
+                if (!view) return;
                 view.style.setProperty('--offline-tavern-narrative-color', theme.narrativeColor);
                 view.style.setProperty('--offline-tavern-dialogue-color', theme.dialogueColor);
-            }
+            });
+            const styleTag = ensureOfflineThemeStyleTag();
+            styleTag.textContent = theme.customCssEnabled && theme.customCss.trim()
+                ? (window.imApp?.scopeUserCss
+                    ? window.imApp.scopeUserCss(resolveOfflineThemeCss(theme.customCss), OFFLINE_THEME_SCOPE)
+                    : resolveOfflineThemeCss(theme.customCss))
+                : '';
             return theme;
         };
         let offlineThemeSaveTimer = null;
 
-        const persistOfflineTheme = async (activeFriend, theme) => {
-            if (!activeFriend) return OFFLINE_THEME_DEFAULTS;
+        const persistOfflineTheme = async (theme) => {
             if (offlineThemeSaveTimer) {
                 clearTimeout(offlineThemeSaveTimer);
                 offlineThemeSaveTimer = null;
             }
             const normalized = normalizeOfflineTheme(theme);
-            activeFriend.offlineTheme = normalized;
-            const saved = await commitSheetFriendChange(activeFriend.id, (targetFriend) => {
-                targetFriend.offlineTheme = normalized;
-            }, { silent: true, metaOnly: true });
-            if (!saved) throw new Error('Failed to persist offline theme');
-            applyOfflineTavernTheme({ ...activeFriend, offlineTheme: normalized });
+            window.imData.offlineTheme = normalized;
+            window.imData.offlineThemeInitialized = true;
+            if (window.imApp?.saveImessageUiState) window.imApp.saveImessageUiState();
+            applyOfflineTavernTheme();
             return normalized;
         };
 
-        const scheduleOfflineThemePersist = (activeFriend, theme) => {
-            if (!activeFriend) return;
+        const persistOfflineThemePresets = async (presets) => {
+            window.imData.offlineThemePresets = normalizeOfflineThemePresets(presets);
+            if (window.imApp?.saveImessageUiState) window.imApp.saveImessageUiState();
+            return window.imData.offlineThemePresets;
+        };
+
+        const scheduleOfflineThemePersist = (theme) => {
             const normalized = normalizeOfflineTheme(theme);
-            activeFriend.offlineTheme = normalized;
-            applyOfflineTavernTheme(activeFriend);
+            window.imData.offlineTheme = normalized;
+            window.imData.offlineThemeInitialized = true;
+            applyOfflineTavernTheme();
             if (offlineThemeSaveTimer) clearTimeout(offlineThemeSaveTimer);
             offlineThemeSaveTimer = setTimeout(() => {
-                persistOfflineTheme(activeFriend, normalized).catch((error) => {
+                persistOfflineTheme(normalized).catch((error) => {
                     console.error('Offline theme persistence failed', error);
                     if (window.showToast) window.showToast('线下主题保存失败');
                 });
@@ -4662,6 +4951,35 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             });
             listEl.appendChild(wbBtnDiv);
 
+            const streamRow = document.createElement('div');
+            streamRow.className = 'offline-settings-streaming';
+            const streamMain = document.createElement('div');
+            streamMain.className = 'offline-settings-worldbook-main';
+            streamMain.innerHTML = '<i class="fas fa-stream"></i><span><strong>流式传输</strong><small>STREAM RESPONSE</small></span>';
+            const streamToggle = document.createElement('label');
+            streamToggle.className = 'toggle-switch';
+            streamToggle.setAttribute('aria-label', '流式传输');
+            const streamCheckbox = document.createElement('input');
+            streamCheckbox.type = 'checkbox';
+            streamCheckbox.checked = activeFriend.offlineStreamEnabled !== false;
+            const streamSlider = document.createElement('span');
+            streamSlider.className = 'slider';
+            streamToggle.append(streamCheckbox, streamSlider);
+            streamCheckbox.addEventListener('change', async () => {
+                const enabled = streamCheckbox.checked;
+                streamCheckbox.disabled = true;
+                const saved = await commitSheetFriendChange(activeFriend.id, (targetFriend) => {
+                    targetFriend.offlineStreamEnabled = enabled;
+                }, { silent: true, metaOnly: true });
+                if (!saved) {
+                    streamCheckbox.checked = !enabled;
+                    if (window.showToast) window.showToast('流式传输设置保存失败');
+                }
+                streamCheckbox.disabled = false;
+            });
+            streamRow.append(streamMain, streamToggle);
+            listEl.appendChild(streamRow);
+
             const variableHint = document.createElement('div');
             variableHint.className = 'offline-settings-variable-hint';
             variableHint.innerHTML = '<div class="offline-settings-section-kicker"><strong>可用变量</strong><span>VARIABLES</span></div><div><code>{{user}}</code> 当前 User 名字</div><div><code>{{char}}</code> 单聊为 Char 真名；群聊为全部群成员真名</div>';
@@ -4755,6 +5073,18 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                 const actionGroup = document.createElement('div');
                 actionGroup.className = 'offline-settings-prompt-actions';
 
+                if (prompt.deletable) {
+                    const deleteBtn = makeIconButton('fas fa-trash', '删除');
+                    deleteBtn.classList.add('danger');
+                    deleteBtn.addEventListener('click', async (event) => {
+                        event.stopPropagation();
+                        const nextPrompts = prompts.filter((_, promptIndex) => promptIndex !== index);
+                        await persistOfflinePrompts(activeFriend, nextPrompts);
+                        renderOfflineTavernSettingsEditor(listEl, activeFriend);
+                    });
+                    actionGroup.appendChild(deleteBtn);
+                }
+
                 if (!prompt.alwaysEnabled) {
                     const toggleLabel = document.createElement('label');
                     toggleLabel.className = 'toggle-switch';
@@ -4775,24 +5105,6 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     toggleLabel.appendChild(slider);
                     actionGroup.appendChild(toggleLabel);
                 }
-
-                if (prompt.deletable) {
-                    const deleteBtn = makeIconButton('fas fa-trash', '删除');
-                    deleteBtn.classList.add('danger');
-                    deleteBtn.addEventListener('click', async (event) => {
-                        event.stopPropagation();
-                        const nextPrompts = prompts.filter((_, promptIndex) => promptIndex !== index);
-                        await persistOfflinePrompts(activeFriend, nextPrompts);
-                        renderOfflineTavernSettingsEditor(listEl, activeFriend);
-                    });
-                    actionGroup.appendChild(deleteBtn);
-                }
-
-                const expandIcon = document.createElement('i');
-                expandIcon.className = 'fas fa-chevron-down';
-                expandIcon.classList.add('offline-settings-expand-icon');
-                actionGroup.appendChild(expandIcon);
-                topRow.appendChild(actionGroup);
 
                 const contentDiv = document.createElement('div');
                 contentDiv.className = 'offline-settings-prompt-content';
@@ -4815,11 +5127,25 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     contentDiv.appendChild(preview);
                 }
 
+                const expandBtn = makeIconButton('fas fa-chevron-down', '展开提示词');
+                expandBtn.classList.add('offline-settings-expand-btn');
+                expandBtn.setAttribute('aria-expanded', 'false');
+                const setExpanded = (expanded) => {
+                    contentDiv.style.display = expanded ? 'block' : 'none';
+                    expandBtn.setAttribute('aria-expanded', String(expanded));
+                    expandBtn.setAttribute('aria-label', expanded ? '收起提示词' : '展开提示词');
+                    expandBtn.title = expanded ? '收起提示词' : '展开提示词';
+                };
+                expandBtn.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    setExpanded(expandBtn.getAttribute('aria-expanded') !== 'true');
+                });
+                actionGroup.appendChild(expandBtn);
+                topRow.appendChild(actionGroup);
+
                 topRow.addEventListener('click', (event) => {
                     if (event.target.closest('button, input, textarea, label')) return;
-                    const willOpen = contentDiv.style.display === 'none';
-                    contentDiv.style.display = willOpen ? 'block' : 'none';
-                    expandIcon.style.transform = willOpen ? 'rotate(180deg)' : 'rotate(0deg)';
+                    setExpanded(expandBtn.getAttribute('aria-expanded') !== 'true');
                 });
 
                 itemDiv.appendChild(topRow);
@@ -4847,15 +5173,29 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             if (!listEl || !activeFriend) return;
             listEl.innerHTML = '';
 
-            const card = document.createElement('section');
-            card.className = 'offline-theme-card';
-            const heading = document.createElement('div');
-            heading.className = 'offline-theme-heading';
-            heading.innerHTML = '<div><strong>聊天文字</strong><span>TEXT COLORS</span></div><p>仅影响 AI 叙述与对话，不改变用户气泡。</p>';
-            card.appendChild(heading);
-
             let theme = applyOfflineTavernTheme(activeFriend);
+            let presets = normalizeOfflineThemePresets(window.imData.offlineThemePresets);
             const controls = [];
+            let cssInput = null;
+            let presetSelect = null;
+            let deletePresetBtn = null;
+
+            const createHeading = (title, kicker, description) => {
+                const heading = document.createElement('div');
+                heading.className = 'offline-theme-heading';
+                heading.innerHTML = `<div><strong>${title}</strong><span>${kicker}</span></div><p>${description}</p>`;
+                return heading;
+            };
+            const refreshPresetSelect = () => {
+                if (!presetSelect) return;
+                presetSelect.innerHTML = '<option value="">自定义主题</option>' + presets.map(preset => (
+                    `<option value="${escapeSheetHtml(preset.id)}">${escapeSheetHtml(preset.name)}</option>`
+                )).join('');
+                presetSelect.value = presets.some(preset => preset.id === theme.activePresetId)
+                    ? theme.activePresetId
+                    : '';
+                if (deletePresetBtn) deletePresetBtn.disabled = !presetSelect.value;
+            };
             const updateControls = () => {
                 controls.forEach(({ field, colorInput, textInput, swatch }) => {
                     const value = theme[field];
@@ -4863,12 +5203,155 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     textInput.value = value;
                     swatch.style.backgroundColor = value;
                 });
+                if (cssInput) cssInput.value = theme.customCss;
+                refreshPresetSelect();
             };
             const updateTheme = (field, value) => {
-                theme = normalizeOfflineTheme({ ...theme, [field]: value });
+                theme = normalizeOfflineTheme({ ...theme, [field]: value, activePresetId: '' });
                 updateControls();
-                scheduleOfflineThemePersist(activeFriend, theme);
+                scheduleOfflineThemePersist(theme);
             };
+
+            const presetCard = document.createElement('section');
+            presetCard.className = 'offline-theme-card';
+            presetCard.appendChild(createHeading('选择主题', 'THEME PRESETS', '主题在所有角色和群聊的线下界面中共用。'));
+            const presetControls = document.createElement('div');
+            presetControls.className = 'offline-theme-preset-controls';
+            presetSelect = document.createElement('select');
+            presetSelect.className = 'offline-theme-preset-select';
+            presetSelect.setAttribute('aria-label', '选择线下主题预设');
+            const importPresetBtn = document.createElement('button');
+            importPresetBtn.type = 'button';
+            importPresetBtn.className = 'offline-theme-preset-icon';
+            importPresetBtn.innerHTML = '<i class="fas fa-file-import"></i>';
+            importPresetBtn.setAttribute('aria-label', '导入主题');
+            importPresetBtn.title = '导入主题';
+            const exportPresetBtn = document.createElement('button');
+            exportPresetBtn.type = 'button';
+            exportPresetBtn.className = 'offline-theme-preset-icon';
+            exportPresetBtn.innerHTML = '<i class="fas fa-file-export"></i>';
+            exportPresetBtn.setAttribute('aria-label', '导出主题');
+            exportPresetBtn.title = '导出主题';
+            const importPresetInput = document.createElement('input');
+            importPresetInput.type = 'file';
+            importPresetInput.accept = '.json,application/json';
+            importPresetInput.hidden = true;
+            deletePresetBtn = document.createElement('button');
+            deletePresetBtn.type = 'button';
+            deletePresetBtn.className = 'offline-theme-preset-delete';
+            deletePresetBtn.textContent = '删除';
+            deletePresetBtn.disabled = true;
+            presetSelect.addEventListener('change', async () => {
+                const preset = presets.find(item => item.id === presetSelect.value);
+                if (!preset) {
+                    theme = await persistOfflineTheme({ ...theme, activePresetId: '' });
+                    updateControls();
+                    return;
+                }
+                theme = await persistOfflineTheme({
+                    narrativeColor: preset.narrativeColor,
+                    dialogueColor: preset.dialogueColor,
+                    customCss: preset.customCss,
+                    customCssEnabled: !!preset.customCss.trim(),
+                    activePresetId: preset.id
+                });
+                updateControls();
+                if (window.showToast) window.showToast(`已应用主题：${preset.name}`);
+            });
+            const removeSelectedPreset = async () => {
+                const selectedId = presetSelect.value;
+                if (!selectedId) return;
+                presets = await persistOfflineThemePresets(presets.filter(preset => preset.id !== selectedId));
+                if (theme.activePresetId === selectedId) {
+                    theme = await persistOfflineTheme({ ...theme, activePresetId: '' });
+                }
+                updateControls();
+                if (window.showToast) window.showToast('主题预设已删除');
+            };
+            deletePresetBtn.addEventListener('click', () => {
+                const selected = presets.find(preset => preset.id === presetSelect.value);
+                if (!selected) return;
+                if (window.showCustomModal) {
+                    window.showCustomModal({
+                        title: '删除主题预设',
+                        message: `确定删除“${selected.name}”吗？`,
+                        confirmText: '删除',
+                        cancelText: '取消',
+                        isDestructive: true,
+                        onConfirm: removeSelectedPreset
+                    });
+                } else {
+                    removeSelectedPreset();
+                }
+            });
+            exportPresetBtn.addEventListener('click', () => {
+                const selected = presets.find(preset => preset.id === theme.activePresetId);
+                const exportName = selected?.name || '自定义线下主题';
+                const payload = {
+                    type: 'u2-offline-theme',
+                    version: 1,
+                    name: exportName,
+                    theme: {
+                        narrativeColor: theme.narrativeColor,
+                        dialogueColor: theme.dialogueColor,
+                        customCss: theme.customCss
+                    }
+                };
+                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `${exportName.replace(/[\\/:*?"<>|]/g, '_') || 'offline-theme'}.json`;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(url);
+                if (window.showToast) window.showToast('线下主题已导出');
+            });
+            importPresetBtn.addEventListener('click', () => importPresetInput.click());
+            importPresetInput.addEventListener('change', async () => {
+                const file = importPresetInput.files?.[0];
+                importPresetInput.value = '';
+                if (!file) return;
+                try {
+                    const payload = JSON.parse(await file.text());
+                    const source = payload?.theme && typeof payload.theme === 'object' ? payload.theme : payload;
+                    if (!source || typeof source !== 'object') throw new Error('Invalid offline theme file');
+                    const importedTheme = normalizeOfflineTheme({
+                        narrativeColor: source.narrativeColor,
+                        dialogueColor: source.dialogueColor,
+                        customCss: typeof source.customCss === 'string' ? source.customCss : '',
+                        activePresetId: ''
+                    });
+                    const fallbackName = file.name.replace(/\.json$/i, '').trim() || '导入主题';
+                    const name = String(payload?.name || source.name || fallbackName).trim().slice(0, 40) || '导入主题';
+                    const existing = presets.find(preset => preset.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+                    const id = existing?.id || `offline-theme-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+                    const nextPreset = {
+                        id,
+                        name,
+                        narrativeColor: importedTheme.narrativeColor,
+                        dialogueColor: importedTheme.dialogueColor,
+                        customCss: importedTheme.customCss
+                    };
+                    presets = await persistOfflineThemePresets(existing
+                        ? presets.map(preset => preset.id === id ? nextPreset : preset)
+                        : presets.concat(nextPreset));
+                    theme = await persistOfflineTheme({ ...nextPreset, activePresetId: id });
+                    updateControls();
+                    if (window.showToast) window.showToast(`已导入并应用主题：${name}`);
+                } catch (error) {
+                    console.error('Import offline theme failed', error);
+                    if (window.showToast) window.showToast('主题文件无效，导入失败');
+                }
+            });
+            presetControls.append(presetSelect, importPresetBtn, exportPresetBtn, deletePresetBtn);
+            presetCard.append(presetControls, importPresetInput);
+            listEl.appendChild(presetCard);
+
+            const colorCard = document.createElement('section');
+            colorCard.className = 'offline-theme-card';
+            colorCard.appendChild(createHeading('聊天文字', 'TEXT COLORS', '控制 AI 叙述与对话文字颜色，并随主题预设一起保存。'));
 
             [
                 { field: 'narrativeColor', label: '普通文本', detail: 'AI 叙述正文' },
@@ -4911,19 +5394,133 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                 controls.push({ field, colorInput, textInput, swatch });
                 controlsWrap.append(swatch, colorInput, textInput);
                 row.append(copy, controlsWrap);
-                card.appendChild(row);
+                colorCard.appendChild(row);
             });
+            listEl.appendChild(colorCard);
+
+            const cssCard = document.createElement('section');
+            cssCard.className = 'offline-theme-card offline-theme-css-card';
+            cssCard.appendChild(createHeading('自定义 CSS', 'CUSTOM SOURCE', 'CSS 仅作用于线下主界面和弹幕详情页，编辑后点击“应用 CSS”生效。'));
+
+            cssInput = document.createElement('textarea');
+            cssInput.className = 'offline-theme-css-input';
+            cssInput.value = theme.customCss;
+            cssInput.spellcheck = false;
+            cssInput.placeholder = '/* 在这里粘贴或编辑线下界面 CSS */\n:scope {\n  background: #fff;\n}';
+            cssCard.appendChild(cssInput);
+
+            const cssActions = document.createElement('div');
+            cssActions.className = 'offline-theme-button-row';
+            const clearCssBtn = document.createElement('button');
+            clearCssBtn.type = 'button';
+            clearCssBtn.className = 'danger';
+            clearCssBtn.textContent = '清空 CSS';
+            const copySourceBtn = document.createElement('button');
+            copySourceBtn.type = 'button';
+            copySourceBtn.textContent = '复制源码';
+            const applyCssBtn = document.createElement('button');
+            applyCssBtn.type = 'button';
+            applyCssBtn.className = 'primary';
+            applyCssBtn.textContent = '应用 CSS';
+
+            clearCssBtn.addEventListener('click', async () => {
+                theme = await persistOfflineTheme({
+                    ...theme,
+                    customCss: '',
+                    customCssEnabled: false,
+                    activePresetId: ''
+                });
+                updateControls();
+                if (window.showToast) window.showToast('已清空线下 CSS');
+            });
+            copySourceBtn.addEventListener('click', async () => {
+                try {
+                    if (navigator.clipboard?.writeText) {
+                        await navigator.clipboard.writeText(OFFLINE_THEME_SOURCE_TEMPLATE);
+                    } else {
+                        const helper = document.createElement('textarea');
+                        helper.value = OFFLINE_THEME_SOURCE_TEMPLATE;
+                        helper.style.position = 'fixed';
+                        helper.style.opacity = '0';
+                        document.body.appendChild(helper);
+                        helper.select();
+                        document.execCommand('copy');
+                        helper.remove();
+                    }
+                    if (window.showToast) window.showToast('已复制线下界面真实源码');
+                } catch (error) {
+                    console.error('Copy offline theme source failed', error);
+                    if (window.showToast) window.showToast('复制失败，请稍后重试');
+                }
+            });
+            applyCssBtn.addEventListener('click', async () => {
+                const customCss = cssInput.value;
+                theme = await persistOfflineTheme({
+                    ...theme,
+                    customCss,
+                    customCssEnabled: !!customCss.trim(),
+                    activePresetId: ''
+                });
+                updateControls();
+                if (window.showToast) window.showToast(customCss.trim() ? '线下 CSS 已应用' : '线下 CSS 已关闭');
+            });
+            cssActions.append(clearCssBtn, copySourceBtn, applyCssBtn);
+            cssCard.appendChild(cssActions);
+
+            const saveRow = document.createElement('div');
+            saveRow.className = 'offline-theme-save-row';
+            const presetNameInput = document.createElement('input');
+            presetNameInput.type = 'text';
+            presetNameInput.maxLength = 40;
+            presetNameInput.placeholder = '输入主题预设名称';
+            const savePresetBtn = document.createElement('button');
+            savePresetBtn.type = 'button';
+            savePresetBtn.textContent = '存为主题预设';
+            savePresetBtn.addEventListener('click', async () => {
+                const name = presetNameInput.value.trim();
+                if (!name) {
+                    if (window.showToast) window.showToast('请输入主题预设名称');
+                    presetNameInput.focus();
+                    return;
+                }
+                const existing = presets.find(preset => preset.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+                const id = existing?.id || `offline-theme-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+                const customCss = cssInput.value;
+                const nextPreset = {
+                    id,
+                    name,
+                    narrativeColor: theme.narrativeColor,
+                    dialogueColor: theme.dialogueColor,
+                    customCss
+                };
+                presets = await persistOfflineThemePresets(existing
+                    ? presets.map(preset => preset.id === id ? nextPreset : preset)
+                    : presets.concat(nextPreset));
+                theme = await persistOfflineTheme({
+                    ...nextPreset,
+                    customCssEnabled: !!customCss.trim(),
+                    activePresetId: id
+                });
+                presetNameInput.value = '';
+                updateControls();
+                if (window.showToast) window.showToast(existing ? '主题预设已更新' : '主题预设已保存');
+            });
+            saveRow.append(presetNameInput, savePresetBtn);
+            cssCard.appendChild(saveRow);
+            listEl.appendChild(cssCard);
 
             const resetBtn = document.createElement('button');
             resetBtn.type = 'button';
             resetBtn.className = 'offline-theme-reset-btn';
-            resetBtn.innerHTML = '<i class="fas fa-undo"></i><span>恢复默认颜色</span>';
+            resetBtn.innerHTML = '<i class="fas fa-undo"></i><span>恢复默认主题</span>';
             resetBtn.addEventListener('click', async () => {
-                theme = await persistOfflineTheme(activeFriend, OFFLINE_THEME_DEFAULTS);
+                theme = await persistOfflineTheme(OFFLINE_THEME_DEFAULTS);
                 updateControls();
+                if (window.showToast) window.showToast('已恢复默认线下主题');
             });
-            card.appendChild(resetBtn);
-            listEl.appendChild(card);
+            listEl.appendChild(resetBtn);
+
+            updateControls();
         };
 
         // Render Offline Tavern Settings
@@ -5102,7 +5699,8 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
 
                             const apiMessages = buildOfflineApiMessages(activeFriend, messagesWithUser);
                             const { content: finalReplyContent, tokens, aborted } = await requestOfflineAssistantReply(apiMessages, streamingBubble, {
-                                signal: generationController.signal
+                                signal: generationController.signal,
+                                stream: activeFriend.offlineStreamEnabled !== false
                             });
 
                             const latestMessages = normalizeOfflineMessagesForFriend(activeFriend);

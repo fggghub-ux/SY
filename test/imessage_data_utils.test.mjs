@@ -305,7 +305,7 @@ test('offline single chat follows the bound account identity and refreshes visib
     assert.match(source, /imChat\.refreshOfflineUserIdentity = refreshOfflineUserIdentity/);
     assert.match(settingsSource, /window\.imChat\?\.refreshOfflineUserIdentity[\s\S]*?window\.imChat\.refreshOfflineUserIdentity\(friend\)/);
     assert.match(settingsSource, /updateChatBindIdLabel\(window\.imData\.currentSettingsFriend\);[\s\S]*?refreshChatPageForFriend\(window\.imData\.currentSettingsFriend\);/);
-    assert.match(html, /4_chat_sheet\.js\?v=20260713-offline-memory-v1/);
+    assert.match(html, /4_chat_sheet\.js\?v=20260714-offline-global-theme-v8/);
     assert.match(html, /5_settings\.js\?v=20260713-offline-memory-v1/);
 });
 
@@ -352,7 +352,10 @@ test('offline chat dialogue and settings use the fullscreen studio presentation'
     assert.match(source, /offline-tavern-speech offline-tavern-dialogue/);
     assert.match(source, /id: 'bilingual_dialogue'[\s\S]*?name: '双语对话'[\s\S]*?presetVersion: 1/);
     assert.match(source, /const bilingualPrompt = prompts\.find\(prompt => prompt\.id === 'bilingual_dialogue'\)[\s\S]*?concat\(bilingualPrompt \? \[bilingualPrompt\] : \[\]\)[\s\S]*?concat\(barragePrompt/);
-    assert.match(source, /id: 'cot'[\s\S]*?presetVersion: 3[\s\S]*?Read Char's Default Language[\s\S]*?audit every drafted Char dialogue line/);
+    assert.match(source, /id: 'cot_before'[\s\S]*?name: 'COT前'[\s\S]*?You must think before outputting the content\.\n<thinking>/);
+    assert.match(source, /id: 'cot_content'[\s\S]*?name: 'COT内容'[\s\S]*?Read Char's Default Language[\s\S]*?audit every drafted Char dialogue line/);
+    assert.match(source, /id: 'cot_after'[\s\S]*?name: 'COT后'[\s\S]*?content: `<\/thinking>`/);
+    assert.match(source, /if \(id === 'cot'\) \{[\s\S]*\['cot_before', 'cot_content', 'cot_after'\]/);
     assert.match(source, /Correct all language, translation, corner-quote, and full-width-parenthesis errors/);
     assert.match(source, /Default Language: \$\{defaultLanguage\}/);
     assert.match(source, /const quoteRegex = \/「\(\[\^」\\n\]\{1,180\}\)」\/g/);
