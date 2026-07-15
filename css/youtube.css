@@ -526,6 +526,33 @@
     letter-spacing: -0.1px;
 }
 
+.yt-messages-nav-unread {
+    display: none !important;
+    position: absolute;
+    top: 8px;
+    left: calc(50% + 7px);
+    width: 8px;
+    height: 8px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    background: #ff3b30;
+    box-sizing: content-box;
+    z-index: 3;
+}
+
+.yt-messages-nav-unread.is-visible {
+    display: block !important;
+}
+
+.yt-message-thread-unread {
+    width: 9px;
+    height: 9px;
+    flex: 0 0 9px;
+    border-radius: 50%;
+    background: #ff3b30;
+    box-shadow: 0 0 0 2px rgba(255,59,48,0.1);
+}
+
 /* Center item (Add button) special styling */
 .yt-nav-item-center {
     min-width: 44px;
@@ -789,6 +816,38 @@
     color: #000000 !important;
 }
 
+.yt-player-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.yt-player-replay-comments-btn,
+.yt-player-delete-video-btn {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.88);
+    color: #0f0f0f;
+    font-size: 15px;
+    cursor: pointer;
+    z-index: 10;
+}
+
+.yt-player-delete-video-btn {
+    color: #ff3b30;
+}
+
+.yt-player-replay-comments-btn:disabled,
+.yt-player-delete-video-btn:disabled {
+    cursor: default;
+    opacity: 0.62;
+}
+
 #yt-player-title {
     color: #0f0f0f !important;
 }
@@ -1004,6 +1063,11 @@
 
 .yt-player-live-menu-item:active {
     background: #f2f2f2;
+}
+
+.yt-player-live-menu-item-danger,
+.yt-player-menu-item-danger {
+    color: #ff3b30 !important;
 }
 
 /* Player Plus Menu */
@@ -1255,12 +1319,16 @@
 /* Super Chat Styles */
 .sc-amount-btn {
     transition: all 0.2s;
-    border: 2px solid transparent;
+    border: 1px solid #e5e5e5;
+    background: #f5f5f5 !important;
+    color: #0f0f0f !important;
 }
 
 .sc-amount-btn.selected {
-    border-color: rgba(255,255,255,0.5);
-    
+    border-color: #0f0f0f;
+    background: #0f0f0f !important;
+    color: #fff !important;
+    transform: translateY(-1px);
 }
 
 .sc-amount-btn:active {
@@ -1378,6 +1446,84 @@
     margin: 0;
     align-items: flex-end; /* Avatar at bottom */
     max-width: 85%;
+}
+
+.yt-sc-modal-overlay {
+    justify-content: center;
+    align-items: center;
+    padding: max(18px, env(safe-area-inset-top, 0px)) 16px max(18px, env(safe-area-inset-bottom, 0px));
+    background: rgba(0, 0, 0, 0.42);
+}
+
+#yt-sc-sheet .yt-sc-modal-card {
+    position: relative !important;
+    inset: auto !important;
+    width: min(100%, 420px) !important;
+    height: auto !important;
+    max-height: min(82vh, 650px);
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden;
+    border: 1px solid #e5e5e5;
+    border-radius: 20px !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    transform: scale(0.97) !important;
+}
+
+#yt-sc-sheet.active .yt-sc-modal-card {
+    transform: scale(1) !important;
+}
+
+.yt-sc-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 18px 13px;
+    border-bottom: 0;
+    background: #fff;
+}
+
+.yt-sc-modal-title {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    color: #0f0f0f;
+    font-size: 17px;
+    font-weight: 700;
+}
+
+.yt-sc-modal-title i {
+    color: #606060;
+}
+
+.yt-sc-modal-close {
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 50%;
+    background: #f2f2f2;
+    color: #606060;
+    cursor: pointer;
+}
+
+#yt-sc-sheet .detail-sheet-content {
+    max-height: min(65vh, 510px);
+    overflow-y: auto;
+    padding: 18px;
+}
+
+#yt-sc-sheet #yt-sc-custom-amount,
+#yt-sc-sheet #yt-sc-input {
+    border: 1px solid #e5e5e5 !important;
+    background: #f7f7f7 !important;
+}
+
+#yt-sc-sheet #yt-send-sc-btn {
+    border-radius: 14px;
+    background: #0f0f0f !important;
+    color: #fff !important;
+    box-shadow: none !important;
 }
 
 .yt-bubble-row.yt-bubble-group-start {
@@ -1823,5 +1969,597 @@
             visibility: visible;
             pointer-events: auto;
         }
+    }
+}
+
+/* Localized YTB content */
+.yt-localized-secondary,
+.yt-char-live-translation,
+.yt-video-title-translation,
+.yt-fan-group-name-translation,
+.yt-community-post-translation,
+.yt-player-live-title-translation {
+    margin-top: 4px;
+    color: #606060;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+
+.yt-player-live-title-translation {
+    color: rgba(255, 255, 255, 0.78);
+}
+
+.yt-comment-translation-toggle {
+    display: inline;
+    margin-left: 6px;
+    color: #606060;
+    font-size: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.yt-comment-translation-toggle:focus-visible {
+    outline: 2px solid rgba(0, 122, 255, 0.45);
+    outline-offset: 2px;
+    border-radius: 3px;
+}
+
+.yt-post-comment-translation-toggle:focus-visible {
+    outline: 2px solid rgba(0, 122, 255, 0.45);
+    outline-offset: 2px;
+    border-radius: 3px;
+}
+
+.yt-post-comment-translation-toggle,
+.yt-community-content-translation-toggle {
+    display: inline;
+    color: #606060;
+    font-size: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.yt-community-content-translation-toggle {
+    display: inline-block;
+    margin-top: 5px;
+    font-size: 12px;
+}
+
+.yt-community-content-translation-toggle:focus-visible {
+    outline: 2px solid rgba(0, 122, 255, 0.45);
+    outline-offset: 2px;
+    border-radius: 3px;
+}
+
+.yt-post-comment-translation {
+    margin-top: 5px;
+    width: fit-content;
+    max-width: 100%;
+    padding: 7px 9px;
+    border: 0;
+    border-radius: 9px;
+    background: #f2f2f7;
+    color: #3a3a3c;
+    font-size: 13px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.yt-post-comment-translation.is-root {
+    font-size: 14px;
+}
+
+.yt-post-comment-translation[hidden],
+.yt-community-post-translation[hidden] {
+    display: none !important;
+}
+
+.yt-comment-translation {
+    margin-top: 5px;
+    padding: 7px 9px;
+    border-radius: 9px;
+    background: #f2f2f7;
+    color: #3a3a3c;
+    font-size: 12px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.yt-comment-translation[hidden] {
+    display: none !important;
+}
+
+#yt-player-chat-container .yt-live-chat-row-anim .yt-comment-translation {
+    display: block;
+    margin-top: 3px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #606060;
+    font-size: inherit;
+    line-height: 1.45;
+}
+
+#yt-player-chat-container .yt-live-chat-row-anim .yt-comment-translation-toggle {
+    font-weight: 400;
+}
+
+#yt-player-chat-container .yt-live-chat-row-anim[style*="background-color"] .yt-comment-translation-toggle,
+#yt-player-chat-container .yt-live-chat-row-anim[style*="background-color"] .yt-comment-translation {
+    color: var(--yt-sc-text-color, rgba(255,255,255,0.82));
+    opacity: 0.82;
+}
+
+.yt-replay-realtime-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 16px 0;
+    color: #606060;
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.yt-replay-realtime-divider::before,
+.yt-replay-realtime-divider::after {
+    content: '';
+    height: 1px;
+    flex: 1;
+    background: #dadce0;
+}
+
+.yt-char-all-content-modal-overlay {
+    justify-content: center;
+    align-items: center;
+    padding:
+        max(20px, env(safe-area-inset-top, 0px))
+        18px
+        max(20px, env(safe-area-inset-bottom, 0px));
+    box-sizing: border-box;
+}
+
+.yt-char-all-content-modal-card {
+    width: min(100%, 440px);
+    max-height: min(82vh, 720px);
+    margin: 0;
+    padding: 0;
+    border-radius: 24px;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+#yt-char-all-content-list {
+    max-height: min(64vh, 580px);
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+.yt-char-generate-modal-overlay {
+    justify-content: center;
+    align-items: center;
+    padding: max(20px, env(safe-area-inset-top, 0px)) 16px max(20px, env(safe-area-inset-bottom, 0px));
+    box-sizing: border-box;
+}
+
+.yt-char-generate-modal-card {
+    width: min(100%, 440px);
+    max-height: min(86vh, 720px);
+    margin: 0;
+    padding: 0;
+    border-radius: 22px;
+    overflow: hidden;
+    background: #fff;
+    transform: translateY(14px) scale(0.98);
+    box-sizing: border-box;
+}
+
+.yt-char-generate-modal-overlay.active .yt-char-generate-modal-card {
+    transform: translateY(0) scale(1);
+}
+
+.yt-char-generate-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 17px 18px 14px;
+    border-bottom: 1px solid #f2f2f2;
+    font-size: 18px;
+    font-weight: 650;
+}
+
+.yt-char-generate-modal-header button {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 50%;
+    background: #f2f2f2;
+    color: #606060;
+    cursor: pointer;
+}
+
+.yt-char-generate-modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 18px 18px;
+    overflow-y: auto;
+}
+
+.yt-char-generate-modal-body > label,
+.yt-char-generate-count-row label {
+    color: #0f0f0f;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#yt-char-generate-requirement {
+    width: 100%;
+    min-height: 104px;
+    resize: vertical;
+    border: 1px solid #e5e5ea;
+    border-radius: 13px;
+    padding: 11px 12px;
+    background: #f8f8f8;
+    color: #0f0f0f;
+    font: inherit;
+    line-height: 1.45;
+    box-sizing: border-box;
+    outline: none;
+}
+
+#yt-char-generate-requirement:focus {
+    border-color: #b8b8bd;
+    background: #fff;
+}
+
+.yt-char-generate-count-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 10px 0 2px;
+}
+
+#yt-char-generate-count {
+    width: 72px;
+    border: 1px solid #e5e5ea;
+    border-radius: 10px;
+    padding: 7px 8px;
+    text-align: center;
+    font-size: 15px;
+}
+
+.yt-char-generate-modal-status {
+    min-height: 18px;
+    color: #606060;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.yt-char-generate-modal-status.is-error {
+    color: #ff3b30;
+}
+
+.yt-char-generate-confirm {
+    width: 100%;
+    min-height: 44px;
+    border: none;
+    border-radius: 22px;
+    background: #0f0f0f;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.yt-char-generate-confirm:disabled {
+    opacity: 0.42;
+    cursor: default;
+}
+
+/* User live lottery */
+.yt-user-live-lottery-modal-overlay {
+    justify-content: center;
+    align-items: center;
+    padding:
+        max(20px, env(safe-area-inset-top, 0px))
+        16px
+        max(20px, env(safe-area-inset-bottom, 0px));
+    box-sizing: border-box;
+}
+
+.yt-user-live-lottery-modal-card {
+    width: min(100%, 460px);
+    max-height: min(86vh, 760px);
+    margin: 0;
+    padding: 0;
+    border-radius: 24px;
+    overflow: hidden;
+    background: #fff;
+    transform: translateY(16px) scale(0.98);
+    box-sizing: border-box;
+}
+
+.yt-user-live-lottery-modal-overlay.active .yt-user-live-lottery-modal-card {
+    transform: translateY(0) scale(1);
+}
+
+.yt-user-live-lottery-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 18px 14px;
+    border-bottom: 1px solid #f2f2f2;
+    background: #fff;
+}
+
+.yt-user-live-lottery-icon-btn {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    border: 0;
+    border-radius: 17px;
+    background: #f2f2f7;
+    color: #606060;
+    cursor: pointer;
+}
+
+.yt-user-live-lottery-modal-body {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px 18px 18px;
+    -webkit-overflow-scrolling: touch;
+}
+
+.yt-user-live-lottery-field {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    color: #0f0f0f;
+    font-size: 14px;
+}
+
+.yt-user-live-lottery-field input,
+.yt-user-live-lottery-prize-row input,
+.yt-user-live-lottery-prize-row select {
+    min-width: 0;
+    border: 0;
+    outline: none;
+    border-radius: 10px;
+    background: #f2f2f7;
+    color: #0f0f0f;
+    font-size: 14px;
+    padding: 10px 12px;
+    box-sizing: border-box;
+}
+
+.yt-user-live-lottery-field > input {
+    width: 110px;
+    text-align: right;
+}
+
+.yt-user-live-lottery-prizes-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 20px 0 10px;
+    font-size: 14px;
+    font-weight: 650;
+}
+
+.yt-user-live-lottery-prizes-title button {
+    border: 0;
+    background: transparent;
+    color: #007aff;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.yt-user-live-lottery-prize-row {
+    display: grid;
+    grid-template-columns: minmax(78px, 1fr) 104px 72px 30px;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 14px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid #f2f2f2;
+}
+
+.yt-user-live-lottery-prize-row select {
+    width: 100%;
+    appearance: auto;
+    -webkit-appearance: menulist;
+}
+
+.yt-lottery-prize-value {
+    grid-column: 1 / -1;
+}
+
+.yt-lottery-prize-value > input,
+.yt-lottery-prize-amount-wrap {
+    display: none;
+    width: 100%;
+}
+
+.yt-lottery-prize-value > input.is-visible,
+.yt-lottery-prize-amount-wrap.is-visible {
+    display: flex;
+}
+
+.yt-lottery-prize-amount-wrap {
+    align-items: center;
+    gap: 6px;
+    padding-left: 12px;
+    border-radius: 10px;
+    background: #f2f2f7;
+    color: #606060;
+    box-sizing: border-box;
+}
+
+.yt-lottery-prize-amount-wrap input {
+    flex: 1;
+    width: 100%;
+    padding-left: 0;
+}
+
+.yt-user-live-lottery-prize-remove {
+    width: 30px;
+    height: 30px;
+    border: 0;
+    border-radius: 15px;
+    background: transparent;
+    color: #ff3b30;
+    cursor: pointer;
+}
+
+.yt-user-live-lottery-confirm {
+    width: 100%;
+    margin-top: 14px;
+    padding: 12px 16px;
+    border: 0;
+    border-radius: 14px;
+    background: #0f0f0f;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.yt-user-live-lottery-confirm[disabled] {
+    opacity: 0.48;
+    cursor: default;
+}
+
+.yt-user-live-lottery-result-tier {
+    padding: 13px 14px;
+    border-radius: 14px;
+    background: #f7f7f9;
+    margin-bottom: 10px;
+}
+
+.yt-user-live-lottery-result-names {
+    margin-top: 7px;
+    color: #0f0f0f;
+    font-size: 14px;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+}
+
+#yt-user-live-lottery-status.is-highlighted {
+    animation: ytLotteryStatusPulse 0.7s ease;
+}
+
+#yt-user-live-lottery-status {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: calc(60% + 8px);
+    z-index: 9;
+    min-width: 0;
+    padding: 11px 13px;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 12px;
+    background: linear-gradient(105deg, rgba(20,20,20,0.96), rgba(48,16,16,0.96));
+    box-shadow: 0 8px 24px rgba(0,0,0,0.32);
+    color: #fff;
+    transform-origin: center bottom;
+    align-items: center;
+    gap: 11px;
+}
+
+.yt-user-live-lottery-status-icon {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #ff0033;
+    box-shadow: 0 0 0 4px rgba(255,0,51,0.16);
+    font-size: 15px;
+}
+
+.yt-user-live-lottery-status-copy {
+    min-width: 0;
+    flex: 1;
+}
+
+.yt-user-live-lottery-status-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.yt-user-live-lottery-status-title > span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #ff0033;
+    box-shadow: 0 0 0 3px rgba(255,0,51,0.14);
+}
+
+.yt-user-live-lottery-status-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 4px;
+    color: rgba(255,255,255,0.76);
+    font-size: 12px;
+}
+
+.yt-user-live-lottery-status-meta strong {
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+}
+
+.yt-user-live-comment-translation-toggle {
+    margin-left: 6px;
+    color: #606060;
+    font-size: inherit;
+    cursor: pointer;
+    user-select: none;
+}
+
+.yt-user-live-comment-translation-toggle:focus-visible {
+    outline: 1px solid currentColor;
+    outline-offset: 2px;
+}
+
+.yt-user-live-comment-translation {
+    display: block;
+    margin-top: 3px;
+    color: #606060;
+    font-size: inherit;
+    line-height: 1.45;
+}
+
+.yt-user-live-comment-translation[hidden] {
+    display: none;
+}
+
+.yt-live-chat-row-anim[style*="background-color"] .yt-user-live-comment-translation-toggle,
+.yt-live-chat-row-anim[style*="background-color"] .yt-user-live-comment-translation {
+    color: rgba(255,255,255,0.82);
+}
+
+@keyframes ytLotteryStatusPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.06); }
+}
+
+@media (max-width: 420px) {
+    .yt-user-live-lottery-prize-row {
+        grid-template-columns: minmax(68px, 1fr) 92px 64px 28px;
+        gap: 6px;
     }
 }
