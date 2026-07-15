@@ -8824,6 +8824,25 @@ input:checked + .slider:before {
     gap: 16px;
 }
 
+.offline-settings-number-input {
+    width: 112px;
+    min-width: 0;
+    box-sizing: border-box;
+    border: 1px solid #d1d1d6;
+    border-radius: 8px;
+    background: #f7f7f8;
+    color: #111;
+    padding: 8px 10px;
+    font: inherit;
+    font-size: 14px;
+    text-align: right;
+}
+
+.offline-settings-number-input:focus {
+    outline: 2px solid rgba(0, 122, 255, 0.22);
+    border-color: #007aff;
+}
+
 .offline-settings-worldbook-main,
 .offline-settings-worldbook-meta {
     display: flex;
