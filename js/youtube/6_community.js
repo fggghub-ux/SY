@@ -594,6 +594,7 @@
                 const replies = Array.isArray(c?.replies) ? c.replies : [];
                 const repliesHtml = replies.map((reply, replyIndex) => {
                     const replyTranslation = String(reply?.translationZh || '').trim();
+                    const replyTranslationId = `yt-post-translation-${rootIndex}-${replyIndex}`;
                     return `
                         <div class="yt-community-comment-reply" style="display:flex; gap:9px; margin-top:12px; padding:10px 10px 10px 12px; border-left:2px solid #e5e5ea; background:#fafafa; border-radius:0 12px 12px 0;">
                             <div class="yt-video-avatar" style="width:24px; height:24px; flex-shrink:0; background:#e5e5ea; display:flex; justify-content:center; align-items:center; border-radius:50%; overflow:hidden;">
@@ -604,18 +605,17 @@
                                     <div style="font-size:12px;color:#606060;margin-bottom:3px;">${ytEscapeHtml(reply.name || '用户')}</div>
                                     <div style="font-size:13px;color:#0f0f0f;line-height:1.4;">${reply.replyTo ? `<span style="color:#606060;">回复 @${ytEscapeHtml(reply.replyTo)}：</span>` : ''}${formatYtPostText(reply.text)}</div>
                                 </div>
-                                ${replyTranslation ? `
-                                    <button type="button" class="yt-post-comment-translation-btn" aria-expanded="false" style="border:none;background:transparent;color:#606060;padding:5px 0 0;font-size:12px;font-weight:600;cursor:pointer;">翻译</button>
-                                    <div class="yt-post-comment-translation" hidden style="margin-top:5px;padding:8px 10px;border-radius:10px;background:#f2f2f7;color:#3a3a3c;font-size:13px;line-height:1.45;">${formatYtPostText(replyTranslation)}</div>
-                                ` : ''}
                                 <div style="font-size:12px;color:#8e8e93;margin-top:5px;display:flex;gap:14px;">
                                     <span class="yt-post-comment-reply-action" role="button" tabindex="0" data-root-index="${rootIndex}" data-reply-index="${replyIndex}" style="font-weight:600;cursor:pointer;">回复</span>
+                                    ${replyTranslation ? `<span class="yt-post-comment-translation-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="${replyTranslationId}" style="font-weight:600;cursor:pointer;">翻译</span>` : ''}
                                     <span class="yt-post-comment-delete-btn" role="button" tabindex="0" data-root-index="${rootIndex}" data-reply-index="${replyIndex}" style="color:#8e8e93;cursor:pointer;">删除</span>
                                 </div>
+                                ${replyTranslation ? `<div class="yt-post-comment-translation is-reply" id="${replyTranslationId}" hidden>${formatYtPostText(replyTranslation)}</div>` : ''}
                             </div>
                         </div>
                     `;
                 }).join('');
+                const rootTranslationId = `yt-post-translation-${rootIndex}-root`;
                 return `
                 <div class="yt-community-comment-item">
                     <div class="yt-video-avatar" style="width:30px; height:30px; flex-shrink: 0; background-color: #f2f2f2; display: flex; justify-content: center; align-items: center; border-radius: 50%; overflow: hidden;">
@@ -626,16 +626,14 @@
                             <div style="font-size: 13px; color: #606060; margin-bottom: 4px;">${ytEscapeHtml(c.name)}</div>
                             <div style="font-size: 14px; color: #0f0f0f; line-height: 1.4;">${formatYtPostText(c.text)}</div>
                         </div>
-                        ${translationZh ? `
-                            <button type="button" class="yt-post-comment-translation-btn" aria-expanded="false" style="border:none; background:transparent; color:#606060; padding:5px 0 0; font-size:12px; font-weight:600; cursor:pointer;">翻译</button>
-                            <div class="yt-post-comment-translation" hidden style="margin-top:5px; padding:8px 10px; border-radius:10px; background:#f2f2f7; color:#3a3a3c; font-size:13px; line-height:1.45;">${formatYtPostText(translationZh)}</div>
-                        ` : ''}
                         <div style="font-size: 12px; color: #8e8e93; margin-top: 6px; display: flex; gap: 16px;">
                             <span><i class="far fa-thumbs-up"></i> ${Number.isFinite(Number(c.likes)) ? Math.max(0, Math.round(Number(c.likes))) : 0}</span>
                             <span><i class="far fa-thumbs-down"></i></span>
                             <span class="yt-post-comment-reply-action" role="button" tabindex="0" data-root-index="${rootIndex}" style="font-weight:600;cursor:pointer;">回复</span>
+                            ${translationZh ? `<span class="yt-post-comment-translation-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="${rootTranslationId}" style="font-weight:600;cursor:pointer;">翻译</span>` : ''}
                             <span class="yt-post-comment-delete-btn" role="button" tabindex="0" data-root-index="${rootIndex}" style="color:#8e8e93;cursor:pointer;">删除</span>
                         </div>
+                        ${translationZh ? `<div class="yt-post-comment-translation is-root" id="${rootTranslationId}" hidden>${formatYtPostText(translationZh)}</div>` : ''}
                         ${repliesHtml}
                     </div>
                 </div>
@@ -661,8 +659,8 @@
                 ${formatYtPostText(post.content || '')}
             </div>
             ${postTranslationZh ? `
-                <button type="button" class="yt-post-comment-translation-btn" aria-expanded="false" style="border:none;background:transparent;color:#606060;padding:0 0 12px;font-size:13px;font-weight:600;cursor:pointer;">翻译</button>
-                <div class="yt-post-comment-translation" hidden style="margin:-6px 0 14px;padding:10px 12px;border-radius:12px;background:#f2f2f7;color:#3a3a3c;font-size:14px;line-height:1.45;">${formatYtPostText(postTranslationZh)}</div>
+                <span class="yt-community-content-translation-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="yt-community-detail-post-translation">翻译</span>
+                <div class="yt-community-post-translation" id="yt-community-detail-post-translation" hidden>${formatYtPostText(postTranslationZh)}</div>
             ` : ''}
             ${post.imageUrl ? `<img src="${ytEscapeHtml(post.imageUrl)}" alt="贴文图片" style="display:block;width:100%;max-height:420px;object-fit:cover;border-radius:16px;margin:0 0 16px;">` : ''}
             ${statusHtml}
@@ -677,16 +675,23 @@
                 ${commentsHtml}
             </div>
         `;
-        communityDetailContent.querySelectorAll('.yt-post-comment-translation-btn').forEach(button => {
-            button.addEventListener('click', event => {
+        communityDetailContent.querySelectorAll('.yt-post-comment-translation-toggle, .yt-community-content-translation-toggle').forEach(button => {
+            const toggleTranslation = event => {
                 event.stopPropagation();
-                const translation = button.nextElementSibling;
+                const translationId = button.getAttribute('aria-controls');
+                const translation = translationId ? document.getElementById(translationId) : button.nextElementSibling;
                 if (!translation) return;
                 const isExpanded = translation.hasAttribute('hidden');
                 if (isExpanded) translation.removeAttribute('hidden');
                 else translation.setAttribute('hidden', '');
                 button.textContent = isExpanded ? '收起翻译' : '翻译';
                 button.setAttribute('aria-expanded', String(isExpanded));
+            };
+            button.addEventListener('click', toggleTranslation);
+            button.addEventListener('keydown', event => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                toggleTranslation(event);
             });
         });
         communityDetailContent.querySelectorAll('.yt-post-comment-reply-target').forEach(target => {
@@ -984,7 +989,13 @@
             const raw = typeof comment === 'string'
                 ? { name: `观众${index + 1}`, text: comment }
                 : (comment && typeof comment === 'object' ? comment : {});
-            const text = String(raw.text || raw.content || '').trim();
+            const languageContext = typeof window.getYtChannelLanguageContext === 'function'
+                ? window.getYtChannelLanguageContext(currentSubChannelData)
+                : null;
+            const localized = typeof window.normalizeYtLocalizedContent === 'function'
+                ? window.normalizeYtLocalizedContent(raw, languageContext)
+                : { text: String(raw.text || raw.content || '').trim(), translationZh: String(raw.translationZh || raw.translation || '').trim() };
+            const text = localized.text;
             if (!text) return null;
             return normalizeYtPostCommentEntry({
                 id: makeYtPostCommentId(),
@@ -993,7 +1004,7 @@
                 name: raw.name || raw.speakerName || `观众${index + 1}`,
                 avatar: raw.avatar || raw.avatarUrl || '',
                 text,
-                translationZh: raw.translationZh || raw.translation || '',
+                translationZh: localized.translationZh,
                 likes: raw.likes
             }, index);
         }).filter(Boolean);
@@ -1012,7 +1023,10 @@
         const modeInstruction = mode === 'thread'
             ? `你正在模拟 YouTube 社群贴文某条评论下的楼中楼讨论。用户刚刚回复了别人：${userReply?.name || effectiveUser.name || 'User'}：${userReply?.text || ''}\n请在同一个楼中楼线程继续生成 10–15 条自然、有差异的后续回复，应该排在用户回复之后。可以有人回应用户、回应根评论、互相补充或跑题闲聊；不要冒充发布者或 User。`
             : '请为当前贴文继续生成 10–15 条新的顶层评论，参考已有评论但避免重复昵称、重复观点和机械复读。不要冒充发布者或 User。';
-        const prompt = `你要模拟真实 YouTube 社群贴文下的国际化评论区。\n发布者：${effectiveUser.name || '用户'}\n发布者人设：${effectiveUser.persona || '未设置'}\n贴文正文：${post.content}\n图片内容描述：${imageContext}\n世界书：${wbContext || '无'}\n可用 Char 列表：${charContext}\n现有评论上下文：\n${existingContext}\n\n${modeInstruction}\n\n输出规则：\n1. 评论者可以是普通国际观众，也可以是可用 Char 列表中的角色。\n2. 如果使用 Char，speakerType 必须是 "char"，speakerId 必须填写可用 Char 列表里的 speakerId；前端会用真实 Char 名字和头像展示。\n3. 普通观众 speakerType 填 "fan" 或留空，name 使用自然昵称。\n4. YouTube 是国际化平台：text 不是中文时 translationZh 必须提供自然中文翻译；text 是中文时 translationZh 必须为空字符串。\n5. 必须一次返回不少于 10 条，最多 15 条。\n只返回严格 JSON：{"comments":[{"speakerType":"fan或char","speakerId":"Char ID或空字符串","name":"评论者昵称","text":"评论内容","translationZh":"中文翻译或空字符串","likes":0}]}。不要 Markdown。`;
+        let prompt = `你要模拟真实 YouTube 社群贴文下的国际化评论区。\n发布者：${effectiveUser.name || '用户'}\n发布者人设：${effectiveUser.persona || '未设置'}\n贴文正文：${post.content}\n图片内容描述：${imageContext}\n世界书：${wbContext || '无'}\n可用 Char 列表：${charContext}\n现有评论上下文：\n${existingContext}\n\n${modeInstruction}\n\n输出规则：\n1. 评论者可以是普通国际观众，也可以是可用 Char 列表中的角色。\n2. 如果使用 Char，speakerType 必须是 "char"，speakerId 必须填写可用 Char 列表里的 speakerId；前端会用真实 Char 名字和头像展示。\n3. 普通观众 speakerType 填 "fan" 或留空，name 使用自然昵称。\n4. YouTube 是国际化平台：text 不是中文时 translationZh 必须提供自然中文翻译；text 是中文时 translationZh 必须为空字符串。\n5. 必须一次返回不少于 10 条，最多 15 条。\n只返回严格 JSON：{"comments":[{"speakerType":"fan或char","speakerId":"Char ID或空字符串","name":"评论者昵称","text":"评论内容","translationZh":"中文翻译或空字符串","likes":0}]}。不要 Markdown。`;
+        if (typeof window.buildYtLocalizedJsonContract === 'function') {
+            prompt += window.buildYtLocalizedJsonContract(currentSubChannelData, 'every generated comment and thread reply text field');
+        }
         let endpoint = window.apiConfig.endpoint.replace(/\/$/, '');
         if (!endpoint.endsWith('/chat/completions')) endpoint = endpoint.endsWith('/v1') ? `${endpoint}/chat/completions` : `${endpoint}/v1/chat/completions`;
         const response = await fetch(endpoint, {
@@ -1188,7 +1202,6 @@
     const groupSettingsSaveBtn = document.getElementById('yt-save-group-settings-btn');
     const groupMemberCount = document.getElementById('yt-group-member-count');
     const groupOwnerStatus = document.getElementById('yt-group-owner-status');
-    const groupContextLimitInput = document.getElementById('yt-group-context-limit-input');
     const groupAdminSettingsGroup = document.getElementById('yt-group-admin-settings-group');
     const groupAdminManageBtn = document.getElementById('yt-group-admin-manage-btn');
     const groupAdminCount = document.getElementById('yt-group-admin-count');
@@ -1197,12 +1210,6 @@
 
     function getCurrentYtFanGroup() {
         return currentSubChannelData?.generatedContent?.fanGroup || null;
-    }
-
-    function clampCurrentYtContextLimit(value, fallback = 80) {
-        return typeof window.clampYtContextLimit === 'function'
-            ? window.clampYtContextLimit(value, fallback)
-            : Math.min(200, Math.max(1, Math.round(Number(value) || fallback)));
     }
 
     function parseYtGroupMemberCount(value, fallback = 1) {
@@ -1307,6 +1314,7 @@
     if (groupChatBackBtn) {
         groupChatBackBtn.addEventListener('click', () => {
             if (groupChatView) groupChatView.classList.remove('active');
+            if (typeof renderMessagesList === 'function') renderMessagesList();
         });
     }
     
@@ -1431,7 +1439,6 @@
                 avatar,
                 isUserOwnedCommunity: true,
                 isBusiness: false,
-                dmContextLimit: 80,
                 dmHistory: [],
                 groupChatHistory: [],
                 generatedContent: {
@@ -1441,7 +1448,6 @@
                         name,
                         avatar,
                         memberCount: 1,
-                        contextLimit: 80,
                         admins: [],
                         isJoined: true,
                         isOwned: true,
@@ -1576,15 +1582,13 @@
             if (!currentSubChannelData || !currentSubChannelData.generatedContent || !currentSubChannelData.generatedContent.fanGroup) return;
             const fanGroup = currentSubChannelData.generatedContent.fanGroup;
             
-            if (groupNameInput && groupNameInput.value.trim()) {
+            if (currentSubChannelData.isUserOwnedCommunity && groupNameInput && groupNameInput.value.trim()) {
                 fanGroup.name = groupNameInput.value.trim();
             }
 
             if (groupAvatarImg && groupAvatarImg.style.display === 'block' && groupAvatarImg.src) {
                 fanGroup.avatar = groupAvatarImg.src;
             }
-            fanGroup.contextLimit = clampCurrentYtContextLimit(groupContextLimitInput?.value, 80);
-            if (groupContextLimitInput) groupContextLimitInput.value = fanGroup.contextLimit;
             if (groupChatTitle) groupChatTitle.textContent = `${fanGroup.name} (${formatYtGroupMemberCount(fanGroup.memberCount)})`;
             
             saveYoutubeData();
@@ -1711,18 +1715,6 @@
     const dmGoHomeBtn = document.getElementById('yt-dm-go-home-btn');
     const dmClearHistoryBtn = document.getElementById('yt-dm-clear-history-btn');
     const dmDeleteFriendBtn = document.getElementById('yt-dm-delete-friend-btn');
-    const dmContextGroup = document.getElementById('yt-dm-context-group');
-    const dmContextLimitInput = document.getElementById('yt-dm-context-limit-input');
-
-    if (dmContextLimitInput) {
-        dmContextLimitInput.addEventListener('change', () => {
-            if (!currentSubChannelData || currentSubChannelData.isBusiness) return;
-            currentSubChannelData.dmContextLimit = clampCurrentYtContextLimit(dmContextLimitInput.value, 80);
-            dmContextLimitInput.value = currentSubChannelData.dmContextLimit;
-            saveYoutubeData();
-            if (window.showToast) window.showToast(`上下文已设为 ${currentSubChannelData.dmContextLimit} 条`);
-        });
-    }
 
     if (groupChatSettingsBtn) {
         groupChatSettingsBtn.addEventListener('click', () => {
@@ -1732,17 +1724,17 @@
             
             if (isDM) {
                 if (dmDeleteFriendBtn) dmDeleteFriendBtn.style.display = 'block';
-                if (dmContextGroup) dmContextGroup.style.display = currentSubChannelData.isBusiness ? 'none' : 'block';
-                if (dmContextLimitInput && !currentSubChannelData.isBusiness) {
-                    dmContextLimitInput.value = clampCurrentYtContextLimit(currentSubChannelData.dmContextLimit, 80);
-                }
                 if (dmSettingsSheet) dmSettingsSheet.classList.add('active');
             } else {
                 // Group Settings
                 if (!currentSubChannelData.generatedContent || !currentSubChannelData.generatedContent.fanGroup) return;
                 const fanGroup = currentSubChannelData.generatedContent.fanGroup;
                 
-                if (groupNameInput) groupNameInput.value = fanGroup.name || '';
+                if (groupNameInput) {
+                    groupNameInput.value = fanGroup.name || '';
+                    groupNameInput.readOnly = !currentSubChannelData.isUserOwnedCommunity;
+                    groupNameInput.style.color = currentSubChannelData.isUserOwnedCommunity ? '' : '#8e8e93';
+                }
                 
                 // Set Group Avatar
                 if (fanGroup.avatar && groupAvatarImg) {
@@ -1765,7 +1757,6 @@
                     ownerAvatar.style.display = 'block';
                 }
                 if (groupMemberCount) groupMemberCount.textContent = formatYtGroupMemberCount(fanGroup.memberCount);
-                if (groupContextLimitInput) groupContextLimitInput.value = clampCurrentYtContextLimit(fanGroup.contextLimit, 80);
                 const isOwnedGroup = !!currentSubChannelData.isUserOwnedCommunity;
                 if (groupOwnerStatus) {
                     groupOwnerStatus.textContent = isOwnedGroup ? '我的频道' : (currentSubChannelData.isFriend ? '已添加' : '添加');
@@ -2352,11 +2343,8 @@
             const adminContext = resolvedAdmins.length > 0
                 ? resolvedAdmins.map(admin => `- speakerId: ${admin.charId}; 姓名: ${admin.name}; 人设: ${admin.persona || '未设置'}`).join('\n')
                 : '无管理员';
-            const contextLimit = isDM
-                ? (char.isBusiness ? 10 : clampCurrentYtContextLimit(char.dmContextLimit, 80))
-                : clampCurrentYtContextLimit(fanGroup?.contextLimit, 80);
             const promptHistory = targetHistory.filter(message => message?.type !== 'system');
-            const historyStr = promptHistory.slice(-contextLimit).map(m => `${m.type || 'fan'}${m.speakerId ? `(${m.speakerId})` : ''} ${m.name}: ${m.text}`).join('\n');
+            const historyStr = promptHistory.map(m => `${m.type || 'fan'}${m.speakerId ? `(${m.speakerId})` : ''} ${m.name}: ${m.text}`).join('\n');
 
             let instructionStr = isUserMsg 
                 ? `用户"${effectiveYtUser.name || '我'}"刚刚发送了消息。请先生成其他粉丝的讨论或附和，然后你作为群主回复用户的消息（也可以带上其他粉丝）。`

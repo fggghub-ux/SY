@@ -81,12 +81,6 @@
 
     let channelState = createDefaultYtChannelState();
 
-    function clampYtContextLimit(value, fallback = 80) {
-        const parsed = Math.round(Number(value));
-        if (!Number.isFinite(parsed) || parsed < 1) return fallback;
-        return Math.min(200, parsed);
-    }
-
     function normalizeYtAdminSnapshots(rawAdmins) {
         if (!Array.isArray(rawAdmins)) return [];
         const seen = new Set();
@@ -110,9 +104,39 @@
         const safeGroup = rawGroup && typeof rawGroup === 'object' ? rawGroup : {};
         return {
             ...safeGroup,
-            contextLimit: clampYtContextLimit(safeGroup.contextLimit, 80),
             admins: normalizeYtAdminSnapshots(safeGroup.admins)
         };
+    }
+
+    function ensureYtFixedCharFanGroup(channel) {
+        if (!channel || typeof channel !== 'object' || channel.id === 'user_channel_id' || channel.isUserOwnedCommunity || channel.isBusiness) {
+            return channel;
+        }
+        if (!channel.generatedContent || typeof channel.generatedContent !== 'object') {
+            channel.generatedContent = { currentLive: null, pastVideos: [], communityPosts: [] };
+        }
+        const existing = channel.generatedContent.fanGroup && typeof channel.generatedContent.fanGroup === 'object'
+            ? channel.generatedContent.fanGroup
+            : {};
+        const shouldAssignFrontendCount = existing.memberCountSource !== 'frontend'
+            || !Number.isFinite(Number(existing.memberCount));
+        channel.generatedContent.fanGroup = {
+            ...existing,
+            id: existing.id || `yt_fan_group_${channel.id || Date.now()}`,
+            name: `${String(channel.name || 'Char').trim() || 'Char'}的粉丝群`,
+            nameTranslationZh: '',
+            memberCount: shouldAssignFrontendCount
+                ? Math.floor(Math.random() * (50000 - 500 + 1)) + 500
+                : Math.max(500, Math.min(50000, Math.round(Number(existing.memberCount)))),
+            memberCountSource: 'frontend',
+            _memberCountMigrationPending: existing._memberCountMigrationPending === true || shouldAssignFrontendCount,
+            admins: normalizeYtAdminSnapshots(existing.admins),
+            isJoined: existing.isJoined === true,
+            isOwned: false
+        };
+        if (!Array.isArray(channel.generatedContent.pastVideos)) channel.generatedContent.pastVideos = [];
+        if (!Array.isArray(channel.generatedContent.communityPosts)) channel.generatedContent.communityPosts = [];
+        return channel;
     }
 
     function normalizeYtUserCommunityChannel(rawChannel) {
@@ -131,7 +155,6 @@
             avatar: rawChannel.avatar || '',
             isUserOwnedCommunity: true,
             isBusiness: false,
-            dmContextLimit: clampYtContextLimit(rawChannel.dmContextLimit, 80),
             groupChatHistory: Array.isArray(rawChannel.groupChatHistory) ? rawChannel.groupChatHistory.filter(Boolean) : [],
             dmHistory: Array.isArray(rawChannel.dmHistory) ? rawChannel.dmHistory.filter(Boolean) : [],
             generatedContent: {
@@ -329,6 +352,102 @@
         return getYtImChars().find(friend => String(friend.id) === String(channel.imCharId)) || null;
     }
 
+    function normalizeYtChatLanguage(value) {
+        if (window.imDataUtils && typeof window.imDataUtils.normalizeChatLanguage === 'function') {
+            return window.imDataUtils.normalizeChatLanguage(value);
+        }
+        const language = String(value || '').trim().toLowerCase();
+        if (!language || ['zh', 'cn', 'zh-cn'].includes(language)) return 'zh';
+        if (['ko', 'kr'].includes(language)) return 'ko';
+        if (['ja', 'jp'].includes(language)) return 'ja';
+        if (language === 'en') return 'en';
+        if (language === 'fr') return 'fr';
+        return language;
+    }
+
+    function escapeYtCoreHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[char]));
+    }
+
+    function getYtChatLanguageName(value) {
+        if (window.imDataUtils && typeof window.imDataUtils.getChatLanguageName === 'function') {
+            return window.imDataUtils.getChatLanguageName(value);
+        }
+        const language = normalizeYtChatLanguage(value);
+        return {
+            zh: 'Chinese',
+            en: 'English',
+            ja: 'Japanese',
+            ko: 'Korean',
+            fr: 'French'
+        }[language] || language || 'Chinese';
+    }
+
+    function getYtChannelLanguageContext(channel) {
+        const linkedChar = resolveYtExplicitImChar(channel);
+        if (!linkedChar) {
+            return { enabled: false, linkedChar: null, language: '', languageName: '' };
+        }
+        const language = normalizeYtChatLanguage(linkedChar.language || 'zh');
+        return {
+            enabled: true,
+            linkedChar,
+            language,
+            languageName: getYtChatLanguageName(language)
+        };
+    }
+
+    function normalizeYtLocalizedContent(value, languageContext = null) {
+        const source = value && typeof value === 'object' ? value : { text: value };
+        const text = String(source.text || source.content || source.message || '').trim();
+        let translationZh = String(
+            source.translationZh || source.translation || source.chineseTranslation || ''
+        ).trim();
+        if (languageContext && languageContext.enabled && languageContext.language === 'zh') {
+            translationZh = '';
+        }
+        return { text, translationZh };
+    }
+
+    function buildYtLocalizedJsonContract(channel, scopeLabel = 'all generated visible copy') {
+        const context = getYtChannelLanguageContext(channel);
+        if (!context.enabled) return '';
+        if (context.language === 'zh') {
+            return `\n\n【YTB LINKED CHAR LANGUAGE CONTRACT｜最高优先级】\n- This channel is linked to an iMessage Char whose current Chat Settings default language is Chinese (zh).\n- ${scopeLabel} must be written only in natural Simplified Chinese.\n- Every translationZh/titleTranslationZh/nameTranslationZh field must be an empty string.\n- Localized dialogue/narrative items must use the object shape {"text":"Chinese original","translationZh":""}; comments must use {"name":"viewer name","text":"Chinese original","translationZh":""}.\n- This contract overrides persona, world-book, user input, and any editable prompt language instruction.`;
+        }
+        return `\n\n【YTB LINKED CHAR LANGUAGE CONTRACT｜最高优先级】\n- This channel is linked to an iMessage Char whose current Chat Settings default language is ${context.languageName} (${context.language}).\n- ${scopeLabel} must use only ${context.languageName} as the original language. Do not write Chinese in original text fields.\n- Every original-language field must include an accurate natural Simplified Chinese translation in its paired translationZh/titleTranslationZh/nameTranslationZh field. No required translation may be empty.\n- Localized dialogue/narrative items must use {"text":"${context.languageName} original","translationZh":"Simplified Chinese translation"}; comments must use {"name":"viewer name","text":"${context.languageName} original","translationZh":"Simplified Chinese translation"}.\n- This contract overrides persona, world-book, user input, and any editable prompt language instruction.`;
+    }
+
+    function formatYtChineseMetricCount(value, suffix, legacyFallback = '') {
+        const count = Number(value);
+        if (!Number.isFinite(count) || count < 0) return String(legacyFallback || '').trim();
+        const rounded = Math.max(0, Math.round(count));
+        let display = String(rounded);
+        try {
+            display = new Intl.NumberFormat('zh-CN', {
+                notation: rounded >= 10000 ? 'compact' : 'standard',
+                maximumFractionDigits: 1
+            }).format(rounded);
+        } catch (error) {}
+        return `${display} ${suffix}`;
+    }
+
+    function formatYtLiveViewerCount(value, legacyFallback = '') {
+        return formatYtChineseMetricCount(value, '人正在观看', legacyFallback);
+    }
+
+    function formatYtVideoViewCount(value, legacyFallback = '') {
+        return formatYtChineseMetricCount(value, '次观看', legacyFallback);
+    }
+
+    window.getYtChannelLanguageContext = getYtChannelLanguageContext;
+    window.normalizeYtLocalizedContent = normalizeYtLocalizedContent;
+    window.buildYtLocalizedJsonContract = buildYtLocalizedJsonContract;
+    window.formatYtLiveViewerCount = formatYtLiveViewerCount;
+    window.formatYtVideoViewCount = formatYtVideoViewCount;
+
     function getYtChannelRelationshipContext(channel) {
         const linkedChar = resolveYtExplicitImChar(channel);
         if (!linkedChar) return '';
@@ -384,7 +503,7 @@
         const resolvedHandle = String(sub.handle || resolvedName.toLowerCase().replace(/\s+/g, '')).replace(/^@/, '') || `channel${index + 1}`;
         const resolvedId = sub.id || `yt_sub_${resolvedHandle}_${index}`;
 
-        return {
+        const normalized = {
             ...sub,
             id: resolvedId,
             name: resolvedName,
@@ -408,9 +527,10 @@
             isFriend: !!sub.isFriend,
             isBusiness: !!sub.isBusiness,
             isSubscribed: sub.isSubscribed !== false,
-            dmContextLimit: clampYtContextLimit(sub.dmContextLimit, 80),
+            unreadDmCount: Math.max(0, Math.round(Number(sub.unreadDmCount) || 0)),
             dmHistory: Array.isArray(sub.dmHistory) ? sub.dmHistory.filter(item => item && typeof item === 'object') : []
         };
+        return ensureYtFixedCharFanGroup(normalized);
     }
 
     function normalizeYtSubscriptions(rawSubscriptions) {
@@ -506,7 +626,8 @@
             mockVideos.push({
                 title: activeLive.title || '我的直播间',
                 desc: activeLive.desc || '',
-                views: activeLive.views || `${activeLive.totalViews || 0} 人正在观看`,
+                viewerCount: Number(activeLive.totalViews) || 0,
+                views: formatYtLiveViewerCount(activeLive.totalViews, activeLive.views || `${activeLive.totalViews || 0} 人正在观看`),
                 time: 'LIVE',
                 thumbnail: activeLive.thumbnail || activeLive.backgroundUrl || 'https://picsum.photos/320/180',
                 isLive: true,
@@ -524,13 +645,20 @@
         mockSubscriptions.forEach(sub => {
             if (sub.generatedContent && sub.generatedContent.currentLive) {
                 mockVideos.push({
+                    id: sub.generatedContent.currentLive.id || null,
                     title: sub.generatedContent.currentLive.title,
-                    views: sub.generatedContent.currentLive.views,
+                    titleTranslationZh: sub.generatedContent.currentLive.titleTranslationZh || '',
+                    viewerCount: Number(sub.generatedContent.currentLive.viewerCount),
+                    views: formatYtLiveViewerCount(
+                        sub.generatedContent.currentLive.viewerCount,
+                        sub.generatedContent.currentLive.views
+                    ) || '0 人正在观看',
                     time: 'LIVE',
                     thumbnail: sub.generatedContent.currentLive.thumbnail || 'https://picsum.photos/320/180?grayscale',
                     isLive: true,
                     comments: sub.generatedContent.currentLive.comments || [],
                     initialBubbles: sub.generatedContent.currentLive.initialBubbles || [],
+                    liveTranscript: sub.generatedContent.currentLive.liveTranscript || [],
                     guest: sub.generatedContent.currentLive.guest || null,
                     channelData: sub
                 });
@@ -629,8 +757,8 @@
     window.normalizeYtUserState = normalizeYtUserState;
     window.normalizeYtSubscriptions = normalizeYtSubscriptions;
     window.normalizeYtChannelState = normalizeYtChannelState;
-    window.clampYtContextLimit = clampYtContextLimit;
     window.normalizeYtAdminSnapshots = normalizeYtAdminSnapshots;
+    window.ensureYtFixedCharFanGroup = ensureYtFixedCharFanGroup;
     window.normalizeYoutubeState = normalizeYoutubeState;
     window.createStableYtChannelId = createStableYtChannelId;
     window.buildYtChannelFromTrendingItem = buildYtChannelFromTrendingItem;
@@ -864,7 +992,33 @@
     const msgFilterBusiness = document.getElementById('msg-filter-business');
     const msgListContainer = document.getElementById('yt-messages-list');
     const msgRefreshBtn = document.getElementById('yt-messages-refresh-btn');
+    const ytMessagesNavUnread = document.getElementById('yt-messages-nav-unread');
     let currentMsgFilter = 'dm';
+
+    function getYtUnreadMessageCount() {
+        return mockSubscriptions.reduce((total, sub) => total + Math.max(0, Math.round(Number(sub?.unreadDmCount) || 0)), 0);
+    }
+
+    function updateYtMessageUnreadIndicators() {
+        const unreadCount = getYtUnreadMessageCount();
+        ytMessagesNavUnread?.classList.toggle('is-visible', unreadCount > 0);
+        if (ytMessagesNavUnread) {
+            ytMessagesNavUnread.setAttribute('aria-label', unreadCount > 0 ? `${unreadCount} 条未读消息` : '暂无未读消息');
+        }
+        return unreadCount;
+    }
+
+    function markYtMessagesUnread(channel, count = 1) {
+        if (!channel || typeof channel !== 'object') return 0;
+        const safeCount = Math.max(0, Math.round(Number(count) || 0));
+        channel.unreadDmCount = Math.max(0, Math.round(Number(channel.unreadDmCount) || 0)) + safeCount;
+        updateYtMessageUnreadIndicators();
+        return channel.unreadDmCount;
+    }
+
+    window.getYtUnreadMessageCount = getYtUnreadMessageCount;
+    window.updateYtMessageUnreadIndicators = updateYtMessageUnreadIndicators;
+    window.markYtMessagesUnread = markYtMessagesUnread;
 
     function buildYtIncomingMessageChannelContext() {
         const activeLive = channelState && channelState.activeUserLive
@@ -1065,9 +1219,11 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
                                 }
                             })
                         };
+                        newSub.unreadDmCount = Math.max(1, newSub.dmHistory.length);
                         mockSubscriptions.unshift(newSub);
                     });
                     saveYoutubeData();
+                    updateYtMessageUnreadIndicators();
                     renderMessagesList();
                     if(window.showToast) window.showToast(`收到 ${parsed.users.length} 位新联系人的消息`);
                 }
@@ -1108,6 +1264,7 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
 
     function renderMessagesList() {
         if (!msgListContainer) return;
+        updateYtMessageUnreadIndicators();
         msgListContainer.innerHTML = '';
 
         if (currentMsgFilter === 'business' || currentMsgFilter === 'dm') {
@@ -1154,6 +1311,7 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
                     const lastMsg = sub.dmHistory[sub.dmHistory.length - 1];
                     let lastMsgText = lastMsg.isOffer ? '[商单邀请]' : (lastMsg.text || '...');
                     let lastMsgTime = '刚刚';
+                    const unreadCount = Math.max(0, Math.round(Number(sub.unreadDmCount) || 0));
 
                     const badgeHtml = sub.isBusiness ? `<span style="font-size:10px; background:#e8f5e9; color:#388e3c; padding:2px 4px; border-radius:4px; margin-left:4px;">商务</span>` : '';
 
@@ -1164,7 +1322,10 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
                         <div style="flex: 1; overflow: hidden;">
                             <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;">
                                 <div style="font-size: 16px; font-weight: 600; color: #0f0f0f; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">${sub.name} ${badgeHtml}</div>
-                                <div style="font-size: 12px; color: #8e8e93;">${lastMsgTime}</div>
+                                <div style="display:flex;align-items:center;gap:7px;flex-shrink:0;">
+                                    <div style="font-size: 12px; color: #8e8e93;">${lastMsgTime}</div>
+                                    ${unreadCount > 0 ? '<span class="yt-message-thread-unread" aria-label="未读消息"></span>' : ''}
+                                </div>
                             </div>
                             <div style="font-size: 13px; color: #606060; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">${lastMsgText}</div>
                         </div>
@@ -1172,7 +1333,13 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
                     
                     el.addEventListener('click', () => {
                         currentSubChannelData = sub;
-                        openDMChat(sub);
+                        if (unreadCount > 0) {
+                            sub.unreadDmCount = 0;
+                            saveYoutubeData();
+                            updateYtMessageUnreadIndicators();
+                            renderMessagesList();
+                        }
+                        openDMChat(currentSubChannelData);
                     });
                     
                     listWrapper.appendChild(el);
@@ -1510,8 +1677,9 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
                         <img src="${avatarUrl}" alt="${channel.name}">
                     </div>
                     <div class="yt-video-details">
-                        <h3 class="yt-video-title">${video.title || '无标题'}</h3>
-                        <p class="yt-video-meta">${channel.name} • ${video.views || '0'} • ${video.time || '刚刚'}</p>
+                        <h3 class="yt-video-title">${escapeYtCoreHtml(video.title || '无标题')}</h3>
+                        ${video.titleTranslationZh ? `<div class="yt-video-title-translation">${escapeYtCoreHtml(video.titleTranslationZh)}</div>` : ''}
+                        <p class="yt-video-meta">${escapeYtCoreHtml(channel.name)} • ${escapeYtCoreHtml(video.views || '0')} • ${escapeYtCoreHtml(video.time || '刚刚')}</p>
                     </div>
                 </div>
             `;
@@ -1739,6 +1907,7 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
     }
 
     function refreshYoutubeUiAfterHydration() {
+        updateYtMessageUnreadIndicators();
         if (!ytView || !ytView.classList.contains('active')) return;
         syncYtProfile();
         renderSubscriptions();

@@ -45,8 +45,8 @@
     <link rel="stylesheet" href="css/loves.css?v=20260714-ios-neutral-pink-v1">
     <link rel="stylesheet" href="css/library.css?v=20260715-reader-streaming-v1">
     <!-- App Styles -->
-    <link rel="stylesheet" href="css/settings.css?v=20260712-login-notice-v1">
-    <link rel="stylesheet" href="css/youtube.css">
+    <link rel="stylesheet" href="css/settings.css?v=20260715-font-upload-v1">
+    <link rel="stylesheet" href="css/youtube.css?v=20260715-user-vod-parity-v2">
     <link rel="stylesheet" href="css/netflix.css">
 </head>
 <body>
@@ -916,8 +916,9 @@
                                         <i class="fas fa-plus-circle" style="font-size: 38px; background: #fff; border-radius: 50%;"></i>
                                     </div>
                                 </div>
-                                <div class="yt-nav-item" data-target="yt-messages-tab" data-index="3">
+                                <div class="yt-nav-item" id="yt-messages-nav-item" data-target="yt-messages-tab" data-index="3">
                                     <i class="fas fa-envelope"></i>
+                                    <span id="yt-messages-nav-unread" class="yt-messages-nav-unread" aria-label="有未读消息"></span>
                                     <span>消息</span>
                                 </div>
                                 <div class="yt-nav-item" data-target="yt-profile-tab" data-index="4">
@@ -973,12 +974,39 @@
                                 <div class="yt-channel-content" id="sub-channel-content"></div>
                             </div>
                         </div>
+
+                        <div class="bottom-sheet-overlay yt-char-generate-modal-overlay" id="yt-char-generate-modal" style="z-index:334;">
+                            <div class="bottom-sheet yt-char-generate-modal-card" role="dialog" aria-modal="true" aria-labelledby="yt-char-generate-modal-title">
+                                <div class="yt-char-generate-modal-header">
+                                    <div id="yt-char-generate-modal-title">生成内容</div>
+                                    <button type="button" id="yt-char-generate-modal-close" aria-label="关闭"><i class="fas fa-times"></i></button>
+                                </div>
+                                <div class="yt-char-generate-modal-body">
+                                    <label id="yt-char-generate-requirement-label" for="yt-char-generate-requirement">内容要求</label>
+                                    <textarea id="yt-char-generate-requirement" rows="4" placeholder="可留空，由角色自由发挥"></textarea>
+                                    <div class="yt-char-generate-count-row" id="yt-char-generate-count-row">
+                                        <label for="yt-char-generate-count">生成数量</label>
+                                        <input type="number" id="yt-char-generate-count" value="3" min="1" max="10" inputmode="numeric">
+                                    </div>
+                                    <div id="yt-char-generate-modal-status" class="yt-char-generate-modal-status"></div>
+                                    <button type="button" id="yt-char-generate-confirm" class="yt-char-generate-confirm">生成内容</button>
+                                </div>
+                            </div>
+                        </div>
         
                         <!-- Video Player View -->
                         <div class="app-view" id="yt-video-player-view" style="display:none; position:absolute; inset:0; z-index:320; flex-direction:column; background:#fff;">
                             <div class="yt-header" style="background:transparent;">
                                 <div class="yt-header-left" id="yt-player-back-btn" style="width:36px; height:36px; border-radius:18px; display:flex; justify-content:center; align-items:center;">
                                     <i class="fas fa-chevron-left"></i>
+                                </div>
+                                <div class="yt-player-header-actions">
+                                    <button type="button" id="yt-player-replay-comments-btn" class="yt-player-replay-comments-btn" aria-label="生成视频评论" title="生成视频评论" style="display:none;">
+                                        <i class="fas fa-search"></i>
+                                    </button>
+                                    <button type="button" id="yt-player-delete-video-btn" class="yt-player-delete-video-btn" aria-label="删除视频" title="删除视频" style="display:none;">
+                                        <i class="fas fa-trash-alt"></i>
+                                    </button>
                                 </div>
                             </div>
                             <div id="yt-player-video-area" style="position:relative; width:100%; aspect-ratio:16/9; background:#000; overflow:hidden; margin-top:max(52px, calc(44px + env(safe-area-inset-top, 0px)));">
@@ -1005,6 +1033,7 @@
                                         <div class="yt-player-action-menu" id="yt-player-action-menu">
                                             <div class="yt-player-menu-item" id="yt-player-action-continue"><i class="fas fa-forward"></i><span>继续直播</span></div>
                                             <div class="yt-player-menu-item" id="yt-player-action-summary"><i class="fas fa-file-lines"></i><span>生成总结</span></div>
+                                            <div class="yt-player-menu-item yt-player-menu-item-danger" id="yt-player-action-end"><i class="fas fa-stop"></i><span>结束直播</span></div>
                                         </div>
                                     </div>
                                 </div>
@@ -1070,19 +1099,24 @@
                         </div>
         
                         <!-- Super Chat Sheet -->
-                        <div class="bottom-sheet-overlay detail-sheet-overlay" id="yt-sc-sheet" style="z-index:346;">
-                            <div class="bottom-sheet">
-                                <div class="sheet-handle"></div>
-                                <div class="sheet-title">发送 Super Chat</div>
+                        <div class="bottom-sheet-overlay detail-sheet-overlay yt-sc-modal-overlay" id="yt-sc-sheet" style="z-index:346;">
+                            <div class="bottom-sheet yt-sc-modal-card">
+                                <div class="yt-sc-modal-header">
+                                    <div class="yt-sc-modal-title"><i class="fab fa-youtube"></i><span>发送 Super Chat</span></div>
+                                    <button type="button" id="yt-sc-close-btn" class="yt-sc-modal-close" aria-label="关闭"><i class="fas fa-times"></i></button>
+                                </div>
                                 <div class="detail-sheet-content">
                                     <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px;">
-                                        <div class="sc-amount-btn selected" data-amount="30" style="background:#606060; color:#fff; padding:12px; text-align:center; border-radius:14px; cursor:pointer;">￥30</div>
-                                        <div class="sc-amount-btn" data-amount="50" style="background:#f2f2f2; color:#333; padding:12px; text-align:center; border-radius:14px; cursor:pointer;">￥50</div>
-                                        <div class="sc-amount-btn" data-amount="100" style="background:#f2f2f2; color:#333; padding:12px; text-align:center; border-radius:14px; cursor:pointer;">￥100</div>
+                                        <div class="sc-amount-btn selected" data-amount="30" style="padding:12px; text-align:center; border-radius:14px; cursor:pointer;">￥30</div>
+                                        <div class="sc-amount-btn" data-amount="50" style="padding:12px; text-align:center; border-radius:14px; cursor:pointer;">￥50</div>
+                                        <div class="sc-amount-btn" data-amount="100" style="padding:12px; text-align:center; border-radius:14px; cursor:pointer;">￥100</div>
+                                        <div class="sc-amount-btn" data-amount="200" style="padding:12px; text-align:center; border-radius:14px; cursor:pointer;">￥200</div>
+                                        <div class="sc-amount-btn" data-amount="500" style="padding:12px; text-align:center; border-radius:14px; cursor:pointer;">￥500</div>
+                                        <div class="sc-amount-btn" data-amount="1000" style="padding:12px; text-align:center; border-radius:14px; cursor:pointer;">￥1000</div>
                                     </div>
-                                    <input id="yt-sc-custom-amount" type="number" placeholder="自定义金额" style="width:100%; margin-top:14px; border:none; border-radius:14px; background:#f2f2f2; padding:12px 14px; box-sizing:border-box; outline:none;">
-                                    <textarea id="yt-sc-input" placeholder="说点什么..." style="width:100%; min-height:90px; margin-top:12px; border:none; border-radius:14px; background:#f2f2f2; padding:12px 14px; box-sizing:border-box; outline:none; resize:none;"></textarea>
-                                    <div class="sheet-action confirm-action" id="yt-send-sc-btn" style="margin-top:14px; background:#606060; color:#fff;">发送 ￥30</div>
+                                    <input id="yt-sc-custom-amount" type="number" placeholder="自定义金额" style="width:100%; margin-top:14px; border-radius:14px; padding:12px 14px; box-sizing:border-box; outline:none;">
+                                    <textarea id="yt-sc-input" placeholder="说点什么..." style="width:100%; min-height:90px; margin-top:12px; border-radius:14px; padding:12px 14px; box-sizing:border-box; outline:none; resize:none;"></textarea>
+                                    <div class="sheet-action confirm-action" id="yt-send-sc-btn" style="margin-top:14px; color:#fff;">发送 ￥30</div>
                                 </div>
                             </div>
                         </div>
@@ -1129,6 +1163,9 @@
                                     </div>
                                     <div style="display:flex; gap:10px; align-items:center;">
                                         <div id="yt-user-live-views-display" style="padding:8px 12px; border-radius:18px; background:rgba(0,0,0,0.35); color:#fff; font-size:12px;">0 人正在观看</div>
+                                        <div id="yt-user-live-lottery-btn" role="button" tabindex="0" aria-label="开启抽奖" title="开启抽奖" style="width:36px; height:36px; border-radius:18px; background:rgba(0,0,0,0.35); color:#fff; display:flex; justify-content:center; align-items:center; cursor:pointer;">
+                                            <i class="fas fa-gift"></i>
+                                        </div>
                                         <div id="yt-user-live-minimize-btn" style="width:36px; height:36px; border-radius:18px; background:rgba(0,0,0,0.35); color:#fff; display:flex; justify-content:center; align-items:center; cursor:pointer;">
                                             <i class="fas fa-minus"></i>
                                         </div>
@@ -1137,6 +1174,16 @@
                                 <div id="yt-user-live-title-display" style="position:absolute; left:16px; right:16px; bottom:22px; max-width:82%; font-size:20px; font-weight:700; color:#fff; z-index:4; text-shadow:0 2px 6px rgba(0,0,0,0.35);">我的直播间</div>
                                 <div id="yt-user-live-bubbles-container" style="position:absolute; left:16px; right:90px; bottom:64px; display:flex; flex-direction:column; align-items:flex-start; gap:10px; z-index:4;"></div>
                                 <div id="yt-user-live-alert-container" style="position:absolute; inset:0; pointer-events:none; z-index:4;"></div>
+                            </div>
+                            <div id="yt-user-live-lottery-status" aria-live="polite" style="display:none;">
+                                <div class="yt-user-live-lottery-status-icon"><i class="fas fa-gift"></i></div>
+                                <div class="yt-user-live-lottery-status-copy">
+                                    <div class="yt-user-live-lottery-status-title"><span></span>直播抽奖进行中</div>
+                                    <div class="yt-user-live-lottery-status-meta">
+                                        <span><strong id="yt-user-live-lottery-participants">0</strong> 人已参与</span>
+                                        <span>距开奖 <strong id="yt-user-live-lottery-countdown">00:30</strong></span>
+                                    </div>
+                                </div>
                             </div>
                             <div class="yt-user-live-chat-shell" style="background:#fff; border-radius:22px 22px 0 0; margin-top:-14px; position:relative; z-index:6; display:flex; flex-direction:column;">
                                 <div style="padding:14px 16px 10px; display:flex; justify-content:space-between; align-items:center; font-size:14px; font-weight:600; color:#0f0f0f;">
@@ -1155,6 +1202,48 @@
                                             </div>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- User Live Lottery Setup -->
+                        <div class="bottom-sheet-overlay detail-sheet-overlay yt-user-live-lottery-modal-overlay" id="yt-user-live-lottery-sheet" style="z-index:348;">
+                            <div class="bottom-sheet yt-user-live-lottery-modal-card">
+                                <div class="yt-user-live-lottery-modal-header">
+                                    <div>
+                                        <div style="font-size:18px; font-weight:700;">直播抽奖</div>
+                                        <div style="font-size:12px; color:#8e8e93; margin-top:3px;">设置开奖时间和奖项</div>
+                                    </div>
+                                    <button type="button" id="yt-user-live-lottery-close" class="yt-user-live-lottery-icon-btn" aria-label="关闭"><i class="fas fa-times"></i></button>
+                                </div>
+                                <div class="yt-user-live-lottery-modal-body">
+                                    <label class="yt-user-live-lottery-field">
+                                        <span>开奖时间（秒）</span>
+                                        <input id="yt-user-live-lottery-duration" type="number" min="5" max="3600" step="1" value="30" inputmode="numeric">
+                                    </label>
+                                    <div class="yt-user-live-lottery-prizes-title">
+                                        <span>奖项设置</span>
+                                        <button type="button" id="yt-user-live-lottery-add-prize">添加奖项</button>
+                                    </div>
+                                    <div id="yt-user-live-lottery-prizes"></div>
+                                    <button type="button" id="yt-user-live-lottery-confirm" class="yt-user-live-lottery-confirm">确认发送</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- User Live Lottery Result -->
+                        <div class="bottom-sheet-overlay detail-sheet-overlay yt-user-live-lottery-modal-overlay" id="yt-user-live-lottery-result-modal" style="z-index:349;">
+                            <div class="bottom-sheet yt-user-live-lottery-modal-card yt-user-live-lottery-result-card">
+                                <div class="yt-user-live-lottery-modal-header">
+                                    <div>
+                                        <div style="font-size:18px; font-weight:700;">开奖结果</div>
+                                        <div id="yt-user-live-lottery-result-summary" style="font-size:12px; color:#8e8e93; margin-top:3px;"></div>
+                                    </div>
+                                    <button type="button" id="yt-user-live-lottery-result-close" class="yt-user-live-lottery-icon-btn" aria-label="关闭"><i class="fas fa-times"></i></button>
+                                </div>
+                                <div class="yt-user-live-lottery-modal-body">
+                                    <div id="yt-user-live-lottery-result-list"></div>
+                                    <button type="button" id="yt-user-live-lottery-result-confirm" class="yt-user-live-lottery-confirm">知道了</button>
                                 </div>
                             </div>
                         </div>
@@ -1374,15 +1463,6 @@
                                             <i class="fas fa-chevron-right arrow"></i>
                                         </div>
                                     </div>
-                                    <div class="settings-group fully-rounded" id="yt-dm-context-group" style="margin:0 16px 16px;">
-                                        <div class="settings-item" style="border-bottom:none; justify-content:space-between;">
-                                            <div style="display:flex; align-items:center;">
-                                                <div class="settings-icon" style="background-color:#8e8e93;"><i class="fas fa-link"></i></div>
-                                                <div class="settings-text">上下文</div>
-                                            </div>
-                                            <input type="number" id="yt-dm-context-limit-input" value="80" min="1" max="200" inputmode="numeric" style="width:58px; text-align:center; border:1px solid #e5e5ea; border-radius:8px; padding:5px; font-size:15px;">
-                                        </div>
-                                    </div>
                                     <div class="settings-group fully-rounded" style="margin:0 16px;">
                                         <div class="sheet-action" id="yt-dm-clear-history-btn" style="margin:0; border-bottom: 1px solid var(--separator-color); border-radius:12px 12px 0 0; color:#ff3b30;">清空聊天记录</div>
                                         <div class="sheet-action" id="yt-dm-delete-friend-btn" style="margin:0; border-radius:0 0 12px 12px; color:#ff3b30;">删除私信</div>
@@ -1425,15 +1505,6 @@
                                                 <span id="yt-group-owner-name" style="color:#606060;"></span>
                                                 <span id="yt-group-owner-status" style="font-size:11px; color:#007aff; font-weight:600;">添加</span>
                                             </div>
-                                        </div>
-                                    </div>
-                                    <div class="settings-group fully-rounded" style="margin:0 16px 16px;">
-                                        <div class="settings-item" style="border-bottom:none; justify-content:space-between;">
-                                            <div style="display:flex; align-items:center;">
-                                                <div class="settings-icon" style="background-color:#8e8e93;"><i class="fas fa-link"></i></div>
-                                                <div class="settings-text">上下文</div>
-                                            </div>
-                                            <input type="number" id="yt-group-context-limit-input" value="80" min="1" max="200" inputmode="numeric" style="width:58px; text-align:center; border:1px solid #e5e5ea; border-radius:8px; padding:5px; font-size:15px;">
                                         </div>
                                     </div>
                                     <div class="settings-group fully-rounded" id="yt-group-admin-settings-group" style="display:none; margin:0 16px 16px;">
@@ -2234,6 +2305,11 @@
                         <div class="settings-text">主题美化</div>
                         <i class="fas fa-chevron-right arrow"></i>
                     </div>
+                    <button class="settings-item theme-font-entry-btn" id="theme-font-btn" type="button">
+                        <div class="settings-icon" style="background-color: #5856d6;"><i class="fas fa-font"></i></div>
+                        <div class="settings-text">字体</div>
+                        <i class="fas fa-chevron-right arrow"></i>
+                    </button>
                     <div class="settings-item" id="home-widget-config-btn" onclick="window.openHomeWidgetPanelFromSettings && window.openHomeWidgetPanelFromSettings()">
                         <div class="settings-icon" style="background-color: #5ac8fa;"><i class="fas fa-layer-group"></i></div>
                         <div class="settings-text">小组件</div>
@@ -2835,17 +2911,6 @@
                         </div>
                     </div>
 
-                    <div class="settings-group fully-rounded" style="margin: 0 16px 20px;">
-                        <div class="settings-item" id="theme-font-btn">
-                            <div class="settings-icon" style="background-color: #5856d6;"><i class="fas fa-font"></i></div>
-                            <div class="settings-text">字体</div>
-                            <i class="fas fa-chevron-right arrow"></i>
-                        </div>
-                        <div class="theme-font-group-body" style="padding: 12px 16px; background: #fff; font-size: 14px; color: #8e8e93;">
-                            <div class="theme-font-preview-caption" id="theme-font-current-label">当前字体：默认</div>
-                        </div>
-                    </div>
-
                     <!-- App Icons List Customization -->
                     <div class="settings-group fully-rounded" style="margin: 0 16px 20px;">
                         <div class="settings-item" style="cursor: default; border-bottom: 1px solid var(--separator-color);">
@@ -2972,61 +3037,71 @@
             </main>
         </div>
 
-        <!-- Font Setting Modal -->
-        <div class="theme-font-modal-overlay" id="theme-font-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 600; opacity: 0; transition: opacity 0.3s; justify-content: center; align-items: center;">
-            <div class="theme-font-modal-card" style="width: 90%; max-width: 400px; background: #f2f2f7; border-radius: 20px; display: flex; flex-direction: column; overflow: hidden; max-height: 85vh; transform: scale(0.95); transition: transform 0.3s;">
-                <div class="theme-font-modal-header" style="display: flex; justify-content: space-between; align-items: center; padding: 16px; background: #fff; border-bottom: 1px solid #e5e5ea;">
-                    <div class="theme-font-modal-title" style="font-size: 18px; font-weight: 600;">字体</div>
-                    <div class="theme-font-modal-icon-actions" style="display: flex; gap: 10px;">
-                        <button class="theme-font-modal-icon-btn" id="theme-font-link-focus-btn" type="button" title="自定义链接字体" style="width: 32px; height: 32px; border-radius: 16px; border: none; background: #f2f2f7; color: #000; cursor: pointer;">
-                            <i class="fas fa-link"></i>
-                        </button>
-                        <button class="theme-font-modal-icon-btn is-danger" id="theme-font-reset-btn" type="button" title="重置字体" style="width: 32px; height: 32px; border-radius: 16px; border: none; background: #ffebee; color: #ff3b30; cursor: pointer;">
-                            <i class="fas fa-rotate-left"></i>
-                        </button>
-                        <button class="theme-font-modal-icon-btn" id="theme-font-close-btn" type="button" title="关闭" style="width: 32px; height: 32px; border-radius: 16px; border: none; background: #e5e5ea; color: #8e8e93; cursor: pointer;">
-                            <i class="fas fa-times"></i>
-                        </button>
+        <!-- Font Setting Bottom Sheet -->
+        <div class="theme-font-modal-overlay" id="theme-font-modal" aria-hidden="true">
+            <section class="theme-font-modal-card" role="dialog" aria-modal="true" aria-labelledby="theme-font-modal-title">
+                <div class="theme-font-sheet-handle" aria-hidden="true"></div>
+                <header class="theme-font-modal-header">
+                    <div>
+                        <div class="theme-font-modal-title" id="theme-font-modal-title">字体</div>
+                        <div class="theme-font-modal-subtitle">统一设置界面文字与字号</div>
                     </div>
-                </div>
+                    <button class="theme-font-modal-icon-btn" id="theme-font-close-btn" type="button" aria-label="关闭字体设置">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </header>
 
-                <div class="theme-font-modal-body" style="padding: 16px; overflow-y: auto; flex: 1;">
-                    <div style="margin-bottom: 20px;">
-                        <div class="theme-font-section-title" style="font-size: 13px; color: #8e8e93; margin-bottom: 8px; padding-left: 4px;">预览</div>
-                        <div class="theme-font-preview-bubble" id="theme-font-modal-preview" style="background: #007aff; color: #fff; padding: 12px 16px; border-radius: 18px; border-bottom-right-radius: 4px; display: inline-block; max-width: 80%; word-break: break-word;">Aa 你好 Hello 123</div>
-                    </div>
-
-                    <div class="theme-font-subsection" style="margin-bottom: 20px;">
-                        <div class="theme-font-section-title" style="font-size: 13px; color: #8e8e93; margin-bottom: 8px; padding-left: 4px;">字体大小</div>
-                        <div class="theme-font-size-row" style="background: #fff; padding: 12px 16px; border-radius: 12px; display: flex; align-items: center; gap: 15px;">
-                            <input class="theme-font-size-slider" id="theme-font-size-slider" type="range" min="12" max="24" step="1" value="16" style="flex: 1;">
-                            <div class="theme-font-size-value" id="theme-font-size-value" style="font-size: 15px; color: #000; width: 40px; text-align: right;">16px</div>
+                <div class="theme-font-modal-body">
+                    <section class="theme-font-panel theme-font-preview-panel">
+                        <div class="theme-font-preview-bubble" id="theme-font-modal-preview">Aa 你好 Hello 123</div>
+                        <div class="theme-font-size-row">
+                            <span class="theme-font-size-symbol">A</span>
+                            <input class="theme-font-size-slider" id="theme-font-size-slider" type="range" min="12" max="24" step="1" value="16" aria-label="全局字体大小">
+                            <span class="theme-font-size-symbol is-large">A</span>
+                            <div class="theme-font-size-value" id="theme-font-size-value">16px</div>
                         </div>
-                    </div>
+                    </section>
 
-                    <div class="theme-font-subsection" style="margin-bottom: 20px;">
-                        <div class="theme-font-section-title" style="font-size: 13px; color: #8e8e93; margin-bottom: 8px; padding-left: 4px;">我的预设</div>
-                        <div class="theme-font-preset-list" id="theme-font-modal-user-preset-list" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
-                    </div>
+                    <section class="theme-font-subsection">
+                        <div class="theme-font-section-heading">
+                            <div class="theme-font-section-title">已保存字体</div>
+                            <div class="theme-font-section-note">点击即可切换</div>
+                        </div>
+                        <div class="theme-font-preset-list" id="theme-font-modal-user-preset-list"></div>
+                    </section>
 
-                    <div id="theme-font-custom-section">
-                        <div class="theme-font-section-title" style="font-size: 13px; color: #8e8e93; margin-bottom: 8px; padding-left: 4px;">自定义链接字体</div>
-                        <div class="form-group fully-rounded" style="margin: 0;">
-                            <div class="form-item">
-                                <label style="width: 80px;">字体名</label>
-                                <input type="text" id="theme-font-name-input" placeholder="例如：MyFont">
-                            </div>
-                            <div class="form-item" style="border-bottom: none;">
-                                <label style="width: 80px;">字体链接</label>
-                                <input type="text" id="theme-font-url-input" placeholder="https://example.com/font.woff2">
-                            </div>
+                    <section class="theme-font-subsection" id="theme-font-custom-section">
+                        <div class="theme-font-section-heading">
+                            <div class="theme-font-section-title">添加字体</div>
+                            <div class="theme-font-section-note">推荐使用体积更小的 WOFF2</div>
+                        </div>
+                        <div class="theme-font-source-tabs" role="tablist" aria-label="字体来源">
+                            <button class="theme-font-source-tab active" type="button" role="tab" aria-selected="true" data-font-source="local">本地上传</button>
+                            <button class="theme-font-source-tab" type="button" role="tab" aria-selected="false" data-font-source="link">字体链接</button>
                         </div>
 
-                        <div class="sheet-action confirm-action" id="theme-font-apply-custom-btn" style="margin: 14px 0 0; background-color: #1c1c1e; color: #fff;">应用链接字体</div>
-                        <div class="sheet-action" id="theme-font-save-preset-btn" style="margin: 10px 0 0; background-color: #fff; color: #111111;">保存为预设</div>
-                    </div>
+                        <div class="theme-font-source-panel active" data-font-source-panel="local">
+                            <label class="theme-font-field-label" for="theme-font-local-name-input">字体名称</label>
+                            <input class="theme-font-text-input" type="text" id="theme-font-local-name-input" placeholder="选择文件后自动填写">
+                            <button class="theme-font-upload-btn" id="theme-font-upload-btn" type="button">
+                                <i class="fas fa-arrow-up-from-bracket"></i>
+                                <span>选择字体文件</span>
+                            </button>
+                            <input type="file" id="theme-font-file-input" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" hidden>
+                            <div class="theme-font-file-status" id="theme-font-file-status">支持 TTF、OTF、WOFF、WOFF2，单个文件不超过 20 MB</div>
+                        </div>
+
+                        <div class="theme-font-source-panel" data-font-source-panel="link" hidden>
+                            <label class="theme-font-field-label" for="theme-font-name-input">字体名称</label>
+                            <input class="theme-font-text-input" type="text" id="theme-font-name-input" placeholder="例如：MyFont">
+                            <label class="theme-font-field-label" for="theme-font-url-input">字体链接</label>
+                            <input class="theme-font-text-input" type="url" id="theme-font-url-input" placeholder="https://example.com/font.woff2">
+                        </div>
+
+                        <button class="theme-font-add-btn" id="theme-font-add-btn" type="button">添加并应用</button>
+                    </section>
                 </div>
-            </div>
+            </section>
         </div>
 
     <div class="app-view stickers-view" id="stickers-view" style="z-index: 500;">
@@ -7507,7 +7582,7 @@
     <script src="js/worldbook.js"></script>
     <!-- 引入核心 UI 管理与设置模块脚本 -->
     <script src="js/ui.js"></script>
-    <script src="js/settings.js?v=20260714-assistive-ball-image-v1"></script>
+    <script src="js/settings.js?v=20260715-font-upload-v1"></script>
     <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="js/library.js?v=20260715-reader-streaming-v1"></script>
     <script src="js/loves.js?v=20260712-friend-mac-v8"></script>
@@ -7515,13 +7590,13 @@
     <script src="js/tiktok/3_home.js?v=20260712-tiktok-feed-cleanup-v1"></script>
     <script src="js/tiktok/4_chat.js?v=20260712-tiktok-polish-v1"></script>
     <script src="js/tiktok/5_profile.js?v=20260712-tiktok-polish-v1"></script>
-    <script src="js/youtube/2_core.js?v=20260710-storage-ready-v1"></script>
-    <script src="js/youtube/3_channel.js"></script>
+    <script src="js/youtube/2_core.js?v=20260715-user-vod-parity-v2"></script>
+    <script src="js/youtube/3_channel.js?v=20260715-user-vod-parity-v2"></script>
     <script src="js/youtube/4_settings.js"></script>
-    <script src="js/youtube/5_player.js"></script>
-    <script src="js/youtube/6_community.js"></script>
+    <script src="js/youtube/5_player.js?v=20260715-user-vod-parity-v2"></script>
+    <script src="js/youtube/6_community.js?v=20260715-user-vod-parity-v2"></script>
     <script src="js/youtube/7_trending.js"></script>
-    <script src="js/youtube/8_user_live.js"></script>
+    <script src="js/youtube/8_user_live.js?v=20260715-user-vod-parity-v2"></script>
     <script src="js/netflix.js?v=20260710-storage-ready-v2"></script>
     <script src="js/shopping.js?v=20260710-storage-ready-v1"></script>
     <script src="js/xapp.js?v=20260710-storage-v7-cache1"></script>

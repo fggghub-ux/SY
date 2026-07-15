@@ -15,6 +15,21 @@
         try {
             if (!subChannelView) return;
             currentSubChannelData = sub;
+            if (typeof window.ensureYtFixedCharFanGroup === 'function' && !sub.isBusiness) {
+                const previousGroup = sub.generatedContent?.fanGroup;
+                const previousName = previousGroup?.name;
+                const previousCountSource = previousGroup?.memberCountSource;
+                const memberCountMigrationPending = previousGroup?._memberCountMigrationPending === true;
+                window.ensureYtFixedCharFanGroup(sub);
+                if (memberCountMigrationPending) delete sub.generatedContent.fanGroup._memberCountMigrationPending;
+                if (previousName !== sub.generatedContent?.fanGroup?.name || previousCountSource !== 'frontend' || memberCountMigrationPending) {
+                    if (typeof saveYoutubeData === 'function') {
+                        saveYoutubeData();
+                        sub = mockSubscriptions.find(item => item.id === sub.id) || sub;
+                        currentSubChannelData = sub;
+                    }
+                }
+            }
 
             const nameEl = document.getElementById('sub-channel-name');
             if (nameEl) nameEl.textContent = sub.name || '未知';
@@ -225,6 +240,26 @@
                 const listWrapper = document.createElement('div');
                 listWrapper.className = 'yt-history-list';
                 listWrapper.style.padding = '16px';
+                let upgradedUserReplays = false;
+                channelState.pastVideos.forEach((video, videoIndex) => {
+                    if (!video.id) {
+                        video.id = `yt-user-replay-${Date.now()}-${videoIndex}-${Math.random().toString(36).slice(2, 7)}`;
+                        upgradedUserReplays = true;
+                    }
+                    if (video.isLiveReplay !== true) {
+                        video.isLiveReplay = true;
+                        upgradedUserReplays = true;
+                    }
+                    if (!Number.isFinite(Number(video.realtimeCommentCount))) {
+                        video.realtimeCommentCount = Array.isArray(video.comments) ? video.comments.length : 0;
+                        upgradedUserReplays = true;
+                    }
+                    if (!Array.isArray(video.liveTranscript)) {
+                        video.liveTranscript = [];
+                        upgradedUserReplays = true;
+                    }
+                });
+                if (upgradedUserReplays) saveYoutubeData();
                 
                 channelState.pastVideos.forEach((v, index) => {
                     const item = document.createElement('div');
@@ -239,30 +274,14 @@
                             <h3 class="yt-history-title">${v.title || '无标题'}</h3>
                             <p class="yt-history-meta">${v.views || '0 次观看'} • ${v.time || '刚刚'}</p>
                         </div>
-                        <div class="yt-history-delete-btn" style="position: absolute; right: 10px; top: 10px; background: rgba(0,0,0,0.5); width: 28px; height: 28px; border-radius: 50%; display: flex; justify-content: center; align-items: center; color: #fff; cursor: pointer; z-index: 10;">
-                            <i class="fas fa-trash-alt" style="font-size: 12px;"></i>
-                        </div>
                     `;
                     item.addEventListener('click', (e) => {
-                        if (e.target.closest('.yt-history-delete-btn')) {
-                            e.stopPropagation();
-                            window.showCustomModal({
-                                title: '删除视频',
-                                message: '确定要删除这个往期视频吗？',
-                                confirmText: '删除',
-                                cancelText: '取消',
-                                isDestructive: true,
-                                onConfirm: () => {
-                                    channelState.pastVideos.splice(index, 1);
-                                    saveYoutubeData();
-                                    const activeTab = document.querySelector('#profile-main-tabs .yt-sliding-tab.active');
-                                    if(activeTab) activeTab.click();
-                                    if(window.showToast) window.showToast('视频已删除');
-                                }
-                            });
-                            return;
-                        }
                         openVideoPlayer({
+                            id: v.id,
+                            isLiveReplay: true,
+                            realtimeCommentCount: Number(v.realtimeCommentCount) || 0,
+                            liveTranscript: Array.isArray(v.liveTranscript) ? v.liveTranscript : [],
+                            time: v.time || '刚刚',
                             title: v.title,
                             views: v.views,
                             thumbnail: v.thumbnail,
@@ -272,7 +291,8 @@
                                 id: 'user_channel_id',
                                 name: ytUserState ? ytUserState.name : '我',
                                 avatar: ytUserState ? ytUserState.avatarUrl : 'https://picsum.photos/80/80?grayscale',
-                                subs: ytUserState ? ytUserState.subs : '0'
+                                subs: ytUserState ? ytUserState.subs : '0',
+                                desc: ytUserState ? ytUserState.persona : ''
                             },
                             comments: v.comments || []
                         });

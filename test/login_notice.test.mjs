@@ -68,7 +68,7 @@ test('shared modal loads before login and remains interactive above the lock scr
     const loginScriptAt = html.indexOf('js/login.js?v=');
     assert.ok(modalScriptAt > 0 && modalScriptAt < loginScriptAt);
     assert.match(html, /css\/login\.css\?v=20260712-login-notice-v1/);
-    assert.match(html, /css\/settings\.css\?v=20260712-login-notice-v1/);
+    assert.match(html, /css\/settings\.css\?v=20260715-font-upload-v1/);
     assert.match(settingsCss, /\.about-info-modal-overlay\s*\{[^}]*z-index: 10000000/);
     assert.match(loginCss, /\.u2-login-screen\s*\{[^}]*z-index: 9999996/);
 });

@@ -125,7 +125,7 @@
             label: '默认',
             cssName: '',
             family: DEFAULT_SYSTEM_THEME_FONT_FAMILY,
-            sources: { woff2: '', woff: '', ttf: '' }
+            sources: { woff2: '', woff: '', ttf: '', otf: '' }
         }
     ];
 
@@ -149,7 +149,10 @@
         fontFamily: DEFAULT_SYSTEM_THEME_FONT_FAMILY,
         fontCssName: '',
         fontSize: 16,
-        fontSources: { woff2: '', woff: '', ttf: '' },
+        fontSources: { woff2: '', woff: '', ttf: '', otf: '' },
+        fontSourceType: 'preset',
+        fontAssetId: '',
+        fontFormat: '',
         savedFontPresets: [],
         imessageCssPresets: {
             bubble: [],
@@ -160,6 +163,7 @@
         imessageChatCss: ''
     };
     window.u2ThemeState = themeState;
+    let themeFontRuntimeReady = false;
     
     document.addEventListener('DOMContentLoaded', async () => {
         // ==========================================
@@ -236,16 +240,12 @@
                 }
             });
             window.u2ThemeState = themeState;
-            
-            // Apply loaded theme state immediately
             applySavedTheme();
         }
 
         if (migratedImessageCssPresets) {
             await persistSettingsData();
         }
-        document.dispatchEvent(new CustomEvent('u2-theme-state-ready'));
-        
         // Expose globally for other modules if needed
         window.apiConfig = apiConfig;
         if (window.u2MinimaxTts && typeof window.u2MinimaxTts.setConfig === 'function') {
@@ -854,14 +854,14 @@
         const themeCurrentApplyBtn = document.getElementById('theme-current-apply-btn');
         const desktopThemeConfigSheet = document.getElementById('desktop-theme-config-sheet');
 
-        function applySavedTheme() {
+        async function applySavedTheme() {
             window.u2ThemeState = themeState;
             applyThemeBackground(themeState);
-            applyThemeFont(themeState);
             applyThemeAppIcons(themeState);
             if (window.imApp && window.imApp.applyGlobalChatCss) {
                 window.imApp.applyGlobalChatCss(themeState);
             }
+            if (themeFontRuntimeReady) await applyThemeFont(themeState);
         }
         
         function openDesktopThemeConfig() {
@@ -2398,27 +2398,35 @@
         const themeFontBtn = document.getElementById('theme-font-btn');
         const themeFontModal = document.getElementById('theme-font-modal');
         const themeFontCloseBtn = document.getElementById('theme-font-close-btn');
-        const themeFontResetBtn = document.getElementById('theme-font-reset-btn');
-        const themeFontLinkFocusBtn = document.getElementById('theme-font-link-focus-btn');
-        const themeFontApplyCustomBtn = document.getElementById('theme-font-apply-custom-btn');
-        const themeFontSavePresetBtn = document.getElementById('theme-font-save-preset-btn');
-        const themeFontCustomSection = document.getElementById('theme-font-custom-section');
         const themeFontModalPreview = document.getElementById('theme-font-modal-preview');
-        const themeFontCurrentLabel = document.getElementById('theme-font-current-label');
-        const themeFontModalPresetList = document.getElementById('theme-font-modal-preset-list');
         const themeFontModalUserPresetList = document.getElementById('theme-font-modal-user-preset-list');
         const themeFontNameInput = document.getElementById('theme-font-name-input');
         const themeFontUrlInput = document.getElementById('theme-font-url-input');
+        const themeFontLocalNameInput = document.getElementById('theme-font-local-name-input');
+        const themeFontUploadBtn = document.getElementById('theme-font-upload-btn');
+        const themeFontFileInput = document.getElementById('theme-font-file-input');
+        const themeFontFileStatus = document.getElementById('theme-font-file-status');
+        const themeFontAddBtn = document.getElementById('theme-font-add-btn');
+        const themeFontSourceTabs = Array.from(document.querySelectorAll('.theme-font-source-tab'));
+        const themeFontSourcePanels = Array.from(document.querySelectorAll('.theme-font-source-panel'));
         const themeFontSizeSlider = document.getElementById('theme-font-size-slider');
         const themeFontSizeValue = document.getElementById('theme-font-size-value');
         const THEME_FONT_PREVIEW_TEXT = 'Aa 你好 Hello 123';
+        const THEME_FONT_MAX_FILE_SIZE = 20 * 1024 * 1024;
+        const THEME_FONT_WARNING_FILE_SIZE = 5 * 1024 * 1024;
+        const THEME_FONT_FORMATS = new Set(['ttf', 'otf', 'woff', 'woff2']);
+        const themeFontFaceRegistry = new Map();
         let themeFontSaveTimer = null;
-        
+        let themeFontSelectedFile = null;
+        let themeFontSourceMode = 'local';
+        let themeFontApplyToken = 0;
+
         function cloneThemeFontSources(sources = {}) {
             return {
                 woff2: typeof sources.woff2 === 'string' ? sources.woff2.trim() : '',
                 woff: typeof sources.woff === 'string' ? sources.woff.trim() : '',
-                ttf: typeof sources.ttf === 'string' ? sources.ttf.trim() : ''
+                ttf: typeof sources.ttf === 'string' ? sources.ttf.trim() : '',
+                otf: typeof sources.otf === 'string' ? sources.otf.trim() : ''
             };
         }
 
@@ -2433,20 +2441,58 @@
             return sanitized || 'CustomThemeFont';
         }
 
+        function sanitizeThemeFontLabel(value) {
+            return sanitizeThemeFontCssName(value).slice(0, 60);
+        }
+
         function buildThemeFontFamily(cssName) {
-            return `"${cssName}", system-ui`;
+            return `"${sanitizeThemeFontCssName(cssName)}", ${DEFAULT_SYSTEM_THEME_FONT_FAMILY}`;
+        }
+
+        function createThemeFontInternalName(presetId) {
+            const safeId = String(presetId || 'font').replace(/[^a-z0-9_-]/gi, '_');
+            return `U2ThemeFont_${safeId}_${Date.now().toString(36)}`;
+        }
+
+        function normalizeThemeFontFormat(value) {
+            const normalized = String(value || '').trim().toLowerCase().replace(/^\./, '');
+            return THEME_FONT_FORMATS.has(normalized) ? normalized : '';
+        }
+
+        function inferThemeFontFormat(value) {
+            const cleanValue = String(value || '').split('?')[0].split('#')[0].toLowerCase();
+            const match = cleanValue.match(/\.([a-z0-9]+)$/);
+            return normalizeThemeFontFormat(match?.[1]);
+        }
+
+        function getThemeFontCssFormat(format) {
+            if (format === 'ttf') return 'truetype';
+            if (format === 'otf') return 'opentype';
+            return format;
         }
 
         function normalizeThemeFontPreset(preset = {}, fallbackIndex = 0) {
-            const normalizedName = sanitizeThemeFontCssName(preset.name || preset.label || preset.cssName || `CustomFont${fallbackIndex + 1}`);
+            const id = typeof preset.id === 'string' && preset.id
+                ? preset.id
+                : `font_preset_${Date.now()}_${fallbackIndex}`;
+            const normalizedName = sanitizeThemeFontLabel(preset.name || preset.label || preset.cssName || `CustomFont${fallbackIndex + 1}`);
+            const fontAssetId = typeof preset.fontAssetId === 'string' ? preset.fontAssetId : '';
+            const sourceType = preset.sourceType === 'local' || fontAssetId ? 'local' : 'link';
+            const sources = cloneThemeFontSources(preset.sources);
+            const sourceUrl = sources.woff2 || sources.woff || sources.ttf || sources.otf || '';
+            const fontFormat = normalizeThemeFontFormat(preset.fontFormat) || inferThemeFontFormat(sourceUrl);
+            const cssName = sanitizeThemeFontCssName(preset.cssName || normalizedName);
             return {
-                id: typeof preset.id === 'string' && preset.id ? preset.id : `font_preset_${Date.now()}_${fallbackIndex}`,
+                id,
                 type: 'user',
                 name: normalizedName,
                 label: normalizedName,
-                cssName: sanitizeThemeFontCssName(preset.cssName || normalizedName),
-                family: buildThemeFontFamily(preset.cssName || normalizedName),
-                sources: cloneThemeFontSources(preset.sources)
+                cssName,
+                family: buildThemeFontFamily(cssName),
+                sourceType,
+                fontAssetId,
+                fontFormat,
+                sources
             };
         }
 
@@ -2457,65 +2503,70 @@
             if (!themeState.fontFamily) themeState.fontFamily = DEFAULT_SYSTEM_THEME_FONT_FAMILY;
             if (typeof themeState.fontCssName !== 'string') themeState.fontCssName = '';
             themeState.fontSize = normalizeThemeFontSize(themeState.fontSize);
+            themeState.fontSources = cloneThemeFontSources(themeState.fontSources);
+            themeState.fontSourceType = ['preset', 'local', 'link'].includes(themeState.fontSourceType)
+                ? themeState.fontSourceType
+                : 'preset';
+            themeState.fontAssetId = typeof themeState.fontAssetId === 'string' ? themeState.fontAssetId : '';
+            themeState.fontFormat = normalizeThemeFontFormat(themeState.fontFormat);
 
-            const builtin = BUILTIN_THEME_FONTS.find(f => f.key === themeState.fontPresetKey) || BUILTIN_THEME_FONTS[0];
+            themeState.savedFontPresets = Array.isArray(themeState.savedFontPresets)
+                ? themeState.savedFontPresets.map((preset, index) => normalizeThemeFontPreset(preset, index))
+                : [];
+
+            if (themeState.fontMode === 'saved' && !themeState.savedFontPresets.some(preset => preset.id === themeState.fontPresetKey)) {
+                const legacySourceUrl = themeState.fontSources.woff2 || themeState.fontSources.woff || themeState.fontSources.ttf || themeState.fontSources.otf || '';
+                if (legacySourceUrl) {
+                    const migratedPreset = normalizeThemeFontPreset({
+                        id: `font_preset_migrated_${Date.now()}`,
+                        name: themeState.fontCssName || '迁移字体',
+                        cssName: themeState.fontCssName || 'MigratedThemeFont',
+                        sourceType: 'link',
+                        sources: themeState.fontSources,
+                        fontFormat: themeState.fontFormat
+                    });
+                    themeState.savedFontPresets.push(migratedPreset);
+                    themeState.fontPresetKey = migratedPreset.id;
+                }
+            }
+
             if (themeState.fontMode !== 'saved') {
+                const builtin = BUILTIN_THEME_FONTS.find(font => font.key === themeState.fontPresetKey) || BUILTIN_THEME_FONTS[0];
+                themeState.fontMode = 'preset';
                 themeState.fontPresetKey = builtin.key;
                 themeState.fontFamily = builtin.family || DEFAULT_SYSTEM_THEME_FONT_FAMILY;
                 themeState.fontCssName = builtin.cssName || '';
-            }
-
-            if (!themeState.fontSources || typeof themeState.fontSources !== 'object') {
                 themeState.fontSources = cloneThemeFontSources(builtin.sources);
-            } else {
-                themeState.fontSources = cloneThemeFontSources(themeState.fontSources);
-            }
-
-            if (!Array.isArray(themeState.savedFontPresets)) {
-                themeState.savedFontPresets = [];
-            } else {
-                themeState.savedFontPresets = themeState.savedFontPresets.map((preset, index) => normalizeThemeFontPreset(preset, index));
+                themeState.fontSourceType = 'preset';
+                themeState.fontAssetId = '';
+                themeState.fontFormat = '';
             }
         }
 
         function getActiveThemeFontDefinition(state = themeState) {
             ensureThemeFontStateShape();
             if (state.fontMode === 'saved') {
-                const savedPreset = state.savedFontPresets.find(p => p.id === state.fontPresetKey);
-                if (savedPreset) {
-                    return { ...savedPreset, type: 'user' };
-                }
+                const savedPreset = state.savedFontPresets.find(preset => preset.id === state.fontPresetKey);
+                if (savedPreset) return { ...savedPreset, type: 'user' };
             }
-            const preset = BUILTIN_THEME_FONTS.find(f => f.key === state.fontPresetKey) || BUILTIN_THEME_FONTS[0];
-            return { ...preset, type: 'builtin' };
+            const preset = BUILTIN_THEME_FONTS.find(font => font.key === state.fontPresetKey) || BUILTIN_THEME_FONTS[0];
+            return { ...preset, type: 'builtin', sourceType: 'preset', fontAssetId: '', fontFormat: '' };
         }
 
-        function buildThemeFontFaceCss(cssName, sources = {}) {
-            const safeCssName = sanitizeThemeFontCssName(cssName);
-            const safeSources = cloneThemeFontSources(sources);
-            const srcList = [];
-            if (safeSources.woff2) srcList.push(`url("${safeSources.woff2}") format("woff2")`);
-            if (safeSources.woff) srcList.push(`url("${safeSources.woff}") format("woff")`);
-            if (safeSources.ttf) srcList.push(`url("${safeSources.ttf}") format("truetype")`);
-            if (!safeCssName || srcList.length === 0) return '';
-            return `
-            @font-face {
-                font-family: '${safeCssName}';
-                src: ${srcList.join(',\n         ')};
-                font-weight: normal;
-                font-style: normal;
-                font-display: swap;
-            }`.trim();
-        }
-
-        function getThemeFontFaceStyleElement() {
-            let styleEl = document.getElementById('theme-font-face-style');
-            if (!styleEl) {
-                styleEl = document.createElement('style');
-                styleEl.id = 'theme-font-face-style';
-                document.head.appendChild(styleEl);
+        function setThemeFontStateFromDefinition(definition) {
+            if (definition.type === 'builtin' || definition.key) {
+                themeState.fontMode = 'preset';
+                themeState.fontPresetKey = definition.key || 'system-default';
+            } else {
+                themeState.fontMode = 'saved';
+                themeState.fontPresetKey = definition.id;
             }
-            return styleEl;
+            themeState.fontFamily = definition.family || DEFAULT_SYSTEM_THEME_FONT_FAMILY;
+            themeState.fontCssName = definition.cssName || '';
+            themeState.fontSources = cloneThemeFontSources(definition.sources);
+            themeState.fontSourceType = definition.sourceType || (definition.type === 'builtin' ? 'preset' : 'link');
+            themeState.fontAssetId = definition.fontAssetId || '';
+            themeState.fontFormat = normalizeThemeFontFormat(definition.fontFormat);
         }
 
         function getThemeFontAppliedStyleElement() {
@@ -2528,86 +2579,124 @@
             return styleEl;
         }
 
-        function applyThemeFont(state = themeState) {
-            ensureThemeFontStateShape();
-            const definition = getActiveThemeFontDefinition(state);
-            const faceStyleEl = getThemeFontFaceStyleElement();
-            faceStyleEl.textContent = buildThemeFontFaceCss(definition.cssName, definition.sources);
-            
+        function applyThemeFontCss(resolvedFamily, fontSize) {
+            const resolvedSize = `${normalizeThemeFontSize(fontSize)}px`;
             const appliedStyleEl = getThemeFontAppliedStyleElement();
-            const resolvedFamily = definition.family || 'system-ui';
-            const resolvedSize = `${normalizeThemeFontSize(state.fontSize)}px`;
-
             appliedStyleEl.textContent = `
             :root {
                 --theme-font-family: ${resolvedFamily};
                 --theme-font-size: ${resolvedSize};
             }
             body,
-            #app,
-            #app :where(.app-page, .settings-view, .bottom-sheet, .bottom-sheet-overlay, .settings-group, .settings-item, .settings-text, .form-item, .sheet-title, .sheet-action, .chat-bubble, .chat-row, .ins-chat-input-container, .ins-chat-messages, .global-textarea, input, textarea, button, select) {
+            body :where(.app-page, .settings-view, .bottom-sheet, .bottom-sheet-overlay, .settings-group, .settings-item, .settings-text, .form-item, .sheet-title, .sheet-action, .chat-bubble, .chat-row, .ins-chat-input-container, .ins-chat-messages, .global-textarea, input, textarea, button, select) {
                 font-family: var(--theme-font-family) !important;
                 font-size: var(--theme-font-size);
             }
-            #app :where(*):not(i):not(.fa):not(.fas):not(.far):not(.fab):not(.fal):not(.fa-solid):not(.fa-regular):not(.fa-brands) {
+            body :where(*:not(i):not(.fa):not(.fas):not(.far):not(.fab):not(.fal):not(.fa-solid):not(.fa-regular):not(.fa-brands)) {
                 font-family: var(--theme-font-family) !important;
             }
-            #app :where(i, .fa, .fas, .far, .fab, .fal, .fa-solid, .fa-regular, .fa-brands),
-            #app :where(i, .fa, .fas, .far, .fab, .fal, .fa-solid, .fa-regular, .fa-brands)::before {
+            body :where(i, .fa, .fas, .far, .fab, .fal, .fa-solid, .fa-regular, .fa-brands),
+            body :where(i, .fa, .fas, .far, .fab, .fal, .fa-solid, .fa-regular, .fa-brands)::before {
                 font-family: "Font Awesome 6 Free", "Font Awesome 6 Brands" !important;
             }
-            #app :where(#theme-bubble-css-input, #theme-chat-css-input, #theme-status-css-input, #bubble-css-input, #status-css-input, textarea[placeholder*="CSS"], textarea[placeholder*="css"]) {
+            body :where(#theme-bubble-css-input, #theme-chat-css-input, #theme-status-css-input, #bubble-css-input, #status-css-input, textarea[placeholder*="CSS"], textarea[placeholder*="css"]) {
                 font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace !important;
                 font-size: 13px !important;
             }`.trim();
-            
             document.documentElement.style.setProperty('--theme-font-family', resolvedFamily);
             document.documentElement.style.setProperty('--theme-font-size', resolvedSize);
-            return definition;
+        }
+
+        async function getThemeFontSource(definition) {
+            if (!definition || definition.type === 'builtin' || definition.key) return null;
+            if (definition.sourceType === 'local') {
+                if (!definition.fontAssetId || typeof window.appStorage?.getAssetUrl !== 'function') {
+                    throw new Error('本地字体文件不存在');
+                }
+                const assetUrl = await window.appStorage.getAssetUrl(definition.fontAssetId);
+                if (!assetUrl) throw new Error('本地字体文件已丢失');
+                return { url: assetUrl, format: normalizeThemeFontFormat(definition.fontFormat) };
+            }
+            const sources = cloneThemeFontSources(definition.sources);
+            const format = sources.woff2 ? 'woff2' : sources.woff ? 'woff' : sources.ttf ? 'ttf' : sources.otf ? 'otf' : '';
+            const url = sources[format] || '';
+            if (!url) throw new Error('字体链接为空');
+            return { url, format: normalizeThemeFontFormat(definition.fontFormat) || format };
+        }
+
+        async function loadThemeFontDefinition(definition) {
+            if (!definition || definition.type === 'builtin' || definition.key) {
+                return definition?.family || DEFAULT_SYSTEM_THEME_FONT_FAMILY;
+            }
+            if (typeof FontFace !== 'function' || !document.fonts) {
+                throw new Error('当前浏览器不支持自定义字体');
+            }
+            const source = await getThemeFontSource(definition);
+            const registryKey = `${definition.cssName}|${source.url}|${source.format}`;
+            const existingFace = themeFontFaceRegistry.get(registryKey);
+            if (existingFace?.status === 'loaded') return definition.family;
+
+            const cssFormat = getThemeFontCssFormat(source.format);
+            const sourceDescriptor = `url(${JSON.stringify(source.url)})${cssFormat ? ` format(${JSON.stringify(cssFormat)})` : ''}`;
+            const fontFace = new FontFace(definition.cssName, sourceDescriptor, {
+                style: 'normal',
+                weight: 'normal',
+                display: 'swap'
+            });
+            await fontFace.load();
+            document.fonts.add(fontFace);
+            themeFontFaceRegistry.set(registryKey, fontFace);
+            return definition.family;
+        }
+
+        async function applyThemeFont(state = themeState, { fallbackOnError = true } = {}) {
+            ensureThemeFontStateShape();
+            const definition = getActiveThemeFontDefinition(state);
+            const applyToken = ++themeFontApplyToken;
+            try {
+                const resolvedFamily = await loadThemeFontDefinition(definition);
+                if (applyToken !== themeFontApplyToken) return false;
+                applyThemeFontCss(resolvedFamily, state.fontSize);
+                renderThemeFontPreview();
+                return true;
+            } catch (error) {
+                console.warn('Failed to load theme font:', error);
+                if (applyToken !== themeFontApplyToken) return false;
+                if (fallbackOnError) applyThemeFontCss(DEFAULT_SYSTEM_THEME_FONT_FAMILY, state.fontSize);
+                return false;
+            }
         }
 
         function renderThemeFontPreview() {
             ensureThemeFontStateShape();
             const definition = getActiveThemeFontDefinition(themeState);
             const previewSize = `${normalizeThemeFontSize(themeState.fontSize)}px`;
-
             if (themeFontModalPreview) {
                 themeFontModalPreview.textContent = THEME_FONT_PREVIEW_TEXT;
-                themeFontModalPreview.style.fontFamily = definition.family || 'system-ui';
+                themeFontModalPreview.style.fontFamily = definition.family || DEFAULT_SYSTEM_THEME_FONT_FAMILY;
                 themeFontModalPreview.style.fontSize = previewSize;
             }
             if (themeFontSizeValue) themeFontSizeValue.textContent = previewSize;
             if (themeFontSizeSlider) themeFontSizeSlider.value = String(normalizeThemeFontSize(themeState.fontSize));
-            
-            let labelText = definition.type === 'user' ? `我的预设 · ${definition.label}` : definition.label;
-            if (themeFontCurrentLabel) themeFontCurrentLabel.textContent = `当前字体：${labelText}`;
         }
-        
+
         function syncThemeFontInputsFromState() {
             ensureThemeFontStateShape();
-            if (themeFontSizeSlider) themeFontSizeSlider.value = String(normalizeThemeFontSize(themeState.fontSize));
-            if (themeFontSizeValue) themeFontSizeValue.textContent = `${normalizeThemeFontSize(themeState.fontSize)}px`;
-            
-            if (themeFontNameInput && themeFontUrlInput) {
-                if (themeState.fontMode === 'saved') {
-                    const preset = themeState.savedFontPresets.find(p => p.id === themeState.fontPresetKey);
-                    if (preset) {
-                        themeFontNameInput.value = preset.name || '';
-                        themeFontUrlInput.value = preset.sources.woff2 || preset.sources.woff || preset.sources.ttf || '';
-                        return;
-                    }
-                }
-                themeFontNameInput.value = '';
-                themeFontUrlInput.value = '';
-            }
-        }
-        
-        function commitThemeFontChanges(toastMessage = '') {
-            renderThemeFontPresetLists();
             renderThemeFontPreview();
-            applyThemeFont(themeState);
-            saveGlobalData();
-            if (toastMessage) showToast(toastMessage);
+            const preset = themeState.fontMode === 'saved'
+                ? themeState.savedFontPresets.find(item => item.id === themeState.fontPresetKey)
+                : null;
+            if (preset?.sourceType === 'link') {
+                themeFontNameInput.value = preset.name || '';
+                themeFontUrlInput.value = preset.sources.woff2 || preset.sources.woff || preset.sources.ttf || preset.sources.otf || '';
+            } else {
+                if (themeFontNameInput) themeFontNameInput.value = '';
+                if (themeFontUrlInput) themeFontUrlInput.value = '';
+            }
+            if (themeFontLocalNameInput) themeFontLocalNameInput.value = '';
+            themeFontSelectedFile = null;
+            if (themeFontFileInput) themeFontFileInput.value = '';
+            updateThemeFontFileStatus();
         }
 
         function scheduleThemeFontSave() {
@@ -2619,205 +2708,276 @@
         }
 
         function createThemeFontPill({ label, family, isActive, onSelect, onDelete = null }) {
-            const pill = document.createElement('button');
-            pill.type = 'button';
+            const pill = document.createElement('div');
             pill.className = `theme-font-pill ${isActive ? 'active' : ''}`;
-            pill.style.fontFamily = family || 'system-ui';
-        
-            const pillLabel = document.createElement('span');
-            pillLabel.className = 'theme-font-pill-label';
-            pillLabel.textContent = label;
-            pill.appendChild(pillLabel);
-        
-            pill.addEventListener('click', () => onSelect?.());
-        
+            const selectBtn = document.createElement('button');
+            selectBtn.type = 'button';
+            selectBtn.className = 'theme-font-pill-select';
+            selectBtn.textContent = label;
+            selectBtn.style.fontFamily = family || DEFAULT_SYSTEM_THEME_FONT_FAMILY;
+            selectBtn.addEventListener('click', () => onSelect?.());
+            pill.appendChild(selectBtn);
             if (typeof onDelete === 'function') {
                 const deleteBtn = document.createElement('button');
                 deleteBtn.type = 'button';
                 deleteBtn.className = 'theme-font-pill-delete';
+                deleteBtn.setAttribute('aria-label', `删除字体 ${label}`);
                 deleteBtn.innerHTML = '<i class="fas fa-times"></i>';
-                deleteBtn.addEventListener('click', (event) => {
-                    event.stopPropagation();
-                    event.preventDefault();
-                    onDelete();
-                });
+                deleteBtn.addEventListener('click', () => onDelete());
                 pill.appendChild(deleteBtn);
             }
             return pill;
         }
-        
+
+        async function activateThemeFontDefinition(definition, toastMessage = '') {
+            try {
+                if (themeFontAddBtn) themeFontAddBtn.disabled = true;
+                await loadThemeFontDefinition(definition);
+                setThemeFontStateFromDefinition(definition);
+                renderThemeFontPresetLists();
+                renderThemeFontPreview();
+                await applyThemeFont(themeState, { fallbackOnError: false });
+                await saveGlobalData();
+                if (toastMessage) showToast(toastMessage);
+                return true;
+            } catch (error) {
+                console.warn('Failed to activate theme font:', error);
+                showToast(error?.message || '字体加载失败');
+                return false;
+            } finally {
+                if (themeFontAddBtn) themeFontAddBtn.disabled = false;
+            }
+        }
+
+        async function deleteThemeFontPreset(preset) {
+            const wasActive = themeState.fontMode === 'saved' && themeState.fontPresetKey === preset.id;
+            themeState.savedFontPresets = themeState.savedFontPresets.filter(item => item.id !== preset.id);
+            if (wasActive) setThemeFontStateFromDefinition({ ...BUILTIN_THEME_FONTS[0], type: 'builtin' });
+            renderThemeFontPresetLists();
+            renderThemeFontPreview();
+            if (wasActive) await applyThemeFont(themeState);
+            await saveGlobalData();
+            if (preset.fontAssetId && typeof window.appStorage?.deleteAsset === 'function') {
+                const stillReferenced = themeState.savedFontPresets.some(item => item.fontAssetId === preset.fontAssetId);
+                if (!stillReferenced) await window.appStorage.deleteAsset(preset.fontAssetId);
+            }
+            showToast(`已删除字体 ${preset.label}`);
+        }
+
         function renderThemeFontPresetLists() {
-            if (themeFontModalUserPresetList) {
-                themeFontModalUserPresetList.innerHTML = '';
-                
-                // Add Built-in font (Default) to user preset list
-                const builtin = BUILTIN_THEME_FONTS[0];
-                const isBuiltinActive = themeState.fontMode === 'preset' && themeState.fontPresetKey === builtin.key;
+            if (!themeFontModalUserPresetList) return;
+            themeFontModalUserPresetList.innerHTML = '';
+            const builtin = BUILTIN_THEME_FONTS[0];
+            themeFontModalUserPresetList.appendChild(createThemeFontPill({
+                label: builtin.label,
+                family: builtin.family,
+                isActive: themeState.fontMode === 'preset',
+                onSelect: () => activateThemeFontDefinition({ ...builtin, type: 'builtin' }, `已切换到 ${builtin.label}`)
+            }));
+            themeState.savedFontPresets.forEach((preset) => {
                 themeFontModalUserPresetList.appendChild(createThemeFontPill({
-                    label: builtin.label,
-                    family: builtin.family,
-                    isActive: isBuiltinActive,
-                    onSelect: () => {
-                        themeState.fontMode = 'preset';
-                        themeState.fontPresetKey = builtin.key;
-                        themeState.fontCssName = builtin.cssName || '';
-                        themeState.fontFamily = builtin.family || DEFAULT_SYSTEM_THEME_FONT_FAMILY;
-                        themeState.fontSources = cloneThemeFontSources(builtin.sources);
-                        syncThemeFontInputsFromState();
-                        commitThemeFontChanges(`已切换到 ${builtin.label}`);
-                    }
-                    // No onDelete for builtin font
+                    label: preset.label,
+                    family: preset.family,
+                    isActive: themeState.fontMode === 'saved' && themeState.fontPresetKey === preset.id,
+                    onSelect: () => activateThemeFontDefinition(preset, `已切换到 ${preset.label}`),
+                    onDelete: () => deleteThemeFontPreset(preset)
                 }));
-                
-                // Add User Presets
-                themeState.savedFontPresets.forEach((preset) => {
-                    const isActive = themeState.fontMode === 'saved' && themeState.fontPresetKey === preset.id;
-                    themeFontModalUserPresetList.appendChild(createThemeFontPill({
-                        label: preset.label,
-                        family: preset.family,
-                        isActive,
-                        onSelect: () => {
-                            themeState.fontMode = 'saved';
-                            themeState.fontPresetKey = preset.id;
-                            themeState.fontCssName = preset.cssName;
-                            themeState.fontFamily = preset.family;
-                            themeState.fontSources = cloneThemeFontSources(preset.sources);
-                            syncThemeFontInputsFromState();
-                            commitThemeFontChanges(`已切换到 ${preset.label}`);
-                        },
-                        onDelete: () => {
-                            themeState.savedFontPresets = themeState.savedFontPresets.filter(p => p.id !== preset.id);
-                            if (themeState.fontMode === 'saved' && themeState.fontPresetKey === preset.id) {
-                                const builtin = BUILTIN_THEME_FONTS[0];
-                                themeState.fontMode = 'preset';
-                                themeState.fontPresetKey = builtin.key;
-                                themeState.fontCssName = builtin.cssName || '';
-                                themeState.fontFamily = builtin.family || DEFAULT_SYSTEM_THEME_FONT_FAMILY;
-                                themeState.fontSources = cloneThemeFontSources(builtin.sources);
-                            }
-                            syncThemeFontInputsFromState();
-                            commitThemeFontChanges(`已删除预设 ${preset.label}`);
-                        }
-                    }));
-                });
-            }
-        }
-        
-        function buildThemeFontDraftFromInputs() {
-            const cssName = sanitizeThemeFontCssName(themeFontNameInput?.value || '');
-            const rawUrl = String(themeFontUrlInput?.value || '').trim();
-            let fontSources = { woff2: '', woff: '', ttf: '' };
-            if (rawUrl) {
-                const normalizedUrl = rawUrl.split('?')[0].split('#')[0].toLowerCase();
-                if (normalizedUrl.endsWith('.woff2')) fontSources.woff2 = rawUrl;
-                else if (normalizedUrl.endsWith('.woff')) fontSources.woff = rawUrl;
-                else if (normalizedUrl.endsWith('.ttf')) fontSources.ttf = rawUrl;
-                else fontSources.woff2 = rawUrl; // default fallback
-            }
-        
-            if (!fontSources.woff2 && !fontSources.woff && !fontSources.ttf) {
-                showToast('请至少填写一个字体完整链接');
-                return null;
-            }
-            return {
-                id: '', type: 'user', name: cssName, label: cssName, cssName,
-                family: buildThemeFontFamily(cssName), sources: fontSources
-            };
-        }
-
-        if (themeFontBtn) {
-            themeFontBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (themeFontModal) {
-                    syncThemeFontInputsFromState();
-                    renderThemeFontPresetLists();
-                    renderThemeFontPreview();
-                    themeFontModal.style.display = 'flex';
-                    // Trigger reflow
-                    themeFontModal.offsetHeight;
-                    themeFontModal.style.opacity = '1';
-                }
             });
         }
 
-        const closeThemeFontModal = () => {
-            if (themeFontModal) {
-                themeFontModal.style.opacity = '0';
-                setTimeout(() => { themeFontModal.style.display = 'none'; }, 300);
-            }
-        };
+        function setThemeFontSourceMode(mode) {
+            themeFontSourceMode = mode === 'link' ? 'link' : 'local';
+            themeFontSourceTabs.forEach((tab) => {
+                const active = tab.dataset.fontSource === themeFontSourceMode;
+                tab.classList.toggle('active', active);
+                tab.setAttribute('aria-selected', String(active));
+            });
+            themeFontSourcePanels.forEach((panel) => {
+                const active = panel.dataset.fontSourcePanel === themeFontSourceMode;
+                panel.classList.toggle('active', active);
+                panel.hidden = !active;
+            });
+        }
 
-        if (themeFontCloseBtn) themeFontCloseBtn.addEventListener('click', closeThemeFontModal);
-        
-        if (themeFontResetBtn) {
-            themeFontResetBtn.addEventListener('click', () => {
-                const builtin = BUILTIN_THEME_FONTS[0];
-                themeState.fontMode = 'preset';
-                themeState.fontPresetKey = builtin.key;
-                themeState.fontFamily = builtin.family;
-                themeState.fontCssName = builtin.cssName || '';
-                themeState.fontSources = cloneThemeFontSources(builtin.sources);
-                themeState.fontSize = 16;
-                syncThemeFontInputsFromState();
-                commitThemeFontChanges('字体已重置为默认字体');
+        function updateThemeFontFileStatus(message = '') {
+            if (!themeFontFileStatus) return;
+            themeFontFileStatus.classList.remove('is-ready', 'is-warning');
+            if (!themeFontSelectedFile) {
+                themeFontFileStatus.textContent = message || '支持 TTF、OTF、WOFF、WOFF2，单个文件不超过 20 MB';
+                return;
+            }
+            const sizeMb = (themeFontSelectedFile.size / (1024 * 1024)).toFixed(1);
+            const largeFile = themeFontSelectedFile.size > THEME_FONT_WARNING_FILE_SIZE;
+            themeFontFileStatus.classList.add(largeFile ? 'is-warning' : 'is-ready');
+            themeFontFileStatus.textContent = largeFile
+                ? `${themeFontSelectedFile.name} · ${sizeMb} MB，文件较大，建议优先使用 WOFF2`
+                : `${themeFontSelectedFile.name} · ${sizeMb} MB，已准备添加`;
+        }
+
+        async function readThemeFontFileAsDataUrl(file) {
+            if (typeof window.appStorage?.blobToDataUrl === 'function') {
+                return window.appStorage.blobToDataUrl(file);
+            }
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result || ''));
+                reader.onerror = () => reject(reader.error || new Error('字体文件读取失败'));
+                reader.readAsDataURL(file);
             });
         }
-        
-        if (themeFontLinkFocusBtn) {
-            themeFontLinkFocusBtn.addEventListener('click', () => {
-                themeFontCustomSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                themeFontNameInput?.focus();
-            });
+
+        function buildThemeFontLinkSources(url, format) {
+            const sources = cloneThemeFontSources();
+            sources[format || 'woff2'] = url;
+            return sources;
         }
-        
-        if (themeFontApplyCustomBtn) {
-            themeFontApplyCustomBtn.addEventListener('click', () => {
-                const draftPreset = buildThemeFontDraftFromInputs();
-                if (!draftPreset) return;
-                themeState.fontMode = 'saved';
-                themeState.fontPresetKey = '__draft__';
-                themeState.fontCssName = draftPreset.cssName;
-                themeState.fontFamily = draftPreset.family;
-                themeState.fontSources = cloneThemeFontSources(draftPreset.sources);
-                commitThemeFontChanges('链接字体已应用');
-            });
-        }
-        
-        if (themeFontSavePresetBtn) {
-            themeFontSavePresetBtn.addEventListener('click', () => {
-                ensureThemeFontStateShape();
-                const draftPreset = buildThemeFontDraftFromInputs();
-                if (!draftPreset) return;
-        
-                const existingIndex = themeState.savedFontPresets.findIndex((preset) => preset.name === draftPreset.name);
-                const presetId = existingIndex >= 0 ? themeState.savedFontPresets[existingIndex].id : `font_preset_${Date.now()}`;
-                const nextPreset = normalizeThemeFontPreset({ ...draftPreset, id: presetId });
-        
-                if (existingIndex >= 0) {
-                    themeState.savedFontPresets[existingIndex] = nextPreset;
+
+        async function addAndApplyThemeFont() {
+            ensureThemeFontStateShape();
+            const rawName = themeFontSourceMode === 'local' ? themeFontLocalNameInput?.value : themeFontNameInput?.value;
+            const name = sanitizeThemeFontLabel(rawName || '');
+            if (!String(rawName || '').trim()) {
+                showToast('请填写字体名称');
+                return;
+            }
+            const existingIndex = themeState.savedFontPresets.findIndex(preset => preset.name === name);
+            const previousPreset = existingIndex >= 0 ? themeState.savedFontPresets[existingIndex] : null;
+            const presetId = previousPreset?.id || `font_preset_${Date.now()}`;
+            const cssName = createThemeFontInternalName(presetId);
+            let nextPreset = null;
+            let newAssetId = '';
+
+            try {
+                if (themeFontAddBtn) themeFontAddBtn.disabled = true;
+                if (themeFontSourceMode === 'local') {
+                    const file = themeFontSelectedFile;
+                    const format = inferThemeFontFormat(file?.name || '');
+                    if (!file || !format) throw new Error('请选择支持的字体文件');
+                    if (file.size <= 0) throw new Error('字体文件为空');
+                    if (file.size > THEME_FONT_MAX_FILE_SIZE) throw new Error('字体文件不能超过 20 MB');
+                    if (typeof window.appStorage?.saveAssetFromDataUrl !== 'function') throw new Error('字体存储服务不可用');
+                    const dataUrl = await readThemeFontFileAsDataUrl(file);
+                    newAssetId = `theme_font_${presetId}_${Date.now()}`;
+                    await window.appStorage.saveAssetFromDataUrl(newAssetId, dataUrl, {
+                        kind: 'theme-font',
+                        fileName: file.name,
+                        fontFormat: format
+                    });
+                    nextPreset = normalizeThemeFontPreset({
+                        id: presetId,
+                        name,
+                        cssName,
+                        sourceType: 'local',
+                        fontAssetId: newAssetId,
+                        fontFormat: format,
+                        sources: {}
+                    });
                 } else {
-                    themeState.savedFontPresets.push(nextPreset);
+                    const rawUrl = String(themeFontUrlInput?.value || '').trim();
+                    let parsedUrl;
+                    try {
+                        parsedUrl = new URL(rawUrl);
+                    } catch (error) {
+                        throw new Error('请输入完整的字体链接');
+                    }
+                    if (!['http:', 'https:'].includes(parsedUrl.protocol)) throw new Error('字体链接仅支持 HTTP 或 HTTPS');
+                    const format = inferThemeFontFormat(parsedUrl.pathname) || 'woff2';
+                    nextPreset = normalizeThemeFontPreset({
+                        id: presetId,
+                        name,
+                        cssName,
+                        sourceType: 'link',
+                        fontFormat: format,
+                        sources: buildThemeFontLinkSources(rawUrl, format)
+                    });
                 }
-                
-                themeState.fontMode = 'saved';
-                themeState.fontPresetKey = nextPreset.id;
-                themeState.fontCssName = nextPreset.cssName;
-                themeState.fontFamily = nextPreset.family;
-                themeState.fontSources = cloneThemeFontSources(nextPreset.sources);
-                
+
+                await loadThemeFontDefinition(nextPreset);
+                if (existingIndex >= 0) themeState.savedFontPresets[existingIndex] = nextPreset;
+                else themeState.savedFontPresets.push(nextPreset);
+                setThemeFontStateFromDefinition(nextPreset);
+                renderThemeFontPresetLists();
+                renderThemeFontPreview();
+                await applyThemeFont(themeState, { fallbackOnError: false });
+                await saveGlobalData();
+
+                if (previousPreset?.fontAssetId && previousPreset.fontAssetId !== newAssetId && typeof window.appStorage?.deleteAsset === 'function') {
+                    await window.appStorage.deleteAsset(previousPreset.fontAssetId);
+                }
                 syncThemeFontInputsFromState();
-                commitThemeFontChanges(existingIndex >= 0 ? '字体预设已更新' : '字体预设已保存');
-            });
+                showToast(existingIndex >= 0 ? '字体已更新并应用' : '字体已添加并应用');
+            } catch (error) {
+                console.warn('Failed to add theme font:', error);
+                if (newAssetId && typeof window.appStorage?.deleteAsset === 'function') {
+                    await window.appStorage.deleteAsset(newAssetId).catch(() => undefined);
+                }
+                showToast(error?.message || '字体添加失败');
+            } finally {
+                if (themeFontAddBtn) themeFontAddBtn.disabled = false;
+            }
         }
-        
+
+        function openThemeFontModal() {
+            if (!themeFontModal) return;
+            syncThemeFontInputsFromState();
+            renderThemeFontPresetLists();
+            setThemeFontSourceMode('local');
+            themeFontModal.classList.add('active');
+            themeFontModal.setAttribute('aria-hidden', 'false');
+        }
+
+        function closeThemeFontModal() {
+            if (!themeFontModal) return;
+            themeFontModal.classList.remove('active');
+            themeFontModal.setAttribute('aria-hidden', 'true');
+        }
+
+        themeFontBtn?.addEventListener('click', (event) => {
+            event.stopPropagation();
+            openThemeFontModal();
+        });
+        themeFontCloseBtn?.addEventListener('click', closeThemeFontModal);
+        themeFontModal?.addEventListener('click', (event) => {
+            if (event.target === themeFontModal) closeThemeFontModal();
+        });
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && themeFontModal?.classList.contains('active')) closeThemeFontModal();
+        });
+        themeFontSourceTabs.forEach(tab => tab.addEventListener('click', () => setThemeFontSourceMode(tab.dataset.fontSource)));
+        themeFontUploadBtn?.addEventListener('click', () => themeFontFileInput?.click());
+        themeFontFileInput?.addEventListener('change', () => {
+            const file = themeFontFileInput.files?.[0] || null;
+            const format = inferThemeFontFormat(file?.name || '');
+            if (!file || !format) {
+                themeFontSelectedFile = null;
+                updateThemeFontFileStatus(file ? '不支持该字体格式' : '');
+                if (file) showToast('仅支持 TTF、OTF、WOFF、WOFF2');
+                return;
+            }
+            if (file.size > THEME_FONT_MAX_FILE_SIZE) {
+                themeFontSelectedFile = null;
+                themeFontFileInput.value = '';
+                updateThemeFontFileStatus('字体文件不能超过 20 MB');
+                showToast('字体文件不能超过 20 MB');
+                return;
+            }
+            themeFontSelectedFile = file;
+            if (themeFontLocalNameInput && !themeFontLocalNameInput.value.trim()) {
+                themeFontLocalNameInput.value = file.name.replace(/\.[^.]+$/, '');
+            }
+            updateThemeFontFileStatus();
+        });
+        themeFontAddBtn?.addEventListener('click', addAndApplyThemeFont);
+
         if (themeFontSizeSlider) {
             themeFontSizeSlider.addEventListener('input', (event) => {
                 themeState.fontSize = normalizeThemeFontSize(event.target.value);
                 renderThemeFontPreview();
-                applyThemeFont(themeState);
+                const family = document.documentElement.style.getPropertyValue('--theme-font-family') || getActiveThemeFontDefinition(themeState).family;
+                applyThemeFontCss(family, themeState.fontSize);
                 scheduleThemeFontSave();
             });
-            themeFontSizeSlider.addEventListener('change', (event) => {
+            themeFontSizeSlider.addEventListener('change', () => {
                 if (themeFontSaveTimer) {
                     clearTimeout(themeFontSaveTimer);
                     themeFontSaveTimer = null;
@@ -2826,6 +2986,11 @@
                 showToast(`字体大小已调整为 ${themeState.fontSize}px`);
             });
         }
+
+        // Font helpers and runtime registries must exist before restoring a saved local font.
+        themeFontRuntimeReady = true;
+        await applySavedTheme();
+        document.dispatchEvent(new CustomEvent('u2-theme-state-ready'));
         
         // ==========================================
         // API CONFIGURATION LOGIC

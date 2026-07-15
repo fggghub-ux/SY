@@ -167,9 +167,9 @@ test('Char edit sheet is hardened against Android input focus overflow', () => {
 test('changed Android input assets are cache-busted', () => {
     assert.match(indexSource, /css\/global\.css\?v=20260714-assistive-ball-image-v1/);
     assert.match(indexSource, /css\/imessage\.css\?v=20260714-offline-global-theme-v8/);
-    assert.match(indexSource, /css\/settings\.css\?v=20260712-login-notice-v1/);
+    assert.match(indexSource, /css\/settings\.css\?v=20260715-font-upload-v1/);
     assert.match(indexSource, /js\/mobile_input_compat\.js\?v=20260713-bstage-enter-v1/);
-    assert.match(indexSource, /js\/settings\.js\?v=20260714-assistive-ball-image-v1/);
+    assert.match(indexSource, /js\/settings\.js\?v=20260715-font-upload-v1/);
     assert.match(indexSource, /id="storage-clean-cache-btn"[^>]*>优化存储<\/button>/);
     assert.match(settingsSource, /appStorage\.optimizeStorage\(\{ progressCallback: updateOperation \}\)/);
 });
