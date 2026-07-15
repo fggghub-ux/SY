@@ -253,6 +253,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (moreActions && mainActions) {
                         mainActions.style.display = 'none';
                         moreActions.style.display = 'flex';
+                        requestAnimationFrame(() => {
+                            window.imChat.fitContextMenuToViewport?.();
+                        });
                     }
                     return;
                 }

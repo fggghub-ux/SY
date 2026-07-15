@@ -8,6 +8,40 @@ document.addEventListener('DOMContentLoaded', () => {
     window.imChat = window.imChat || {};
     const imChat = window.imChat;
     const offlineRegexEngine = window.imOfflineRegex;
+    const offlineReasoning = window.imOfflineReasoning;
+    const OFFLINE_COT_PROMPT_IDS = new Set([
+        'cot_before',
+        'cot_scene_planning',
+        'cot_literary_guidance',
+        'cot_language_check',
+        'cot_output_audit',
+        'cot_after'
+    ]);
+    const OFFLINE_CHAT_HISTORY_PROMPT_ID = 'chat_history';
+    const OFFLINE_TAVERN_PROMPT_ORDER = [
+        'role_identity',
+        'data_zone',
+        'memory_system',
+        OFFLINE_CHAT_HISTORY_PROMPT_ID,
+        'task_instruction',
+        'length_words',
+        'nsfw',
+        'format_rules',
+        'bilingual_dialogue',
+        'perspective_first',
+        'perspective_second',
+        'perspective_third',
+        'barrage_comments',
+        'player_choices',
+        'style_baimiao',
+        'style_green_apple',
+        'cot_before',
+        'cot_scene_planning',
+        'cot_literary_guidance',
+        'cot_language_check',
+        'cot_output_audit',
+        'cot_after'
+    ];
 
 async function commitSheetFriendChange(friendOrId, mutator, options = {}) {
         if (!window.imApp.commitFriendChange) return false;
@@ -879,7 +913,9 @@ function createAttachmentSheet(page) {
 
         const stripOfflineDecorativeMarkup = (value) => {
             let text = String(value == null ? '' : value).replace(/\r\n/g, '\n');
-            text = text.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
+            text = offlineReasoning
+                ? offlineReasoning.normalizeResponse(text, '').content
+                : text.replace(/<\s*think(?:ing)?\s*>[\s\S]*?<\s*\/\s*think(?:ing)?\s*>/gi, '').trim();
             text = parseOfflineBarrageBlocks(text).cleanText;
             text = parseOfflineChoiceBlocks(text).cleanText;
             text = text.replace(/<speech\b([^>]*)>([\s\S]*?)<\/speech>/gi, (_, attrText, innerText) => {
@@ -1146,23 +1182,37 @@ function createAttachmentSheet(page) {
             return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${pad(date.getHours())}:${pad(date.getMinutes())}`;
         };
 
-        const cloneOfflineMeetingMessages = (messages) => (Array.isArray(messages) ? messages : []).map((message, index) => ({
-            id: message?.id || createOfflineTavernId(message?.role === 'assistant' ? 'offline-ai' : 'offline-user'),
-            role: message?.role === 'assistant' ? 'assistant' : 'user',
-            content: String(message?.content || ''),
-            timestamp: Number(message?.timestamp) || Date.now() + index,
-            tokens: message?.role === 'assistant' ? Math.max(0, Number(message?.tokens) || estimateOfflineTextTokens(message?.content || '')) : undefined,
-            updatedAt: message?.updatedAt || undefined,
-            offlineRegexAppliedRevisions: offlineRegexEngine?.normalizeAppliedRevisions(message?.offlineRegexAppliedRevisions) || {}
-        }));
+        const cloneOfflineMeetingMessages = (messages) => (Array.isArray(messages) ? messages : []).map((message, index) => {
+            const role = message?.role === 'assistant' ? 'assistant' : 'user';
+            const parsed = role === 'assistant' && offlineReasoning
+                ? offlineReasoning.normalizeResponse(message?.content || '', message?.reasoning || '')
+                : { content: String(message?.content || ''), reasoning: '' };
+            return {
+                id: message?.id || createOfflineTavernId(role === 'assistant' ? 'offline-ai' : 'offline-user'),
+                role,
+                content: parsed.content,
+                reasoning: role === 'assistant' && parsed.reasoning ? parsed.reasoning : undefined,
+                timestamp: Number(message?.timestamp) || Date.now() + index,
+                tokens: role === 'assistant' ? Math.max(0, Number(message?.tokens) || estimateOfflineTextTokens(parsed.content)) : undefined,
+                updatedAt: message?.updatedAt || undefined,
+                generationState: message?.generationState === 'failed' ? 'failed' : undefined,
+                generationError: message?.generationState === 'failed' && message?.generationError
+                    ? String(message.generationError)
+                    : undefined,
+                offlineRegexAppliedRevisions: offlineRegexEngine?.normalizeAppliedRevisions(message?.offlineRegexAppliedRevisions) || {}
+            };
+        });
 
         const serializeOfflineMessagesForCompare = (messages) => JSON.stringify((messages || []).map(message => ({
             id: message.id,
             role: message.role,
             content: message.content,
+            reasoning: message.reasoning || '',
             timestamp: message.timestamp,
             tokens: message.tokens || 0,
             updatedAt: message.updatedAt || '',
+            generationState: message.generationState || '',
+            generationError: message.generationError || '',
             offlineRegexAppliedRevisions: message.offlineRegexAppliedRevisions || {}
         })));
 
@@ -2433,19 +2483,15 @@ function createAttachmentSheet(page) {
                 avatarHtml = `<div class="offline-tavern-avatar"><img src="${escapeSheetHtml(userAvatar)}" alt="avatar"></div>`;
             }
 
-            // 解析 thinking 标签
+            // reasoning 与正文分开渲染；旧标签消息在这里仍可兼容解析。
             let displayThinking = '';
-            let rawThinking = '';
-            const displayContent = applyOfflineRegexText(friend, message.content, message.role, depth, 'display');
-            let displayText = displayContent;
-            
-            const thinkingMatch = displayContent.match(/<thinking>([\s\S]*?)<\/thinking>/);
-            if (thinkingMatch) {
-                rawThinking = thinkingMatch[1];
-                // 将原始文本中的 thinking 块移除，剩余的作为正文
-                displayText = displayContent.replace(/<thinking>[\s\S]*?<\/thinking>/, '').trim();
-                
-                // 构建可折叠的 thinking 气泡 UI
+            const parsedMessage = !isUser && offlineReasoning
+                ? offlineReasoning.normalizeResponse(message.content, message.reasoning)
+                : { content: String(message.content || ''), reasoning: '' };
+            const rawThinking = parsedMessage.reasoning;
+            const displayText = applyOfflineRegexText(friend, parsedMessage.content, message.role, depth, 'display');
+
+            if (rawThinking) {
                 displayThinking = `
                     <div class="offline-tavern-thinking-content" data-raw-thinking="${escapeSheetHtml(rawThinking)}" style="display: none; background: #f8f8f8; border: 1px solid #e5e5ea; border-radius: 12px; padding: 10px 14px; margin-top: 8px; font-size: 13px; white-space: pre-wrap; word-break: break-word; color: #666; width: 100%; box-sizing: border-box;">${escapeSheetHtml(rawThinking.trim())}</div>
                 `;
@@ -2464,7 +2510,7 @@ function createAttachmentSheet(page) {
                     ${avatarHtml}
                     <div class="offline-tavern-name-container">
                         <span class="offline-tavern-name">${escapeSheetHtml(userName)}</span>
-                        ${thinkingMatch ? `<i class="fas fa-chevron-down offline-tavern-thinking-icon" style="transition: transform 0.3s; cursor: pointer; color: #8e8e93; margin-left: 4px;"></i>` : ''}
+                        ${rawThinking ? `<i class="fas fa-chevron-down offline-tavern-thinking-icon" style="transition: transform 0.3s; cursor: pointer; color: #8e8e93; margin-left: 4px;"></i>` : ''}
                     </div>
                     ${userSign ? `<div class="offline-tavern-sign">${escapeSheetHtml(userSign)}</div>` : ''}
                     ${displayThinking}
@@ -2513,7 +2559,7 @@ function createAttachmentSheet(page) {
                 });
             });
 
-            bindOfflineTavernTextControls(bubbleDiv, { ...message, content: displayContent }, friend, floor);
+            bindOfflineTavernTextControls(bubbleDiv, { ...message, content: displayText, reasoning: rawThinking || undefined }, friend, floor);
 
             contentArea.appendChild(bubbleDiv);
             contentArea.scrollTop = contentArea.scrollHeight;
@@ -2525,6 +2571,7 @@ function createAttachmentSheet(page) {
                 id: options.id || createOfflineTavernId(isUser ? 'offline-user' : 'offline-ai'),
                 role: isUser ? 'user' : 'assistant',
                 content: initialText,
+                reasoning: options.reasoning || '',
                 timestamp: options.timestamp || Date.now(),
                 tokens: options.tokens || 0
             };
@@ -2534,154 +2581,124 @@ function createAttachmentSheet(page) {
                 actionsDisabled: true
             });
             if (!bubbleDiv) return null;
-            
-            let currentText = initialText;
-            
-            return {
-                appendChunk: (chunk) => {
-                    currentText += chunk;
-                    
-                    // 解析流式文本并更新 DOM
-                    const displaySource = applyOfflineStreamingRegexText(
-                        window.imData.currentActiveFriend,
-                        currentText,
-                        message.role,
-                        Number.isInteger(Number(options.depth)) ? Number(options.depth) : 0
-                    );
-                    let displayText = displaySource;
-                    let displayThinking = '';
-                    
-                    let isThinkingStarted = false;
-                    let isThinkingEnded = false;
-                    let currentThinking = '';
+            let currentContent = initialText;
+            let currentNativeReasoning = String(options.reasoning || '');
+            let lastVisibleReasoning = String(options.reasoning || '').trim();
+            let generationFinished = false;
+            let autoCollapsed = false;
 
-                    const startMatch = displaySource.match(/<t(h(i(n(k(i(n(g(>)?)?)?)?)?)?)?)?/);
-                    const endMatch = displaySource.match(/<\/t(h(i(n(k(i(n(g(>)?)?)?)?)?)?)?)?/);
+            const renderStreamingState = () => {
+                const currentParsed = offlineReasoning
+                    ? offlineReasoning.normalizeResponse(currentContent, currentNativeReasoning, { streaming: !generationFinished })
+                    : { content: currentContent, reasoning: currentNativeReasoning, incomplete: false };
+                if (String(currentParsed.reasoning || '').trim()) {
+                    lastVisibleReasoning = String(currentParsed.reasoning).trim();
+                }
+                const parsed = lastVisibleReasoning && !String(currentParsed.reasoning || '').trim()
+                    ? { ...currentParsed, reasoning: lastVisibleReasoning }
+                    : currentParsed;
+                const activeFriend = window.imData.currentActiveFriend;
+                const depth = Number.isInteger(Number(options.depth)) ? Number(options.depth) : 0;
+                const displayText = applyOfflineStreamingRegexText(activeFriend, parsed.content, message.role, depth);
+                const header = bubbleDiv.querySelector('.offline-tavern-bubble-header');
+                const nameContainer = header?.querySelector('.offline-tavern-name-container');
+                let thinkingIcon = nameContainer?.querySelector('.offline-tavern-thinking-icon');
+                let thinkingContent = header?.querySelector('.offline-tavern-thinking-content');
 
-                    if (startMatch) {
-                        isThinkingStarted = true;
-                        const startIdx = startMatch.index;
-                        let innerStartIdx = startIdx + startMatch[0].length;
-
-                        // Check if we actually have the full opening tag, otherwise we assume the content hasn't fully started
-                        if (displaySource.substring(startIdx, innerStartIdx) !== '<thinking>') {
-                            innerStartIdx = startIdx; // Do not parse thinking text yet if tag incomplete
-                        }
-
-                        if (endMatch) {
-                            const endIdx = endMatch.index;
-                            isThinkingEnded = true;
-                            // Extract thinking content
-                            if (displaySource.substring(startIdx, startIdx + 10) === '<thinking>') {
-                                currentThinking = displaySource.substring(startIdx + 10, endIdx);
-                            }
-                            
-                            // displayText is what comes before <thinking and after </thinking>
-                            displayText = displaySource.substring(0, startIdx) + displaySource.substring(endIdx + endMatch[0].length);
-                        } else {
-                            // Thinking has started but not ended
-                            if (displaySource.substring(startIdx, startIdx + 10) === '<thinking>') {
-                                currentThinking = displaySource.substring(startIdx + 10);
-                            }
-                            // Only show text before the thinking tag started
-                            displayText = displaySource.substring(0, startIdx);
-                        }
+                if (parsed.reasoning) {
+                    if (!thinkingIcon && nameContainer) {
+                        nameContainer.insertAdjacentHTML('beforeend', '<i class="fas fa-chevron-down offline-tavern-thinking-icon" style="transition: transform 0.3s; cursor: pointer; color: #8e8e93; margin-left: 4px;"></i>');
+                        thinkingIcon = nameContainer.querySelector('.offline-tavern-thinking-icon');
+                        thinkingIcon?.addEventListener('click', (event) => {
+                            event.stopPropagation();
+                            const content = bubbleDiv.querySelector('.offline-tavern-thinking-content');
+                            if (!content) return;
+                            const willOpen = content.style.display === 'none';
+                            content.style.display = willOpen ? 'block' : 'none';
+                            thinkingIcon.style.transform = willOpen ? 'rotate(180deg)' : 'rotate(0deg)';
+                        });
                     }
-                    
-                    let thinkingHtml = '';
-                    let thinkingIconHtml = '';
-                    
-                    if (isThinkingStarted) {
-                        thinkingIconHtml = `<i class="fas fa-chevron-down offline-tavern-thinking-icon" style="transition: transform 0.3s; cursor: pointer; color: #8e8e93; margin-left: 4px; ${!isThinkingEnded ? 'transform: rotate(180deg);' : ''}"></i>`;
-                        thinkingHtml = `
-                            <div class="offline-tavern-thinking-content" data-raw-thinking="${escapeSheetHtml(currentThinking)}" style="${isThinkingEnded ? 'display: none;' : 'display: block;'} background: #f8f8f8; border: 1px solid #e5e5ea; border-radius: 12px; padding: 10px 14px; margin-top: 8px; font-size: 13px; white-space: pre-wrap; word-break: break-word; color: #666; width: 100%; box-sizing: border-box;">${escapeSheetHtml(currentThinking.trim() || '思考中...')}</div>
-                        `;
+                    if (!thinkingContent && header) {
+                        header.insertAdjacentHTML('beforeend', '<div class="offline-tavern-thinking-content" style="display:none; background:#f8f8f8; border:1px solid #e5e5ea; border-radius:12px; padding:10px 14px; margin-top:8px; font-size:13px; white-space:pre-wrap; word-break:break-word; color:#666; width:100%; box-sizing:border-box;"></div>');
+                        thinkingContent = header.querySelector('.offline-tavern-thinking-content');
                     }
-                    
-                    const header = bubbleDiv.querySelector('.offline-tavern-bubble-header');
-                    if (header) {
-                        const nameContainer = header.querySelector('.offline-tavern-name-container');
-                        if (nameContainer) {
-                            const existingIcon = nameContainer.querySelector('.offline-tavern-thinking-icon');
-                            if (thinkingIconHtml && !existingIcon) {
-                                nameContainer.insertAdjacentHTML('beforeend', thinkingIconHtml);
-                                
-                                // 为新添加的图标绑定事件
-                                const newIcon = nameContainer.querySelector('.offline-tavern-thinking-icon');
-                                newIcon.addEventListener('click', (e) => {
-                                    e.stopPropagation();
-                                    const content = bubbleDiv.querySelector('.offline-tavern-thinking-content');
-                                    if (content) {
-                                        if (content.style.display === 'none') {
-                                            content.style.display = 'block';
-                                            newIcon.style.transform = 'rotate(180deg)';
-                                        } else {
-                                            content.style.display = 'none';
-                                            newIcon.style.transform = 'rotate(0deg)';
-                                        }
-                                    }
-                                });
-                            } else if (existingIcon && !isThinkingEnded) {
-                                existingIcon.style.transform = 'rotate(180deg)';
-                            } else if (existingIcon && isThinkingEnded && existingIcon.dataset.autoClosed !== 'true') {
-                                // Auto close it once when ended
-                                existingIcon.style.transform = 'rotate(0deg)';
-                                existingIcon.dataset.autoClosed = 'true';
-                            }
-                        }
-                        
-                        let thinkingContent = header.querySelector('.offline-tavern-thinking-content');
-                        if (thinkingHtml) {
-                            if (!thinkingContent) {
-                                header.insertAdjacentHTML('beforeend', thinkingHtml);
-                            } else {
-                                thinkingContent.setAttribute('data-raw-thinking', currentThinking);
-                                thinkingContent.innerHTML = escapeSheetHtml(currentThinking.trim() || '思考中...');
-                                if (!isThinkingEnded && thinkingContent.style.display === 'none') {
-                                    thinkingContent.style.display = 'block';
-                                } else if (isThinkingEnded && thinkingContent.dataset.autoClosed !== 'true') {
-                                    thinkingContent.style.display = 'none';
-                                    thinkingContent.dataset.autoClosed = 'true';
-                                }
-                            }
-                        }
+                    if (thinkingContent) {
+                        thinkingContent.setAttribute('data-raw-thinking', parsed.reasoning);
+                        thinkingContent.textContent = parsed.reasoning;
                     }
-                    
-                    let textEl = bubbleDiv.querySelector('.offline-tavern-bubble-text');
-                    if (displayText.trim() !== '') {
-                        if (!textEl) {
-                            bubbleDiv.insertAdjacentHTML('beforeend', `<div class="offline-tavern-bubble-text"></div>`);
-                            textEl = bubbleDiv.querySelector('.offline-tavern-bubble-text');
-                        }
+                    const reasoningOnly = !generationFinished && !parsed.content && (parsed.incomplete || !!currentNativeReasoning);
+                    if (reasoningOnly && !autoCollapsed) {
+                        if (thinkingContent) thinkingContent.style.display = 'block';
+                        if (thinkingIcon) thinkingIcon.style.transform = 'rotate(180deg)';
+                    } else if (!autoCollapsed) {
+                        if (thinkingContent) thinkingContent.style.display = 'none';
+                        if (thinkingIcon) thinkingIcon.style.transform = 'rotate(0deg)';
+                        autoCollapsed = true;
+                    }
+                } else {
+                    thinkingIcon?.remove();
+                    thinkingContent?.remove();
+                }
+
+                const textEl = bubbleDiv.querySelector('.offline-tavern-bubble-text');
+                if (textEl) {
+                    if (displayText) {
                         textEl.style.display = '';
                         textEl.innerHTML = buildOfflineTavernTextHtml(displayText, {
                             messageId: message.id,
                             enableVoice: !isUser,
-                            enableBarrage: !isUser && isOfflineBarragePromptEnabled(window.imData.currentActiveFriend),
-                            enableChoices: !isUser && isOfflineChoicesPromptEnabled(window.imData.currentActiveFriend),
-                            language: window.imData.currentActiveFriend?.language || 'zh'
+                            enableBarrage: !isUser && isOfflineBarragePromptEnabled(activeFriend),
+                            enableChoices: !isUser && isOfflineChoicesPromptEnabled(activeFriend),
+                            language: activeFriend?.language || 'zh'
                         });
-                        bindOfflineTavernTextControls(bubbleDiv, message, window.imData.currentActiveFriend, Number(options.floor) || 1);
-                    } else if (textEl) {
-                        // Clear text if it became empty (e.g. was a partial thinking tag)
+                        bindOfflineTavernTextControls(bubbleDiv, { ...message, content: parsed.content, reasoning: parsed.reasoning }, activeFriend, Number(options.floor) || 1);
+                    } else {
                         textEl.innerHTML = '';
                         textEl.style.display = 'none';
                     }
-                    
-                    const contentArea = document.getElementById('offline-tavern-content');
-                    if (contentArea) {
-                        // Keep scrolled to bottom during generation
-                        contentArea.scrollTop = contentArea.scrollHeight;
-                    }
+                }
+
+                const contentArea = document.getElementById('offline-tavern-content');
+                if (contentArea) contentArea.scrollTop = contentArea.scrollHeight;
+                return parsed;
+            };
+
+            return {
+                appendContentChunk: (chunk) => {
+                    currentContent += String(chunk || '');
+                    renderStreamingState();
+                },
+                appendReasoningChunk: (chunk) => {
+                    currentNativeReasoning += String(chunk || '');
+                    renderStreamingState();
+                },
+                appendChunk: (chunk) => {
+                    currentContent += String(chunk || '');
+                    renderStreamingState();
+                },
+                finish: () => {
+                    generationFinished = true;
+                    const parsed = renderStreamingState();
+                    return lastVisibleReasoning && !String(parsed.reasoning || '').trim()
+                        ? { ...parsed, reasoning: lastVisibleReasoning }
+                        : parsed;
                 },
                 setTokens: (tokens) => {
                     const safeTokens = Math.max(0, Number(tokens) || 0);
                     const metaEl = bubbleDiv.querySelector('.offline-tavern-bubble-meta');
                     if (metaEl) {
-                        metaEl.textContent = `#${Number(options.floor) || 1} · ${safeTokens || estimateOfflineTextTokens(currentText)} tokens · ${formatOfflineBubbleTime(message.timestamp)}`;
+                        metaEl.textContent = `#${Number(options.floor) || 1} · ${safeTokens || estimateOfflineTextTokens(currentContent)} tokens · ${formatOfflineBubbleTime(message.timestamp)}`;
                     }
                 },
-                getFullText: () => currentText
+                getResult: () => {
+                    const parsed = offlineReasoning
+                        ? offlineReasoning.normalizeResponse(currentContent, currentNativeReasoning)
+                        : { content: currentContent, reasoning: currentNativeReasoning };
+                    return lastVisibleReasoning && !String(parsed.reasoning || '').trim()
+                        ? { ...parsed, reasoning: lastVisibleReasoning }
+                        : parsed;
+                },
+                getFullText: () => currentContent
             };
         };
 
@@ -3208,10 +3225,7 @@ function createAttachmentSheet(page) {
         const buildOfflineApiMessages = (activeFriend, offlineMessagesForContext) => {
             const currentUserState = window.getUserState ? window.getUserState() : (window.userState || {});
             const identityContext = getOfflineIdentityContext(activeFriend, currentUserState);
-            const { userName, charName, isGroup } = identityContext;
-            const systemPrompt = isGroup
-                ? `You are the narrator and director of a fictional face-to-face group scene centered on ${userName}, involving these group members: ${charName}. You are not the group itself and must not speak as a single group entity.`
-                : `You are the narrator and director of a fictional face-to-face scene centered on ${userName}, featuring ${charName}. Write narrative fiction rather than speaking as an assistant.`;
+            const { userName, charName } = identityContext;
             const historyMessages = getOfflineContextMessages(activeFriend, offlineMessagesForContext);
             const worldBookContextText = [
                 ...historyMessages.map(m => m.content || ''),
@@ -3230,33 +3244,38 @@ function createAttachmentSheet(page) {
                 worldBookContexts
             });
             const memorySystemContext = buildOfflineMemorySystemContext(activeFriend, worldBookContextText);
-            const finalPrompts = [];
             const offlinePrompts = ensureOfflinePromptsForFriend(activeFriend);
+            const requestReasoning = activeFriend?.offlineRequestReasoning !== false;
+            const apiMessages = [];
+            let historyMounted = false;
 
-            for (let p of offlinePrompts) {
-                const isEnabled = p.alwaysEnabled || p.enabled;
-                if (!isEnabled) continue;
-                if (p.id === 'data_zone') finalPrompts.push(replaceOfflinePromptVariables(dataZoneContext, identityContext));
-                else if (p.id === 'memory_system') finalPrompts.push(replaceOfflinePromptVariables(memorySystemContext, identityContext));
-                else if (p.content && p.content.trim()) finalPrompts.push(replaceOfflinePromptVariables(p.content.trim(), identityContext));
-            }
-
-            const combinedPromptsText = finalPrompts.join('\n\n');
-            if (combinedPromptsText) {
-                const insertIndex = Math.max(0, historyMessages.length - 3);
-                historyMessages.splice(insertIndex, 0, {
-                    role: 'system',
-                    content: `[System Instruction for Current Roleplay]:\n${combinedPromptsText}`
-                });
-            }
-
-            return [
-                { role: 'system', content: systemPrompt },
-                ...historyMessages.map(message => ({
+            const mountHistory = () => {
+                if (historyMounted) return;
+                apiMessages.push(...historyMessages.map(message => ({
                     role: message.role,
                     content: message.content
-                }))
-            ];
+                })));
+                historyMounted = true;
+            };
+
+            for (let p of offlinePrompts) {
+                if (p.id === OFFLINE_CHAT_HISTORY_PROMPT_ID) {
+                    mountHistory();
+                    continue;
+                }
+                const isEnabled = p.alwaysEnabled || p.enabled;
+                if (!isEnabled) continue;
+                if (!requestReasoning && OFFLINE_COT_PROMPT_IDS.has(p.id)) continue;
+                let promptContent = '';
+                if (p.id === 'data_zone') promptContent = replaceOfflinePromptVariables(dataZoneContext, identityContext);
+                else if (p.id === 'memory_system') promptContent = replaceOfflinePromptVariables(memorySystemContext, identityContext);
+                else if (p.content && p.content.trim()) promptContent = replaceOfflinePromptVariables(p.content.trim(), identityContext);
+                if (!promptContent) continue;
+                apiMessages.push({ role: 'system', content: promptContent });
+            }
+
+            mountHistory();
+            return apiMessages;
         };
 
         const requestOfflineAssistantReply = async (apiMessages, streamingBubble = null, options = {}) => {
@@ -3273,11 +3292,32 @@ function createAttachmentSheet(page) {
                 endpoint = endpoint.endsWith('/v1') ? `${endpoint}/chat/completions` : `${endpoint}/v1/chat/completions`;
             }
 
-            const finishStream = (content, completionTokens = 0, aborted = false) => {
-                const finalText = streamingBubble ? streamingBubble.getFullText() : content;
-                const tokens = completionTokens || estimateOfflineTextTokens(finalText);
+            const finishStream = (content, nativeReasoning = '', completionTokens = 0, aborted = false, finishReason = '') => {
+                const streamedResult = streamingBubble?.finish
+                    ? streamingBubble.finish()
+                    : (streamingBubble?.getResult ? streamingBubble.getResult() : null);
+                const normalized = streamedResult || (offlineReasoning
+                    ? offlineReasoning.normalizeResponse(content, nativeReasoning)
+                    : { content: String(content || ''), reasoning: String(nativeReasoning || '') });
+                if (!aborted && !String(normalized.content || '').trim()) {
+                    const exhaustedTokens = ['length', 'max_tokens', 'max_completion_tokens'].includes(String(finishReason || '').toLowerCase());
+                    const error = new Error(exhaustedTokens && String(normalized.reasoning || '').trim()
+                        ? 'Offline assistant exhausted the response token limit during reasoning'
+                        : 'Offline assistant returned empty content');
+                    error.code = exhaustedTokens && String(normalized.reasoning || '').trim()
+                        ? 'reasoning_tokens_exhausted'
+                        : 'empty_response';
+                    error.finishReason = finishReason || '';
+                    throw error;
+                }
+                const tokens = completionTokens || estimateOfflineTextTokens(`${normalized.reasoning || ''}\n${normalized.content || ''}`);
                 if (streamingBubble?.setTokens) streamingBubble.setTokens(tokens);
-                return { content: finalText, tokens, aborted };
+                return {
+                    content: normalized.content,
+                    reasoning: normalized.reasoning || '',
+                    tokens,
+                    aborted
+                };
             };
 
             const requestBody = {
@@ -3286,6 +3326,17 @@ function createAttachmentSheet(page) {
                 temperature: parseFloat(currentApiConfig.temperature) || 0.7,
                 stream: useStreaming
             };
+            const reasoningRequest = offlineReasoning?.buildReasoningRequestConfig({
+                endpoint: currentApiConfig.endpoint,
+                model: currentApiConfig.model,
+                enabled: options.requestReasoning !== false,
+                maxTokens: options.maxResponseTokens
+            }) || {
+                enabled: options.requestReasoning !== false,
+                hasReasoningParameter: false,
+                parameters: { max_tokens: 30000 }
+            };
+            Object.assign(requestBody, reasoningRequest.parameters);
             if (useStreaming) requestBody.stream_options = { include_usage: true };
 
             let response = null;
@@ -3301,29 +3352,54 @@ function createAttachmentSheet(page) {
                 });
             } catch (error) {
                 if (signal?.aborted || error?.name === 'AbortError') {
-                    return finishStream('', 0, true);
+                    return finishStream('', '', 0, true);
                 }
                 throw error;
             }
 
             if (!response.ok) {
-                throw new Error(`HTTP Error: ${response.status}`);
+                const isUnsupportedReasoningConfig = reasoningRequest.hasReasoningParameter
+                    && (response.status === 400 || response.status === 422);
+                const error = new Error(isUnsupportedReasoningConfig
+                    ? 'Current API does not support automatic reasoning configuration'
+                    : `HTTP Error: ${response.status}`);
+                error.code = isUnsupportedReasoningConfig ? 'reasoning_config_unsupported' : 'http_error';
+                error.status = response.status;
+                throw error;
             }
 
-            if (!useStreaming) {
+            const responseContentType = String(response.headers?.get?.('content-type') || '').toLowerCase();
+            const returnedJsonInsteadOfStream = useStreaming && responseContentType.includes('application/json');
+            if (!useStreaming || returnedJsonInsteadOfStream) {
                 const data = await response.json();
-                const content = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || '';
+                const responseChoice = data?.choices?.[0] || {};
+                const responseMessage = responseChoice.message || {};
+                const content = offlineReasoning?.readFirstContentValue(
+                    responseMessage.content,
+                    responseMessage.output_text,
+                    responseChoice.text,
+                    data?.output_text
+                ) || '';
+                const nativeReasoning = offlineReasoning?.readFirstReasoningValue(
+                    responseMessage.reasoning_content,
+                    responseMessage.reasoning,
+                    responseMessage.reasoning_details
+                ) || '';
                 const completionTokens = Number(data?.usage?.completion_tokens) || 0;
-                if (streamingBubble && content) streamingBubble.appendChunk(content);
-                return finishStream(content, completionTokens, false);
+                if (streamingBubble && nativeReasoning) streamingBubble.appendReasoningChunk?.(nativeReasoning);
+                if (streamingBubble && content) (streamingBubble.appendContentChunk || streamingBubble.appendChunk)?.(content);
+                return finishStream(content, nativeReasoning, completionTokens, false, responseChoice.finish_reason);
             }
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder('utf-8');
             let done = false;
             let fullText = '';
+            let fullReasoning = '';
             let completionTokens = 0;
             let aborted = false;
+            let eventBuffer = '';
+            let finishReason = '';
 
             while (!done) {
                 let readResult = null;
@@ -3340,18 +3416,49 @@ function createAttachmentSheet(page) {
                 done = readerDone;
                 if (!value) continue;
                 const chunkStr = decoder.decode(value, { stream: !done });
-                const lines = chunkStr.split('\n');
+                const lines = `${eventBuffer}${chunkStr}`.split('\n');
+                eventBuffer = lines.pop() || '';
                 for (const line of lines) {
-                    if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
+                    const trimmedLine = line.trim();
+                    if (!trimmedLine.startsWith('data:')) continue;
+                    const eventData = trimmedLine.slice(5).trim();
+                    if (!eventData || eventData === '[DONE]') continue;
                     try {
-                        const data = JSON.parse(line.substring(6));
+                        const data = JSON.parse(eventData);
+                        if (data.choices?.[0]?.finish_reason) finishReason = data.choices[0].finish_reason;
                         if (data.usage?.completion_tokens != null) {
                             completionTokens = Number(data.usage.completion_tokens) || completionTokens;
                         }
-                        const deltaContent = data.choices?.[0]?.delta?.content || data.choices?.[0]?.text || '';
+                        const choice = data.choices?.[0] || {};
+                        const delta = choice.delta || {};
+                        const finalMessage = choice.message || {};
+                        const deltaReasoning = offlineReasoning?.readFirstReasoningValue(
+                            delta.reasoning_content,
+                            delta.reasoning,
+                            delta.reasoning_details,
+                            !fullReasoning ? finalMessage.reasoning_content : '',
+                            !fullReasoning ? finalMessage.reasoning : '',
+                            !fullReasoning ? finalMessage.reasoning_details : '',
+                            !fullReasoning ? choice.reasoning_content : '',
+                            !fullReasoning ? choice.reasoning : '',
+                            !fullReasoning ? data.reasoning_content : '',
+                            !fullReasoning ? data.reasoning : ''
+                        ) || '';
+                        if (deltaReasoning) {
+                            fullReasoning += deltaReasoning;
+                            if (streamingBubble?.appendReasoningChunk) streamingBubble.appendReasoningChunk(deltaReasoning);
+                        }
+                        const deltaContent = offlineReasoning?.readFirstContentValue(
+                            delta.content,
+                            delta.output_text,
+                            choice.text,
+                            data.output_text,
+                            !fullText ? finalMessage.content : '',
+                            !fullText ? finalMessage.output_text : ''
+                        ) || '';
                         if (deltaContent) {
                             fullText += deltaContent;
-                            if (streamingBubble) streamingBubble.appendChunk(deltaContent);
+                            if (streamingBubble) (streamingBubble.appendContentChunk || streamingBubble.appendChunk)?.(deltaContent);
                         }
                     } catch (error) {
                         // Ignore incomplete streaming JSON chunks.
@@ -3368,7 +3475,7 @@ function createAttachmentSheet(page) {
                 }
             }
 
-            return finishStream(fullText, completionTokens, aborted || !!signal?.aborted);
+            return finishStream(fullText, fullReasoning, completionTokens, aborted || !!signal?.aborted, finishReason);
         };
 
         const formatOfflineMeetingTranscript = (activeFriend, messages) => {
@@ -3642,22 +3749,19 @@ ${transcript}`;
             const actionButtons = actionsEl ? Array.from(actionsEl.querySelectorAll('button')) : [];
             const rerollTimestamp = Date.now();
 
-            let streamText = '';
+            let streamContent = '';
+            let streamReasoning = '';
+            const getStreamResult = (streaming = true) => offlineReasoning
+                ? offlineReasoning.normalizeResponse(streamContent, streamReasoning, { streaming })
+                : { content: streamContent, reasoning: streamReasoning };
             const getVisibleStreamText = () => {
-                let displayText = applyOfflineStreamingRegexText(
+                const parsed = getStreamResult(true);
+                return applyOfflineStreamingRegexText(
                     activeFriend,
-                    streamText,
+                    parsed.content,
                     'assistant',
                     messages.length - 1 - targetIndex
-                );
-                const startIndex = displayText.indexOf('<thinking>');
-                if (startIndex >= 0) {
-                    const endIndex = displayText.indexOf('</thinking>', startIndex);
-                    displayText = endIndex >= 0
-                        ? `${displayText.slice(0, startIndex)}${displayText.slice(endIndex + '</thinking>'.length)}`
-                        : displayText.slice(0, startIndex);
-                }
-                return displayText.trim();
+                ).trim();
             };
             const renderStreamText = () => {
                 if (!textEl || !bubble) return;
@@ -3686,17 +3790,27 @@ ${transcript}`;
                 }
             };
             const streamingBubble = textEl ? {
-                appendChunk: (chunk) => {
-                    streamText += chunk;
+                appendContentChunk: (chunk) => {
+                    streamContent += String(chunk || '');
                     renderStreamText();
                 },
+                appendReasoningChunk: (chunk) => {
+                    streamReasoning += String(chunk || '');
+                    renderStreamText();
+                },
+                appendChunk: (chunk) => {
+                    streamContent += String(chunk || '');
+                    renderStreamText();
+                },
+                finish: () => getStreamResult(false),
                 setTokens: (tokens) => {
                     if (metaEl) {
                         const safeTokens = Math.max(0, Number(tokens) || 0);
-                        metaEl.textContent = `#${targetIndex + 1} · ${safeTokens || estimateOfflineTextTokens(streamText)} tokens · ${formatOfflineBubbleTime(rerollTimestamp)}`;
+                        metaEl.textContent = `#${targetIndex + 1} · ${safeTokens || estimateOfflineTextTokens(`${streamReasoning}\n${streamContent}`)} tokens · ${formatOfflineBubbleTime(rerollTimestamp)}`;
                     }
                 },
-                getFullText: () => streamText
+                getResult: () => getStreamResult(false),
+                getFullText: () => streamContent
             } : null;
 
             if (button) {
@@ -3716,16 +3830,21 @@ ${transcript}`;
             try {
                 const contextMessages = messages.slice(0, targetIndex);
                 const apiMessages = buildOfflineApiMessages(activeFriend, contextMessages);
-                const { content, tokens } = await requestOfflineAssistantReply(apiMessages, streamingBubble, {
-                    stream: activeFriend.offlineStreamEnabled !== false
+                const { content, reasoning, tokens } = await requestOfflineAssistantReply(apiMessages, streamingBubble, {
+                    stream: activeFriend.offlineStreamEnabled !== false,
+                    requestReasoning: activeFriend.offlineRequestReasoning !== false,
+                    maxResponseTokens: activeFriend.offlineMaxResponseTokens
                 });
                 const nextMessages = messages.slice();
                 nextMessages[targetIndex] = {
                     ...nextMessages[targetIndex],
                     content,
+                    reasoning: reasoning || undefined,
                     tokens,
                     timestamp: rerollTimestamp,
                     updatedAt: new Date().toISOString(),
+                    generationState: undefined,
+                    generationError: undefined,
                     offlineRegexAppliedRevisions: {}
                 };
                 await persistOfflineMessages(activeFriend, nextMessages, { resetMessageIds: [messageId] });
@@ -3742,7 +3861,13 @@ ${transcript}`;
                 }
                 if (metaEl) metaEl.textContent = originalMeta;
                 console.error('Offline reroll failed', error);
-                if (window.showToast) window.showToast('重回失败，请检查 API 配置或网络');
+                if (window.showToast) window.showToast(error?.code === 'reasoning_config_unsupported'
+                    ? '当前接口不支持自动推理配置'
+                    : (error?.code === 'reasoning_tokens_exhausted'
+                        ? '思考已用完回复 Token，请在线下设置中提高最大回复 Token 后重试'
+                        : (error?.code === 'empty_response'
+                            ? '模型返回了空回复，请重试或更换模型'
+                            : '重回失败，请检查 API 配置或网络')));
             } finally {
                 actionButtons.forEach(actionButton => {
                     actionButton.disabled = false;
@@ -3807,13 +3932,11 @@ ${transcript}`;
             'COT': 'cot',
             'COT前': 'cot_before',
             'COT内容': 'cot_content',
+            'cot-情景规划': 'cot_scene_planning',
+            'cot-文学指导': 'cot_literary_guidance',
+            'cot-语言检查': 'cot_language_check',
+            'cot-输出审查': 'cot_output_audit',
             'COT后': 'cot_after'
-        };
-
-        const OFFLINE_PROMPT_RENAMED_DEFAULT_NAME_BY_ID = {
-            role_identity: new Set(['破限和身份定义']),
-            length_words: new Set(['语言和字数']),
-            memory_system: new Set(['记忆系统'])
         };
 
         const createOfflineDefaultPrompts = () => [
@@ -3844,6 +3967,17 @@ System managed. Mounted world books, User persona, Char persona, and recent onli
                 editable: false,
                 deletable: false,
                 alwaysEnabled: true
+            },
+            {
+                id: OFFLINE_CHAT_HISTORY_PROMPT_ID,
+                name: '上下文',
+                enabled: true,
+                content: '',
+                systemManaged: true,
+                editable: false,
+                deletable: false,
+                alwaysEnabled: true,
+                presetVersion: 2
             },
             {
                 id: 'length_words',
@@ -3890,6 +4024,76 @@ Use plain description. Prefer nouns and verbs over adjectives.
 Show emotion through actions, objects, silence, distance, light, sound, smell, and touch.
 Avoid ornate metaphors, abstract emotional labels, and author commentary.
 Keep sentences clean and concrete. Let the reader infer what the characters feel from what they do.
+</writing_style>`,
+                editable: true,
+                deletable: false
+            },
+            {
+                id: 'style_green_apple',
+                name: '文风-青苹果',
+                enabled: false,
+                presetVersion: 2,
+                content: `<writing_style name="Green Apple">
+1. Viewpoint and Psychology
+
+The primary viewpoint must follow the active <perspective_rule>. Secondary viewpoints should shift frequently when appropriate. Within a secondary viewpoint, use that character's first-person inner monologue.
+
+Psychological description should occupy the main share of the prose. Magnify every small romantic flutter through trivial worries, hesitation, tangled thoughts, and self-directed teasing. Example of the intended emotional scale: a character may think that their fingertips only brushed for a moment, yet their heart is unbearably loud—and then call themselves an idiot for reacting that way.
+
+2. Language and Dialogue
+
+Keep the language conversational and soft. Frequently use ellipses, em dashes, pauses, and short sentences.
+
+Naturally use hesitant expressions such as “Eh...”, “Um...”, “Mm...”, “Idiot”, and “Honestly...”.
+
+Dialogue should be halting and incomplete. Genuine feelings should hide inside unfinished sentences and silence rather than direct confessions.
+
+3. Sensory Detail and Imagery
+
+Focus on minute body language: reddening earlobes, fingertips winding around a lock of hair, a suddenly averted gaze, a face hidden inside a scarf, or the uncertain distance between two palms.
+
+Do not state similes or metaphors directly. Instead, defamiliarize emotions through concrete objects, sounds, textures, and sensory fragments. Examples include the sound of soda bubbles breaking to suggest a heartbeat, an afternoon breeze passing through white curtains to suggest gentleness, or freshly baked sweet-bean bread to create a warm emotional atmosphere.
+
+Emphasize environmental light, scent, and temperature. Give ordinary scenes a pale, softly tinted glow.
+
+4. Rhythm and Structure
+
+Slow down the reader's sense of time. One walk home after school, a shared umbrella, or a brief moment choosing drinks together may unfold into a long chapter.
+
+Avoid intense conflict and dramatic reversals. Keep daily life ordinary yet heart-quickening, with the emphasis on the process of gradually drawing closer.
+
+Let chapters feel like light slices of life, each capturing one casual frame from an ordinary day.
+
+5. Restraint in Interaction
+
+Reveal affection indirectly: remembering the other person's usual drink, quietly raising the air-conditioner temperature, doodling in the blank space of a book and hurriedly erasing it, or composing a LINE message again and again before finally sending it.
+
+Keep physical contact limited to fingertips brushing, briefly catching a sleeve and letting go, or shoulders touching accidentally while walking side by side.
+
+Every small contact must create a large emotional ripple and be supported by at least two passages of psychological description.
+
+6. Prohibitions
+
+Do not use melodramatic misunderstandings, clingy physical contact, explicit sexual implications, barrages of confessions, aggressive language, profanity, abusive love triangles, permanent separation, or death-driven tragedy.
+
+Maintain a transparent and pure feeling, like ice-cold lemon water in summer: only lightly sweet, yet enough to make someone smile.
+
+7. Recurring Scenes
+
+Possible scene elements include an empty classroom and corridor at sunset; scooping goldfish at a summer festival while cotton candy melts onto fingertips; sharing one pair of earphones while neither person is truly listening; drinking soda side by side outside a convenience store; sheltering beneath a narrow eave during light rain; or a frozen hand moving near the other person's pocket in winter but never quite entering it.
+
+Integrate these elements naturally. Never copy them mechanically or treat them as a checklist.
+
+Style Calibration
+
+Toradora! — delicate psychology balanced between tartness and sweetness.
+Hyouka — affection restrained almost to silence, with an atmosphere that feels warm, sweet, and transparent.
+Looking Up at the Half-Moon — quiet sweetness and faint sorrow found in ordinary companionship within limited time.
+Adachi and Shimamura — abundant romantic tension unfolding through an extremely slow pace.
+Tsuki ga Kirei — an example of awkward, earnest, and inexperienced young love.
+Insomniacs After School — the warm, lightly sweet intimacy of being alone together late at night.
+
+Use these works only as high-level calibration references. Do not copy their wording, characters, signature scenes, or any author's exact voice.
 </writing_style>`,
                 editable: true,
                 deletable: false
@@ -4017,25 +4221,55 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
                 id: 'cot_before',
                 name: 'COT前',
                 enabled: true,
-                presetVersion: 1,
+                presetVersion: 5,
                 content: `You must think before outputting the content.
 <thinking>`,
                 editable: true,
                 deletable: false
             },
             {
-                id: 'cot_content',
-                name: 'COT内容',
+                id: 'cot_scene_planning',
+                name: 'cot-情景规划',
                 enabled: true,
-                presetVersion: 1,
-                content: `Think through the active world-book facts, personas, memories, recent online/offline context, scene goal, character motivation, narrative perspective, and a concise prose draft plan.
-Read Char's Default Language from the mounted profile before drafting any spoken dialogue.
+                presetVersion: 2,
+                content: `Think through the active world-book facts, personas, memories, recent online/offline context, scene goal, character motivation, narrative perspective, and continuity.
+Build a concise, concrete scene plan covering what has already happened, what each character currently wants, and the next causally connected beat. Prepare a prose draft plan that advances the scene without repeating the previous beat.`,
+                editable: true,
+                deletable: false
+            },
+            {
+                id: 'cot_literary_guidance',
+                name: 'cot-文学指导',
+                enabled: true,
+                presetVersion: 2,
+                content: `Before drafting, scan the current system instruction for every enabled <writing_style>...</writing_style> block. Disabled writing-style entries are not mounted and must not influence the response.
+Extract each active writing style's name, diction, rhythm, psychological density, dialogue behavior, sensory priorities, interaction boundaries, and prohibitions. Build a concrete style plan and execute it in the final prose.
+When multiple <writing_style> blocks are active, preserve all compatible rules. If two writing-style rules conflict, the later mounted <writing_style> block overrides the earlier one.
+The active <perspective_rule> controls the primary viewpoint and the primary narrative person. When the Green Apple writing style is active, it specifically permits brief secondary-viewpoint shifts using that secondary character's first-person inner monologue; return to the primary viewpoint afterward and never treat private thoughts as knowledge shared by other characters.
+Formatting rules and task instructions override writing-style rules when their output requirements conflict.`,
+                editable: true,
+                deletable: false
+            },
+            {
+                id: 'cot_language_check',
+                name: 'cot-语言检查',
+                enabled: true,
+                presetVersion: 2,
+                content: `Read Char's Default Language from the mounted profile before drafting any spoken dialogue.
 Before finishing the reasoning, audit every drafted Char dialogue line. Confirm that the original dialogue uses Char's Default Language and that every non-Chinese line is immediately followed by an accurate Chinese translation in the exact fixed format 「default-language dialogue（Chinese translation）」.
-If Char's Default Language is Chinese, confirm that each dialogue line uses 「Chinese dialogue」 without a duplicate translation. Correct all language, translation, corner-quote, and full-width-parenthesis errors before writing the final prose.
+If Char's Default Language is Chinese, confirm that each dialogue line uses 「Chinese dialogue」 without a duplicate translation. Correct all language, translation, corner-quote, and full-width-parenthesis errors before writing the final prose.`,
+                editable: true,
+                deletable: false
+            },
+            {
+                id: 'cot_output_audit',
+                name: 'cot-输出审查',
+                enabled: true,
+                presetVersion: 2,
+                content: `Before ending the reasoning, verify that the planned final response satisfies every active formatting rule and task instruction, preserves scene continuity, and does not omit any required output section.
 Complete the reasoning before any正文 begins.
 After the reasoning, output the final正文 only; do not continue thinking in the正文.
-Keep the thinking concise, specific, and usable for drafting. The正文 must execute the draft plan instead of ignoring it.
-`,
+Keep the thinking concise, specific, and usable for drafting. The正文 must execute the draft plan instead of ignoring it.`,
                 editable: true,
                 deletable: false
             },
@@ -4043,7 +4277,7 @@ Keep the thinking concise, specific, and usable for drafting. The正文 must exe
                 id: 'cot_after',
                 name: 'COT后',
                 enabled: true,
-                presetVersion: 1,
+                presetVersion: 5,
                 content: `</thinking>`,
                 editable: true,
                 deletable: false
@@ -4069,57 +4303,82 @@ Keep the thinking concise, specific, and usable for drafting. The正文 must exe
             .replace(/^-+|-+$/g, '')
             .slice(0, 32) || 'custom';
 
-        const groupOfflinePerspectivePrompts = (prompts) => {
-            const perspectiveIds = ['perspective_first', 'perspective_second', 'perspective_third'];
-            const perspectivePrompts = perspectiveIds
-                .map(id => prompts.find(prompt => prompt.id === id))
-                .filter(Boolean);
-            const bilingualPrompt = prompts.find(prompt => prompt.id === 'bilingual_dialogue');
-            const barragePrompt = prompts.find(prompt => prompt.id === 'barrage_comments');
-            const choicesPrompt = prompts.find(prompt => prompt.id === 'player_choices');
-            const groupedPrompts = perspectivePrompts
-                .concat(bilingualPrompt ? [bilingualPrompt] : [])
-                .concat(barragePrompt ? [barragePrompt] : [])
-                .concat(choicesPrompt ? [choicesPrompt] : []);
-            if (groupedPrompts.length <= 1) return prompts;
+        const orderOfflinePromptsForHistoryAnchor = (prompts) => {
+            const source = Array.isArray(prompts) ? prompts : [];
+            const canonicalIds = new Set(OFFLINE_TAVERN_PROMPT_ORDER);
+            const builtInById = new Map();
+            const customBuckets = new Map();
+            let precedingBuiltInId = '';
 
-            const groupedIds = new Set(perspectiveIds.concat(['bilingual_dialogue', 'barrage_comments', 'player_choices']));
-            const withoutPerspective = prompts.filter(prompt => !groupedIds.has(prompt.id));
-            const styleIndex = withoutPerspective.findIndex(prompt => prompt.id === 'style_baimiao');
-            const insertIndex = styleIndex >= 0 ? styleIndex + 1 : Math.min(withoutPerspective.length, 5);
-            return [
-                ...withoutPerspective.slice(0, insertIndex),
-                ...groupedPrompts,
-                ...withoutPerspective.slice(insertIndex)
-            ];
+            const appendCustom = (anchorId, prompt) => {
+                const bucket = customBuckets.get(anchorId) || [];
+                bucket.push(prompt);
+                customBuckets.set(anchorId, bucket);
+            };
+
+            source.forEach((prompt) => {
+                const id = String(prompt?.id || '');
+                if (canonicalIds.has(id) && !builtInById.has(id)) {
+                    builtInById.set(id, prompt);
+                    precedingBuiltInId = id;
+                    return;
+                }
+                appendCustom(precedingBuiltInId, prompt);
+            });
+
+            const ordered = [...(customBuckets.get('') || [])];
+            OFFLINE_TAVERN_PROMPT_ORDER.forEach((id) => {
+                const prompt = builtInById.get(id);
+                if (prompt) ordered.push(prompt);
+                ordered.push(...(customBuckets.get(id) || []));
+            });
+            return ordered;
         };
 
         const normalizeOfflinePrompts = (sourcePrompts) => {
             const defaults = createOfflineDefaultPrompts();
             const defaultById = new Map(defaults.map(prompt => [prompt.id, prompt]));
             const source = Array.isArray(sourcePrompts) ? sourcePrompts : [];
-            if (source.length === 0) return groupOfflinePerspectivePrompts(defaults.map(cloneOfflinePrompt));
+            if (source.length === 0) return orderOfflinePromptsForHistoryAnchor(defaults.map(cloneOfflinePrompt));
 
             const normalized = [];
             const usedIds = new Set();
+            const modularCotIds = ['cot_scene_planning', 'cot_literary_guidance', 'cot_language_check', 'cot_output_audit'];
+            const fullCotIds = ['cot_before', ...modularCotIds, 'cot_after'];
+            const sourceIds = new Set(source.map((rawPrompt, index) => {
+                const prompt = rawPrompt && typeof rawPrompt === 'object' ? rawPrompt : {};
+                const rawName = String(prompt.name || '').trim();
+                return prompt.id || OFFLINE_LEGACY_PROMPT_ID_BY_NAME[rawName] || `custom-${slugOfflinePromptName(rawName)}-${index}`;
+            }));
+            const historyAnchorOrderVersion = Math.max(0, Number(
+                source.find(prompt => prompt?.id === OFFLINE_CHAT_HISTORY_PROMPT_ID)?.presetVersion
+            ) || 0);
+
+            const appendMigratedCotPrompts = (cotIds, enabled) => {
+                cotIds.forEach(cotId => {
+                    if (usedIds.has(cotId) || (sourceIds.has(cotId) && !['cot', 'cot_content'].includes(cotId))) return;
+                    const cotDefault = defaultById.get(cotId);
+                    if (!cotDefault) return;
+                    const cotPrompt = cloneOfflinePrompt(cotDefault);
+                    cotPrompt.enabled = enabled;
+                    normalized.push(cotPrompt);
+                    usedIds.add(cotId);
+                });
+            };
 
             source.forEach((rawPrompt, index) => {
                 const prompt = rawPrompt && typeof rawPrompt === 'object' ? rawPrompt : {};
                 const rawName = String(prompt.name || '').trim();
                 const id = prompt.id || OFFLINE_LEGACY_PROMPT_ID_BY_NAME[rawName] || `custom-${slugOfflinePromptName(rawName)}-${index}`;
                 if (id === 'cot') {
-                    const legacyEnabled = prompt.enabled !== false;
-                    ['cot_before', 'cot_content', 'cot_after'].forEach(cotId => {
-                        if (usedIds.has(cotId)) return;
-                        const cotPrompt = cloneOfflinePrompt(defaultById.get(cotId));
-                        cotPrompt.enabled = legacyEnabled;
-                        normalized.push(cotPrompt);
-                        usedIds.add(cotId);
-                    });
+                    appendMigratedCotPrompts(fullCotIds, prompt.enabled !== false);
+                    return;
+                }
+                if (id === 'cot_content') {
+                    appendMigratedCotPrompts(modularCotIds, prompt.enabled !== false);
                     return;
                 }
                 const defaultPrompt = defaultById.get(id);
-                const isLegacyDefault = !prompt.id && !!defaultPrompt;
                 const isDuplicateDefault = defaultPrompt && usedIds.has(id);
 
                 if (isDuplicateDefault) {
@@ -4141,24 +4400,14 @@ Keep the thinking concise, specific, and usable for drafting. The正文 must exe
                 if (defaultPrompt) {
                     const item = cloneOfflinePrompt(defaultPrompt);
                     item.enabled = item.alwaysEnabled ? true : (typeof prompt.enabled === 'boolean' ? prompt.enabled : item.enabled);
-                    const legacyRenamedNames = OFFLINE_PROMPT_RENAMED_DEFAULT_NAME_BY_ID[id];
-                    const shouldUseDefaultName = !rawName || isLegacyDefault || item.systemManaged || legacyRenamedNames?.has(rawName);
-                    item.name = (!shouldUseDefaultName && prompt.id && rawName) ? rawName : defaultPrompt.name;
-                    const sourcePresetVersion = Math.max(0, Number(prompt.presetVersion) || 0);
+                    item.name = rawName && !item.systemManaged ? rawName : defaultPrompt.name;
                     const targetPresetVersion = Math.max(0, Number(defaultPrompt.presetVersion) || 0);
-                    const shouldSyncPreset = ['role_identity', 'perspective_third', 'task_instruction', 'barrage_comments', 'player_choices', 'bilingual_dialogue', 'format_rules', 'cot_before', 'cot_content', 'cot_after'].includes(id) && sourcePresetVersion < targetPresetVersion;
-                    item.content = item.systemManaged || shouldSyncPreset
+                    item.content = item.systemManaged
                         ? defaultPrompt.content
-                        : ((!isLegacyDefault && typeof prompt.content === 'string') ? prompt.content : defaultPrompt.content);
-                    const oldStructuredPrompt = /<speech\b|<barrages?\b|<barrage\b|<choices?\b|<choice\b/i.test(item.content || '');
-                    if (['barrage_comments', 'player_choices', 'format_rules'].includes(id) && oldStructuredPrompt) {
-                        item.content = defaultPrompt.content;
-                    }
+                        : (typeof prompt.content === 'string' ? prompt.content : defaultPrompt.content);
                     if (id === 'barrage_comments') {
                         item.alwaysEnabled = false;
-                        item.enabled = sourcePresetVersion < targetPresetVersion
-                            ? true
-                            : (typeof prompt.enabled === 'boolean' ? prompt.enabled : item.enabled);
+                        item.enabled = typeof prompt.enabled === 'boolean' ? prompt.enabled : item.enabled;
                     }
                     item.presetVersion = targetPresetVersion;
                     normalized.push(item);
@@ -4181,15 +4430,26 @@ Keep the thinking concise, specific, and usable for drafting. The正文 must exe
 
             defaults.forEach(defaultPrompt => {
                 if (!usedIds.has(defaultPrompt.id)) {
-                    normalized.push(cloneOfflinePrompt(defaultPrompt));
+                    const missingPrompt = cloneOfflinePrompt(defaultPrompt);
+                    if (defaultPrompt.id === 'style_green_apple') {
+                        const styleIndex = normalized.findIndex(prompt => prompt.id === 'style_baimiao');
+                        normalized.splice(styleIndex >= 0 ? styleIndex + 1 : normalized.length, 0, missingPrompt);
+                    } else if (modularCotIds.includes(defaultPrompt.id)) {
+                        const cotAfterIndex = normalized.findIndex(prompt => prompt.id === 'cot_after');
+                        normalized.splice(cotAfterIndex >= 0 ? cotAfterIndex : normalized.length, 0, missingPrompt);
+                    } else {
+                        normalized.push(missingPrompt);
+                    }
                     usedIds.add(defaultPrompt.id);
                 }
             });
 
-            // Existing configurations are user ordered.  Only the first-time defaults
-            // use the grouped layout; later normalization may add missing defaults but
-            // must never move a custom entry back behind a built-in entry.
-            return normalized;
+            // The anchor version marks configurations that already completed the
+            // current one-time ordering migration. After that, the visible user order
+            // is authoritative and normalization must not move entries again.
+            return historyAnchorOrderVersion >= 2
+                ? normalized
+                : orderOfflinePromptsForHistoryAnchor(normalized);
         };
 
         const serializeOfflinePrompts = (prompts) => JSON.stringify((prompts || []).map(prompt => cloneOfflinePrompt(prompt)));
@@ -4980,6 +5240,65 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             streamRow.append(streamMain, streamToggle);
             listEl.appendChild(streamRow);
 
+            const reasoningRow = document.createElement('div');
+            reasoningRow.className = 'offline-settings-streaming';
+            const reasoningMain = document.createElement('div');
+            reasoningMain.className = 'offline-settings-worldbook-main';
+            reasoningMain.innerHTML = '<i class="fas fa-brain"></i><span><strong>请求模型思考</strong><small>REQUEST REASONING</small></span>';
+            const reasoningToggle = document.createElement('label');
+            reasoningToggle.className = 'toggle-switch';
+            reasoningToggle.setAttribute('aria-label', '请求模型思考');
+            const reasoningCheckbox = document.createElement('input');
+            reasoningCheckbox.type = 'checkbox';
+            reasoningCheckbox.checked = activeFriend.offlineRequestReasoning !== false;
+            const reasoningSlider = document.createElement('span');
+            reasoningSlider.className = 'slider';
+            reasoningToggle.append(reasoningCheckbox, reasoningSlider);
+            reasoningCheckbox.addEventListener('change', async () => {
+                const enabled = reasoningCheckbox.checked;
+                reasoningCheckbox.disabled = true;
+                const saved = await commitSheetFriendChange(activeFriend.id, (targetFriend) => {
+                    targetFriend.offlineRequestReasoning = enabled;
+                }, { silent: true, metaOnly: true });
+                if (!saved) {
+                    reasoningCheckbox.checked = !enabled;
+                    if (window.showToast) window.showToast('请求模型思考设置保存失败');
+                }
+                reasoningCheckbox.disabled = false;
+            });
+            reasoningRow.append(reasoningMain, reasoningToggle);
+            listEl.appendChild(reasoningRow);
+
+            const maxTokensRow = document.createElement('div');
+            maxTokensRow.className = 'offline-settings-streaming';
+            const maxTokensMain = document.createElement('div');
+            maxTokensMain.className = 'offline-settings-worldbook-main';
+            maxTokensMain.innerHTML = '<i class="fas fa-gauge-high"></i><span><strong>最大回复 Token</strong><small>MAX RESPONSE TOKENS</small></span>';
+            const maxTokensInput = document.createElement('input');
+            maxTokensInput.className = 'offline-settings-number-input';
+            maxTokensInput.type = 'number';
+            maxTokensInput.min = '256';
+            maxTokensInput.max = '32768';
+            maxTokensInput.step = '256';
+            maxTokensInput.setAttribute('aria-label', '最大回复 Token');
+            maxTokensInput.value = String(offlineReasoning?.normalizeMaxResponseTokens(activeFriend.offlineMaxResponseTokens) || 30000);
+            maxTokensInput.addEventListener('change', async () => {
+                const previousValue = offlineReasoning?.normalizeMaxResponseTokens(activeFriend.offlineMaxResponseTokens) || 30000;
+                const normalizedValue = offlineReasoning?.normalizeMaxResponseTokens(maxTokensInput.value) || 30000;
+                maxTokensInput.value = String(normalizedValue);
+                maxTokensInput.disabled = true;
+                const saved = await commitSheetFriendChange(activeFriend.id, (targetFriend) => {
+                    targetFriend.offlineMaxResponseTokens = normalizedValue;
+                }, { silent: true, metaOnly: true });
+                if (!saved) {
+                    maxTokensInput.value = String(previousValue);
+                    if (window.showToast) window.showToast('最大回复 Token 设置保存失败');
+                }
+                maxTokensInput.disabled = false;
+            });
+            maxTokensRow.append(maxTokensMain, maxTokensInput);
+            listEl.appendChild(maxTokensRow);
+
             const variableHint = document.createElement('div');
             variableHint.className = 'offline-settings-variable-hint';
             variableHint.innerHTML = '<div class="offline-settings-section-kicker"><strong>可用变量</strong><span>VARIABLES</span></div><div><code>{{user}}</code> 当前 User 名字</div><div><code>{{char}}</code> 单聊为 Char 真名；群聊为全部群成员真名</div>';
@@ -5004,6 +5323,8 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             prompts.forEach((prompt, index) => {
                 const itemDiv = document.createElement('div');
                 itemDiv.className = 'offline-settings-prompt-item';
+                const isHistoryAnchor = prompt.id === OFFLINE_CHAT_HISTORY_PROMPT_ID;
+                if (isHistoryAnchor) itemDiv.classList.add('offline-settings-history-anchor');
 
                 const topRow = document.createElement('div');
                 topRow.className = 'offline-settings-prompt-row';
@@ -5059,7 +5380,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                 if (prompt.systemManaged) {
                     const managedLabel = document.createElement('div');
                     managedLabel.className = 'offline-settings-state-label';
-                    managedLabel.textContent = '系统挂载 · 始终开启';
+                    managedLabel.textContent = isHistoryAnchor ? '历史插入位置' : '系统挂载 · 始终开启';
                     nameWrap.appendChild(managedLabel);
                 } else if (prompt.alwaysEnabled) {
                     const alwaysLabel = document.createElement('div');
@@ -5106,50 +5427,56 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     actionGroup.appendChild(toggleLabel);
                 }
 
-                const contentDiv = document.createElement('div');
-                contentDiv.className = 'offline-settings-prompt-content';
+                let contentDiv = null;
+                let setExpanded = null;
+                let expandBtn = null;
+                if (!isHistoryAnchor) {
+                    contentDiv = document.createElement('div');
+                    contentDiv.className = 'offline-settings-prompt-content';
 
-                if (prompt.editable !== false) {
-                    const textarea = document.createElement('textarea');
-                    textarea.value = prompt.content || '';
-                    textarea.placeholder = '输入提示词内容...';
-                    textarea.className = 'offline-settings-prompt-textarea';
-                    textarea.addEventListener('click', event => event.stopPropagation());
-                    textarea.addEventListener('input', () => {
-                        prompt.content = textarea.value;
-                        scheduleOfflinePromptsPersist(activeFriend, prompts);
+                    if (prompt.editable !== false) {
+                        const textarea = document.createElement('textarea');
+                        textarea.value = prompt.content || '';
+                        textarea.placeholder = '输入提示词内容...';
+                        textarea.className = 'offline-settings-prompt-textarea';
+                        textarea.addEventListener('click', event => event.stopPropagation());
+                        textarea.addEventListener('input', () => {
+                            prompt.content = textarea.value;
+                            scheduleOfflinePromptsPersist(activeFriend, prompts);
+                        });
+                        contentDiv.appendChild(textarea);
+                    } else {
+                        const preview = document.createElement('div');
+                        preview.className = 'offline-settings-prompt-preview';
+                        preview.textContent = prompt.content || '';
+                        contentDiv.appendChild(preview);
+                    }
+
+                    expandBtn = makeIconButton('fas fa-chevron-down', '展开提示词');
+                    expandBtn.classList.add('offline-settings-expand-btn');
+                    expandBtn.setAttribute('aria-expanded', 'false');
+                    setExpanded = (expanded) => {
+                        contentDiv.style.display = expanded ? 'block' : 'none';
+                        expandBtn.setAttribute('aria-expanded', String(expanded));
+                        expandBtn.setAttribute('aria-label', expanded ? '收起提示词' : '展开提示词');
+                        expandBtn.title = expanded ? '收起提示词' : '展开提示词';
+                    };
+                    expandBtn.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                        setExpanded(expandBtn.getAttribute('aria-expanded') !== 'true');
                     });
-                    contentDiv.appendChild(textarea);
-                } else {
-                    const preview = document.createElement('div');
-                    preview.className = 'offline-settings-prompt-preview';
-                    preview.textContent = prompt.content || '';
-                    contentDiv.appendChild(preview);
+                    actionGroup.appendChild(expandBtn);
                 }
-
-                const expandBtn = makeIconButton('fas fa-chevron-down', '展开提示词');
-                expandBtn.classList.add('offline-settings-expand-btn');
-                expandBtn.setAttribute('aria-expanded', 'false');
-                const setExpanded = (expanded) => {
-                    contentDiv.style.display = expanded ? 'block' : 'none';
-                    expandBtn.setAttribute('aria-expanded', String(expanded));
-                    expandBtn.setAttribute('aria-label', expanded ? '收起提示词' : '展开提示词');
-                    expandBtn.title = expanded ? '收起提示词' : '展开提示词';
-                };
-                expandBtn.addEventListener('click', (event) => {
-                    event.stopPropagation();
-                    setExpanded(expandBtn.getAttribute('aria-expanded') !== 'true');
-                });
-                actionGroup.appendChild(expandBtn);
                 topRow.appendChild(actionGroup);
 
                 topRow.addEventListener('click', (event) => {
+                    if (!setExpanded || !expandBtn) return;
                     if (event.target.closest('button, input, textarea, label')) return;
                     setExpanded(expandBtn.getAttribute('aria-expanded') !== 'true');
                 });
 
                 itemDiv.appendChild(topRow);
-                itemDiv.appendChild(contentDiv);
+                if (contentDiv) itemDiv.appendChild(contentDiv);
                 promptsContainer.appendChild(itemDiv);
             });
 
@@ -5672,6 +5999,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                         sendBtn.classList.remove('is-stopping');
                         sendBtn.innerHTML = '<i class="fas fa-pause"></i>';
                         sendBtn.title = '暂停生成';
+                        let pendingAiMessage = null;
 
                         try {
                             await ensureOfflineMeetingState(activeFriend);
@@ -5687,6 +6015,13 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
 
                             const aiTimestamp = Date.now();
                             const aiMessageId = createOfflineTavernId('offline-ai');
+                            pendingAiMessage = {
+                                id: aiMessageId,
+                                role: 'assistant',
+                                content: '',
+                                timestamp: aiTimestamp,
+                                tokens: 0
+                            };
                             const streamingBubble = createStreamingBubble('', false, {
                                 id: aiMessageId,
                                 floor: messagesWithUser.length + 1,
@@ -5698,30 +6033,67 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                             }
 
                             const apiMessages = buildOfflineApiMessages(activeFriend, messagesWithUser);
-                            const { content: finalReplyContent, tokens, aborted } = await requestOfflineAssistantReply(apiMessages, streamingBubble, {
+                            const { content: finalReplyContent, reasoning: finalReplyReasoning, tokens, aborted } = await requestOfflineAssistantReply(apiMessages, streamingBubble, {
                                 signal: generationController.signal,
-                                stream: activeFriend.offlineStreamEnabled !== false
+                                stream: activeFriend.offlineStreamEnabled !== false,
+                                requestReasoning: activeFriend.offlineRequestReasoning !== false,
+                                maxResponseTokens: activeFriend.offlineMaxResponseTokens
                             });
 
                             const latestMessages = normalizeOfflineMessagesForFriend(activeFriend);
                             const aiMsgObj = {
-                                id: aiMessageId,
-                                role: 'assistant',
+                                ...pendingAiMessage,
                                 content: finalReplyContent || '',
-                                timestamp: aiTimestamp,
+                                reasoning: finalReplyReasoning || undefined,
                                 tokens: Math.max(0, Number(tokens) || 0)
                             };
                             await persistOfflineMessages(activeFriend, latestMessages.concat(aiMsgObj));
-                            renderOfflineCurrentMessages(activeFriend);
+                            const latestFriendAfterSave = window.imApp?.getFriendById?.(activeFriend.id)
+                                || window.imData?.currentActiveFriend
+                                || activeFriend;
+                            renderOfflineCurrentMessages(latestFriendAfterSave);
 
                             if (aborted && window.showToast) {
                                 window.showToast(finalReplyContent ? '已暂停生成' : '已暂停生成，可重回空白楼层');
                             }
                         } catch (error) {
                             console.error("Offline Tavern API Error:", error);
+                            const isPersistenceFailure = /Failed to persist offline meeting/.test(String(error?.message || ''));
+                            let failureFloorPersistenceFailed = false;
+                            if (!isPersistenceFailure && pendingAiMessage) {
+                                try {
+                                    const latestMessages = normalizeOfflineMessagesForFriend(activeFriend);
+                                    const alreadyPersisted = latestMessages.some(message => String(message.id) === String(pendingAiMessage.id));
+                                    if (!alreadyPersisted) {
+                                        const failedMessage = {
+                                            ...pendingAiMessage,
+                                            generationState: 'failed',
+                                            generationError: error?.code === 'reasoning_config_unsupported'
+                                                ? 'reasoning_unsupported'
+                                                : (error?.code === 'reasoning_tokens_exhausted'
+                                                    ? 'reasoning_tokens_exhausted'
+                                                    : (error?.code === 'empty_response' || /empty content/i.test(String(error?.message || ''))
+                                                        ? 'empty_response'
+                                                        : 'request_failed'))
+                                        };
+                                        await persistOfflineMessages(activeFriend, latestMessages.concat(failedMessage));
+                                        renderOfflineCurrentMessages(activeFriend);
+                                    }
+                                } catch (persistError) {
+                                    console.error('Failed to persist offline failure floor:', persistError);
+                                    failureFloorPersistenceFailed = true;
+                                }
+                            }
                             if (window.showToast) {
-                                const isPersistenceFailure = /Failed to persist offline meeting/.test(String(error?.message || ''));
-                                window.showToast(isPersistenceFailure ? '线下聊天记录保存失败' : '请求失败，请检查网络或 API 配置');
+                                window.showToast(isPersistenceFailure || failureFloorPersistenceFailed
+                                    ? '线下聊天记录保存失败'
+                                    : (error?.code === 'reasoning_config_unsupported'
+                                        ? '当前接口不支持自动推理配置'
+                                        : (error?.code === 'reasoning_tokens_exhausted'
+                                            ? '思考已用完回复 Token，请在线下设置中提高最大回复 Token 后重试'
+                                            : (error?.code === 'empty_response'
+                                                ? '模型返回了空回复，请重试或更换模型'
+                                                : '请求失败，请检查网络或 API 配置'))));
                             }
                         } finally {
                             isGenerating = false;
@@ -5803,6 +6175,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                 role: 'system',
                 type: 'system_notice',
                 noticeKind: 'narration',
+                narrationSource: 'manual',
                 content: narrationText,
                 text: narrationText,
                 timestamp: now

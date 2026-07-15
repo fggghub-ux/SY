@@ -20,5 +20,5 @@ test('Loves acceptance markers are removed before structured chat parsing', asyn
 
 test('the page loads the cache-busted Loves invite parser', async () => {
     const index = await readWorkspaceFile('index.html');
-    assert.match(index, /js\/imessage\/4_chat_ai\.js\?v=20260714-loves-invite-card-v1/);
+    assert.match(index, /js\/imessage\/4_chat_ai\.js\?v=20260715-dynamic-narration-zh-v3/);
 });

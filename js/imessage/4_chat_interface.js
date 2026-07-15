@@ -1248,7 +1248,70 @@ async function openChatTab(friend) {
         }
     }
 
-function showContextMenu(row, e) {
+    function measureContextMenuSafeInset(screenEl, propertyName) {
+        const probe = document.createElement('div');
+        probe.setAttribute('aria-hidden', 'true');
+        probe.style.cssText = `position:absolute; visibility:hidden; pointer-events:none; width:0; height:var(${propertyName}, 0px);`;
+        screenEl.appendChild(probe);
+        const value = Math.max(0, probe.getBoundingClientRect().height || 0);
+        probe.remove();
+        return value;
+    }
+
+    function fitContextMenuToViewport() {
+        const msgContextMenu = document.getElementById('msg-context-menu');
+        const bubbleClone = document.getElementById('msg-context-bubble-clone');
+        const reactionBar = document.getElementById('msg-reaction-bar');
+        const mainActions = document.getElementById('msg-context-actions');
+        const moreActions = document.getElementById('msg-context-more-actions');
+        const screenEl = document.getElementById('app') || document.body;
+        if (!msgContextMenu || !bubbleClone || !screenEl) return;
+
+        const screenRect = screenEl.getBoundingClientRect();
+        const visualViewport = window.visualViewport;
+        const visibleViewportTop = visualViewport ? visualViewport.offsetTop : 0;
+        const visibleViewportBottom = visualViewport
+            ? visualViewport.offsetTop + visualViewport.height
+            : document.documentElement.clientHeight;
+        const localViewportTop = Math.max(0, visibleViewportTop - screenRect.top);
+        const localViewportBottom = Math.min(screenRect.height, visibleViewportBottom - screenRect.top);
+        const safeInsetTop = measureContextMenuSafeInset(screenEl, '--safe-top');
+        const safeInsetBottom = measureContextMenuSafeInset(screenEl, '--safe-bottom');
+        const safeTop = Math.max(localViewportTop + 16 + safeInsetTop, 60);
+        const safeBottom = Math.max(safeTop + 120, localViewportBottom - Math.max(20, safeInsetBottom + 12));
+        const availableHeight = Math.max(120, safeBottom - safeTop);
+        const visibleActions = moreActions && getComputedStyle(moreActions).display !== 'none' ? moreActions : mainActions;
+        const gap = parseFloat(getComputedStyle(msgContextMenu).gap) || 6;
+        const reactionHeight = reactionBar?.getBoundingClientRect().height || 0;
+        const actionsHeight = visibleActions?.getBoundingClientRect().height || 0;
+        const chromeHeight = reactionHeight + actionsHeight + gap * 2;
+        const bubbleHeightLimit = Math.max(64, availableHeight - chromeHeight);
+
+        bubbleClone.style.maxHeight = `${bubbleHeightLimit}px`;
+        bubbleClone.style.overflowY = 'auto';
+        bubbleClone.style.overscrollBehavior = 'contain';
+        bubbleClone.style.flexShrink = '1';
+        if (reactionBar) reactionBar.style.flexShrink = '0';
+        if (mainActions) mainActions.style.flexShrink = '0';
+        if (moreActions) moreActions.style.flexShrink = '0';
+        msgContextMenu.style.maxHeight = `${availableHeight}px`;
+        msgContextMenu.style.overflowY = 'auto';
+        msgContextMenu.style.overscrollBehavior = 'contain';
+
+        const activeBubble = window.imData.currentActiveRow?.querySelector('.chat-bubble, .sticker-message-wrap');
+        const activeBubbleRect = activeBubble?.getBoundingClientRect();
+        const desiredCenter = activeBubbleRect
+            ? activeBubbleRect.top + activeBubbleRect.height / 2 - screenRect.top
+            : safeTop + availableHeight / 2;
+        const measuredHeight = Math.min(msgContextMenu.scrollHeight || msgContextMenu.getBoundingClientRect().height, availableHeight);
+        const nextTop = Math.min(
+            Math.max(desiredCenter - measuredHeight / 2, safeTop),
+            Math.max(safeTop, safeBottom - measuredHeight)
+        );
+        msgContextMenu.style.top = `${nextTop}px`;
+    }
+
+ function showContextMenu(row, e) {
         const msgContextOverlay = document.getElementById('msg-context-overlay');
         const msgContextMenu = document.getElementById('msg-context-menu');
         
@@ -1347,31 +1410,10 @@ function showContextMenu(row, e) {
             msgContextMenu.style.right = 'auto';
         }
         
-        // Vertical centering: place bubble roughly at its original position
-        const bubbleRect = bubble.getBoundingClientRect();
-        const bubbleCenterY = bubbleRect.top + bubbleRect.height / 2 - screenRect.top;
-        const clonedBubbleRect = bubbleClone?.firstElementChild?.getBoundingClientRect?.();
-        const safeBubbleHeight = Math.min(
-            clonedBubbleRect?.height || bubbleRect.height,
-            Math.max(80, screenRect.height * 0.45)
-        );
-        
-        // Estimate menu total height (reaction bar ~50 + bubble + actions ~200)
-        const estimatedMenuHeight = 50 + safeBubbleHeight + 220;
-        let topOffset = bubbleCenterY - estimatedMenuHeight / 2;
-        
-        // Clamp to screen bounds
-        if (topOffset < 60) topOffset = 60;
-        if (topOffset + estimatedMenuHeight > screenRect.height - 20) {
-            topOffset = screenRect.height - estimatedMenuHeight - 20;
-        }
-        if (topOffset < 60) topOffset = 60;
-        
-        msgContextMenu.style.top = topOffset + 'px';
-        
         msgContextMenu.style.transformOrigin = isUserRow ? 'top right' : 'top left';
         
         requestAnimationFrame(() => {
+            fitContextMenuToViewport();
             msgContextMenu.style.opacity = '1';
             msgContextMenu.style.transform = 'scale(1)';
         });
@@ -1578,6 +1620,7 @@ function closeContextMenu() {
 
     window.imChat.openChatTab = openChatTab;
     window.imChat.showContextMenu = showContextMenu;
+    window.imChat.fitContextMenuToViewport = fitContextMenuToViewport;
     window.imChat.closeContextMenu = closeContextMenu;
     window.imChat.showGroupMemberProfileCard = showGroupMemberProfileCard;
 

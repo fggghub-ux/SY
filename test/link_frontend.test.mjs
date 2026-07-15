@@ -157,7 +157,8 @@ test('uses fake_link in chat rendering, safe webpage rendering, menu sizing, and
     assert.match(bubbleSource, /isAllowedFakeLinkImageUrlForRender/);
     assert.match(bubbleSource, /overlay\.style\.display\s*=\s*'flex'/);
     assert.match(interfaceSource, /msg-context-card-clone/);
-    assert.match(interfaceSource, /safeBubbleHeight/);
+    assert.match(interfaceSource, /fitContextMenuToViewport/);
+    assert.match(interfaceSource, /bubbleHeightLimit/);
     assert.match(cssSource, /#msg-context-bubble-clone \.chat-link-card/);
     assert.match(cssSource, /im-fake-link-context-toggle/);
     assert.equal(coreSource.includes("type === 'link'"), false);
@@ -263,7 +264,7 @@ test('restores saved iMessage theme CSS after contact data hydration and chat pa
     assert.match(restoreSource, /window\.imData\.friends\.forEach\(f => applyFriendCss\(f\)\)/);
 
     assert.ok((interfaceSource.match(/window\.imApp\.applyFriendCss\(friend\)/g) || []).length >= 2);
-    assert.match(indexSource, /js\/imessage\/4_chat_interface\.js\?v=20260714-batch-delete-header-v1/);
+    assert.match(indexSource, /js\/imessage\/4_chat_interface\.js\?v=20260715-chat-context-menu-offline-retry-v1/);
     assert.match(indexSource, /js\/imessage\/5_settings\.js\?v=20260713-offline-memory-v1/);
 });
 
@@ -505,7 +506,7 @@ test('uses visible keyword-triggered memory recall for single and group chats', 
     assert.match(settingsSource, /summaryPayload\.memoryTags/);
     assert.match(statusSource, /triggerKeywords = window\.imChat\?\.normalizeMemoryTriggerKeywords/);
     assert.match(cssSource, /\.memory-recall-narration-pill/);
-    assert.match(indexSource, /4_chat_ai\.js\?v=20260714-loves-invite-card-v1/);
+    assert.match(indexSource, /4_chat_ai\.js\?v=20260715-dynamic-narration-zh-v3/);
     assert.match(indexSource, /4_chat_bubbles\.js\?v=20260713-offline-summary-modal-v3/);
     assert.match(indexSource, /5_settings\.js\?v=20260713-offline-memory-v1/);
 });
@@ -536,9 +537,9 @@ test('uses per-member group languages, content-sized private bubbles, and fresh 
     assert.match(coreSource, /const getApiContextFingerprint = \(message\) => JSON\.stringify/);
     assert.match(coreSource, /getApiContextFingerprint\(targetMessage\) !== previousContextFingerprint/);
     assert.match(coreSource, /window\.imApp\.clearFriendRuntimeMessageContext\(targetFriend\)/);
-    assert.match(indexSource, /js\/imessage\/2_core\.js\?v=20260714-offline-global-theme-v8/);
-    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260714-loves-invite-card-v1/);
-    assert.match(indexSource, /js\/imessage\/4_chat_main\.js\?v=20260712-reply-single-tap-v1/);
+    assert.match(indexSource, /js\/imessage\/2_core\.js\?v=20260715-offline-token-30000-v4/);
+    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260715-dynamic-narration-zh-v3/);
+    assert.match(indexSource, /js\/imessage\/4_chat_main\.js\?v=20260715-chat-context-menu-offline-retry-v1/);
 });
 
 test('uses stable long-press selection and purges deleted chat context without selecting narration', async () => {
@@ -576,5 +577,5 @@ test('uses stable long-press selection and purges deleted chat context without s
     assert.match(narrationRenderer, /row\.className = 'chat-system-row'/);
     assert.doesNotMatch(narrationRenderer, /chat-checkbox-wrapper/);
     assert.match(cssSource, /\.im-chat-cancel-batch-btn\s*\{[\s\S]*?color:\s*#111111/);
-    assert.match(indexSource, /css\/imessage\.css\?v=20260714-offline-global-theme-v8/);
+    assert.match(indexSource, /css\/imessage\.css\?v=20260715-offline-reasoning-request-v9/);
 });

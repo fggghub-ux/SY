@@ -30,9 +30,9 @@ test('offline prompt settings retain order and expose streaming beneath world bo
         readWorkspaceFile('index.html')
     ]);
 
-    assert.match(source, /if \(source\.length === 0\) return groupOfflinePerspectivePrompts/);
+    assert.match(source, /if \(source\.length === 0\) return orderOfflinePromptsForHistoryAnchor/);
     assert.match(source, /id: 'role_identity',[\s\S]*presetVersion: 3,[\s\S]*Output language: Simplified Chinese \(plain text\)\./);
-    assert.match(source, /return normalized;\s*};\s*\n\s*const serializeOfflinePrompts/);
+    assert.match(source, /return historyAnchorOrderVersion >= 2[\s\S]*\? normalized[\s\S]*: orderOfflinePromptsForHistoryAnchor\(normalized\);\s*};\s*\n\s*const serializeOfflinePrompts/);
     assert.match(source, /actionGroup\.appendChild\(deleteBtn\)[\s\S]*actionGroup\.appendChild\(toggleLabel\)/);
     assert.match(source, /offline-settings-expand-btn/);
     assert.match(source, /expandBtn\.setAttribute\('aria-expanded'/);
@@ -42,9 +42,19 @@ test('offline prompt settings retain order and expose streaming beneath world bo
     assert.doesNotMatch(source, /activeFriend\.offlineStreamEnabled = enabled/);
     assert.match(source, /if \(!saved\) \{[\s\S]*streamCheckbox\.checked = !enabled/);
     assert.match(source, /stream: activeFriend\.offlineStreamEnabled !== false/g);
-    assert.match(source, /if \(!useStreaming\) \{[\s\S]*response\.json\(\)[\s\S]*choices\?\.\[0\]\?\.message\?\.content/);
+    assert.match(source, /listEl\.appendChild\(streamRow\);[\s\S]*请求模型思考[\s\S]*最大回复 Token[\s\S]*offline-settings-variable-hint/);
+    assert.match(source, /reasoningCheckbox\.checked = activeFriend\.offlineRequestReasoning !== false/);
+    assert.match(source, /targetFriend\.offlineRequestReasoning = enabled/);
+    assert.match(source, /maxTokensInput\.min = '256'[\s\S]*maxTokensInput\.max = '32768'/);
+    assert.match(source, /targetFriend\.offlineMaxResponseTokens = normalizedValue/);
+    assert.match(source, /requestReasoning: activeFriend\.offlineRequestReasoning !== false/g);
+    assert.match(source, /maxResponseTokens: activeFriend\.offlineMaxResponseTokens/g);
+    assert.match(source, /if \(!useStreaming \|\| returnedJsonInsteadOfStream\) \{[\s\S]*response\.json\(\)[\s\S]*responseMessage\.content/);
     assert.match(coreSource, /normalized\.offlineStreamEnabled = normalized\.offlineStreamEnabled !== false/);
+    assert.match(coreSource, /normalized\.offlineRequestReasoning = normalized\.offlineRequestReasoning !== false/);
+    assert.match(coreSource, /normalized\.offlineMaxResponseTokens[\s\S]*30000/);
     assert.match(cssSource, /\.offline-settings-expand-btn \{[\s\S]*border-radius: 50%/);
     assert.match(cssSource, /\.offline-settings-streaming \{/);
-    assert.match(indexSource, /css\/imessage\.css\?v=20260714-offline-global-theme-v8/);
+    assert.match(cssSource, /\.offline-settings-number-input \{/);
+    assert.match(indexSource, /css\/imessage\.css\?v=20260715-offline-reasoning-request-v9/);
 });

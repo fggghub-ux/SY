@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import fs from 'node:fs/promises';
+import vm from 'node:vm';
 
 const require = createRequire(import.meta.url);
 const utils = require('../js/imessage/data_utils.js');
@@ -305,7 +306,8 @@ test('offline single chat follows the bound account identity and refreshes visib
     assert.match(source, /imChat\.refreshOfflineUserIdentity = refreshOfflineUserIdentity/);
     assert.match(settingsSource, /window\.imChat\?\.refreshOfflineUserIdentity[\s\S]*?window\.imChat\.refreshOfflineUserIdentity\(friend\)/);
     assert.match(settingsSource, /updateChatBindIdLabel\(window\.imData\.currentSettingsFriend\);[\s\S]*?refreshChatPageForFriend\(window\.imData\.currentSettingsFriend\);/);
-    assert.match(html, /4_chat_sheet\.js\?v=20260714-offline-global-theme-v8/);
+    assert.match(html, /offline_reasoning\.js\?v=20260716-tagged-cot-priority-v5/);
+    assert.match(html, /4_chat_sheet\.js\?v=20260716-offline-cot-last-v14/);
     assert.match(html, /5_settings\.js\?v=20260713-offline-memory-v1/);
 });
 
@@ -351,11 +353,18 @@ test('offline chat dialogue and settings use the fullscreen studio presentation'
     assert.doesNotMatch(html, /bottom-sheet-overlay detail-sheet-overlay" id="offline-tavern-settings-sheet"/);
     assert.match(source, /offline-tavern-speech offline-tavern-dialogue/);
     assert.match(source, /id: 'bilingual_dialogue'[\s\S]*?name: '双语对话'[\s\S]*?presetVersion: 1/);
-    assert.match(source, /const bilingualPrompt = prompts\.find\(prompt => prompt\.id === 'bilingual_dialogue'\)[\s\S]*?concat\(bilingualPrompt \? \[bilingualPrompt\] : \[\]\)[\s\S]*?concat\(barragePrompt/);
-    assert.match(source, /id: 'cot_before'[\s\S]*?name: 'COT前'[\s\S]*?You must think before outputting the content\.\n<thinking>/);
-    assert.match(source, /id: 'cot_content'[\s\S]*?name: 'COT内容'[\s\S]*?Read Char's Default Language[\s\S]*?audit every drafted Char dialogue line/);
-    assert.match(source, /id: 'cot_after'[\s\S]*?name: 'COT后'[\s\S]*?content: `<\/thinking>`/);
-    assert.match(source, /if \(id === 'cot'\) \{[\s\S]*\['cot_before', 'cot_content', 'cot_after'\]/);
+    assert.match(source, /'format_rules',[\s\S]*?'bilingual_dialogue',[\s\S]*?'perspective_first',[\s\S]*?'barrage_comments',[\s\S]*?'player_choices'/);
+    assert.match(source, /id: 'cot_before'[\s\S]*?name: 'COT前'[\s\S]*?presetVersion: 5[\s\S]*?You must think before outputting the content\.\n<thinking>/);
+    assert.match(source, /id: 'cot_scene_planning'[\s\S]*?name: 'cot-情景规划'[\s\S]*?next causally connected beat/);
+    assert.match(source, /id: 'cot_literary_guidance'[\s\S]*?name: 'cot-文学指导'[\s\S]*?every enabled <writing_style>/);
+    assert.match(source, /id: 'cot_language_check'[\s\S]*?name: 'cot-语言检查'[\s\S]*?Read Char's Default Language[\s\S]*?audit every drafted Char dialogue line/);
+    assert.match(source, /id: 'cot_output_audit'[\s\S]*?name: 'cot-输出审查'[\s\S]*?satisfies every active formatting rule and task instruction/);
+    assert.match(source, /id: 'cot_after'[\s\S]*?name: 'COT后'[\s\S]*?presetVersion: 5[\s\S]*?content: `<\/thinking>`/);
+    assert.match(source, /const modularCotIds = \['cot_scene_planning', 'cot_literary_guidance', 'cot_language_check', 'cot_output_audit'\]/);
+    assert.match(source, /const fullCotIds = \['cot_before', \.\.\.modularCotIds, 'cot_after'\]/);
+    assert.match(source, /if \(id === 'cot'\) \{[\s\S]*?appendMigratedCotPrompts\(fullCotIds, prompt\.enabled !== false\)/);
+    assert.match(source, /if \(id === 'cot_content'\) \{[\s\S]*?appendMigratedCotPrompts\(modularCotIds, prompt\.enabled !== false\)/);
+    assert.match(source, /modularCotIds\.includes\(defaultPrompt\.id\)[\s\S]*?findIndex\(prompt => prompt\.id === 'cot_after'\)/);
     assert.match(source, /Correct all language, translation, corner-quote, and full-width-parenthesis errors/);
     assert.match(source, /Default Language: \$\{defaultLanguage\}/);
     assert.match(source, /const quoteRegex = \/「\(\[\^」\\n\]\{1,180\}\)」\/g/);
@@ -375,6 +384,89 @@ test('offline chat dialogue and settings use the fullscreen studio presentation'
     assert.match(css, /\.offline-tavern-speech\.is-playable\.is-loading\s*\{[\s\S]*?cursor:\s*wait/);
     assert.match(css, /\.offline-settings-view\.active\s*\{[\s\S]*?display:\s*flex/);
     assert.match(css, /@media \(max-width: 520px\)[\s\S]*?\.offline-settings-prompt-content\s*\{[\s\S]*?margin-left:\s*0/);
+});
+
+test('offline COT normalization expands legacy entries and preserves module switches', async () => {
+    const source = await fs.readFile(new URL('../js/imessage/4_chat_sheet.js', import.meta.url), 'utf8');
+    const start = source.indexOf('const OFFLINE_LEGACY_PROMPT_ID_BY_NAME');
+    const end = source.indexOf('const serializeOfflinePrompts');
+    assert.ok(start >= 0 && end > start);
+
+    const context = {
+        OFFLINE_CHAT_HISTORY_PROMPT_ID: 'chat_history',
+        OFFLINE_TAVERN_PROMPT_ORDER: [
+            'role_identity', 'data_zone', 'memory_system', 'chat_history',
+            'task_instruction', 'length_words', 'nsfw', 'format_rules', 'bilingual_dialogue',
+            'perspective_first', 'perspective_second', 'perspective_third', 'barrage_comments', 'player_choices',
+            'style_baimiao', 'style_green_apple',
+            'cot_before', 'cot_scene_planning', 'cot_literary_guidance', 'cot_language_check', 'cot_output_audit', 'cot_after'
+        ]
+    };
+    vm.runInNewContext(`${source.slice(start, end)}\nthis.normalizeOfflinePromptsForTest = normalizeOfflinePrompts;`, context);
+    const normalize = context.normalizeOfflinePromptsForTest;
+    const cotIds = ['cot_before', 'cot_scene_planning', 'cot_literary_guidance', 'cot_language_check', 'cot_output_audit', 'cot_after'];
+    const onlyCot = prompts => normalize(prompts).filter(prompt => String(prompt.id).startsWith('cot'));
+
+    const fresh = onlyCot([]);
+    assert.deepEqual(Array.from(fresh, prompt => prompt.id), cotIds);
+    assert.ok(fresh.every(prompt => prompt.enabled));
+
+    const migratedContent = onlyCot([
+        { id: 'cot_before', name: 'COT前', enabled: true },
+        { id: 'cot_content', name: 'COT内容', enabled: false },
+        { id: 'cot_after', name: 'COT后', enabled: true }
+    ]);
+    assert.deepEqual(Array.from(migratedContent, prompt => prompt.id), cotIds);
+    assert.ok(migratedContent.slice(1, 5).every(prompt => prompt.enabled === false));
+
+    const migratedLegacy = onlyCot([{ id: 'cot', name: 'COT', enabled: false }]);
+    assert.deepEqual(Array.from(migratedLegacy, prompt => prompt.id), cotIds);
+    assert.ok(migratedLegacy.every(prompt => prompt.enabled === false));
+
+    const independent = onlyCot(cotIds.map((id, index) => ({
+        id,
+        name: id,
+        enabled: index % 2 === 0,
+        presetVersion: 2
+    }))); 
+    assert.deepEqual(Array.from(independent, prompt => prompt.enabled), [true, false, true, false, true, false]);
+    assert.equal(independent.find(prompt => prompt.id === 'cot_before').content, 'You must think before outputting the content.\n<thinking>');
+    assert.equal(independent.find(prompt => prompt.id === 'cot_after').content, '</thinking>');
+
+    const freshIds = Array.from(normalize([]), prompt => prompt.id);
+    assert.deepEqual(freshIds, context.OFFLINE_TAVERN_PROMPT_ORDER);
+
+    const migratedWithCustom = normalize([
+        { id: 'role_identity', name: 'custom role name', enabled: false, content: 'CUSTOM ROLE' },
+        { id: 'data_zone', name: 'data', enabled: true },
+        { id: 'custom-after-data', name: 'custom', enabled: true, content: 'CUSTOM' },
+        { id: 'length_words', name: 'length', enabled: true },
+        { id: 'barrage_comments', name: 'barrage', enabled: false, content: 'CUSTOM BARRAGE' }
+    ]);
+    assert.equal(
+        migratedWithCustom.findIndex(prompt => prompt.id === 'custom-after-data'),
+        migratedWithCustom.findIndex(prompt => prompt.id === 'data_zone') + 1
+    );
+    assert.deepEqual(
+        Object.fromEntries(['name', 'enabled', 'content'].map(key => [key, migratedWithCustom.find(prompt => prompt.id === 'role_identity')[key]])),
+        { name: 'custom role name', enabled: false, content: 'CUSTOM ROLE' }
+    );
+    assert.equal(migratedWithCustom.find(prompt => prompt.id === 'barrage_comments').enabled, false);
+    assert.equal(migratedWithCustom.find(prompt => prompt.id === 'barrage_comments').content, 'CUSTOM BARRAGE');
+
+    const userOrdered = normalize([]);
+    const markerIndex = userOrdered.findIndex(prompt => prompt.id === 'chat_history');
+    const [marker] = userOrdered.splice(markerIndex, 1);
+    userOrdered.unshift(marker);
+    assert.deepEqual(
+        Array.from(normalize(userOrdered), prompt => prompt.id),
+        Array.from(userOrdered, prompt => prompt.id)
+    );
+
+    const previousOrder = normalize([]);
+    previousOrder.find(prompt => prompt.id === 'chat_history').presetVersion = 1;
+    const migratedOrder = normalize(previousOrder);
+    assert.deepEqual(Array.from(migratedOrder.slice(-6), prompt => prompt.id), cotIds);
 });
 
 test('injects loaded group chat memory only into character single-chat prompts', async () => {

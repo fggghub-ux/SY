@@ -533,6 +533,16 @@ window.imApp.normalizeFriendData = function(friend) {
     normalized.timeAware = normalized.timeAware !== false;
     normalized.allowRoleRecall = normalized.allowRoleRecall !== false;
     normalized.offlineStreamEnabled = normalized.offlineStreamEnabled !== false;
+    normalized.offlineRequestReasoning = normalized.offlineRequestReasoning !== false;
+    const offlineMaxResponseTokens = Number(normalized.offlineMaxResponseTokens);
+    const offlineMaxResponseTokensVersion = Math.max(0, Number(normalized.offlineMaxResponseTokensVersion) || 0);
+    const shouldMigrateLegacyTokenDefault = offlineMaxResponseTokensVersion < 1 && offlineMaxResponseTokens === 4096;
+    normalized.offlineMaxResponseTokens = shouldMigrateLegacyTokenDefault
+        ? 30000
+        : (Number.isFinite(offlineMaxResponseTokens) && offlineMaxResponseTokens > 0
+            ? Math.min(32768, Math.max(256, Math.round(offlineMaxResponseTokens)))
+            : 30000);
+    normalized.offlineMaxResponseTokensVersion = 1;
     normalized.dynamicActionNarrationEnabled = !!normalized.dynamicActionNarrationEnabled;
     normalized.timestampPosition = normalized.timestampPosition === 'outside' ? 'outside' : 'inside';
     normalized.boundBooks = Array.isArray(normalized.boundBooks) ? normalized.boundBooks : [];
@@ -927,7 +937,17 @@ window.imApp.formatSystemNoticeForApiContext = function(message) {
         return '[系统事件：User 重新进入群聊。]';
     }
     if (noticeKind === 'narration') {
-        return `[旁白：${noticeText}]`;
+        const narrationSource = normalizedMessage.narrationSource === 'dynamic_action'
+            ? 'narrator_dynamic_action'
+            : 'scene_director';
+        return `<SCENE_NARRATION source="${narrationSource}" attribution="none">
+content_json: ${JSON.stringify(String(noticeText || ''))}
+interpretation_rules:
+- This is an out-of-character scene narration event, not a message, spoken line, inner thought, intention, or automatically performed action from User.
+- Do not reply as though User said this text. Do not attribute it to User or any character unless the narration explicitly names that character as the actor.
+- If the narration explicitly states that a named character performed an action, treat that action as an already established scene fact and continue from its result.
+- Preserve this event's chronological place in the scene and continue the story from it.
+</SCENE_NARRATION>`;
     }
     if (noticeKind === 'offline_meeting_active') {
         return '';

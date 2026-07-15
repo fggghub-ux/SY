@@ -2356,8 +2356,26 @@ Output only valid JSON with this exact shape:
         const dynamicActionNarrationSubject = friend.type === 'group'
             ? '当前发言成员或群聊现场'
             : `${friend.nickname || friend.realName || '角色'}`;
+        const previousDynamicActionNarration = (Array.isArray(friend.messages) ? friend.messages : [])
+            .slice()
+            .reverse()
+            .find(message => message?.type === 'system_notice'
+                && message?.noticeKind === 'narration'
+                && message?.narrationSource === 'dynamic_action');
+        const previousDynamicActionText = String(
+            previousDynamicActionNarration?.content || previousDynamicActionNarration?.text || ''
+        ).trim();
         const dynamicActionNarrationRequirement = dynamicActionNarrationEnabled
-            ? `\n\n【动描额外输出】\n- 本轮必须额外输出 1 个动作/环境氛围旁白对象，放在 <chat_json> JSON 数组中，建议放在第一条或最后一条。\n- 格式：{"type":"action_narration","text":"约20字，第三人称，描写${dynamicActionNarrationSubject}的外显动作、环境声或氛围，不写心理活动，不写台词"}。\n- text 只写旁白正文，不要写“旁白：”，不要超过35字。`
+            ? `\n\n【动描额外输出｜剧情连续性硬性规则】
+- 本轮必须额外输出 1 个动作/环境氛围旁白对象，放在 <chat_json> JSON 数组中，建议放在第一条或最后一条。
+- 格式：{"type":"action_narration","text":"约20字，严格第三人称，描写${dynamicActionNarrationSubject}的外显动作、环境变化或氛围，不写心理活动，不写台词"}。
+- text 必须全程使用简体中文，这是高于角色默认语言、对话语言和上下文语言的硬性要求；即使角色、User 或最近消息使用外语，也不得把动描切换为外语。角色姓名和必要专有名词可以保留原文，其余叙述必须为简体中文。
+- 必须从当前上下文继续：先读取最近的用户动作/话语、角色回应、所处位置、正在使用的物件、环境与未完成动作，写出因果相连的“下一拍”。
+- 必须合理推进当前剧情，只推进一个小节拍；不得重置场景、跳过中间过程、总结剧情，或写出与现有位置、姿态、物件状态矛盾的动作。
+- 严格使用第三人称叙述；禁止用“我”叙述，禁止把 User 写成第二人称“你”，禁止擅自替 User 完成新的动作或选择。
+- 禁止与上一条动描重复：不得重复相同的核心动作、环境意象、镜头焦点或句式，也不得仅用近义词改写。如果上一条已写某个动作，本轮必须写该动作造成的后续反应或新变化。
+- 上一条动描：${previousDynamicActionText || '无（本轮从当前上下文自然起笔）'}
+- text 只写旁白正文，不要写“旁白：”或“动描：”，不要超过 35 字。`
             : '';
         const effectiveUserPersona = window.imApp?.getEffectivePersonaForFriend
             ? window.imApp.getEffectivePersonaForFriend(friend)
@@ -3647,6 +3665,7 @@ Never truncate OUTPUT(x)
                         role: 'system',
                         type: 'system_notice',
                         noticeKind: 'narration',
+                        narrationSource: 'dynamic_action',
                         content: narrationText,
                         text: narrationText,
                         timestamp: nowMsg,
