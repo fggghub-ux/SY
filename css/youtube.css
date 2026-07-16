@@ -1244,6 +1244,292 @@
     color: #ffffff;
 }
 
+/* Shared simulated call-in UI for Char and user live rooms */
+.yt-live-connect-btn {
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    margin-right: 6px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: #606060;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.yt-live-connect-btn:disabled,
+.yt-live-connect-btn.is-connecting {
+    opacity: 0.45;
+    pointer-events: none;
+}
+
+#yt-video-player-view.yt-char-live-mode #yt-player-connect-btn,
+#yt-user-live-view.active #yt-user-live-connect-btn {
+    display: flex;
+}
+
+.yt-live-connection-card {
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    z-index: 8;
+    min-width: 154px;
+    max-width: min(74%, 280px);
+    min-height: 54px;
+    padding: 8px 38px 8px 8px;
+    border-radius: 29px;
+    background: rgba(15, 15, 15, 0.72);
+    color: #fff;
+    box-sizing: border-box;
+    align-items: center;
+    gap: 9px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.yt-live-connections-stack {
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    z-index: 8;
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: flex-end;
+    gap: 9px;
+    pointer-events: none;
+}
+
+.yt-live-connections-stack .yt-live-connection-card {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    display: flex;
+    pointer-events: auto;
+}
+
+.yt-live-connection-avatar-wrap {
+    position: relative;
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+}
+
+.yt-live-connection-avatar {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    background: #333;
+}
+
+.yt-live-connection-wave {
+    position: absolute;
+    right: -7px;
+    bottom: -3px;
+    height: 18px;
+    padding: 2px 4px;
+    border-radius: 9px;
+    background: #34c759;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.yt-live-connection-wave i {
+    width: 2px;
+    height: 5px;
+    border-radius: 2px;
+    background: #fff;
+    animation: ytLiveConnectionWave 0.75s ease-in-out infinite alternate;
+}
+
+.yt-live-connection-wave i:nth-child(2) { animation-delay: -0.45s; }
+.yt-live-connection-wave i:nth-child(3) { animation-delay: -0.2s; }
+.yt-live-connection-wave i:nth-child(4) { animation-delay: -0.6s; }
+
+@keyframes ytLiveConnectionWave {
+    from { height: 4px; }
+    to { height: 13px; }
+}
+
+.yt-live-connection-info {
+    min-width: 0;
+    line-height: 1.2;
+}
+
+.yt-live-connection-name {
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.yt-live-connection-duration {
+    margin-top: 3px;
+    font-size: 10px;
+    color: rgba(255,255,255,0.72);
+    font-variant-numeric: tabular-nums;
+}
+
+.yt-live-connection-exit {
+    position: absolute;
+    top: 50%;
+    right: 7px;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    transform: translateY(-50%);
+    border: 0;
+    border-radius: 50%;
+    background: #ff3b30;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.yt-live-connection-bubbles {
+    position: absolute;
+    right: calc(100% + 8px);
+    bottom: 0;
+    width: min(240px, 70vw);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    pointer-events: none;
+}
+
+.yt-live-connection-bubble {
+    max-width: 100%;
+    padding: 7px 10px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.94);
+    color: #0f0f0f;
+    font-size: 12px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    box-shadow: 0 3px 12px rgba(0,0,0,0.12);
+    animation: liveChatSlideUp 0.25s ease-out forwards;
+}
+
+.yt-live-connection-narratives {
+    position: absolute;
+    right: calc(100% + 8px);
+    bottom: 0;
+    width: min(250px, 72vw);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 5px;
+    pointer-events: none;
+}
+
+.yt-live-connection-bubbles:not(:empty) + .yt-live-connection-narratives {
+    bottom: 46px;
+}
+
+.yt-live-connection-narrative {
+    max-width: 100%;
+    color: rgba(255,255,255,0.9);
+    font-size: 11px;
+    line-height: 1.45;
+    font-style: italic;
+    text-align: right;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.95);
+    animation: liveChatSlideUp 0.25s ease-out forwards;
+}
+
+.yt-live-connection-bubble .yt-char-live-translation {
+    margin-top: 3px;
+    color: #606060;
+    font-size: 11px;
+}
+
+#yt-guest-list .account-card.is-selected {
+    background: #f0f7ff;
+    box-shadow: inset 0 0 0 1.5px #1677ff;
+}
+
+.yt-guest-selected-mark {
+    margin-left: auto;
+    color: #1677ff;
+    opacity: 0;
+}
+
+.account-card.is-selected .yt-guest-selected-mark {
+    opacity: 1;
+}
+
+.yt-guest-multi-confirm {
+    width: calc(100% - 24px);
+    margin: 12px;
+    padding: 12px 16px;
+    border: 0;
+    border-radius: 999px;
+    background: #0f0f0f;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.yt-char-live-lottery-overlay {
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+
+.yt-char-live-lottery-card {
+    width: min(86%, 340px);
+    padding: 24px 20px 20px;
+    border-radius: 24px;
+    background: rgba(255,255,255,0.98);
+    color: #0f0f0f;
+    text-align: center;
+    box-shadow: 0 18px 50px rgba(0,0,0,0.2);
+}
+
+.yt-char-live-lottery-icon {
+    width: 54px;
+    height: 54px;
+    margin: 0 auto 12px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff0f0;
+    color: #e62117;
+    font-size: 24px;
+}
+
+.yt-char-live-lottery-title { font-size: 18px; font-weight: 700; }
+.yt-char-live-lottery-prize { margin-top: 10px; font-size: 16px; font-weight: 650; }
+.yt-char-live-lottery-countdown { margin-top: 8px; color: #e62117; font-size: 13px; font-variant-numeric: tabular-nums; }
+.yt-char-live-lottery-status { margin-top: 10px; color: #606060; font-size: 13px; line-height: 1.5; }
+.yt-char-live-lottery-actions { display: flex; gap: 10px; margin-top: 18px; }
+.yt-char-live-lottery-actions button,
+.yt-char-live-lottery-close {
+    flex: 1;
+    min-height: 42px;
+    border: 0;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 650;
+    cursor: pointer;
+}
+.yt-char-live-lottery-actions button:first-child { background: #f2f2f2; color: #606060; }
+.yt-char-live-lottery-actions button:last-child,
+.yt-char-live-lottery-close { background: #0f0f0f; color: #fff; }
+.yt-char-live-lottery-close { width: 100%; margin-top: 18px; }
+
 /* Community Post Styles */
 .yt-community-post {
     padding: 16px;
@@ -2089,8 +2375,8 @@
 
 #yt-player-chat-container .yt-live-chat-row-anim[style*="background-color"] .yt-comment-translation-toggle,
 #yt-player-chat-container .yt-live-chat-row-anim[style*="background-color"] .yt-comment-translation {
-    color: var(--yt-sc-text-color, rgba(255,255,255,0.82));
-    opacity: 0.82;
+    color: rgba(255,255,255,0.78);
+    opacity: 1;
 }
 
 .yt-replay-realtime-divider {
@@ -2451,10 +2737,12 @@
     overflow-wrap: anywhere;
 }
 
+.yt-live-lottery-status.is-highlighted,
 #yt-user-live-lottery-status.is-highlighted {
     animation: ytLotteryStatusPulse 0.7s ease;
 }
 
+.yt-live-lottery-status,
 #yt-user-live-lottery-status {
     position: absolute;
     left: 12px;
@@ -2547,9 +2835,10 @@
     display: none;
 }
 
-.yt-live-chat-row-anim[style*="background-color"] .yt-user-live-comment-translation-toggle,
-.yt-live-chat-row-anim[style*="background-color"] .yt-user-live-comment-translation {
-    color: rgba(255,255,255,0.82);
+.yt-user-live-superchat .yt-user-live-comment-translation-toggle,
+.yt-user-live-superchat .yt-user-live-comment-translation {
+    color: rgba(255,255,255,0.78);
+    opacity: 1;
 }
 
 @keyframes ytLotteryStatusPulse {
