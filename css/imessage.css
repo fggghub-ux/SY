@@ -2267,6 +2267,68 @@ button.group-private-chat-detail-bubble {
     align-items: stretch;
 }
 
+.offline-tavern-thinking {
+    width: 100%;
+    margin-bottom: 8px;
+    overflow: hidden;
+    border: 1px solid #e5e5ea;
+    border-radius: 14px;
+    background: #f8f8f8;
+    text-align: left;
+    box-sizing: border-box;
+}
+
+.offline-tavern-thinking-toggle {
+    width: 100%;
+    min-height: 42px;
+    padding: 10px 13px;
+    border: 0;
+    background: transparent;
+    color: #636366;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font: inherit;
+    cursor: pointer;
+}
+
+.offline-tavern-thinking-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.offline-tavern-thinking-label > i {
+    color: #8e8e93;
+}
+
+.offline-tavern-thinking-icon {
+    flex: 0 0 auto;
+    color: #8e8e93;
+    font-size: 11px;
+    transition: transform 0.2s ease;
+}
+
+.offline-tavern-thinking.is-expanded .offline-tavern-thinking-icon {
+    transform: rotate(180deg);
+}
+
+.offline-tavern-thinking-content {
+    padding: 0 13px 12px;
+    color: #666;
+    font-size: 13px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.offline-tavern-thinking-content[hidden] {
+    display: none;
+}
+
 .offline-tavern-floor {
     display: inline;
     color: #8e8e93;
@@ -4144,7 +4206,44 @@ input:checked + .slider:before {
     touch-action: manipulation;
 }
 
+.chat-profile-panel-action-btn {
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+    border: none;
+    border-radius: 50%;
+    background: #fff;
+    color: #111;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.chat-profile-panel-action-btn.is-page {
+    font-size: 14px;
+}
+
+.chat-profile-panel-action-btn:disabled {
+    opacity: 0.34;
+    cursor: default;
+    transform: none;
+}
+
+.chat-profile-panel-action-btn.is-danger {
+    color: #ff3b30;
+}
+
+.chat-profile-panel-action-btn:active {
+    transform: scale(0.94);
+    background: #f2f2f7;
+}
+
 .chat-profile-panel-card {
+    position: relative;
     width: min(100%, 320px);
     background: #ffffff;
     border-radius: 24px;
@@ -4152,6 +4251,8 @@ input:checked + .slider:before {
     overflow: hidden;
     transform: translateY(12px) scale(0.96);
     opacity: 0;
+    touch-action: pan-y;
+    will-change: transform, opacity;
     transition: transform 0.22s ease, opacity 0.22s ease;
 }
 
@@ -5107,6 +5208,215 @@ input:checked + .slider:before {
     left: 0;
     width: 100%;
     z-index: 30;
+}
+
+.chat-profile-status-page {
+    width: 100%;
+}
+
+.chat-profile-status-time {
+    margin-bottom: 7px;
+    color: #8e8e93;
+    font-size: 11px;
+    text-align: right;
+}
+
+.chat-profile-status-counter {
+    margin-top: 10px;
+    color: #8e8e93;
+    font-size: 11px;
+    font-weight: 700;
+    text-align: center;
+}
+
+.chat-profile-status-edit-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 12;
+    align-items: center;
+    justify-content: center;
+    padding: 14px;
+    background: rgba(0, 0, 0, 0.32);
+    opacity: 0;
+    transition: opacity 0.18s ease;
+}
+
+.chat-profile-status-edit-overlay.active {
+    opacity: 1;
+}
+
+.chat-profile-status-edit-card {
+    width: 100%;
+    max-height: 100%;
+    overflow-y: auto;
+    padding: 18px;
+    border-radius: 20px;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    transform: translateY(8px) scale(0.98);
+    transition: transform 0.18s ease;
+}
+
+.chat-profile-status-edit-overlay.active .chat-profile-status-edit-card {
+    transform: translateY(0) scale(1);
+}
+
+.chat-profile-status-edit-title {
+    color: #111;
+    font-size: 18px;
+    font-weight: 750;
+}
+
+.chat-profile-status-edit-card label {
+    color: #666;
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.chat-profile-status-edit-card textarea {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid #e5e5ea;
+    border-radius: 12px;
+    background: #f8f8fb;
+    color: #111;
+    padding: 10px 11px;
+    font: inherit;
+    font-size: 14px;
+    outline: none;
+    resize: none;
+}
+
+.chat-profile-status-edit-card textarea:focus {
+    border-color: #111;
+}
+
+.chat-profile-status-edit-readonly {
+    color: #8e8e93;
+    font-size: 12px;
+}
+
+.status-prompt-sheet-card {
+    max-height: 82%;
+    padding-left: 0;
+    padding-right: 0;
+    padding-bottom: calc(18px + env(safe-area-inset-bottom));
+    background: #f2f2f7;
+}
+
+.status-prompt-sheet-content {
+    padding: 6px 18px 0;
+}
+
+.status-prompt-toggle-group {
+    margin: 14px 0 18px;
+    overflow: hidden;
+    border-radius: 18px;
+    background: #fff;
+}
+
+.status-prompt-toggle-row {
+    min-height: 72px;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 12px 16px !important;
+    cursor: default;
+    border-bottom: none !important;
+}
+
+.status-prompt-toggle-copy {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.status-prompt-toggle-copy > span:last-child {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.status-prompt-toggle-icon {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 11px;
+    background: #111;
+    color: #fff;
+    font-size: 15px;
+}
+
+.status-prompt-input-label {
+    display: block;
+    margin: 0 4px 9px;
+    color: #636366;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#status-prompt-input {
+    min-height: 180px;
+    width: 100%;
+    padding: 16px 17px;
+    border: 1px solid #e5e5ea;
+    border-radius: 18px;
+    background: #fff;
+    line-height: 1.65;
+    box-sizing: border-box;
+    transition: opacity 0.2s ease, background 0.2s ease;
+}
+
+.status-builder-hint {
+    margin-top: 3px;
+    color: #8e8e93;
+    font-size: 11px;
+}
+
+#status-prompt-input:disabled {
+    opacity: 0.58;
+    background: #fff;
+}
+
+#save-status-prompt-btn {
+    width: 100%;
+    min-height: 48px;
+    margin: 18px 0 0;
+    border: none;
+    border-radius: 15px;
+    background: #111;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.chat-profile-status-edit-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.chat-profile-status-edit-actions button {
+    min-height: 40px;
+    border: none;
+    border-radius: 12px;
+    background: #f2f2f7;
+    color: #111;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.chat-profile-status-edit-actions button.is-primary {
+    background: #111;
+    color: #fff;
 }
 
 .publish-moment-content {
