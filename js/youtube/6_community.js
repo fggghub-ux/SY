@@ -2361,6 +2361,38 @@
                 instructionStr = `这是用户自己创建并担任群主的社群。用户群主名为"${effectiveYtUser.name || '我'}"，你绝对不能代替、模仿或生成用户群主的发言。只能生成普通粉丝和上方管理员名单中的管理员发言。管理员发言必须使用真实 speakerId 并严格遵守对应人设；没有管理员时只能生成普通粉丝。${isUserMsg ? '请自然回应用户刚刚发送的消息。' : '请基于上下文自然延续社群日常聊天。'}`;
             }
 
+            function getYtDmVideoText(value) {
+                if (value && typeof value === 'object') return String(value.text || value.content || '').trim();
+                return String(value || '').trim();
+            }
+
+            function summarizeYtDmPastVideos(videos, ownerLabel) {
+                const source = Array.isArray(videos) ? videos.slice(0, 6) : [];
+                if (source.length === 0) return `${ownerLabel}：暂无往期视频。`;
+                return `${ownerLabel}：\n${source.map((video, index) => {
+                    const transcript = (Array.isArray(video?.liveTranscript) ? video.liveTranscript : [])
+                        .slice(-12)
+                        .map(item => `${item?.name ? `${item.name}：` : ''}${getYtDmVideoText(item)}`)
+                        .filter(Boolean)
+                        .join('｜');
+                    const initialBubbles = (Array.isArray(video?.initialBubbles) ? video.initialBubbles : [])
+                        .slice(-8)
+                        .map(getYtDmVideoText)
+                        .filter(Boolean)
+                        .join('｜');
+                    const comments = (Array.isArray(video?.comments) ? video.comments : [])
+                        .slice(-8)
+                        .map(item => `${item?.name || '观众'}：${getYtDmVideoText(item)}`)
+                        .filter(Boolean)
+                        .join('｜');
+                    return `${index + 1}. 标题：${video?.title || '无标题'}\n简介：${video?.desc || '无'}\n公开内容：${transcript || initialBubbles || '无可用发言记录'}\n代表评论：${comments || '无'}`;
+                }).join('\n\n')}`;
+            }
+
+            const dmPastVideoContext = isDM
+                ? `【双方往期视频公开内容】\n${summarizeYtDmPastVideos(char?.generatedContent?.pastVideos, `${char.name || 'Char'}自己的往期`)}\n\n${summarizeYtDmPastVideos(channelState?.pastVideos, `${effectiveYtUser.name || 'User'}的往期`)}\n你可以在话题相关时自然回忆、评价或追问这些视频内容，但不能声称看过这里没有记录的内容。`
+                : '';
+
             let promptStr = channelState.groupChatPrompt || defaultGroupChatPrompt;
             const charPersona = typeof window.getYtChannelPersonaWithRelationships === 'function'
                 ? window.getYtChannelPersonaWithRelationships(char)
@@ -2375,7 +2407,7 @@
                 .replace(/{chat_history}/g, historyStr)
                 .replace(/{trigger_instruction}/g, instructionStr);
             if (isDM) {
-                finalPrompt += `\n\n【国际化输出协议｜不可省略】\n- 返回 {"charReplies":[{"text":"原文","translationZh":"中文翻译或空字符串"}]}。\n- text 不是中文时必须提供自然中文翻译；text 是中文时 translationZh 为空字符串。\n- 只返回合法 JSON，不要 Markdown。`;
+                finalPrompt += `\n\n${dmPastVideoContext}\n\n【国际化输出协议｜不可省略】\n- 返回 {"charReplies":[{"text":"原文","translationZh":"中文翻译或空字符串"}]}。\n- text 不是中文时必须提供自然中文翻译；text 是中文时 translationZh 为空字符串。\n- 只返回合法 JSON，不要 Markdown。`;
             } else {
                 const allowedRoles = isOwnedGroup ? 'admin 或 fan，禁止 owner 和 user' : 'owner 或 fan';
                 finalPrompt += `\n\n【统一群聊输出协议｜不可省略】\n- 返回 {"groupReplies":[{"role":"角色","speakerId":"管理员ID或空字符串","name":"显示名","text":"原文","translationZh":"中文翻译或空字符串"}]}。\n- role 只能是 ${allowedRoles}。\n- admin 只能从管理员名单选择，speakerId 必须完全一致；fan 使用自然的粉丝昵称。\n- text 不是中文时必须提供自然中文翻译；text 是中文时 translationZh 为空字符串。\n- 生成 2–6 条简短、自然、有连续性的消息。\n- 只返回合法 JSON，不要 Markdown。`;

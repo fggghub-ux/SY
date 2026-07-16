@@ -52,5 +52,5 @@ test('past-video details share comment search, deletion, and replay boundaries f
     assert.match(channelSource, /realtimeCommentCount: Number\(v\.realtimeCommentCount\) \|\| 0/);
     assert.doesNotMatch(channelSource, /class="yt-history-delete-btn"/);
     assert.match(userLiveSource, /isLiveReplay: true[\s\S]*realtimeCommentCount: archivedUserComments\.length/);
-    assert.match(indexSource, /js\/youtube\/6_community\.js\?v=20260715-user-vod-parity-v2/);
+    assert.match(indexSource, /js\/youtube\/6_community\.js\?v=20260717-char-lottery-consistency-v18/);
 });

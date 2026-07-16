@@ -58,6 +58,7 @@
             activeUserLive: null,
             pastVideos: [],
             communityPosts: [],
+            dataCenter: { views: 0, sc: 0, subs: 0, commission: 0, receivedGifts: [] },
             userCommunityChannel: null
         };
     }
@@ -294,6 +295,7 @@
     function normalizeYtChannelState(rawState) {
         const defaults = createDefaultYtChannelState();
         const safeState = rawState && typeof rawState === 'object' ? rawState : {};
+        const rawDataCenter = safeState.dataCenter && typeof safeState.dataCenter === 'object' ? safeState.dataCenter : {};
 
         return {
             ...defaults,
@@ -304,6 +306,15 @@
             activeUserLive: safeState.activeUserLive && typeof safeState.activeUserLive === 'object' ? safeState.activeUserLive : null,
             pastVideos: Array.isArray(safeState.pastVideos) ? safeState.pastVideos.filter(video => video && typeof video === 'object') : [],
             communityPosts: Array.isArray(safeState.communityPosts) ? safeState.communityPosts.filter(post => post && typeof post === 'object') : [],
+            dataCenter: {
+                views: Math.max(0, Number(rawDataCenter.views) || 0),
+                sc: Math.max(0, Number(rawDataCenter.sc) || 0),
+                subs: Math.max(0, Number(rawDataCenter.subs) || 0),
+                commission: Number(rawDataCenter.commission) || 0,
+                receivedGifts: Array.isArray(rawDataCenter.receivedGifts)
+                    ? rawDataCenter.receivedGifts.filter(item => item && typeof item === 'object').slice(0, 100)
+                    : []
+            },
             userCommunityChannel: normalizeYtUserCommunityChannel(safeState.userCommunityChannel)
         };
     }
@@ -1308,8 +1319,9 @@ offerData.price 用于展示，offerData.rmbAmount 是纯数字，代表换算�
                         el.style.borderBottom = '1px solid #f2f2f2';
                     }
                     
-                    const lastMsg = sub.dmHistory[sub.dmHistory.length - 1];
-                    let lastMsgText = lastMsg.isOffer ? '[商单邀请]' : (lastMsg.text || '...');
+                    const dmHistory = Array.isArray(sub.dmHistory) ? sub.dmHistory : [];
+                    const lastMsg = dmHistory.length > 0 ? dmHistory[dmHistory.length - 1] : null;
+                    let lastMsgText = lastMsg?.isOffer ? '[商单邀请]' : (lastMsg?.text || '暂无消息');
                     let lastMsgTime = '刚刚';
                     const unreadCount = Math.max(0, Math.round(Number(sub.unreadDmCount) || 0));
 

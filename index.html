@@ -46,7 +46,7 @@
     <link rel="stylesheet" href="css/library.css?v=20260715-reader-streaming-v1">
     <!-- App Styles -->
     <link rel="stylesheet" href="css/settings.css?v=20260715-font-upload-v1">
-    <link rel="stylesheet" href="css/youtube.css?v=20260715-user-vod-parity-v2">
+    <link rel="stylesheet" href="css/youtube.css?v=20260717-char-lottery-consistency-v18">
     <link rel="stylesheet" href="css/netflix.css">
 </head>
 <body>
@@ -1013,6 +1013,18 @@
                                 <img id="yt-player-thumbnail" src="" alt="" style="width:100%; height:100%; object-fit:cover;">
                                 <div id="yt-player-live-badge" class="yt-live-badge" style="display:none;">LIVE</div>
                                 <div id="yt-char-speech-bubble" class="yt-char-live-bubbles-container" style="display:none;"></div>
+                                <div id="yt-char-live-connection-card" class="yt-live-connection-card" style="display:none;">
+                                    <div class="yt-live-connection-avatar-wrap">
+                                        <img class="yt-live-connection-avatar" src="" alt="">
+                                        <div class="yt-live-connection-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+                                    </div>
+                                    <div class="yt-live-connection-info">
+                                        <div class="yt-live-connection-name"></div>
+                                        <div class="yt-live-connection-duration">00:00:00</div>
+                                    </div>
+                                    <button type="button" class="yt-live-connection-exit" aria-label="退出连线" title="退出连线"><i class="fas fa-phone-slash"></i></button>
+                                    <div class="yt-live-connection-narratives" aria-live="polite"></div>
+                                </div>
                             </div>
                             <div class="yt-player-meta-panel" style="padding:14px 16px 10px; border-bottom:1px solid #f2f2f2;">
                                 <div id="yt-player-title" style="font-size:18px; font-weight:700; color:#0f0f0f; line-height:1.4;">标题</div>
@@ -1038,11 +1050,22 @@
                                     </div>
                                 </div>
                             </div>
+                            <div id="yt-char-live-lottery-inline-status" class="yt-live-lottery-status" aria-live="polite" style="display:none;">
+                                <div class="yt-user-live-lottery-status-icon"><i class="fas fa-gift"></i></div>
+                                <div class="yt-user-live-lottery-status-copy">
+                                    <div class="yt-user-live-lottery-status-title"><span></span>直播抽奖进行中</div>
+                                    <div class="yt-user-live-lottery-status-meta">
+                                        <span><strong id="yt-char-live-lottery-participants">0</strong> 人已参与</span>
+                                        <span>距开奖 <strong id="yt-char-live-lottery-status-countdown">00:30</strong></span>
+                                    </div>
+                                </div>
+                            </div>
                             <div class="yt-player-chat-shell" style="flex:1; display:flex; flex-direction:column; min-height:0;">
                                 <div id="yt-player-chat-title" style="padding:12px 16px; font-size:14px; font-weight:600;">实时聊天</div>
                                 <div id="yt-player-chat-container" style="flex:1; overflow-y:auto; padding:0 16px 16px;"></div>
                                 <div class="ins-chat-input-container">
                                     <div class="ins-chat-input-wrapper" style="background:#f2f2f2; border-radius:22px; display:flex; align-items:center; padding:4px 6px 4px 14px;">
+                                        <button type="button" id="yt-player-connect-btn" class="yt-live-connect-btn" aria-label="请求连线" title="请求连线"><i class="fas fa-phone-volume"></i></button>
                                         <input id="yt-player-chat-input" type="text" placeholder="发表评论..." style="flex:1; min-width:0; border:none; background:transparent; padding:8px 0; outline:none; font-size:15px; color:#0f0f0f;">
                                         <div style="display:flex; align-items:center; gap:4px;">
                                             <div id="yt-player-chat-send" role="button" tabindex="0" aria-label="发送消息" title="发送消息" style="width:32px; height:32px; border-radius:16px; background:transparent; color:#8e8e93; display:flex; justify-content:center; align-items:center; cursor:pointer;">
@@ -1054,6 +1077,22 @@
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- Char Live Random Lottery -->
+                        <div class="bottom-sheet-overlay detail-sheet-overlay yt-char-live-lottery-overlay" id="yt-char-live-lottery-modal" style="z-index:351;">
+                            <div class="yt-char-live-lottery-card">
+                                <div class="yt-char-live-lottery-icon"><i class="fas fa-gift"></i></div>
+                                <div id="yt-char-live-lottery-title" class="yt-char-live-lottery-title">主播发起了抽奖</div>
+                                <div id="yt-char-live-lottery-prize" class="yt-char-live-lottery-prize"></div>
+                                <div id="yt-char-live-lottery-countdown" class="yt-char-live-lottery-countdown">开奖倒计时 00:30</div>
+                                <div id="yt-char-live-lottery-status" class="yt-char-live-lottery-status">是否参与本次抽奖？</div>
+                                <div id="yt-char-live-lottery-actions" class="yt-char-live-lottery-actions">
+                                    <button type="button" id="yt-char-live-lottery-skip">不参与</button>
+                                    <button type="button" id="yt-char-live-lottery-join">参与抽奖</button>
+                                </div>
+                                <button type="button" id="yt-char-live-lottery-close" class="yt-char-live-lottery-close" style="display:none;">知道了</button>
                             </div>
                         </div>
         
@@ -1074,10 +1113,6 @@
                                         <div class="form-item">
                                             <label>标题</label>
                                             <input type="text" id="yt-edit-video-title-input" placeholder="输入标题">
-                                        </div>
-                                        <div class="form-item" id="yt-edit-video-guest-selector" style="cursor:pointer;">
-                                            <label>联动嘉宾</label>
-                                            <input type="text" id="yt-edit-video-guest-name" value="无" readonly style="color:#606060;">
                                         </div>
                                     </div>
                                     <div style="display:flex; gap:10px; margin-top:18px;">
@@ -1174,6 +1209,7 @@
                                 <div id="yt-user-live-title-display" style="position:absolute; left:16px; right:16px; bottom:22px; max-width:82%; font-size:20px; font-weight:700; color:#fff; z-index:4; text-shadow:0 2px 6px rgba(0,0,0,0.35);">我的直播间</div>
                                 <div id="yt-user-live-bubbles-container" style="position:absolute; left:16px; right:90px; bottom:64px; display:flex; flex-direction:column; align-items:flex-start; gap:10px; z-index:4;"></div>
                                 <div id="yt-user-live-alert-container" style="position:absolute; inset:0; pointer-events:none; z-index:4;"></div>
+                                <div id="yt-user-live-connection-card" class="yt-live-connections-stack" aria-live="polite"></div>
                             </div>
                             <div id="yt-user-live-lottery-status" aria-live="polite" style="display:none;">
                                 <div class="yt-user-live-lottery-status-icon"><i class="fas fa-gift"></i></div>
@@ -1192,6 +1228,7 @@
                                 <div id="yt-user-live-chat-container" style="flex:1; overflow-y:auto; padding:0 16px 16px;"></div>
                                 <div class="ins-chat-input-container">
                                     <div class="ins-chat-input-wrapper" style="background:#f2f2f2; border-radius:22px; display:flex; align-items:center; padding:4px 6px 4px 14px;">
+                                        <button type="button" id="yt-user-live-connect-btn" class="yt-live-connect-btn" aria-label="请求连线" title="请求连线"><i class="fas fa-phone-volume"></i></button>
                                         <input id="yt-user-live-chat-input" type="text" placeholder="说点什么..." style="flex:1; min-width:0; border:none; background:transparent; padding:8px 0; outline:none; font-size:15px; color:#0f0f0f;">
                                         <div style="display:flex; align-items:center; gap:4px;">
                                             <div id="yt-user-live-chat-send" role="button" tabindex="0" aria-label="发送消息" title="发送消息" style="width:32px; height:32px; border-radius:16px; background:transparent; color:#8e8e93; display:flex; justify-content:center; align-items:center; cursor:pointer;">
@@ -1310,6 +1347,10 @@
                                         <div class="yt-dc-section-title">进行中的商单</div>
                                     </div>
                                     <div id="dc-offers-list" class="yt-dc-offers-list"></div>
+                                    <div class="yt-dc-section-header">
+                                        <div class="yt-dc-section-title">获得礼物</div>
+                                    </div>
+                                    <div id="dc-received-gifts-list" class="yt-dc-offers-list"></div>
                                 </div>
                             </div>
                         </div>
@@ -7588,13 +7629,13 @@
     <script src="js/tiktok/3_home.js?v=20260712-tiktok-feed-cleanup-v1"></script>
     <script src="js/tiktok/4_chat.js?v=20260712-tiktok-polish-v1"></script>
     <script src="js/tiktok/5_profile.js?v=20260712-tiktok-polish-v1"></script>
-    <script src="js/youtube/2_core.js?v=20260715-user-vod-parity-v2"></script>
-    <script src="js/youtube/3_channel.js?v=20260715-user-vod-parity-v2"></script>
+    <script src="js/youtube/2_core.js?v=20260717-char-lottery-consistency-v18"></script>
+    <script src="js/youtube/3_channel.js?v=20260717-char-lottery-consistency-v18"></script>
     <script src="js/youtube/4_settings.js"></script>
-    <script src="js/youtube/5_player.js?v=20260715-user-vod-parity-v2"></script>
-    <script src="js/youtube/6_community.js?v=20260715-user-vod-parity-v2"></script>
+    <script src="js/youtube/5_player.js?v=20260717-char-lottery-consistency-v18"></script>
+    <script src="js/youtube/6_community.js?v=20260717-char-lottery-consistency-v18"></script>
     <script src="js/youtube/7_trending.js"></script>
-    <script src="js/youtube/8_user_live.js?v=20260715-user-vod-parity-v2"></script>
+    <script src="js/youtube/8_user_live.js?v=20260717-char-lottery-consistency-v18"></script>
     <script src="js/netflix.js?v=20260710-storage-ready-v2"></script>
     <script src="js/shopping.js?v=20260710-storage-ready-v1"></script>
     <script src="js/xapp.js?v=20260710-storage-v7-cache1"></script>

@@ -4,14 +4,31 @@
     const ytPlayerVideoArea = document.getElementById('yt-player-video-area');
     const ytPlayerThumbnail = document.getElementById('yt-player-thumbnail');
     const ytCharSpeechBubble = document.getElementById('yt-char-speech-bubble');
+    const ytCharLiveConnectionCard = document.getElementById('yt-char-live-connection-card');
+    const ytPlayerConnectBtn = document.getElementById('yt-player-connect-btn');
     const ytPlayerReplayCommentsBtn = document.getElementById('yt-player-replay-comments-btn');
     const ytPlayerDeleteVideoBtn = document.getElementById('yt-player-delete-video-btn');
+    const ytCharLiveLotteryModal = document.getElementById('yt-char-live-lottery-modal');
+    const ytCharLiveLotteryTitle = document.getElementById('yt-char-live-lottery-title');
+    const ytCharLiveLotteryPrize = document.getElementById('yt-char-live-lottery-prize');
+    const ytCharLiveLotteryCountdown = document.getElementById('yt-char-live-lottery-countdown');
+    const ytCharLiveLotteryStatus = document.getElementById('yt-char-live-lottery-status');
+    const ytCharLiveLotteryInlineStatus = document.getElementById('yt-char-live-lottery-inline-status');
+    const ytCharLiveLotteryParticipants = document.getElementById('yt-char-live-lottery-participants');
+    const ytCharLiveLotteryStatusCountdown = document.getElementById('yt-char-live-lottery-status-countdown');
+    const ytCharLiveLotteryActions = document.getElementById('yt-char-live-lottery-actions');
+    const ytCharLiveLotteryJoin = document.getElementById('yt-char-live-lottery-join');
+    const ytCharLiveLotterySkip = document.getElementById('yt-char-live-lottery-skip');
+    const ytCharLiveLotteryClose = document.getElementById('yt-char-live-lottery-close');
     
     let currentVideoData = null;
     let chatInterval = null;
     let tempVideoCover = null;
-    let tempGuestData = null;
     let ytReplayCommentRequestId = '';
+    let ytCharConnectionDelayTimer = null;
+    let ytCharConnectionDurationTimer = null;
+    let ytCharLiveLotteryTimer = null;
+    const YT_CHAR_LOTTERY_TRIGGER_RATE = 0.03;
 
     function getCurrentYtViewer() {
         if (typeof window.getYtEffectiveUserState === 'function') {
@@ -158,7 +175,9 @@
         const source = item && typeof item === 'object' ? item : { text: item };
         const localized = getYtPlayerLocalizedContent(source);
         return {
-            type: source.type === 'narrative' ? 'narrative' : 'bubble',
+            type: source.type === 'narrative' ? 'narrative' : (source.type || 'bubble'),
+            ...(source.name ? { name: String(source.name) } : {}),
+            ...(source.senderType ? { senderType: String(source.senderType) } : {}),
             text: localized.text,
             ...(localized.translationZh ? { translationZh: localized.translationZh } : {}),
             timestamp: Number(source.timestamp) || (Date.now() + index)
@@ -189,7 +208,28 @@
             comments: archivedComments,
             realtimeCommentCount: archivedComments.length,
             liveTranscript: archivedTranscript,
-            guest: currentLive.guest || null
+            guest: currentLive.guest || null,
+            connectionHistory: Array.isArray(currentLive.connectionHistory)
+                ? currentLive.connectionHistory.map(item => ({
+                    ...item,
+                    participant: { ...(item?.participant || {}) },
+                    transcript: Array.isArray(item?.transcript) ? item.transcript.map(entry => ({ ...entry })) : []
+                }))
+                : [],
+            charLottery: currentLive.charLottery ? {
+                ...currentLive.charLottery,
+                participants: Array.isArray(currentLive.charLottery.participants)
+                    ? currentLive.charLottery.participants.map(item => ({ ...item }))
+                    : [],
+                winner: currentLive.charLottery.winner ? { ...currentLive.charLottery.winner } : null
+            } : null,
+            charLotteryHistory: Array.isArray(currentLive.charLotteryHistory)
+                ? currentLive.charLotteryHistory.map(lottery => ({
+                    ...lottery,
+                    participants: Array.isArray(lottery?.participants) ? lottery.participants.map(item => ({ ...item })) : [],
+                    winner: lottery?.winner ? { ...lottery.winner } : null
+                }))
+                : []
         };
         if (!Array.isArray(generatedContent.pastVideos)) generatedContent.pastVideos = [];
         generatedContent.pastVideos.unshift(replay);
@@ -239,13 +279,11 @@
     const ytGuestPickerSheet = document.getElementById('yt-guest-picker-sheet');
     const ytGuestList = document.getElementById('yt-guest-list');
     const closeYtGuestPickerBtn = document.getElementById('close-yt-guest-picker-btn');
-    const ytEditVideoGuestSelector = document.getElementById('yt-edit-video-guest-selector');
-    const ytEditVideoGuestName = document.getElementById('yt-edit-video-guest-name');
     
     // User Live Guest Elements
     const ytUserLiveGuestSelector = document.getElementById('yt-user-live-guest-selector');
     const ytUserLiveGuestName = document.getElementById('yt-user-live-guest-name');
-    let userLiveSelectedGuest = null;
+    let userLiveSelectedGuests = [];
 
     function getFollowedTkLiveGuests() {
         const chars = Array.isArray(window.tkState?.chars) ? window.tkState.chars : [];
@@ -288,45 +326,96 @@
         });
     }
 
+    function getYtSubscribedConnectionOptions() {
+        const effectiveUser = typeof getCurrentYtViewer === 'function' ? getCurrentYtViewer() : (ytUserState || {});
+        const currentUserName = String(effectiveUser?.name || '').trim();
+        return getUnifiedYtLiveGuestOptions().filter(option => (
+            option
+            && option.isSubscribed !== false
+            && option.isBusiness !== true
+            && String(option.id || '') !== 'user_channel_id'
+            && (!currentUserName || String(option.name || '').trim() !== currentUserName)
+        ));
+    }
+
     function validateYtLiveGuestOption(guest) {
         if (!guest) return null;
-        return getUnifiedYtLiveGuestOptions().find(option => {
+        return getYtSubscribedConnectionOptions().find(option => {
             if (String(option.id) === String(guest.id)) return true;
             return option.imCharId && guest.imCharId && String(option.imCharId) === String(guest.imCharId);
         }) || null;
     }
+    window.validateYtLiveGuestOption = validateYtLiveGuestOption;
 
-    function validateUserLiveSelectedGuest() {
-        if (!userLiveSelectedGuest) return null;
-        userLiveSelectedGuest = validateYtLiveGuestOption(userLiveSelectedGuest);
-        if (ytUserLiveGuestName) ytUserLiveGuestName.value = userLiveSelectedGuest ? userLiveSelectedGuest.name : '无';
-        return userLiveSelectedGuest;
+    function updateUserLiveGuestLabel() {
+        if (!ytUserLiveGuestName) return;
+        ytUserLiveGuestName.value = userLiveSelectedGuests.length
+            ? userLiveSelectedGuests.map(item => item.name).join('、')
+            : '无';
     }
 
-    window.validateUserLiveSelectedGuest = validateUserLiveSelectedGuest;
+    function validateUserLiveSelectedGuests() {
+        const seen = new Set();
+        userLiveSelectedGuests = (Array.isArray(userLiveSelectedGuests) ? userLiveSelectedGuests : [])
+            .map(validateYtLiveGuestOption)
+            .filter(guest => {
+                const key = String(guest?.imCharId || guest?.id || '');
+                if (!key || seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            })
+            .slice(0, 3);
+        updateUserLiveGuestLabel();
+        return userLiveSelectedGuests;
+    }
+
+    window.validateUserLiveSelectedGuests = validateUserLiveSelectedGuests;
+    window.validateUserLiveSelectedGuest = () => validateUserLiveSelectedGuests()[0] || null;
+    window.getUserLiveSelectedGuests = () => [...validateUserLiveSelectedGuests()];
+    window.setUserLiveSelectedGuests = guests => {
+        userLiveSelectedGuests = Array.isArray(guests) ? [...guests] : [];
+        return validateUserLiveSelectedGuests();
+    };
 
     function renderGuestPicker(onSelect, source = 'unified-live-guests', options = {}) {
         if (!ytGuestList) return;
         ytGuestList.innerHTML = '';
+        const excludedIds = new Set((options.excludeIds || []).map(String));
+        const isMulti = options.multiSelect === true;
+        const selectedIds = new Set((options.selectedIds || []).map(String));
+        const selectedById = new Map();
 
-        // "No Guest" option
-        const noneItem = document.createElement('div');
-        noneItem.className = 'account-card';
-        noneItem.innerHTML = `<div class="account-content"><div class="account-name">无联动嘉宾</div></div>`;
-        noneItem.addEventListener('click', () => {
-            onSelect(null);
-            if(ytGuestPickerSheet) ytGuestPickerSheet.classList.remove('active');
-        });
-        ytGuestList.appendChild(noneItem);
+        if (options.includeNone !== false && !isMulti) {
+            const noneItem = document.createElement('div');
+            noneItem.className = 'account-card';
+            noneItem.innerHTML = `<div class="account-content"><div class="account-name">无联动嘉宾</div></div>`;
+            noneItem.addEventListener('click', () => {
+                onSelect(null);
+                if(ytGuestPickerSheet) ytGuestPickerSheet.classList.remove('active');
+            });
+            ytGuestList.appendChild(noneItem);
+        }
 
         const guestOptions = source === 'tiktok-following'
             ? getFollowedTkLiveGuests()
-            : (source === 'youtube-subscriptions' ? mockSubscriptions : getUnifiedYtLiveGuestOptions());
+            : (source === 'youtube-subscriptions'
+                ? mockSubscriptions
+                : (source === 'youtube-connection-friends' ? getYtSubscribedConnectionOptions() : getUnifiedYtLiveGuestOptions()));
+
+        if (guestOptions.length === 0) {
+            const emptyItem = document.createElement('div');
+            emptyItem.style.cssText = 'padding:28px 16px;text-align:center;color:#8e8e93;font-size:13px;';
+            emptyItem.textContent = '暂无可连线的订阅好友';
+            ytGuestList.appendChild(emptyItem);
+        }
 
         guestOptions.forEach(sub => {
             // Avoid selecting self
             if (options.excludeCurrent !== false && currentSubChannelData && sub.id === currentSubChannelData.id) return;
             if (ytUserState && sub.name === ytUserState.name) return;
+            const participantKey = String(sub.imCharId || sub.id || '');
+            if (excludedIds.has(String(sub.id)) || (sub.imCharId && excludedIds.has(String(sub.imCharId)))) return;
+            if (selectedIds.has(participantKey) || selectedIds.has(String(sub.id))) selectedById.set(participantKey, sub);
             const avatarUrl = source === 'tiktok-following'
                 ? (sub.avatar || `https://picsum.photos/seed/${encodeURIComponent(sub.id || sub.name)}/80/80`)
                 : (typeof resolveYtChannelAvatar === 'function'
@@ -337,22 +426,47 @@
                 : (sub.guestSource === 'imessage-char' ? 'Char' : `${sub.subs || '0'} 订阅者`);
 
             const item = document.createElement('div');
-            item.className = 'account-card';
+            item.className = `account-card${selectedById.has(participantKey) ? ' is-selected' : ''}`;
             item.innerHTML = `
                 <div class="account-content">
                         <div class="account-avatar"><img src="${avatarUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"></div>
                         <div class="account-info">
                             <div class="account-name">${sub.name}</div>
                             <div class="account-detail">${detailText}</div>
+                        </div>
+                        ${isMulti ? '<i class="fas fa-check-circle yt-guest-selected-mark" aria-hidden="true"></i>' : ''}
                     </div>
-                </div>
             `;
             item.addEventListener('click', () => {
+                if (isMulti) {
+                    if (selectedById.has(participantKey)) {
+                        selectedById.delete(participantKey);
+                        item.classList.remove('is-selected');
+                    } else if (selectedById.size < 3) {
+                        selectedById.set(participantKey, sub);
+                        item.classList.add('is-selected');
+                    } else if (window.showToast) {
+                        window.showToast('最多选择 3 位连线嘉宾');
+                    }
+                    return;
+                }
                 onSelect(sub);
-                if(ytGuestPickerSheet) ytGuestPickerSheet.classList.remove('active');
+                if (ytGuestPickerSheet) ytGuestPickerSheet.classList.remove('active');
             });
             ytGuestList.appendChild(item);
         });
+
+        if (isMulti) {
+            const confirm = document.createElement('button');
+            confirm.type = 'button';
+            confirm.className = 'yt-guest-multi-confirm';
+            confirm.textContent = '确认选择';
+            confirm.addEventListener('click', () => {
+                onSelect([...selectedById.values()].slice(0, 3));
+                ytGuestPickerSheet?.classList.remove('active');
+            });
+            ytGuestList.appendChild(confirm);
+        }
     }
 
     if (closeYtGuestPickerBtn && ytGuestPickerSheet) {
@@ -362,29 +476,33 @@
         });
     }
 
-    if (ytEditVideoGuestSelector && ytGuestPickerSheet) {
-        ytEditVideoGuestSelector.addEventListener('click', () => {
-            renderGuestPicker((selectedSub) => {
-                tempGuestData = selectedSub;
-                if (ytEditVideoGuestName) {
-                    ytEditVideoGuestName.value = selectedSub ? selectedSub.name : '无';
-                }
+    if (ytUserLiveGuestSelector && ytGuestPickerSheet) {
+        ytUserLiveGuestSelector.addEventListener('click', () => {
+            renderGuestPicker((selectedGuests) => {
+                userLiveSelectedGuests = selectedGuests;
+                validateUserLiveSelectedGuests();
+            }, 'youtube-connection-friends', {
+                excludeCurrent: false,
+                includeNone: false,
+                multiSelect: true,
+                selectedIds: userLiveSelectedGuests.map(item => item.imCharId || item.id)
             });
             ytGuestPickerSheet.classList.add('active');
         });
     }
-    
-    if (ytUserLiveGuestSelector && ytGuestPickerSheet) {
-        ytUserLiveGuestSelector.addEventListener('click', () => {
-            renderGuestPicker((selectedSub) => {
-                userLiveSelectedGuest = selectedSub;
-                if (ytUserLiveGuestName) {
-                    ytUserLiveGuestName.value = selectedSub ? selectedSub.name : '无';
-                }
-            }, 'unified-live-guests', { excludeCurrent: false });
-            ytGuestPickerSheet.classList.add('active');
+
+    window.openYtLiveConnectionPicker = function(onSelect, options = {}) {
+        if (!ytGuestPickerSheet || typeof onSelect !== 'function') return false;
+        renderGuestPicker(onSelect, 'youtube-connection-friends', {
+            includeNone: options.includeNone !== false,
+            excludeCurrent: true,
+            excludeIds: options.excludeIds || []
         });
-    }
+        const title = ytGuestPickerSheet.querySelector('.sheet-title');
+        if (title) title.textContent = options.title || '选择连线好友';
+        ytGuestPickerSheet.classList.add('active');
+        return true;
+    };
 
     if (ytPlayerVideoArea && ytEditVideoSheet) {
         ytPlayerVideoArea.addEventListener('click', (e) => {
@@ -396,12 +514,6 @@
                         ytEditVideoCoverImg.style.display = 'block';
                     } else {
                         ytEditVideoCoverImg.style.display = 'none';
-                    }
-
-                    // Set temp guest data
-                    tempGuestData = validateYtLiveGuestOption(currentVideoData.guest) || null;
-                    if(ytEditVideoGuestName) {
-                        ytEditVideoGuestName.value = tempGuestData ? tempGuestData.name : '无';
                     }
 
                     ytEditVideoSheet.classList.add('active');
@@ -452,13 +564,11 @@
                 
                 const newTitle = ytEditVideoTitleInput.value.trim() || '无标题';
                 const newCover = (ytEditVideoCoverImg.style.display === 'block' && ytEditVideoCoverImg.src) ? ytEditVideoCoverImg.src : 'https://picsum.photos/320/180?grayscale';
-                tempGuestData = validateYtLiveGuestOption(tempGuestData) || null;
                 const titleChanged = newTitle !== currentVideoData.title;
 
                 currentVideoData.title = newTitle;
                 if (titleChanged) currentVideoData.titleTranslationZh = '';
                 currentVideoData.thumbnail = newCover;
-                currentVideoData.guest = tempGuestData;
                 
                 const titleEl = document.getElementById('yt-player-title');
                 if(titleEl) titleEl.textContent = newTitle;
@@ -472,7 +582,6 @@
                         channel.generatedContent.currentLive.title = newTitle;
                         if (titleChanged) channel.generatedContent.currentLive.titleTranslationZh = '';
                         channel.generatedContent.currentLive.thumbnail = newCover;
-                        channel.generatedContent.currentLive.guest = tempGuestData;
                     } else if (!currentVideoData.isLive && channel.generatedContent.pastVideos) {
                         const originalTitle = currentVideoData._originalTitle;
                         const match = channel.generatedContent.pastVideos.find(v => v.title === originalTitle);
@@ -480,7 +589,6 @@
                             match.title = newTitle;
                             if (titleChanged) match.titleTranslationZh = '';
                             match.thumbnail = newCover;
-                            match.guest = tempGuestData;
                         }
                     }
                 }
@@ -491,7 +599,6 @@
                     if (match) {
                         match.title = newTitle;
                         match.thumbnail = newCover;
-                        match.guest = tempGuestData;
                     }
                 }
                 
@@ -499,7 +606,6 @@
                 if (mv) {
                     mv.title = newTitle;
                     mv.thumbnail = newCover;
-                    mv.guest = tempGuestData;
                 }
                 
                 currentVideoData._originalTitle = newTitle; 
@@ -544,6 +650,11 @@
                 ytCharSpeechBubble.innerHTML = '';
                 ytCharSpeechBubble.style.display = 'none';
             }
+            stopYtCharConnectionVisualTimers();
+            if (ytCharLiveConnectionCard) ytCharLiveConnectionCard.style.display = 'none';
+            stopYtCharLiveLotteryTimer();
+            ytCharLiveLotteryModal?.classList.remove('active');
+            if (ytCharLiveLotteryInlineStatus) ytCharLiveLotteryInlineStatus.style.display = 'none';
         });
     }
 
@@ -553,7 +664,599 @@
         ytCharSpeechBubble.style.display = 'none';
     }
 
+    function formatYtLiveConnectionDuration(startedAt) {
+        const totalSeconds = Math.max(0, Math.floor((Date.now() - Number(startedAt || Date.now())) / 1000));
+        const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+        const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+        const seconds = String(totalSeconds % 60).padStart(2, '0');
+        return `${hours}:${minutes}:${seconds}`;
+    }
+
+    function resolveCanonicalYtCharLive() {
+        const channelId = currentVideoData?.channelData?.id;
+        if (!channelId || channelId === 'user_channel_id') return null;
+        const canonicalChannel = (Array.isArray(mockSubscriptions) ? mockSubscriptions : [])
+            .find(channel => String(channel?.id) === String(channelId));
+        const currentLive = canonicalChannel?.generatedContent?.currentLive;
+        if (!canonicalChannel || !currentLive) return null;
+        const requestedLiveId = currentVideoData?.id || currentVideoData?.liveId;
+        if (requestedLiveId && currentLive.id && String(requestedLiveId) !== String(currentLive.id)) return null;
+        currentVideoData.channelData = canonicalChannel;
+        currentVideoData.id = currentLive.id || requestedLiveId || '';
+        currentVideoData.liveId = currentVideoData.id;
+        currentVideoData.comments = Array.isArray(currentLive.comments) ? currentLive.comments : [];
+        currentVideoData.initialBubbles = Array.isArray(currentLive.initialBubbles) ? currentLive.initialBubbles : [];
+        currentVideoData.liveTranscript = Array.isArray(currentLive.liveTranscript) ? currentLive.liveTranscript : [];
+        if (currentLive.connection && typeof currentLive.connection === 'object') {
+            currentLive.connection.id = currentLive.connection.id || `connection_${currentLive.connection.requestedAt || Date.now()}`;
+            currentLive.connection.transcript = Array.isArray(currentLive.connection.transcript)
+                ? currentLive.connection.transcript.map(normalizeYtConnectionTranscriptItem)
+                : [];
+        }
+        currentVideoData.connection = currentLive.connection || null;
+        currentVideoData.connectionHistory = Array.isArray(currentLive.connectionHistory) ? currentLive.connectionHistory : [];
+        currentVideoData.charLottery = currentLive.charLottery || null;
+        return { channel: canonicalChannel, live: currentLive };
+    }
+
+    function getActiveYtCharConnection() {
+        return resolveCanonicalYtCharLive()?.live?.connection || null;
+    }
+
+    function setYtCharConnectionButtonState(connection = getActiveYtCharConnection()) {
+        if (!ytPlayerConnectBtn) return;
+        const isCharLive = !!(currentVideoData?.isLive && currentVideoData?.channelData?.id !== 'user_channel_id');
+        const isConnecting = connection?.status === 'connecting';
+        const isActive = connection?.status === 'active';
+        ytPlayerConnectBtn.style.display = isCharLive ? 'flex' : 'none';
+        ytPlayerConnectBtn.disabled = !isCharLive || isConnecting || isActive;
+        ytPlayerConnectBtn.classList.toggle('is-connecting', isConnecting);
+        ytPlayerConnectBtn.innerHTML = isConnecting
+            ? '<i class="fas fa-circle-notch fa-spin"></i>'
+            : '<i class="fas fa-phone-volume"></i>';
+        ytPlayerConnectBtn.title = isConnecting ? '正在等待接通' : (isActive ? '正在连线' : '请求连线');
+        ytPlayerConnectBtn.setAttribute('aria-label', ytPlayerConnectBtn.title);
+    }
+
+    function stopYtCharConnectionVisualTimers() {
+        if (ytCharConnectionDelayTimer) clearTimeout(ytCharConnectionDelayTimer);
+        if (ytCharConnectionDurationTimer) clearInterval(ytCharConnectionDurationTimer);
+        ytCharConnectionDelayTimer = null;
+        ytCharConnectionDurationTimer = null;
+    }
+
+    function addYtCharConnectionBubble(value) {
+        const localized = getYtPlayerLocalizedContent(value, currentVideoData?.channelData);
+        const participant = getActiveYtCharConnection()?.participant || getCurrentYtViewer();
+        const participantName = participant?.name || 'User';
+        if (!localized.text) return;
+        addCharLiveBubble({
+            text: `${participantName}：${localized.text}`,
+            translationZh: localized.translationZh ? `${participantName}：${localized.translationZh}` : ''
+        }, { skipPersist: true });
+    }
+
+    function addYtCharConnectionNarrative(value) {
+        const localized = getYtPlayerLocalizedContent(value, currentVideoData?.channelData);
+        const container = ytCharLiveConnectionCard?.querySelector('.yt-live-connection-narratives');
+        if (!container || !localized.text) return;
+        const narrative = document.createElement('div');
+        narrative.className = 'yt-live-connection-narrative';
+        narrative.textContent = localized.translationZh
+            ? `${localized.text}（${localized.translationZh}）`
+            : localized.text;
+        container.appendChild(narrative);
+        while (container.children.length > 2) container.firstElementChild?.remove();
+        setTimeout(() => narrative.remove(), 10000);
+    }
+
+    function normalizeYtConnectionTranscriptItem(item = {}) {
+        return {
+            speakerType: item.speakerType || 'user',
+            speakerId: item.speakerId || null,
+            name: item.name || '',
+            text: String(item.text || '').trim(),
+            ...(item.translationZh ? { translationZh: String(item.translationZh) } : {}),
+            kind: item.kind === 'narrative' ? 'narrative' : 'speech',
+            timestamp: Number(item.timestamp) || Date.now()
+        };
+    }
+
+    function recordYtCharConnectionUserContent(text) {
+        const resolved = resolveCanonicalYtCharLive();
+        if (!resolved || !text) return;
+        const participant = resolved.live.connection?.participant || getCurrentYtViewer();
+        const transcriptItem = normalizeYtConnectionTranscriptItem({
+            speakerType: 'user',
+            speakerId: participant?.id || 'user_channel_id',
+            name: participant?.name || '我',
+            text: String(text),
+            kind: 'speech'
+        });
+        if (resolved.live.connection) {
+            if (!Array.isArray(resolved.live.connection.transcript)) resolved.live.connection.transcript = [];
+            resolved.live.connection.transcript.push({ ...transcriptItem });
+        }
+        if (!Array.isArray(resolved.channel.liveHistory)) resolved.channel.liveHistory = [];
+        resolved.channel.liveHistory.push({ type: 'connection-user', senderType: 'user', ...transcriptItem });
+        if (!Array.isArray(resolved.live.liveTranscript)) resolved.live.liveTranscript = [];
+        resolved.live.liveTranscript.push({ type: 'connection-user', senderType: 'user', ...transcriptItem });
+        currentVideoData.liveTranscript = resolved.live.liveTranscript;
+        saveYoutubeData();
+    }
+
+    function renderYtCharConnection() {
+        if (!ytCharLiveConnectionCard) return;
+        stopYtCharConnectionVisualTimers();
+        const connection = getActiveYtCharConnection();
+        setYtCharConnectionButtonState(connection);
+        if (!connection || connection.status !== 'active' || !currentVideoData?.isLive) {
+            ytCharLiveConnectionCard.style.display = 'none';
+            ytCharLiveConnectionCard.querySelector('.yt-live-connection-narratives')?.replaceChildren();
+            return;
+        }
+        const participant = connection.participant || {};
+        const avatar = ytCharLiveConnectionCard.querySelector('.yt-live-connection-avatar');
+        const name = ytCharLiveConnectionCard.querySelector('.yt-live-connection-name');
+        const duration = ytCharLiveConnectionCard.querySelector('.yt-live-connection-duration');
+        if (avatar) avatar.src = participant.avatar || participant.avatarUrl || 'https://picsum.photos/80/80?grayscale';
+        if (name) name.textContent = participant.name || 'User';
+        const updateDuration = () => {
+            if (duration) duration.textContent = formatYtLiveConnectionDuration(connection.startedAt);
+        };
+        updateDuration();
+        ytCharConnectionDurationTimer = setInterval(updateDuration, 1000);
+        ytCharLiveConnectionCard.style.display = 'flex';
+    }
+
+    async function triggerYtCharConnectionKickoff() {
+        const resolved = resolveCanonicalYtCharLive();
+        const connection = resolved?.live?.connection;
+        if (!resolved || connection?.status !== 'active' || connection.kickoffCompleted === true) return;
+        connection.kickoffAttemptedAt = Date.now();
+        saveYoutubeData();
+        const responseObj = await getCharResponse('', false, 0, false, { connectionKickoff: true });
+        if (responseObj?._error) {
+            removeCharLiveLoadingBubbles();
+            if (window.showToast) {
+                window.showToast(responseObj._error === 'API_NOT_CONFIGURED'
+                    ? '请先配置 API，之后可点击 API 按钮重试连线互动'
+                    : '连线互动生成失败，可点击 API 按钮重试');
+            }
+            return;
+        }
+        const latest = resolveCanonicalYtCharLive()?.live?.connection;
+        if (!latest || latest.status !== 'active') return;
+        latest.kickoffCompleted = true;
+        saveYoutubeData();
+        resolveCanonicalYtCharLive();
+        renderAiResponse(responseObj);
+    }
+
+    function activateYtCharConnection() {
+        const resolved = resolveCanonicalYtCharLive();
+        const connection = resolved?.live?.connection;
+        if (!resolved || connection?.status !== 'connecting') return;
+        connection.status = 'active';
+        connection.startedAt = (Number(connection.requestedAt) || Date.now()) + 3000;
+        resolved.live.guest = { ...connection.participant };
+        currentVideoData.guest = resolved.live.guest;
+        saveYoutubeData();
+        renderYtCharConnection();
+        triggerYtCharConnectionKickoff();
+    }
+
+    function scheduleYtCharConnectionRestore() {
+        const connection = getActiveYtCharConnection();
+        stopYtCharConnectionVisualTimers();
+        if (connection?.status === 'connecting') {
+            setYtCharConnectionButtonState(connection);
+            const remaining = Math.max(0, (Number(connection.requestedAt) + 3000) - Date.now());
+            ytCharConnectionDelayTimer = setTimeout(activateYtCharConnection, remaining);
+            return;
+        }
+        renderYtCharConnection();
+    }
+
+    function stopYtCharLiveLotteryTimer() {
+        if (ytCharLiveLotteryTimer) clearInterval(ytCharLiveLotteryTimer);
+        ytCharLiveLotteryTimer = null;
+    }
+
+    function getYtCharLiveLottery() {
+        return resolveCanonicalYtCharLive()?.live?.charLottery || null;
+    }
+
+    function formatYtCharLotteryCountdown(milliseconds) {
+        const seconds = Math.max(0, Math.ceil(Number(milliseconds || 0) / 1000));
+        return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+    }
+
+    function positionYtCharLiveLotteryStatus() {
+        if (!ytCharLiveLotteryInlineStatus || !playerView) return;
+        const chatShell = playerView.querySelector('.yt-player-chat-shell');
+        if (!chatShell) return;
+        const viewRect = playerView.getBoundingClientRect();
+        const chatRect = chatShell.getBoundingClientRect();
+        const chatHeightFromBottom = Math.max(0, viewRect.bottom - chatRect.top);
+        ytCharLiveLotteryInlineStatus.style.bottom = `${Math.round(chatHeightFromBottom + 8)}px`;
+    }
+
+    function renderYtCharLiveLotteryInlineStatus(lottery = getYtCharLiveLottery()) {
+        if (!ytCharLiveLotteryInlineStatus) return;
+        if (!lottery || lottery.status !== 'active' || lottery.joined !== true) {
+            ytCharLiveLotteryInlineStatus.style.display = 'none';
+            return;
+        }
+        ytCharLiveLotteryInlineStatus.style.display = 'flex';
+        positionYtCharLiveLotteryStatus();
+        if (ytCharLiveLotteryParticipants) {
+            ytCharLiveLotteryParticipants.textContent = String(Array.isArray(lottery.participants) ? lottery.participants.length : 0);
+        }
+        if (ytCharLiveLotteryStatusCountdown) {
+            ytCharLiveLotteryStatusCountdown.textContent = formatYtCharLotteryCountdown(Number(lottery.endAt) - Date.now());
+        }
+    }
+
+    function parseYtCharLotteryCashAmount(value) {
+        const text = String(value || '').trim();
+        const match = text.match(/(?:¥|￥|RMB|人民币)\s*(\d+(?:\.\d+)?)/i)
+            || text.match(/(\d+(?:\.\d+)?)\s*元/);
+        const amount = match ? Number(match[1]) : 0;
+        return Number.isFinite(amount) && amount > 0 ? Math.round(amount * 100) / 100 : 0;
+    }
+
+    function grantYtCharLotteryUserReward(lottery, resolved) {
+        if (!lottery?.userWon || lottery.rewardGrantedAt) return false;
+        channelState.dataCenter = channelState.dataCenter && typeof channelState.dataCenter === 'object'
+            ? channelState.dataCenter
+            : { views: 0, sc: 0, subs: 0, commission: 0, receivedGifts: [] };
+        channelState.dataCenter.receivedGifts = Array.isArray(channelState.dataCenter.receivedGifts)
+            ? channelState.dataCenter.receivedGifts
+            : [];
+        const existingGift = channelState.dataCenter.receivedGifts.find(item => String(item?.lotteryId) === String(lottery.id));
+        if (existingGift) {
+            lottery.rewardGrantedAt = Number(existingGift.receivedAt) || Date.now();
+            return false;
+        }
+
+        const configuredAmount = Number(lottery.cashAmount);
+        const cashAmount = Number.isFinite(configuredAmount) && configuredAmount > 0
+            ? Math.round(configuredAmount * 100) / 100
+            : parseYtCharLotteryCashAmount(lottery.prize);
+        const isCash = lottery.prizeType === 'cash' || cashAmount > 0;
+        let payCredited = false;
+        if (isCash && cashAmount > 0) {
+            payCredited = typeof window.addPayTransaction === 'function'
+                && window.addPayTransaction(cashAmount, `YouTube 抽奖中奖 · ${lottery.hostName || '主播'}`, 'income') !== false;
+            if (!payCredited) {
+                if (window.showToast) window.showToast('奖金暂未到账，请稍后重新进入直播间领取');
+                return false;
+            }
+        }
+
+        const receivedAt = Date.now();
+        channelState.dataCenter.receivedGifts.unshift({
+            id: `yt_received_gift_${lottery.id}`,
+            lotteryId: lottery.id,
+            name: lottery.prize || '神秘礼物',
+            type: isCash ? 'cash' : 'gift',
+            cashAmount: isCash ? cashAmount : 0,
+            payCredited,
+            fromId: lottery.hostId || resolved?.channel?.id || '',
+            fromName: lottery.hostName || resolved?.channel?.name || '主播',
+            liveId: resolved?.live?.id || currentVideoData?.id || '',
+            receivedAt
+        });
+        channelState.dataCenter.receivedGifts = channelState.dataCenter.receivedGifts.slice(0, 100);
+        lottery.prizeType = isCash ? 'cash' : 'gift';
+        lottery.cashAmount = isCash ? cashAmount : 0;
+        lottery.payCredited = payCredited;
+        lottery.rewardGrantedAt = receivedAt;
+        if (typeof window.renderDataCenter === 'function') window.renderDataCenter();
+        return true;
+    }
+
+    function renderYtCharLiveLottery(lottery = getYtCharLiveLottery(), shouldOpen = true) {
+        if (!ytCharLiveLotteryModal || !lottery) return;
+        const channelName = currentVideoData?.channelData?.name || lottery.hostName || '主播';
+        const isCompleted = lottery.status === 'completed';
+        if (ytCharLiveLotteryTitle) ytCharLiveLotteryTitle.textContent = isCompleted ? '开奖结果' : `${channelName} 发起了抽奖`;
+        if (ytCharLiveLotteryPrize) ytCharLiveLotteryPrize.textContent = `奖品：${lottery.prize || '神秘礼物'}`;
+        if (ytCharLiveLotteryCountdown) {
+            ytCharLiveLotteryCountdown.textContent = isCompleted
+                ? `共 ${Array.isArray(lottery.participants) ? lottery.participants.length : 0} 人参与`
+                : `开奖倒计时 ${formatYtCharLotteryCountdown(Number(lottery.endAt) - Date.now())}`;
+        }
+        if (ytCharLiveLotteryActions) ytCharLiveLotteryActions.style.display = (!isCompleted && !lottery.joined && !lottery.declined) ? 'flex' : 'none';
+        if (ytCharLiveLotteryClose) {
+            ytCharLiveLotteryClose.style.display = (isCompleted || lottery.joined || lottery.declined) ? 'block' : 'none';
+            ytCharLiveLotteryClose.textContent = isCompleted ? '知道了' : '先收起';
+        }
+        if (ytCharLiveLotteryStatus) {
+            if (!isCompleted) {
+                ytCharLiveLotteryStatus.textContent = lottery.joined
+                    ? '已参与，等待开奖…'
+                    : (lottery.declined ? '你选择了不参与本次抽奖' : '是否参与本次抽奖？');
+            } else if (!lottery.joined) {
+                ytCharLiveLotteryStatus.textContent = '你没有参与本次抽奖';
+            } else if (lottery.userWon) {
+                const rewardDestination = lottery.prizeType === 'cash' ? '，奖金已收入 Pay' : '，奖品已放入数据中心';
+                ytCharLiveLotteryStatus.textContent = `恭喜你中奖，获得「${lottery.prize || '神秘礼物'}」${rewardDestination}`;
+            } else {
+                ytCharLiveLotteryStatus.textContent = `本次未中奖，中奖者：${lottery.winner?.name || '其他观众'}`;
+            }
+        }
+        if (shouldOpen) ytCharLiveLotteryModal.classList.add('active');
+    }
+
+    function finalizeYtCharLiveLottery() {
+        const resolved = resolveCanonicalYtCharLive();
+        const lottery = resolved?.live?.charLottery;
+        if (!resolved || !lottery || lottery.status !== 'active') return;
+        const participants = Array.isArray(lottery.participants) ? lottery.participants : [];
+        const winner = participants.length ? participants[Math.floor(Math.random() * participants.length)] : null;
+        lottery.status = 'completed';
+        lottery.completedAt = Date.now();
+        lottery.winner = winner ? { ...winner } : null;
+        lottery.userWon = Boolean(lottery.joined && winner?.id === 'user_channel_id');
+        if (lottery.userWon) grantYtCharLotteryUserReward(lottery, resolved);
+        currentVideoData.charLottery = lottery;
+        stopYtCharLiveLotteryTimer();
+        renderYtCharLiveLotteryInlineStatus(lottery);
+        const resultText = lottery.userWon
+            ? `恭喜你抽中了「${lottery.prize || '神秘礼物'}」！`
+            : `抽奖结束，中奖的是 ${lottery.winner?.name || '一位观众'}。`;
+        addCharLiveBubble(resultText, { skipPersist: true });
+        recordCharContent(resultText, false);
+        saveYoutubeData();
+        renderYtCharLiveLottery(lottery, true);
+    }
+
+    function startYtCharLiveLotteryTimer() {
+        stopYtCharLiveLotteryTimer();
+        const lottery = getYtCharLiveLottery();
+        if (!lottery || lottery.status !== 'active') {
+            renderYtCharLiveLotteryInlineStatus(lottery);
+            return;
+        }
+        if (Date.now() >= Number(lottery.endAt)) {
+            finalizeYtCharLiveLottery();
+            return;
+        }
+        renderYtCharLiveLotteryInlineStatus(lottery);
+        renderYtCharLiveLottery(lottery, lottery.joined !== true && lottery.declined !== true);
+        ytCharLiveLotteryTimer = setInterval(() => {
+            const latest = getYtCharLiveLottery();
+            if (!latest || latest.status !== 'active') {
+                stopYtCharLiveLotteryTimer();
+                renderYtCharLiveLotteryInlineStatus(latest);
+                return;
+            }
+            if (Date.now() >= Number(latest.endAt)) finalizeYtCharLiveLottery();
+            else {
+                renderYtCharLiveLotteryInlineStatus(latest);
+                renderYtCharLiveLottery(latest, false);
+            }
+        }, 1000);
+    }
+
+    function isExplicitYtCharLotteryRequest(userMessage) {
+        const text = String(userMessage || '').trim().toLowerCase();
+        if (!text) return false;
+        const mentionsLottery = /抽奖|抽个奖|开奖|giveaway|raffle/.test(text);
+        const asksForAction = /来|开|发|搞|办|安排|整|想要|想看|要不要|可以|能不能|可不可以|请|希望|吧|呗|一下|抽一个|抽个|do|start|host|run|please|can you|could you/.test(text);
+        return mentionsLottery && asksForAction;
+    }
+
+    function normalizeYtCharLotteryDecision(value) {
+        if (value === true || value === 1) return true;
+        if (value === false || value === 0) return false;
+        const normalized = String(value ?? '').trim().toLowerCase();
+        if (['true', 'yes', 'start', 'accept', 'accepted', 'agree', 'agreed', '同意', '愿意', '开始', '发起'].includes(normalized)) return true;
+        if (['false', 'no', 'decline', 'declined', 'reject', 'rejected', 'refuse', '拒绝', '不愿意', '不发'].includes(normalized)) return false;
+        return null;
+    }
+
+    function inferYtCharLotteryAcceptance(responseObj) {
+        const values = Array.isArray(responseObj?.charBubbles)
+            ? responseObj.charBubbles
+            : (responseObj?.charResponse ? [responseObj.charResponse] : []);
+        const text = values.map(value => (
+            typeof value === 'object' ? (value?.text || value?.content || '') : value
+        )).join(' ').trim();
+        if (!text) return false;
+        if (/(?:不发|不开|不抽|拒绝|算了|下次|改天|今天不|暂时不).{0,10}(?:抽奖|开奖|奖品)|(?:抽奖|开奖).{0,10}(?:不行|不要|算了|拒绝)/.test(text)) return false;
+        return /(?:好|可以|行|当然|那就|来|现在|马上|开始|安排|发|开|送).{0,14}(?:抽奖|开奖|奖品)|(?:抽奖|开奖|奖品).{0,14}(?:开始|安排|来|发|开|送)/.test(text);
+    }
+
+    function maybeStartYtCharLiveLottery(responseObj) {
+        const resolved = resolveCanonicalYtCharLive();
+        if (!resolved || !currentVideoData?.isLive || resolved.live.charLottery?.status === 'active') return false;
+        const suggestion = responseObj?.lotterySuggestion || responseObj?.randomLottery || {};
+        const explicitRequest = responseObj?._explicitLotteryRequest === true;
+        const explicitPrize = String(suggestion.prize?.name || suggestion.prize || suggestion.reward || suggestion.gift || '').trim();
+        if (explicitRequest) {
+            const rawDecision = suggestion.shouldStart
+                ?? suggestion.start
+                ?? suggestion.accepted
+                ?? suggestion.agree
+                ?? suggestion.hasLottery
+                ?? suggestion.enabled;
+            const shouldStart = normalizeYtCharLotteryDecision(rawDecision);
+            if (shouldStart === false) return false;
+            if (shouldStart !== true && !explicitPrize && !inferYtCharLotteryAcceptance(responseObj)) return false;
+        } else if (Math.random() >= YT_CHAR_LOTTERY_TRIGGER_RATE) {
+            return false;
+        }
+        const prize = String(explicitPrize || '主播准备的神秘礼物').slice(0, 80);
+        const declaredPrizeType = String(suggestion.prizeType || suggestion.type || '').trim().toLowerCase();
+        const suggestedCashAmount = Number(suggestion.cashAmount ?? suggestion.amount ?? suggestion.prize?.amount);
+        const cashAmount = declaredPrizeType === 'gift'
+            ? 0
+            : (Number.isFinite(suggestedCashAmount) && suggestedCashAmount > 0
+                ? Math.round(suggestedCashAmount * 100) / 100
+                : parseYtCharLotteryCashAmount(prize));
+        const prizeType = declaredPrizeType === 'gift' ? 'gift' : (declaredPrizeType === 'cash' || cashAmount > 0 ? 'cash' : 'gift');
+        const durationSec = Math.max(10, Math.min(60, Math.round(Number(suggestion.durationSec ?? suggestion.duration) || 30)));
+        const viewerCount = Math.max(1, Number(resolved.live.viewerCount) || parseInt(String(resolved.live.views || '').replace(/[^0-9]/g, ''), 10) || 100);
+        const simulatedCount = Math.max(8, Math.min(40, Math.round(viewerCount * (0.05 + Math.random() * 0.08))));
+        const participants = Array.from({ length: simulatedCount }, (_, index) => ({
+            id: `char_lottery_viewer_${index}_${Date.now()}`,
+            name: `观众${index + 1}`,
+            source: 'frontend-random'
+        }));
+        const now = Date.now();
+        const previousLottery = resolved.live.charLottery;
+        if (previousLottery) {
+            resolved.live.charLotteryHistory = Array.isArray(resolved.live.charLotteryHistory)
+                ? resolved.live.charLotteryHistory
+                : [];
+            if (!resolved.live.charLotteryHistory.some(item => String(item?.id) === String(previousLottery.id))) {
+                resolved.live.charLotteryHistory.push({
+                    ...previousLottery,
+                    participants: Array.isArray(previousLottery.participants) ? previousLottery.participants.map(item => ({ ...item })) : [],
+                    winner: previousLottery.winner ? { ...previousLottery.winner } : null
+                });
+            }
+        }
+        const lottery = {
+            id: `char_live_lottery_${now}_${Math.random().toString(36).slice(2, 8)}`,
+            status: 'active',
+            hostId: resolved.channel.id,
+            hostName: resolved.channel.name || '主播',
+            prize,
+            prizeType,
+            cashAmount: prizeType === 'cash' ? cashAmount : 0,
+            durationSec,
+            createdAt: now,
+            endAt: now + durationSec * 1000,
+            participants,
+            joined: false,
+            declined: false,
+            winner: null,
+            userWon: false
+        };
+        resolved.live.charLottery = lottery;
+        currentVideoData.charLottery = lottery;
+        saveYoutubeData();
+        const announcement = `来抽个奖吧，奖品是「${prize}」，想参加的记得点一下。`;
+        addCharLiveBubble(announcement, { skipPersist: true });
+        recordCharContent(announcement, false);
+        startYtCharLiveLotteryTimer();
+        return true;
+    }
+
+    ytCharLiveLotteryJoin?.addEventListener('click', event => {
+        event.stopPropagation();
+        const resolved = resolveCanonicalYtCharLive();
+        const lottery = resolved?.live?.charLottery;
+        if (!resolved || !lottery || lottery.status !== 'active' || lottery.joined) return;
+        const user = getCurrentYtViewer();
+        lottery.joined = true;
+        lottery.declined = false;
+        lottery.joinedAt = Date.now();
+        lottery.participants = Array.isArray(lottery.participants) ? lottery.participants : [];
+        lottery.participants.push({ id: 'user_channel_id', name: user.name || '我', source: 'user-choice', joinedAt: lottery.joinedAt });
+        saveYoutubeData();
+        ytCharLiveLotteryModal?.classList.remove('active');
+        renderYtCharLiveLotteryInlineStatus(lottery);
+    });
+
+    ytCharLiveLotterySkip?.addEventListener('click', event => {
+        event.stopPropagation();
+        const lottery = getYtCharLiveLottery();
+        if (!lottery || lottery.status !== 'active') return;
+        lottery.declined = true;
+        lottery.joined = false;
+        saveYoutubeData();
+        renderYtCharLiveLottery(lottery, true);
+    });
+
+    ytCharLiveLotteryClose?.addEventListener('click', event => {
+        event.stopPropagation();
+        ytCharLiveLotteryModal?.classList.remove('active');
+    });
+
+    window.addEventListener('resize', positionYtCharLiveLotteryStatus);
+    window.visualViewport?.addEventListener('resize', positionYtCharLiveLotteryStatus);
+
+    function beginYtCharConnection() {
+        const resolved = resolveCanonicalYtCharLive();
+        if (!resolved || resolved.live.connection?.status === 'connecting' || resolved.live.connection?.status === 'active') return;
+        const user = getCurrentYtViewer();
+        resolved.live.connection = {
+            id: `connection_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            status: 'connecting',
+            requestedAt: Date.now(),
+            startedAt: null,
+            kickoffAttemptedAt: null,
+            kickoffCompleted: false,
+            transcript: [],
+            participant: {
+                id: 'user_channel_id',
+                name: user.name || '我',
+                avatar: user.avatarUrl || user.avatar || '',
+                persona: user.persona || ''
+            }
+        };
+        currentVideoData.connection = resolved.live.connection;
+        saveYoutubeData();
+        scheduleYtCharConnectionRestore();
+        if (window.showToast) window.showToast('连线请求已发送，等待对方接通...');
+    }
+
+    function endYtCharConnection() {
+        const resolved = resolveCanonicalYtCharLive();
+        const connection = resolved?.live?.connection;
+        if (!resolved || !connection) return;
+        resolved.live.guest = { ...(connection.participant || {}) };
+        resolved.live.connectionEndedAt = Date.now();
+        resolved.live.connectionHistory = [
+            ...(Array.isArray(resolved.live.connectionHistory) ? resolved.live.connectionHistory : []),
+            {
+                id: connection.id,
+                participant: { ...(connection.participant || {}) },
+                requestedAt: connection.requestedAt || null,
+                startedAt: connection.startedAt || null,
+                endedAt: resolved.live.connectionEndedAt,
+                transcript: Array.isArray(connection.transcript) ? connection.transcript.map(item => ({ ...item })) : []
+            }
+        ];
+        resolved.live.connection = null;
+        currentVideoData.connection = null;
+        stopYtCharConnectionVisualTimers();
+        saveYoutubeData();
+        renderYtCharConnection();
+        if (window.showToast) window.showToast('连线已结束');
+    }
+
+    if (ytPlayerConnectBtn) {
+        ytPlayerConnectBtn.addEventListener('click', event => {
+            event.stopPropagation();
+            if (!currentVideoData?.isLive || currentVideoData?.channelData?.id === 'user_channel_id') return;
+            const confirmConnection = () => beginYtCharConnection();
+            if (window.showCustomModal) {
+                window.showCustomModal({
+                    title: '请求连线',
+                    message: `确定向 ${currentVideoData.channelData?.name || '当前主播'} 发起连线吗？`,
+                    confirmText: '请求连线',
+                    cancelText: '取消',
+                    onConfirm: confirmConnection
+                });
+            } else {
+                confirmConnection();
+            }
+        });
+    }
+
+    ytCharLiveConnectionCard?.querySelector('.yt-live-connection-exit')?.addEventListener('click', event => {
+        event.stopPropagation();
+        endYtCharConnection();
+    });
+
     function addCharLiveBubble(value, options = {}) {
+        if (currentVideoData?.isLive && currentVideoData?.channelData?.id !== 'user_channel_id') resolveCanonicalYtCharLive();
         const localized = getYtPlayerLocalizedContent(value);
         if (!ytCharSpeechBubble || (!localized.text && !options.loading) || !currentVideoData || !currentVideoData.isLive) return;
         const bubble = document.createElement('div');
@@ -803,6 +1506,7 @@
                 if (item.type !== 'narrative') {
                     // removed the visible time string to make bubbles look more connected
                     el.innerHTML = `
+                        ${item.name ? `<div style="font-size:11px;color:#606060;margin-bottom:3px;">${ytPlayerEscapeHtml(item.name)}</div>` : ''}
                         <div>${ytPlayerEscapeHtml(localized.text)}</div>
                         ${renderYtSecondaryTranslation(localized.translationZh)}
                     `;
@@ -855,7 +1559,25 @@
             if (userLiveView) userLiveView.classList.remove('active');
             currentVideoData = video;
             if(!currentVideoData._originalTitle) currentVideoData._originalTitle = video.title;
-            const channel = video.channelData;
+            let channel = video.channelData;
+
+            if (video.isLive && channel?.id && channel.id !== 'user_channel_id') {
+                const canonicalChannel = (Array.isArray(mockSubscriptions) ? mockSubscriptions : [])
+                    .find(item => String(item?.id) === String(channel.id));
+                const canonicalLive = canonicalChannel?.generatedContent?.currentLive;
+                const requestedLiveId = video.id || video.liveId;
+                if (canonicalChannel && canonicalLive && (!requestedLiveId || !canonicalLive.id || String(requestedLiveId) === String(canonicalLive.id))) {
+                    channel = canonicalChannel;
+                    currentVideoData.channelData = canonicalChannel;
+                    currentVideoData.id = canonicalLive.id || requestedLiveId || '';
+                    currentVideoData.liveId = currentVideoData.id;
+                    currentVideoData.comments = canonicalLive.comments || [];
+                    currentVideoData.initialBubbles = canonicalLive.initialBubbles || [];
+                    currentVideoData.liveTranscript = canonicalLive.liveTranscript || [];
+                    currentVideoData.connection = canonicalLive.connection || null;
+                    currentVideoData.guest = canonicalLive.guest || null;
+                }
+            }
 
             if(!channel) return;
             ensureCharLiveChrome(video);
@@ -944,7 +1666,16 @@
                     
                     if(chatInterval) clearInterval(chatInterval);
                 }
+                if (channel.id !== 'user_channel_id') {
+                    scheduleYtCharConnectionRestore();
+                    const restoredCharLottery = getYtCharLiveLottery();
+                    if (restoredCharLottery?.status === 'active') startYtCharLiveLotteryTimer();
+                    else if (restoredCharLottery?.status === 'completed') renderYtCharLiveLottery(restoredCharLottery, false);
+                }
             } else {
+                stopYtCharConnectionVisualTimers();
+                if (ytCharLiveConnectionCard) ytCharLiveConnectionCard.style.display = 'none';
+                setYtCharConnectionButtonState(null);
                 setYtReplayCommentsButtonState(isPastVideo, !!ytReplayCommentRequestId);
                 setYtPlayerDeleteVideoButtonState(isPastVideo);
                 syncPlayerChatInputMode(false);
@@ -989,6 +1720,7 @@
     window.getYtSuperChatTier = getYtSuperChatTier;
 
     function addChatMessage(name, text, isLive = true, amount = null, color = null, skipPersist = false, senderType = '', translationZh = '') {
+        if (isLive && currentVideoData?.channelData?.id !== 'user_channel_id') resolveCanonicalYtCharLive();
         const chatContainer = document.getElementById('yt-player-chat-container');
         if(!chatContainer) return;
 
@@ -1493,14 +2225,22 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
     }
 
     // AI API call for interactive response (Live)
-    async function getCharResponse(userMessage, isSC = false, amount = 0, isContinue = false) {
+    async function getCharResponse(userMessage, isSC = false, amount = 0, isContinue = false, options = {}) {
         if (!currentVideoData || !currentVideoData.channelData) return null;
         const char = currentVideoData.channelData;
         const requestedLiveId = ensureYtCharLiveId(char.generatedContent?.currentLive, char.id);
         if (!requestedLiveId) return null;
-        const guest = currentVideoData.guest;
+        const charLiveState = resolveCanonicalYtCharLive()?.live;
+        const explicitLotteryRequest = isExplicitYtCharLotteryRequest(userMessage);
+        const activeConnection = charLiveState?.connection?.status === 'active' ? charLiveState.connection : null;
+        const connectionHistory = Array.isArray(charLiveState?.connectionHistory) ? charLiveState.connectionHistory : [];
+        const hasManagedConnectionSession = !!charLiveState?.connection || connectionHistory.length > 0;
+        const guest = hasManagedConnectionSession
+            ? (activeConnection?.participant || null)
+            : currentVideoData.guest;
         
         if (!window.apiConfig || !window.apiConfig.endpoint || !window.apiConfig.apiKey) {
+            if (options.connectionKickoff) return { _error: 'API_NOT_CONFIGURED' };
             return { charBubbles: ["（请配置API后体验互动）"], passerbyComments: [] };
         }
         
@@ -1549,6 +2289,40 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
             ? `\n特别注意：本场直播的联动嘉宾是"${guest.name}"，ta的人设："${guestPersona}"。你的回复中可以偶尔cue到嘉宾，或由你代为复述嘉宾说的话。`
             : "";
 
+        const publicConnectionSessions = [...connectionHistory, ...(activeConnection ? [activeConnection] : [])];
+        const publicConnectionContext = publicConnectionSessions.length
+            ? publicConnectionSessions.map(session => {
+                const participantName = session.participant?.name || 'User';
+                const lines = (session.transcript || []).map(item => (
+                    `${item.kind === 'narrative' ? '公开动作' : '公开发言'}｜${item.name || participantName}：${item.text || ''}`
+                )).filter(Boolean).join('\n') || '尚无公开发言';
+                return `${participantName}｜${session.endedAt ? '已结束' : '进行中'}\n${lines}`;
+            }).join('\n\n')
+            : '本场尚无连线公开记录。';
+        const recentLiveTranscript = (Array.isArray(charLiveState?.liveTranscript) ? charLiveState.liveTranscript : [])
+            .slice(-30)
+            .map(item => {
+                const localized = getYtPlayerLocalizedContent(item, char);
+                if (!localized.text) return '';
+                const speaker = item?.name || (item?.senderType === 'user' ? userName : (char.name || '主播'));
+                const kind = item?.kind === 'narrative' || item?.type === 'narrative' || item?.type === 'connection-narrative'
+                    ? '公开动作/环境'
+                    : '公开发言';
+                return `${kind}｜${speaker}：${localized.text}`;
+            })
+            .filter(Boolean);
+        const recentLiveComments = (Array.isArray(currentChatHistory) ? currentChatHistory : [])
+            .slice(-20)
+            .map(item => `${item?.name || '观众'}：${item?.text || ''}`)
+            .filter(line => !line.endsWith('：'));
+        const liveContinuityContext = [
+            ...recentLiveTranscript,
+            ...recentLiveComments.map(line => `近期弹幕｜${line}`)
+        ].join('\n') || '本场暂时没有可用的历史内容。';
+        const privateUserPersona = typeof window.getYtChannelPersonaWithRelationships === 'function'
+            ? window.getYtChannelPersonaWithRelationships(effectiveYtUser, userPersona)
+            : userPersona;
+
         let finalPrompt = systemPromptStr
             .replace(/{char}/g, char.name || '')
             .replace(/{char_persona}/g, charPersona)
@@ -1560,6 +2334,20 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
             .replace(/{msg}/g, userMessage || '')
             .replace(/{msg_context}/g, msgContextStr)
             .replace(/{context_clue}/g, contextClueStr + guestContextStr);
+
+        const connectionStatusRule = activeConnection
+            ? '当前连线仍在进行，可以继续实时对话。'
+            : (connectionHistory.length > 0
+                ? '当前没有任何在线连线；历史连线均已结束。主播和观众不得把历史参与者描述成仍在通话，也不得继续向其提问或等待其即时回答。'
+                : '当前没有在线连线用户。');
+
+        finalPrompt += `\n\n【主播私有连线资料】${activeConnection
+            ? `当前连线用户：${activeConnection.participant?.name || userName}。完整人设与关系：${privateUserPersona}。主播可以据此理解并回应用户。`
+            : '当前没有在线连线用户。'}
+【连线实时状态】${connectionStatusRule}
+【观众可见的公开连线记录】\n${publicConnectionContext}
+【严格信息边界】fanComments、passerbyComments 和 randomSuperChat 只能依据公开昵称、公开发言与公开动作；不得引用、暗示或泄露主播私有连线资料。主播可以自然回顾已结束连线的公开内容，评论也可以偶尔提到“错过了刚才的联动”，但不要强制所有评论讨论旧连线。`;
+        finalPrompt += `\n\n【本场直播最近公开内容｜按已发生事实处理】\n${liveContinuityContext}\n【连续性规则】以上内容都已经在本场直播中真实发生。主播必须记得自己已经说过什么，并从最后的内容自然承接；不得重新开场、失忆、重复刚说过的观点，或把已经发生的内容当成第一次听说。新回复应推进话题、补充新信息或回应最新变化。`;
             
         if (isSC) {
             finalPrompt += `\n注意：这不仅仅是一条弹幕，而是一条来自“${userName}”价值 ${amount} 元的 Super Chat（醒目留言）！这是非常慷慨的打赏！\n要求：\n1. 你的 charBubbles 必须明确提到“${userName}”的名字，并表现出相应的惊喜和感谢！\n2. 【重要】本次由于已经有观众打赏，**请将 randomSuperChat 设置为 {"hasSuperChat": false}，不要再生成其他人的打赏了**！`;
@@ -1574,6 +2362,22 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
             finalPrompt += `\n- For this live response, narrative must be {"text":"original","translationZh":"Simplified Chinese translation or empty string"}; charBubbles must be an array of the same object shape.\n- Use this exact localized object schema even if the editable prompt above requests strings.`;
         }
         finalPrompt += `\n\n【最高优先级：直播观众国际化协议】主播的 narrative 和 charBubbles 继续严格使用主播默认语言；但 fanComments、passerbyComments 和 randomSuperChat 是来自世界各地的观众，绝对不能统一成主播默认语言。fanComments 或 passerbyComments 每次必须返回 6–10 条；观众昵称要符合其国家或地区，评论需混合英语、日语、韩语、法语、西班牙语及其他自然语言，至少包含 3 种语言，且至少一半为非中文评论。每条 fanComments/passerbyComments 必须是 {"name":"viewer name","text":"观众自己的语言原文","translationZh":"自然准确的简体中文翻译或空字符串"}；text 非中文时 translationZh 必须填写，text 中文时必须为空字符串。randomSuperChat 也遵循相同原文与翻译规则。此协议覆盖上方任何要求观众跟随主播默认语言的内容。`;
+        finalPrompt += `\n\n【主播气泡去重规则｜最高优先级】同一批 charBubbles 中禁止用不同措辞重复表达同一个回应、观点、感谢、称呼或结论；也禁止在后续气泡重新回答一次用户刚才的同一条留言。每条气泡必须承接上一条并提供新的信息、反应、动作或话题推进。生成完成后先自行检查并删除语义重复的气泡，只保留自然连续且各有新内容的气泡。`;
+        if (explicitLotteryRequest) {
+            finalPrompt += charLiveState?.charLottery?.status === 'active'
+                ? `\n\n【User 明确请求抽奖】当前已有一轮抽奖正在进行，不能同时再次发起。lotterySuggestion 必须返回 {"shouldStart":false,"prize":"","prizeType":"gift","cashAmount":0,"durationSec":30}，主播应自然提醒 User 等待当前开奖。`
+                : `\n\n【User 明确请求抽奖｜由 Char 自主决定】User 正在明确要求主播发抽奖。请严格根据主播完整人设、与 User 的关系、当前情绪和本场直播内容，决定主播愿不愿意发；不得默认同意，也不得由观众替主播决定。只能返回以下三种完全合法的 JSON 之一：礼物抽奖示例 lotterySuggestion={"shouldStart":true,"prize":"签名海报","prizeType":"gift","cashAmount":0,"durationSec":30}；现金抽奖示例 lotterySuggestion={"shouldStart":true,"prize":"¥66现金","prizeType":"cash","cashAmount":66,"durationSec":30}；拒绝示例 lotterySuggestion={"shouldStart":false,"prize":"","prizeType":"gift","cashAmount":0,"durationSec":30}。durationSec 可选择 10 到 60 的整数。只要 charBubbles 表示同意、答应、宣布奖品或声称马上开始，shouldStart 就必须为 true，且必须同时返回具体 prize；绝对不能出现“嘴上答应但 shouldStart=false 或漏掉 lotterySuggestion”的矛盾。shouldStart=false 时应按人设自然拒绝、回避或提出理由，绝对不能声称抽奖已经开始。禁止把 shouldStart 返回成字符串。`;
+        } else {
+            finalPrompt += `\n每次响应还要返回一个合法的候选抽奖对象。非现金示例：lotterySuggestion={"shouldStart":true,"prize":"签名海报","prizeType":"gift","cashAmount":0,"durationSec":30}；现金示例：lotterySuggestion={"shouldStart":true,"prize":"¥66现金","prizeType":"cash","cashAmount":66,"durationSec":30}。这只是候选奖品，前端仅会以极低概率真正触发抽奖；不要为了该字段强行让 charBubbles 宣布抽奖。`;
+        }
+        if (activeConnection) {
+            finalPrompt += `\n当前连线有效时还必须返回 connectionNarrative={"text":"连线用户的公开环境、动作或氛围描写","translationZh":"简体中文翻译或空字符串"}。该描写会公开显示并写入会话记录。`;
+        }
+        if (options.connectionKickoff) {
+            const connection = getActiveYtCharConnection();
+            const participant = connection?.participant || getCurrentYtViewer();
+            finalPrompt += `\n\n【本次是连线刚接通后的首次互动，优先级最高】连线用户：${participant?.name || 'User'}。请让主播根据私有完整人设自然回应连线接通，并让观众只根据公开信息围绕这次连线即时讨论。charBubbles 必须生成 1–3 条主播发言；connectionNarrative 必须非空；fanComments 或 passerbyComments 必须生成 10–14 条相关评论，不得少于 10 条。`;
+        }
 
         try {
             let endpoint = window.apiConfig.endpoint;
@@ -1601,10 +2405,22 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
             let resultText = data.choices[0].message.content;
             resultText = resultText.replace(/```json/g, '').replace(/```/g, '').trim();
             if (char.generatedContent?.currentLive?.id !== requestedLiveId || currentVideoData?.channelData?.id !== char.id) return null;
-            return { ...sanitizeObj(JSON.parse(resultText)), _liveId: requestedLiveId };
+            const parsedResult = sanitizeObj(JSON.parse(resultText));
+            if (options.connectionKickoff) {
+                const bubbles = Array.isArray(parsedResult.charBubbles)
+                    ? parsedResult.charBubbles
+                    : (parsedResult.charResponse ? [parsedResult.charResponse] : []);
+                const comments = Array.isArray(parsedResult.fanComments)
+                    ? parsedResult.fanComments
+                    : (Array.isArray(parsedResult.passerbyComments) ? parsedResult.passerbyComments : []);
+                const connectionNarrative = getYtPlayerLocalizedContent(parsedResult.connectionNarrative, char);
+                if (bubbles.length < 1 || comments.length < 10 || !connectionNarrative.text) throw new Error('INVALID_CONNECTION_KICKOFF');
+            }
+            return { ...parsedResult, _liveId: requestedLiveId, _explicitLotteryRequest: explicitLotteryRequest };
         } catch (error) {
             console.error('Interactive Live Error:', error);
             if (char.generatedContent?.currentLive?.id !== requestedLiveId) return null;
+            if (options.connectionKickoff) return { _error: 'CONNECTION_RESPONSE_INVALID', _liveId: requestedLiveId };
             return {
                 _liveId: requestedLiveId,
                 charBubbles: ["（直播信号有点差...）"],
@@ -1615,6 +2431,7 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
 
     function recordCharContent(value, isNarrative = false) {
         if (!currentVideoData || !currentVideoData.channelData) return;
+        if (currentVideoData.isLive && currentVideoData.channelData.id !== 'user_channel_id') resolveCanonicalYtCharLive();
         const localized = getYtPlayerLocalizedContent(value, currentVideoData.channelData);
         const transcriptItem = {
             type: isNarrative ? 'narrative' : 'bubble',
@@ -1631,27 +2448,69 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
             if (!Array.isArray(currentLive.liveTranscript)) currentLive.liveTranscript = [];
             currentLive.liveTranscript.push({ ...transcriptItem });
             currentVideoData.liveTranscript = currentLive.liveTranscript;
+            if (currentLive.connection?.status === 'active') {
+                if (!Array.isArray(currentLive.connection.transcript)) currentLive.connection.transcript = [];
+                currentLive.connection.transcript.push(normalizeYtConnectionTranscriptItem({
+                    speakerType: 'char',
+                    speakerId: currentVideoData.channelData.id,
+                    name: currentVideoData.channelData.name || '主播',
+                    text: localized.text,
+                    translationZh: localized.translationZh,
+                    kind: isNarrative ? 'narrative' : 'speech',
+                    timestamp: transcriptItem.timestamp
+                }));
+            }
         }
         saveYoutubeData();
     }
 
     function renderAiResponse(responseObj) {
         if (!responseObj) return;
+        if (currentVideoData?.isLive && currentVideoData?.channelData?.id !== 'user_channel_id') resolveCanonicalYtCharLive();
         if (responseObj._liveId && currentVideoData?.channelData?.generatedContent?.currentLive?.id !== responseObj._liveId) return;
         removeCharLiveLoadingBubbles();
         
         window.ytLiveTimeouts = window.ytLiveTimeouts || [];
 
         if (responseObj.narrative) {
+            const narrative = getYtPlayerLocalizedContent(responseObj.narrative);
+            const localizedNarrative = {
+                text: narrative.text ? `（${narrative.text}）` : '',
+                translationZh: narrative.translationZh ? `（${narrative.translationZh}）` : ''
+            };
+            recordCharContent(localizedNarrative, true);
             let tId = setTimeout(() => {
-                const narrative = getYtPlayerLocalizedContent(responseObj.narrative);
-                const localizedNarrative = {
-                    text: narrative.text ? `（${narrative.text}）` : '',
-                    translationZh: narrative.translationZh ? `（${narrative.translationZh}）` : ''
-                };
                 addCharLiveBubble(localizedNarrative, { isNarrative: true });
-                recordCharContent(localizedNarrative, true);
             }, 500);
+            window.ytLiveTimeouts.push(tId);
+        }
+
+        if (responseObj.connectionNarrative && getActiveYtCharConnection()?.status === 'active') {
+            const tId = setTimeout(() => {
+                const connection = getActiveYtCharConnection();
+                if (!connection || connection.status !== 'active') return;
+                const localized = getYtPlayerLocalizedContent(responseObj.connectionNarrative, currentVideoData?.channelData);
+                if (!localized.text) return;
+                addYtCharConnectionNarrative(localized);
+                const item = normalizeYtConnectionTranscriptItem({
+                    speakerType: 'user',
+                    speakerId: connection.participant?.id || 'user_channel_id',
+                    name: connection.participant?.name || 'User',
+                    text: localized.text,
+                    translationZh: localized.translationZh,
+                    kind: 'narrative'
+                });
+                connection.transcript = Array.isArray(connection.transcript) ? connection.transcript : [];
+                connection.transcript.push(item);
+                const resolved = resolveCanonicalYtCharLive();
+                if (resolved) {
+                    resolved.live.liveTranscript = Array.isArray(resolved.live.liveTranscript) ? resolved.live.liveTranscript : [];
+                    resolved.live.liveTranscript.push({ type: 'connection-narrative', senderType: 'user', ...item });
+                    resolved.channel.liveHistory = Array.isArray(resolved.channel.liveHistory) ? resolved.channel.liveHistory : [];
+                    resolved.channel.liveHistory.push({ type: 'connection-narrative', senderType: 'user', ...item });
+                    saveYoutubeData();
+                }
+            }, 700);
             window.ytLiveTimeouts.push(tId);
         }
 
@@ -1680,9 +2539,9 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
 
         if (bubbles.length > 0) {
             bubbles.forEach((bubbleValue, index) => {
+                recordCharContent(bubbleValue, false);
                 let tId = setTimeout(() => {
                     addCharLiveBubble(bubbleValue);
-                    recordCharContent(bubbleValue, false);
                     // 主播的话不再显示在下方评论区，仅在气泡显示
                 }, 1000 + (index * 2500)); 
                 window.ytLiveTimeouts.push(tId);
@@ -1702,6 +2561,7 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
                 window.ytLiveTimeouts.push(tId);
             });
         }
+        maybeStartYtCharLiveLottery(responseObj);
     }
 
     async function generateLiveSummary() {
@@ -1833,6 +2693,8 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
         chatInput,
         chatSend,
         chatApiBtn,
+        ytPlayerConnectBtn,
+        ytCharLiveConnectionCard,
         playerPlusBtn,
         document.getElementById('yt-gift-btn')
     ].filter(Boolean).forEach((el) => {
@@ -1858,6 +2720,7 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
                 if (chatInput && document.activeElement === chatInput) chatInput.blur();
             });
         }
+
     }
 
     if (chatInput) {
@@ -1896,6 +2759,10 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
             const isLive = currentVideoData && currentVideoData.isLive;
             const effectiveYtUser = getCurrentYtViewer();
             addChatMessage(effectiveYtUser.name || '我', text, isLive, null, null, false, 'user');
+            if (isLive && getActiveYtCharConnection()?.status === 'active') {
+                addYtCharConnectionBubble(text);
+                recordYtCharConnectionUserContent(text);
+            }
             chatInput.value = '';
         };
 
@@ -1967,8 +2834,27 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
         setPlayerChatApiLoading(true);
         try {
             if (isLive) {
-                const responseObj = await getCharResponse(latestUserMessage?.text || '', false, 0, !latestUserMessage);
-                renderAiResponse(responseObj);
+                const activeConnection = getActiveYtCharConnection();
+                const needsConnectionRetry = activeConnection?.status === 'active' && activeConnection.kickoffCompleted !== true;
+                const responseObj = await getCharResponse(
+                    latestUserMessage?.text || '',
+                    false,
+                    0,
+                    !latestUserMessage,
+                    { connectionKickoff: needsConnectionRetry }
+                );
+                if (responseObj?._error) {
+                    removeCharLiveLoadingBubbles();
+                    if (window.showToast) window.showToast('连线互动生成失败，请重试');
+                } else {
+                    if (needsConnectionRetry) {
+                        const latestConnection = getActiveYtCharConnection();
+                        if (latestConnection) latestConnection.kickoffCompleted = true;
+                        saveYoutubeData();
+                        resolveCanonicalYtCharLive();
+                    }
+                    renderAiResponse(responseObj);
+                }
             } else {
                 showPlayerReplyLoading();
                 const responseObj = await getVODResponse(latestUserMessage.text);
@@ -2019,8 +2905,13 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
 
     function finishCurrentYtCharLive() {
         const video = currentVideoData;
-        const channel = video?.channelData;
-        if (!video?.isLive || !channel || channel.id === 'user_channel_id' || !channel.generatedContent?.currentLive) {
+        const channelId = video?.channelData?.id;
+        const channel = (Array.isArray(mockSubscriptions) ? mockSubscriptions : [])
+            .find(item => String(item?.id) === String(channelId)) || video?.channelData;
+        const currentLive = channel?.generatedContent?.currentLive;
+        const requestedLiveId = video?.id || video?.liveId;
+        if (!video?.isLive || !channel || channel.id === 'user_channel_id' || !currentLive
+            || (requestedLiveId && currentLive.id && String(requestedLiveId) !== String(currentLive.id))) {
             if (window.showToast) window.showToast('当前没有可结束的 Char 直播');
             return;
         }
@@ -2028,6 +2919,29 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
         if (window.ytLiveTimeouts) {
             window.ytLiveTimeouts.forEach(clearTimeout);
             window.ytLiveTimeouts = [];
+        }
+        if (currentLive.charLottery?.status === 'active') finalizeYtCharLiveLottery();
+        stopYtCharLiveLotteryTimer();
+        ytCharLiveLotteryModal?.classList.remove('active');
+        if (ytCharLiveLotteryInlineStatus) ytCharLiveLotteryInlineStatus.style.display = 'none';
+        stopYtCharConnectionVisualTimers();
+        if (currentLive.connection) {
+            currentLive.guest = { ...(currentLive.connection.participant || currentLive.guest || {}) };
+            currentLive.connectionEndedAt = Date.now();
+            currentLive.connectionHistory = [
+                ...(Array.isArray(currentLive.connectionHistory) ? currentLive.connectionHistory : []),
+                {
+                    id: currentLive.connection.id,
+                    participant: { ...(currentLive.connection.participant || {}) },
+                    requestedAt: currentLive.connection.requestedAt || null,
+                    startedAt: currentLive.connection.startedAt || null,
+                    endedAt: currentLive.connectionEndedAt,
+                    transcript: Array.isArray(currentLive.connection.transcript)
+                        ? currentLive.connection.transcript.map(item => ({ ...item }))
+                        : []
+                }
+            ];
+            currentLive.connection = null;
         }
         archiveYtCurrentCharLive(channel);
         channel.generatedContent.currentLive = null;
@@ -2257,6 +3171,8 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
                 if (cardEl) {
                     cardEl.addEventListener('click', () => {
                         const videoObj = {
+                            id: data.currentLive.id || '',
+                            liveId: data.currentLive.id || '',
                             title: data.currentLive.title,
                             titleTranslationZh: data.currentLive.titleTranslationZh || '',
                             viewerCount: data.currentLive.viewerCount,
@@ -2349,7 +3265,7 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
                     const btnText = isJoined ? '进入' : '加入';
 
                     const groupEl = document.createElement('div');
-                    groupEl.style.margin = '0 16px 16px';
+                    groupEl.style.margin = '12px 16px 16px';
                     groupEl.style.padding = '12px';
                     groupEl.style.backgroundColor = '#f2f2f2';
                     groupEl.style.borderRadius = '12px';
@@ -2877,6 +3793,25 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
         openVideoPlayer(video);
     }
 
+    function resolveYtCharGenerationChannel(channelId, fallbackChannel = null) {
+        const canonical = (Array.isArray(mockSubscriptions) ? mockSubscriptions : [])
+            .find(item => String(item?.id) === String(channelId));
+        return canonical
+            || (currentSubChannelData && String(currentSubChannelData.id) === String(channelId) ? currentSubChannelData : null)
+            || fallbackChannel;
+    }
+
+    function refreshYtCharGeneratedContentUi(channelId, mode, fallbackChannel = null) {
+        const canonicalChannel = resolveYtCharGenerationChannel(channelId, fallbackChannel);
+        if (!canonicalChannel) return null;
+        currentSubChannelData = canonicalChannel;
+        setYtCharGenerationModalLoading(false);
+        ytCharGenerateModal?.classList.remove('active');
+        renderGeneratedContent(mode);
+        if (typeof renderVideos === 'function') renderVideos();
+        return canonicalChannel;
+    }
+
     async function submitYtCharTabGeneration() {
         if (ytCharGenerateRequestActive || !currentSubChannelData) return;
         if (!window.apiConfig || !window.apiConfig.endpoint || !window.apiConfig.apiKey) {
@@ -2903,7 +3838,8 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
         try {
             const result = await requestYtCharTabGeneration(requestMode, requirement, count);
             if (currentSubChannelData?.id !== requestChannel.id) throw new Error('STALE_CHANNEL');
-            const channel = requestChannel;
+            const channel = resolveYtCharGenerationChannel(requestChannel.id, requestChannel);
+            if (!channel) throw new Error('STALE_CHANNEL');
             if (typeof window.ensureYtFixedCharFanGroup === 'function') window.ensureYtFixedCharFanGroup(channel);
             const generatedContent = channel.generatedContent;
             if (requestMode === 'live') {
@@ -2911,10 +3847,7 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
                 generatedContent.currentLive = live;
                 channel.isLive = true;
                 saveYoutubeData();
-                const canonicalChannel = mockSubscriptions.find(item => item.id === channel.id) || channel;
-                currentSubChannelData = canonicalChannel;
-                setYtCharGenerationModalLoading(false);
-                ytCharGenerateModal.classList.remove('active');
+                const canonicalChannel = refreshYtCharGeneratedContentUi(channel.id, 'live', channel) || channel;
                 openNewYtCharLive(canonicalChannel.generatedContent?.currentLive || live, canonicalChannel);
                 if (window.showToast) window.showToast('直播已开始');
                 return;
@@ -2927,10 +3860,7 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
                 generatedContent.communityPosts = posts.concat(generatedContent.communityPosts || []);
             }
             saveYoutubeData();
-            currentSubChannelData = mockSubscriptions.find(item => item.id === channel.id) || channel;
-            renderGeneratedContent(requestMode);
-            setYtCharGenerationModalLoading(false);
-            ytCharGenerateModal.classList.remove('active');
+            refreshYtCharGeneratedContentUi(channel.id, requestMode, channel);
             if (window.showToast) window.showToast(requestMode === 'past' ? `已生成 ${count} 个往期视频` : `已生成 ${count} 条帖子`);
         } catch (error) {
             console.error('Char tab generation failed:', error);

@@ -82,7 +82,7 @@ test('viewer metrics are numeric inputs formatted by the frontend with Chinese u
 test('homepage, live continuation, user replies, comments, and centered history modal use the localized contract', () => {
     assert.match(playerSource, /buildYtLocalizedJsonContract\(\s*currentSubChannelData,[\s\S]*currentLive\.title/);
     assert.match(playerSource, /initialBubbles: 对象数组/);
-    assert.match(playerSource, /getCharResponse\(latestUserMessage\?\.text \|\| '', false, 0, !latestUserMessage\)/);
+    assert.match(playerSource, /getCharResponse\(\s*latestUserMessage\?\.text \|\| '',\s*false,\s*0,\s*!latestUserMessage,/);
     assert.match(playerSource, /getCharResponse\('', false, 0, true\)/);
     assert.match(playerSource, /Use this exact localized object schema even if the editable prompt above requests strings/);
     assert.match(playerSource, /class="yt-comment-translation-toggle" role="button" tabindex="0"/);
@@ -100,6 +100,6 @@ test('homepage, live continuation, user replies, comments, and centered history 
     assert.match(cssSource, /\.yt-post-comment-translation\.is-root\s*\{[\s\S]*font-size:\s*14px;/);
     assert.match(cssSource, /\.yt-char-all-content-modal-overlay\s*\{[\s\S]*justify-content:\s*center;[\s\S]*align-items:\s*center;/);
     assert.match(cssSource, /\.yt-char-all-content-modal-card\s*\{[\s\S]*border-radius:\s*24px;/);
-    assert.match(indexSource, /css\/youtube\.css\?v=20260715-user-vod-parity-v2/);
-    assert.match(indexSource, /js\/youtube\/5_player\.js\?v=20260715-user-vod-parity-v2/);
+    assert.match(indexSource, /css\/youtube\.css\?v=20260717-char-lottery-consistency-v18/);
+    assert.match(indexSource, /js\/youtube\/5_player\.js\?v=20260717-char-lottery-consistency-v18/);
 });

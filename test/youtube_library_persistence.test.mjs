@@ -16,7 +16,7 @@ test('YouTube state is rehydrated after IndexedDB-backed global data becomes rea
     assert.match(youtubeCoreSource, /window\.globalDataReadyPromise\.then\(\(\) => \{/);
     assert.match(youtubeCoreSource, /loadYoutubeData\(\);\s*refreshYoutubeUiAfterHydration\(\);/);
     assert.match(youtubeCoreSource, /window\.youtubeDataReadyPromise\s*=/);
-    assert.match(indexSource, /js\/youtube\/2_core\.js\?v=20260715-user-vod-parity-v2/);
+    assert.match(indexSource, /js\/youtube\/2_core\.js\?v=20260717-char-lottery-consistency-v18/);
 });
 
 test('YouTube message API generation is persisted before UI replay', () => {

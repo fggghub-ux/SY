@@ -77,6 +77,9 @@ test('user live comments require foreign originals with clickable Chinese transl
     assert.match(liveSource, /comments 至少一半来自使用英语、日语、韩语、法语、西班牙语/);
     assert.match(liveSource, /translationZh.*participates/);
     assert.match(liveSource, /class="yt-user-live-comment-translation-toggle" role="button" tabindex="0"/);
+    assert.match(cssSource, /\.yt-user-live-superchat \.yt-user-live-comment-translation-toggle,[\s\S]*\.yt-user-live-superchat \.yt-user-live-comment-translation\s*\{[\s\S]*color:\s*rgba\(255,255,255,0\.78\);[\s\S]*opacity:\s*1;/);
+    assert.match(liveSource, /function renderUserLiveChatRow\(comment\)[\s\S]*row\.className = 'yt-live-chat-row-anim';[\s\S]*row\.classList\.add\('yt-user-live-superchat'\)/);
+    assert.match(liveSource, /function addUserLiveChatMessage\(name, text, amount, color, translationZh = ''\)[\s\S]*row\.classList\.add\('yt-user-live-superchat'\)/);
     assert.match(liveSource, /event\.key !== 'Enter' && event\.key !== ' '/);
     assert.match(liveSource, /addUserLiveChatMessage\(ev\.data\.name, ev\.data\.text, null, null, ev\.data\.translationZh\)/);
 });
@@ -108,5 +111,5 @@ test('draw follow-up is marked before one automatic API request and requires ten
     assert.match(liveSource, /messages\.length < 2[\s\S]*TOO_FEW_WINNER_DMS/);
     assert.match(liveSource, /appendUserLiveLotteryWinnerDms\(lottery, winnerDmBatches\)/);
     assert.match(liveSource, /contact\.dmHistory\.push\(\{[\s\S]*lotteryId/);
-    assert.match(indexSource, /js\/youtube\/8_user_live\.js\?v=20260715-user-vod-parity-v2/);
+    assert.match(indexSource, /js\/youtube\/8_user_live\.js\?v=20260717-char-lottery-consistency-v18/);
 });

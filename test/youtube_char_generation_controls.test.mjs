@@ -46,6 +46,15 @@ test('tab generation validates requested counts and mutates only its target coll
     assert.match(playerSource, /用户要求不得覆盖 JSON、语言、翻译、数量和安全协议/);
 });
 
+test('generated Char content re-resolves canonical state and redraws immediately', () => {
+    assert.match(playerSource, /function resolveYtCharGenerationChannel\(channelId, fallbackChannel = null\)/);
+    assert.match(playerSource, /find\(item => String\(item\?\.id\) === String\(channelId\)\)/);
+    assert.match(playerSource, /function refreshYtCharGeneratedContentUi\(channelId, mode, fallbackChannel = null\)/);
+    assert.match(playerSource, /currentSubChannelData = canonicalChannel;[\s\S]*ytCharGenerateModal\?\.classList\.remove\('active'\);[\s\S]*renderGeneratedContent\(mode\);[\s\S]*renderVideos\(\)/);
+    assert.match(playerSource, /const channel = resolveYtCharGenerationChannel\(requestChannel\.id, requestChannel\)/);
+    assert.match(playerSource, /saveYoutubeData\(\);[\s\S]*refreshYtCharGeneratedContentUi\(channel\.id, requestMode, channel\)/);
+});
+
 test('every non-user Char owns a fixed frontend-counted fan group', () => {
     assert.match(coreSource, /function ensureYtFixedCharFanGroup\(channel\)/);
     assert.match(coreSource, /channel\.id === 'user_channel_id' \|\| channel\.isUserOwnedCommunity \|\| channel\.isBusiness/);
@@ -55,5 +64,9 @@ test('every non-user Char owns a fixed frontend-counted fan group', () => {
     assert.match(channelSource, /ensureYtFixedCharFanGroup\(sub\)/);
     assert.match(communitySource, /groupNameInput\.readOnly = !currentSubChannelData\.isUserOwnedCommunity/);
     assert.match(communitySource, /currentSubChannelData\.isUserOwnedCommunity && groupNameInput/);
-    assert.match(indexSource, /js\/youtube\/3_channel\.js\?v=20260715-user-vod-parity-v2/);
+    assert.match(indexSource, /js\/youtube\/3_channel\.js\?v=20260717-char-lottery-consistency-v18/);
+});
+
+test('Char community fan group card leaves breathing room below the tabs', () => {
+    assert.match(playerSource, /groupEl\.style\.margin = '12px 16px 16px'/);
 });

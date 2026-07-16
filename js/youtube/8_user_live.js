@@ -75,8 +75,8 @@
 
     if (startUserLiveBtn && userLiveView) {
         startUserLiveBtn.addEventListener('click', () => {
-            if (typeof window.validateUserLiveSelectedGuest === 'function') {
-                window.validateUserLiveSelectedGuest();
+            if (typeof window.validateUserLiveSelectedGuests === 'function') {
+                window.validateUserLiveSelectedGuests();
             }
             const titleInput = document.getElementById('yt-user-live-title-input');
             const title = titleInput && titleInput.value ? titleInput.value : '我的直播间';
@@ -94,6 +94,7 @@
             document.getElementById('yt-user-live-chat-container').innerHTML = '';
             document.getElementById('yt-user-live-bubbles-container').innerHTML = '';
             document.getElementById('yt-user-live-alert-container').innerHTML = '';
+            userLiveConnectionCard?.replaceChildren();
             userLiveHistory = [];
 
             if (typeof window.openYtUserLiveView === 'function') {
@@ -118,6 +119,7 @@
                 cancelText: '继续',
                 isDestructive: true,
                 onConfirm: () => {
+                    archiveAllUserLiveConnections();
                     if (typeof window.releaseYtChatKeyboardLock === 'function') window.releaseYtChatKeyboardLock();
                     userLiveView.classList.remove('active');
                     
@@ -143,11 +145,13 @@
         const dcTotalCommission = document.getElementById('dc-total-commission');
         const dcTotalRevenue = document.getElementById('dc-total-revenue');
         const dcOffersList = document.getElementById('dc-offers-list');
+        const dcReceivedGiftsList = document.getElementById('dc-received-gifts-list');
 
         if (!channelState.dataCenter) {
-            channelState.dataCenter = { views: 0, sc: 0, subs: 0, commission: 0 };
+            channelState.dataCenter = { views: 0, sc: 0, subs: 0, commission: 0, receivedGifts: [] };
         }
         if (channelState.dataCenter.commission === undefined) channelState.dataCenter.commission = 0;
+        if (!Array.isArray(channelState.dataCenter.receivedGifts)) channelState.dataCenter.receivedGifts = [];
 
         if (dcTotalViews) dcTotalViews.textContent = channelState.dataCenter.views || 0;
         if (dcTotalSc) dcTotalSc.textContent = (channelState.dataCenter.sc || 0).toFixed(2);
@@ -285,12 +289,16 @@
     let userLiveMaxHot = 0;
     let userLiveNewSubs = 0;
     let userLiveSessionId = null;
+    const userLiveConnectionDelayTimers = new Map();
+    const userLiveConnectionDurationTimers = new Map();
 
     const userLiveChatInput = document.getElementById('yt-user-live-chat-input');
     const userLiveChatSend = document.getElementById('yt-user-live-chat-send');
     const userLiveBubblesContainer = document.getElementById('yt-user-live-bubbles-container');
     const userLiveChatContainer = document.getElementById('yt-user-live-chat-container');
     const userLiveTriggerApiBtn = document.getElementById('yt-user-live-trigger-api-btn');
+    const userLiveConnectBtn = document.getElementById('yt-user-live-connect-btn');
+    const userLiveConnectionCard = document.getElementById('yt-user-live-connection-card');
     const userLiveMinimizeBtn = document.getElementById('yt-user-live-minimize-btn');
     const userLiveLotteryBtn = document.getElementById('yt-user-live-lottery-btn');
     const userLiveLotterySheet = document.getElementById('yt-user-live-lottery-sheet');
@@ -345,8 +353,10 @@
         return topicInput && topicInput.value ? topicInput.value : '';
     }
 
-    function getSelectedUserLiveGuest() {
-        return typeof userLiveSelectedGuest !== 'undefined' ? userLiveSelectedGuest : null;
+    function getSelectedUserLiveGuests() {
+        return typeof window.getUserLiveSelectedGuests === 'function'
+            ? window.getUserLiveSelectedGuests()
+            : [];
     }
 
     function buildActiveUserLiveState(extra = {}) {
@@ -366,7 +376,7 @@
             maxHot: Number(userLiveMaxHot) || totalViews,
             newSubs: Number(userLiveNewSubs) || 0,
             liveSessionId: userLiveSessionId || channelState.activeUserLive?.liveSessionId || null,
-            guest: getSelectedUserLiveGuest(),
+            guests: getSelectedUserLiveGuests(),
             user: {
                 name: effectiveYtUser.name || '我',
                 avatarUrl: effectiveYtUser.avatarUrl || '',
@@ -382,6 +392,303 @@
         channelState.activeUserLive = buildActiveUserLiveState(extra);
         saveYoutubeData();
         return channelState.activeUserLive;
+    }
+
+    function formatUserLiveConnectionDuration(startedAt) {
+        const totalSeconds = Math.max(0, Math.floor((Date.now() - Number(startedAt || Date.now())) / 1000));
+        const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+        const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+        const seconds = String(totalSeconds % 60).padStart(2, '0');
+        return `${hours}:${minutes}:${seconds}`;
+    }
+
+    function normalizeUserLiveTranscriptItem(item = {}) {
+        const kind = item.kind === 'narrative' ? 'narrative' : 'speech';
+        return {
+            speakerType: item.speakerType || 'char',
+            speakerId: item.speakerId || null,
+            name: item.name || '',
+            text: String(item.text || '').trim(),
+            ...(item.translationZh ? { translationZh: String(item.translationZh) } : {}),
+            kind,
+            timestamp: Number(item.timestamp) || Date.now()
+        };
+    }
+
+    function getUserLiveConnections() {
+        const live = channelState?.activeUserLive;
+        if (!live) return [];
+        if (!Array.isArray(live.connections)) {
+            live.connections = live.connection && typeof live.connection === 'object' ? [live.connection] : [];
+            live.connection = null;
+        }
+        live.connections = live.connections.filter(Boolean).slice(0, 3).map(connection => ({
+            ...connection,
+            id: connection.id || `connection_${connection.requestedAt || Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            transcript: Array.isArray(connection.transcript) ? connection.transcript.map(normalizeUserLiveTranscriptItem) : []
+        }));
+        if (!Array.isArray(live.connectionHistory)) live.connectionHistory = [];
+        return live.connections;
+    }
+
+    function getActiveUserLiveConnections() {
+        return getUserLiveConnections().filter(connection => connection.status === 'active');
+    }
+
+    function getUserLiveConnectionById(connectionId) {
+        return getUserLiveConnections().find(connection => String(connection.id) === String(connectionId)) || null;
+    }
+
+    function stopUserLiveConnectionTimers(connectionId = null) {
+        const stopMap = (map, clearFn) => {
+            if (connectionId !== null) {
+                const timer = map.get(String(connectionId));
+                if (timer) clearFn(timer);
+                map.delete(String(connectionId));
+                return;
+            }
+            map.forEach(clearFn);
+            map.clear();
+        };
+        stopMap(userLiveConnectionDelayTimers, clearTimeout);
+        stopMap(userLiveConnectionDurationTimers, clearInterval);
+    }
+
+    function stopUserLiveConnectionDurationTimers() {
+        userLiveConnectionDurationTimers.forEach(clearInterval);
+        userLiveConnectionDurationTimers.clear();
+    }
+
+    function setUserLiveConnectionButtonState() {
+        if (!userLiveConnectBtn) return;
+        const connections = getUserLiveConnections();
+        const isFull = connections.length >= 3;
+        userLiveConnectBtn.disabled = !channelState?.activeUserLive || isFull;
+        userLiveConnectBtn.classList.toggle('is-connecting', connections.some(item => item.status === 'connecting'));
+        userLiveConnectBtn.innerHTML = '<i class="fas fa-phone-volume"></i>';
+        userLiveConnectBtn.title = isFull ? '最多同时连线 3 位嘉宾' : '添加连线嘉宾';
+        userLiveConnectBtn.setAttribute('aria-label', userLiveConnectBtn.title);
+    }
+
+    function appendUserLiveConnectionTranscript(connectionId, item, options = {}) {
+        const connection = getUserLiveConnectionById(connectionId);
+        const normalized = normalizeUserLiveTranscriptItem(item);
+        if (!connection || !normalized.text) return null;
+        connection.transcript.push(normalized);
+        if (options.includeLiveHistory !== false) {
+            userLiveHistory.push({
+                type: normalized.kind === 'narrative' ? 'guest-narrative' : 'guest',
+                senderType: normalized.speakerType,
+                ...normalized
+            });
+        }
+        persistActiveUserLive({ connections: getUserLiveConnections(), connection: null });
+        return normalized;
+    }
+
+    function addUserLiveConnectionBubble(connectionId, value, options = {}) {
+        const connection = getUserLiveConnectionById(connectionId);
+        const text = String(value?.text || value?.content || value || '').trim();
+        const translationZh = String(value?.translationZh || value?.translation || '').trim();
+        if (!connection || !userLiveBubblesContainer || !text) return;
+        const participantName = connection.participant?.name || '连线嘉宾';
+        const bubble = document.createElement('div');
+        bubble.className = 'yt-user-live-bubble';
+        bubble.innerHTML = `
+            <div class="yt-localized-original">${escapeYtUserLiveHtml(`${participantName}：${text}`)}</div>
+            ${translationZh ? `<div class="yt-char-live-translation">${escapeYtUserLiveHtml(`${participantName}：${translationZh}`)}</div>` : ''}`;
+        userLiveBubblesContainer.appendChild(bubble);
+        setTimeout(() => {
+            bubble.style.opacity = '0';
+            bubble.style.transition = 'opacity 1s ease';
+            setTimeout(() => bubble.remove(), 1000);
+        }, 8000);
+        if (options.persist !== false) {
+            appendUserLiveConnectionTranscript(connectionId, {
+                speakerType: 'char',
+                speakerId: connection.participant?.imCharId || connection.participant?.id,
+                name: connection.participant?.name || '连线嘉宾',
+                text,
+                translationZh,
+                kind: 'speech'
+            });
+        }
+    }
+
+    function addUserLiveConnectionNarrative(connectionId, value, options = {}) {
+        const connection = getUserLiveConnectionById(connectionId);
+        const text = String(value?.text || value?.content || value || '').trim();
+        const translationZh = String(value?.translationZh || value?.translation || '').trim();
+        const container = userLiveConnectionCard?.querySelector(`[data-connection-id="${CSS.escape(String(connectionId))}"] .yt-live-connection-narratives`);
+        if (!connection || !container || !text) return;
+        const narrative = document.createElement('div');
+        narrative.className = 'yt-live-connection-narrative';
+        narrative.textContent = translationZh ? `${text}（${translationZh}）` : text;
+        container.appendChild(narrative);
+        while (container.children.length > 2) container.firstElementChild?.remove();
+        setTimeout(() => narrative.remove(), 10000);
+        if (options.persist !== false) {
+            appendUserLiveConnectionTranscript(connectionId, {
+                speakerType: 'char',
+                speakerId: connection.participant?.imCharId || connection.participant?.id,
+                name: connection.participant?.name || '连线嘉宾',
+                text,
+                translationZh,
+                kind: 'narrative'
+            });
+        }
+    }
+
+    function renderUserLiveConnections() {
+        if (!userLiveConnectionCard) return;
+        stopUserLiveConnectionDurationTimers();
+        userLiveConnectionCard.replaceChildren();
+        const activeConnections = channelState?.activeUserLive ? getActiveUserLiveConnections() : [];
+        activeConnections.forEach(connection => {
+            const participant = connection.participant || {};
+            const seat = document.createElement('div');
+            seat.className = 'yt-live-connection-card yt-user-live-connection-seat';
+            seat.dataset.connectionId = connection.id;
+            seat.innerHTML = `
+                <div class="yt-live-connection-avatar-wrap">
+                    <img class="yt-live-connection-avatar" src="${escapeYtUserLiveHtml(participant.avatar || participant.avatarUrl || 'https://picsum.photos/80/80?grayscale')}" alt="">
+                    <div class="yt-live-connection-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+                </div>
+                <div class="yt-live-connection-info">
+                    <div class="yt-live-connection-name">${escapeYtUserLiveHtml(participant.name || '连线嘉宾')}</div>
+                    <div class="yt-live-connection-duration">${formatUserLiveConnectionDuration(connection.startedAt)}</div>
+                </div>
+                <button type="button" class="yt-live-connection-exit" aria-label="退出连线" title="退出连线"><i class="fas fa-phone-slash"></i></button>
+                <div class="yt-live-connection-narratives" aria-live="polite"></div>`;
+            seat.querySelector('.yt-live-connection-exit')?.addEventListener('click', event => {
+                event.stopPropagation();
+                endUserLiveConnection(connection.id);
+            });
+            userLiveConnectionCard.appendChild(seat);
+            const duration = seat.querySelector('.yt-live-connection-duration');
+            const timer = setInterval(() => {
+                const latest = getUserLiveConnectionById(connection.id);
+                if (!latest || latest.status !== 'active') return;
+                if (duration) duration.textContent = formatUserLiveConnectionDuration(latest.startedAt);
+            }, 1000);
+            userLiveConnectionDurationTimers.set(String(connection.id), timer);
+        });
+        setUserLiveConnectionButtonState();
+    }
+
+    function activateUserLiveConnection(connectionId) {
+        const connection = getUserLiveConnectionById(connectionId);
+        if (!connection || connection.status !== 'connecting') return;
+        userLiveConnectionDelayTimers.delete(String(connectionId));
+        connection.status = 'active';
+        connection.startedAt = (Number(connection.requestedAt) || Date.now()) + 3000;
+        persistActiveUserLive({ connections: getUserLiveConnections(), connection: null });
+        renderUserLiveConnections();
+        if (window.showToast) window.showToast(`已与 ${connection.participant?.name || '嘉宾'} 接通`);
+    }
+
+    function scheduleUserLiveConnectionRestore() {
+        stopUserLiveConnectionTimers();
+        getUserLiveConnections().forEach(connection => {
+            if (connection.status !== 'connecting') return;
+            const remaining = Math.max(0, (Number(connection.requestedAt) + 3000) - Date.now());
+            const timer = setTimeout(() => activateUserLiveConnection(connection.id), remaining);
+            userLiveConnectionDelayTimers.set(String(connection.id), timer);
+        });
+        renderUserLiveConnections();
+    }
+
+    function beginUserLiveConnection(guest) {
+        if (!channelState?.activeUserLive || !guest) return false;
+        const validatedGuest = typeof window.validateYtLiveGuestOption === 'function'
+            ? window.validateYtLiveGuestOption(guest)
+            : guest;
+        if (!validatedGuest) {
+            window.showToast?.('该好友已不在订阅栏中');
+            return false;
+        }
+        const connections = getUserLiveConnections();
+        const participantId = String(validatedGuest.imCharId || validatedGuest.id || '');
+        if (connections.some(item => String(item.participant?.imCharId || item.participant?.id || '') === participantId)) {
+            window.showToast?.('该嘉宾已经在连线中');
+            return false;
+        }
+        if (connections.length >= 3) {
+            window.showToast?.('最多同时连线 3 位嘉宾');
+            return false;
+        }
+        const participant = {
+            id: validatedGuest.id,
+            imCharId: validatedGuest.imCharId || null,
+            name: validatedGuest.name || '连线嘉宾',
+            avatar: validatedGuest.avatar || validatedGuest.avatarUrl || '',
+            desc: validatedGuest.desc || validatedGuest.persona || '',
+            persona: validatedGuest.persona || validatedGuest.desc || '',
+            guestSource: validatedGuest.guestSource || 'youtube-subscription'
+        };
+        const connection = {
+            id: `connection_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            status: 'connecting',
+            requestedAt: Date.now(),
+            startedAt: null,
+            participant,
+            transcript: []
+        };
+        connections.push(connection);
+        persistActiveUserLive({ connections, connection: null });
+        scheduleUserLiveConnectionRestore();
+        window.showToast?.(`已向 ${participant.name} 发送连线请求，等待接通...`);
+        return true;
+    }
+
+    function endUserLiveConnection(connectionId, options = {}) {
+        const live = channelState?.activeUserLive;
+        const connection = getUserLiveConnectionById(connectionId);
+        if (!live || !connection) return;
+        stopUserLiveConnectionTimers(connection.id);
+        const connectionHistory = Array.isArray(live.connectionHistory) ? [...live.connectionHistory] : [];
+        connectionHistory.push({
+            ...connection,
+            participant: { ...(connection.participant || {}) },
+            transcript: Array.isArray(connection.transcript) ? connection.transcript.map(item => ({ ...item })) : [],
+            endedAt: Date.now()
+        });
+        const connections = getUserLiveConnections().filter(item => String(item.id) !== String(connection.id));
+        persistActiveUserLive({ connections, connection: null, connectionHistory });
+        renderUserLiveConnections();
+        if (!options.silent) window.showToast?.(`已结束与 ${connection.participant?.name || '嘉宾'} 的连线`);
+    }
+
+    function archiveAllUserLiveConnections() {
+        const ids = getUserLiveConnections().map(connection => connection.id);
+        ids.forEach(id => endUserLiveConnection(id, { silent: true }));
+    }
+
+    if (userLiveConnectBtn) {
+        userLiveConnectBtn.addEventListener('click', event => {
+            event.stopPropagation();
+            if (!channelState?.activeUserLive) return;
+            const connections = getUserLiveConnections();
+            if (connections.length >= 3) {
+                window.showToast?.('最多同时连线 3 位嘉宾');
+                return;
+            }
+            const excludedIds = connections.flatMap(item => [item.participant?.id, item.participant?.imCharId]).filter(Boolean);
+            const opened = window.openYtLiveConnectionPicker?.((selectedGuest) => {
+                if (!selectedGuest) return;
+                const confirmConnection = () => beginUserLiveConnection(selectedGuest);
+                if (window.showCustomModal) {
+                    window.showCustomModal({
+                        title: '请求连线',
+                        message: `确定向 ${selectedGuest.name || '该好友'} 发起连线吗？`,
+                        confirmText: '请求连线',
+                        cancelText: '取消',
+                        onConfirm: confirmConnection
+                    });
+                } else confirmConnection();
+            }, { includeNone: false, title: '添加连线嘉宾', excludeIds: excludedIds });
+            if (opened === false) window.showToast?.('暂无可连线的订阅好友');
+        });
     }
 
     function getUserLiveLotteryPrizeName(index) {
@@ -834,6 +1141,34 @@
                 saveYoutubeData();
             }
         }
+
+        if (dcReceivedGiftsList) {
+            const receivedGifts = channelState.dataCenter.receivedGifts;
+            if (receivedGifts.length === 0) {
+                dcReceivedGiftsList.innerHTML = '<div style="padding: 16px; text-align: center; color: #8e8e93; font-size: 14px;">暂无获得的礼物</div>';
+            } else {
+                dcReceivedGiftsList.innerHTML = receivedGifts.map(gift => {
+                    const name = escapeYtUserLiveHtml(gift?.name || '神秘礼物');
+                    const fromName = escapeYtUserLiveHtml(gift?.fromName || '主播');
+                    const receivedAt = Number(gift?.receivedAt)
+                        ? new Date(Number(gift.receivedAt)).toLocaleString('zh-CN')
+                        : '刚刚';
+                    const cashMeta = gift?.type === 'cash' && Number(gift?.cashAmount) > 0
+                        ? ` · ¥${Number(gift.cashAmount).toFixed(2)} 已收入 Pay`
+                        : '';
+                    return `
+                        <div class="settings-item" style="padding:12px 16px;">
+                            <div style="width:36px;height:36px;border-radius:50%;margin-right:12px;flex-shrink:0;background:#fff0f3;color:#ff0033;display:flex;align-items:center;justify-content:center;">
+                                <i class="fas fa-gift"></i>
+                            </div>
+                            <div style="flex:1;min-width:0;">
+                                <div style="font-weight:600;font-size:15px;color:#000;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;">${name}</div>
+                                <div style="font-size:12px;color:#8e8e93;margin-top:2px;">来自 ${fromName}${cashMeta} · ${escapeYtUserLiveHtml(receivedAt)}</div>
+                            </div>
+                        </div>`;
+                }).join('');
+            }
+        }
     }
 
     async function finalizeUserLiveLottery() {
@@ -1009,7 +1344,9 @@
     function renderUserLiveChatRow(comment) {
         if (!userLiveChatContainer || !comment) return;
         const row = document.createElement('div');
+        row.className = 'yt-live-chat-row-anim';
         if (comment.amount) {
+            row.classList.add('yt-user-live-superchat');
             row.style.backgroundColor = comment.color || '#8e8e93';
             row.style.padding = '8px 12px';
             row.style.borderRadius = '8px';
@@ -1052,6 +1389,9 @@
         userLiveMaxHot = Number(activeLive.maxHot) || userLiveTotalViews;
         userLiveNewSubs = Number(activeLive.newSubs) || 0;
         userLiveSessionId = activeLive.liveSessionId || activeLive.id || null;
+        getUserLiveConnections();
+        const restoredGuests = activeLive.connections.map(item => item.participant).filter(Boolean);
+        window.setUserLiveSelectedGuests?.(restoredGuests.length ? restoredGuests : (activeLive.guests || []));
 
         const titleInput = document.getElementById('yt-user-live-title-input');
         const topicInput = document.getElementById('yt-user-live-topic-input');
@@ -1068,6 +1408,8 @@
         }
         if (bgDisplay) bgDisplay.src = userLiveBgUrl || 'https://picsum.photos/900/600';
         if (viewsEl) viewsEl.textContent = activeLive.views || `${userLiveTotalViews} 人正在观看`;
+        const guestNameInput = document.getElementById('yt-user-live-guest-name');
+        if (guestNameInput) guestNameInput.value = restoredGuests.length ? restoredGuests.map(item => item.name).join('、') : '无';
         if (userLiveChatContainer) {
             userLiveChatContainer.innerHTML = '';
             userLiveComments.forEach(renderUserLiveChatRow);
@@ -1079,6 +1421,7 @@
             renderUserLiveLotteryStatus();
             if (restoredLottery?.status === 'completed') renderUserLiveLotteryResult(restoredLottery, false);
         }
+        scheduleUserLiveConnectionRestore();
     }
 
     window.openYtUserLiveView = function() {
@@ -1087,6 +1430,7 @@
         if (playerView) playerView.classList.remove('active', 'yt-char-live-mode');
         if (userLiveView) userLiveView.classList.add('active');
         requestAnimationFrame(positionUserLiveLotteryStatus);
+        scheduleUserLiveConnectionRestore();
         window.resetYtViewportOffset?.();
     };
 
@@ -1100,6 +1444,8 @@
         userLiveLotteryBtn,
         document.getElementById('yt-user-live-views-display'),
         userLiveTriggerApiBtn,
+        userLiveConnectBtn,
+        userLiveConnectionCard,
         userLiveChatContainer,
         userLiveChatInput,
         userLiveChatSend
@@ -1154,10 +1500,13 @@
             userLiveNewSubs = 0;
             userLiveSessionId = `user_live_${Date.now()}`;
             stopUserLiveLotteryTimer();
-            persistActiveUserLive({ minimized: false, lottery: null });
+            const initialGuests = getSelectedUserLiveGuests().slice(0, 3);
+            persistActiveUserLive({ minimized: false, lottery: null, connection: null, connections: [], connectionHistory: [] });
             renderUserLiveLotteryStatus();
             const viewsEl = document.getElementById('yt-user-live-views-display');
             if(viewsEl) viewsEl.textContent = userLiveTotalViews + ' 人正在观看';
+            initialGuests.forEach(beginUserLiveConnection);
+            if (initialGuests.length === 0) renderUserLiveConnections();
         });
     }
 
@@ -1165,6 +1514,7 @@
         userLiveMinimizeBtn.addEventListener('click', () => {
             if (typeof window.releaseYtChatKeyboardLock === 'function') window.releaseYtChatKeyboardLock();
             if(userLiveView) userLiveView.classList.remove('active');
+            stopUserLiveConnectionTimers();
             if(window.showToast) window.showToast('直播已最小化并在后台运行');
             
             // Generate a fake active live stream for the user in the channel list
@@ -1189,7 +1539,7 @@
                         isLive: true,
                         comments: activeLive.comments || [],
                         initialBubbles: [],
-                        guest: activeLive.guest || null,
+                        guest: activeLive.connections?.[0]?.participant || activeLive.guests?.[0] || null,
                         channelData: {
                             id: 'user_channel_id',
                             name: effectiveYtUser.name || '我',
@@ -1216,6 +1566,7 @@
         ytSummaryConfirmBtn.addEventListener('click', () => {
             userLiveSummarySheet.classList.remove('active');
             const completedLiveId = userLiveSessionId || channelState.activeUserLive?.liveSessionId || `user_live_${Date.now()}`;
+            archiveAllUserLiveConnections();
             const communityGrowth = typeof window.applyYtUserCommunityLiveGrowth === 'function'
                 ? window.applyYtUserCommunityLiveGrowth({
                     liveId: completedLiveId,
@@ -1269,14 +1620,26 @@
                 comments: archivedUserComments,
                 realtimeCommentCount: archivedUserComments.length,
                 liveTranscript: Array.isArray(userLiveHistory) ? userLiveHistory.map(item => ({ ...item })) : [],
-                guest: getSelectedUserLiveGuest(),
+                guest: channelState.activeUserLive?.connectionHistory?.[0]?.participant || null,
+                participants: (channelState.activeUserLive?.connectionHistory || []).map(item => ({ ...(item.participant || {}) })),
+                connectionHistory: Array.isArray(channelState.activeUserLive?.connectionHistory)
+                    ? channelState.activeUserLive.connectionHistory.map(item => ({
+                        ...item,
+                        participant: { ...(item?.participant || {}) },
+                        transcript: Array.isArray(item?.transcript) ? item.transcript.map(entry => ({ ...entry })) : []
+                    }))
+                    : [],
                 lottery: channelState.activeUserLive?.lottery || null
             };
             channelState.pastVideos.unshift(pastVid);
             
             // Sync to Guest Profile
-            const selectedLiveGuest = getSelectedUserLiveGuest();
-            if (selectedLiveGuest && selectedLiveGuest.guestSource !== 'tiktok-following') {
+            const archivedGuests = [...new Map((channelState.activeUserLive?.connectionHistory || [])
+                .map(item => item.participant)
+                .filter(Boolean)
+                .map(item => [String(item.imCharId || item.id), item])).values()];
+            archivedGuests.forEach(selectedLiveGuest => {
+              if (selectedLiveGuest.guestSource !== 'tiktok-following') {
                 const guestSub = mockSubscriptions.find(s => s.id === selectedLiveGuest.id);
                 if (guestSub) {
                     if (!guestSub.generatedContent) {
@@ -1292,7 +1655,8 @@
                         guest: { name: effectiveYtUser.name || '我' }
                     });
                 }
-            }
+              }
+            });
 
             stopUserLiveLotteryTimer();
             renderUserLiveLotteryStatus();
@@ -1320,7 +1684,18 @@
             const text = userLiveChatInput.value.trim();
             if(!text) return;
 
-            userLiveHistory.push({ type: 'host', senderType: 'user', text: text });
+            const effectiveHost = getCurrentYtLiveUser();
+            const hostTurn = normalizeUserLiveTranscriptItem({
+                speakerType: 'user',
+                speakerId: effectiveHost.id || 'user_channel_id',
+                name: effectiveHost.name || '我',
+                text,
+                kind: 'speech'
+            });
+            userLiveHistory.push({ type: 'host', senderType: 'user', ...hostTurn });
+            getActiveUserLiveConnections().forEach(connection => {
+                appendUserLiveConnectionTranscript(connection.id, hostTurn, { includeLiveHistory: false });
+            });
             
             // Create bubble on screen
             const bubble = document.createElement('div');
@@ -1378,11 +1753,34 @@
         const hostPersona = effectiveYtUser.persona || effectiveYtUser.desc || '普通主播';
         const liveTitle = getUserLiveTitle();
         const liveTopic = getUserLiveTopic();
-        const recentHostMsg = userLiveHistory.slice(-5).map(m => m.text).filter(Boolean).join(' | ') || '刚开播，还没有明显发言';
-        const selectedGuest = getSelectedUserLiveGuest();
-        const guestContext = selectedGuest
-            ? `联动嘉宾：${selectedGuest.name || '未知'}。嘉宾人设：${selectedGuest.desc || selectedGuest.persona || '未知'}。`
-            : '联动嘉宾：无。';
+        const recentHostMsg = userLiveHistory.filter(item => item?.type === 'host').slice(-5).map(m => m.text).filter(Boolean).join(' | ') || '刚开播，还没有明显发言';
+        const activeConnections = getActiveUserLiveConnections();
+        const connectionHistory = Array.isArray(channelState?.activeUserLive?.connectionHistory)
+            ? channelState.activeUserLive.connectionHistory
+            : [];
+        const formatPublicSession = connection => {
+            const participant = connection.participant || {};
+            const transcript = (connection.transcript || []).map(item => {
+                const label = item.kind === 'narrative' ? '公开动作' : '公开发言';
+                return `${label}｜${item.name || participant.name || '嘉宾'}：${item.text || ''}`;
+            }).filter(Boolean).join('\n') || '尚无公开发言';
+            return `会话 ${connection.id || 'unknown'}｜${participant.name || '未知嘉宾'}｜${connection.endedAt ? '已结束' : '进行中'}\n${transcript}`;
+        };
+        const publicConnectionContext = [...connectionHistory, ...activeConnections].length
+            ? [...connectionHistory, ...activeConnections].map(formatPublicSession).join('\n\n')
+            : '本场尚无连线公开记录。';
+        const privateGuestContext = activeConnections.map(connection => {
+            const participant = connection.participant || {};
+            const canonical = (Array.isArray(mockSubscriptions) ? mockSubscriptions : []).find(item => (
+                String(item?.id || '') === String(participant.id || '')
+                || (item?.imCharId && participant.imCharId && String(item.imCharId) === String(participant.imCharId))
+            )) || participant;
+            const persona = typeof window.getYtChannelPersonaWithRelationships === 'function'
+                ? window.getYtChannelPersonaWithRelationships(canonical, participant.persona || participant.desc || '未知')
+                : (participant.persona || participant.desc || '未知');
+            return `participantId=${participant.imCharId || participant.id}\n姓名=${participant.name || '未知'}\n完整人设与关系=${persona}`;
+        }).join('\n\n');
+        const needsGuestTurns = activeConnections.length > 0;
         const worldBookSection = worldBookSections.length > 0
             ? `\n已挂载世界书内容：\n${worldBookSections.join('\n\n')}\n`
             : '';
@@ -1391,15 +1789,28 @@
             ? `\n当前直播正在抽奖。剩余约 ${Math.max(0, Math.ceil((Number(activeLottery.endAt) - Date.now()) / 1000))} 秒。奖项：${JSON.stringify(activeLottery.prizes)}。每条评论必须额外返回 participates 布尔值，只有明确报名参加抽奖的人为 true；其他围观评论为 false。\n`
             : '';
 
-        return `你正在为一个真实 YouTube 直播间生成观众实时反应。
+        const guestTurnsExample = activeConnections.map(connection => {
+            const participantId = connection.participant?.imCharId || connection.participant?.id;
+            return `{"participantId":"${participantId}","bubbles":[{"text":"嘉宾原话","translationZh":"简体中文翻译或空字符串"}],"narrative":{"text":"公开环境或动作描写","translationZh":"简体中文翻译或空字符串"}}`;
+        }).join(',');
+
+        return `你正在为一个真实 YouTube 直播间生成观众实时反应与连线嘉宾回应。
 主播名：${hostName}
 主播人设：${hostPersona}
 直播标题：${liveTitle}
 直播主题：${liveTopic}
 最近主播发言或动作：${recentHostMsg}
-${guestContext}${worldBookSection}${lotteryContext}
+${worldBookSection}${lotteryContext}
+【所有人可见的连线公开记录】
+${publicConnectionContext}
+
+【仅供连线嘉宾扮演使用的私密角色资料】
+${privateGuestContext || '当前没有在线嘉宾。'}
+这部分私密角色资料只能用于对应 participantId 的 guestTurns，comments 和 superchats 绝对不能引用、暗示或泄露未在公开记录中出现的人设、关系和身份信息。
+
 请根据主播人设、直播标题、主题、最近发言和联动信息，生成像真实 YouTube 直播间一样的即时评论、打赏和新订阅。
 评论要短、有弹幕感，允许观众有不同语气、追问、吐槽、起哄、支持和轻微跑题，但要贴合当前直播。
+观众可以自然回顾已结束连线的公开内容，例如提到错过刚才的联动，但不要强制每条评论都讨论旧连线。
 观众要有明显的国际构成：comments 至少一半来自使用英语、日语、韩语、法语、西班牙语等非中文语言的外国观众，昵称也要符合对应语言地区。非中文内容保留原语言，并提供自然准确的简体中文 translationZh；中文内容的 translationZh 为空字符串。不要把所有评论都写成中文。
 
 只返回严格 JSON，不要 Markdown，不要代码块，不要解释，不要 emoji。
@@ -1412,7 +1823,7 @@ JSON 结构必须完全符合：
   "superchats": [
     {"name": "supporter name", "text": "original message", "translationZh": "简体中文翻译或空字符串", "displayAmount": "$50", "amount": 350, "color": "#e65100"}
   ],
-  "newSubs": ["新粉丝A", "新粉丝B"]
+  "newSubs": ["新粉丝A", "新粉丝B"]${needsGuestTurns ? `,\n  "guestTurns": [${guestTurnsExample}]` : ''}
 }
 约束：
 1. comments 必须是 5 到 10 条
@@ -1420,7 +1831,10 @@ JSON 结构必须完全符合：
 3. newSubs 可以是空数组，也可以是 1 到 3 个名字
 4. 抽奖进行中时 comments 每项必须包含 participates；没有抽奖时一律为 false
 5. comments 和 superchats 的非中文内容必须带 translationZh，中文内容不重复翻译
-6. 所有句子自然短促，不要在句末堆标点`;
+6. 所有句子自然短促，不要在句末堆标点${needsGuestTurns ? `
+7. guestTurns 必须且只能覆盖以下在线 participantId，各一次且不能重复：${activeConnections.map(item => item.participant?.imCharId || item.participant?.id).join('、')}
+8. 每个 guestTurns.bubbles 必须生成 3 到 8 条，只能使用该 participantId 的人设，禁止多人串位
+9. 每个 guestTurns.narrative 必须有至少一条公开环境、动作或氛围描写；嘉宾使用自己的默认语言，非中文时提供 translationZh` : ''}`;
     }
 
     if (userLiveTriggerApiBtn) {
@@ -1434,6 +1848,15 @@ JSON 结构必须完全符合：
             userLiveTriggerApiBtn.style.pointerEvents = 'none';
             userLiveTriggerApiBtn.setAttribute('aria-busy', 'true');
             userLiveTriggerApiBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            const requestedConnections = getActiveUserLiveConnections().map(connection => ({
+                id: connection.id,
+                participantId: String(connection.participant?.imCharId || connection.participant?.id || ''),
+                startedAt: connection.startedAt
+            }));
+            const requestedConnectionSignature = requestedConnections
+                .map(item => `${item.id}:${item.participantId}:${item.startedAt || ''}`)
+                .sort()
+                .join('|');
 
             try {
                 let endpoint = window.apiConfig.endpoint;
@@ -1467,6 +1890,50 @@ JSON 结构必须完全符合：
                     console.error("JSON Parse Error in Live Audience:", parseErr, resultText);
                     if(window.showToast) window.showToast('观众反应格式生成失败，请重试');
                     return;
+                }
+
+                const guestTurns = Array.isArray(parsed.guestTurns) ? parsed.guestTurns : [];
+                if (requestedConnections.length > 0) {
+                    const expectedIds = new Set(requestedConnections.map(item => item.participantId));
+                    const receivedIds = guestTurns.map(turn => String(turn?.participantId || ''));
+                    const hasDuplicateId = new Set(receivedIds).size !== receivedIds.length;
+                    const hasUnknownId = receivedIds.some(id => !expectedIds.has(id));
+                    const hasMissingId = expectedIds.size !== receivedIds.length || [...expectedIds].some(id => !receivedIds.includes(id));
+                    const hasInvalidTurn = guestTurns.some(turn => {
+                        const bubbles = Array.isArray(turn?.bubbles)
+                            ? turn.bubbles.filter(item => String(item?.text || item?.content || '').trim())
+                            : [];
+                        const narrativeText = String(turn?.narrative?.text || turn?.narrative?.content || '').trim();
+                        return bubbles.length < 3 || bubbles.length > 8 || !narrativeText;
+                    });
+                    if (hasDuplicateId || hasUnknownId || hasMissingId || hasInvalidTurn) {
+                        window.showToast?.('多人连线回复格式不完整或角色对应错误，请重试');
+                        return;
+                    }
+
+                    const latestSignature = getActiveUserLiveConnections().map(connection => (
+                        `${connection.id}:${String(connection.participant?.imCharId || connection.participant?.id || '')}:${connection.startedAt || ''}`
+                    )).sort().join('|');
+                    if (latestSignature !== requestedConnectionSignature) return;
+
+                    guestTurns.forEach(turn => {
+                        const participantId = String(turn.participantId);
+                        const requested = requestedConnections.find(item => item.participantId === participantId);
+                        if (!requested) return;
+                        setTimeout(() => {
+                            const latest = getUserLiveConnectionById(requested.id);
+                            if (latest?.status !== 'active') return;
+                            addUserLiveConnectionNarrative(requested.id, turn.narrative);
+                        }, 350);
+                        turn.bubbles.forEach((bubble, index) => {
+                            setTimeout(() => {
+                                const latest = getUserLiveConnectionById(requested.id);
+                                const latestParticipantId = String(latest?.participant?.imCharId || latest?.participant?.id || '');
+                                if (latest?.status !== 'active' || latestParticipantId !== participantId) return;
+                                addUserLiveConnectionBubble(requested.id, bubble);
+                            }, 900 + (index * 1700));
+                        });
+                    });
                 }
 
                 // Combine and Shuffle Events for Realistic Streaming
@@ -1558,6 +2025,7 @@ JSON 结构必须完全符合：
         row.className = 'yt-live-chat-row-anim';
         
         if (amount) {
+            row.classList.add('yt-user-live-superchat');
             let displayAmount = amount;
             if (typeof amount === 'number' || /^\d+(\.\d+)?$/.test(String(amount))) {
                 displayAmount = '￥' + amount;

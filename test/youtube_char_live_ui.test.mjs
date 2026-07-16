@@ -31,6 +31,7 @@ test('Char Super Chat uses a centered neutral modal while message bubbles use am
     assert.match(playerSource, /return \{ key: 'blue', color: '#1565c0'/);
     assert.match(playerSource, /row\.style\.backgroundColor = superChatTier\.color/);
     assert.match(playerSource, /randomSuperChat\.amount \|\| responseObj\.randomSuperChat\.displayAmount[\s\S]*\.color/);
+    assert.match(cssSource, /#yt-player-chat-container \.yt-live-chat-row-anim\[style\*="background-color"\] \.yt-comment-translation-toggle,[\s\S]*\.yt-comment-translation\s*\{[\s\S]*color:\s*rgba\(255,255,255,0\.78\);[\s\S]*opacity:\s*1;/);
 });
 
 test('Char live audience comments override the host default language with global diversity', () => {
@@ -39,4 +40,22 @@ test('Char live audience comments override the host default language with global
     assert.match(playerSource, /最高优先级：直播观众国际化协议[\s\S]*每次必须返回 6–10 条[\s\S]*至少包含 3 种语言/);
     assert.match(playerSource, /最高优先级：观众评论国际化协议[\s\S]*currentLive\.comments[\s\S]*至少一半为非中文评论/);
     assert.match(playerSource, /text 非中文时 translationZh 必须填写/);
+});
+
+test('Char live prompt rejects semantically repeated host bubbles', () => {
+    assert.match(playerSource, /【主播气泡去重规则｜最高优先级】/);
+    assert.match(playerSource, /同一批 charBubbles 中禁止用不同措辞重复表达同一个回应/);
+    assert.match(playerSource, /禁止在后续气泡重新回答一次用户刚才的同一条留言/);
+    assert.match(playerSource, /每条气泡必须承接上一条并提供新的信息、反应、动作或话题推进/);
+    assert.match(playerSource, /自行检查并删除语义重复的气泡/);
+});
+
+test('Char live prompt remembers recent host speech and public room context', () => {
+    assert.match(playerSource, /charLiveState\?\.liveTranscript[\s\S]*\.slice\(-30\)/);
+    assert.match(playerSource, /currentChatHistory[\s\S]*\.slice\(-20\)/);
+    assert.match(playerSource, /【本场直播最近公开内容｜按已发生事实处理】/);
+    assert.match(playerSource, /主播必须记得自己已经说过什么，并从最后的内容自然承接/);
+    assert.match(playerSource, /不得重新开场、失忆、重复刚说过的观点/);
+    assert.match(playerSource, /recordCharContent\(localizedNarrative, true\);[\s\S]*setTimeout/);
+    assert.match(playerSource, /bubbles\.forEach\(\(bubbleValue, index\) => \{\s*recordCharContent\(bubbleValue, false\);\s*let tId = setTimeout/);
 });
