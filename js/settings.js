@@ -1140,7 +1140,6 @@
         if (themeBubbleCopyBtn) {
             themeBubbleCopyBtn.addEventListener('click', () => {
                 const bubbleTemplate = `/* iMessage 真实气泡源码（单聊文本气泡）
-   来源：css/imessage.css + js/imessage/4_chat_bubbles.js
    运行时结构：.chat-row.user-row/.ai-row > .chat-bubble.user-bubble/.ai-bubble
    提示：在主题编辑器里，:scope 代表当前聊天页根节点 */
 
@@ -1333,7 +1332,6 @@
         if (themeChatCopyBtn) {
             themeChatCopyBtn.addEventListener('click', () => {
                 const chatTemplate = `/* iMessage 真实单聊 Chat 源码
-   来源：css/imessage.css + js/imessage/4_chat_interface.js
    运行时根节点：.active-chat-interface.im-chat-single
    提示：在主题编辑器里，:scope 代表当前单聊根节点 */
 
@@ -1604,6 +1602,100 @@
 
 .mic-btn:active {
   background: #2c2c2e;
+}
+
+/* =========================================================
+   消息卡片通用层
+   结构：.chat-row > .chat-bubble.im-card-bubble > .im-card-content
+   ========================================================= */
+.chat-row .chat-bubble.im-card-bubble {
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: min(70%, 260px) !important;
+  flex: 0 1 auto !important;
+  white-space: normal !important;
+  box-sizing: border-box !important;
+}
+
+.chat-row .chat-bubble.im-card-bubble .im-card-content {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+
+:scope.timestamp-outside .pay-transfer-bubble .bubble-meta { bottom: 12px; }
+
+/* 图片卡片 */
+.chat-row .chat-bubble.image-message-bubble { max-width: min(62vw, 204px) !important; padding: 0; background: transparent; }
+.chat-image-bubble-img { width: min(56vw, 200px) !important; height: min(56vw, 200px) !important; max-width: 200px !important; max-height: 200px !important; display: block; object-fit: cover; border-radius: 18px; }
+
+/* 转账、亲属卡与收款凭证 */
+.pay-transfer-bubble { padding: 4px 6px !important; min-width: 156px; max-width: min(56vw, 210px) !important; background: transparent !important; color: #111 !important; }
+.pay-transfer-bubble .bubble-meta { margin-top: 4px; }
+.pay-transfer-card { padding: 11px 12px; border: 1px solid rgba(0,0,0,0.05); border-radius: 20px; background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,248,250,0.98)); color: #111; }
+.pay-transfer-card.is-received { background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(246,249,246,0.98)); }
+.pay-transfer-card.is-income { background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(245,247,255,0.98)); }
+.pay-transfer-card.is-pending { background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(249,249,251,0.98)); cursor: pointer; }
+.pay-transfer-card.is-rejected { opacity: 0.72; }
+.pay-transfer-card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.pay-transfer-card-icon { width: 28px; height: 28px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: #111; color: #fff; font-size: 12px; }
+.pay-transfer-card-meta { min-width: 0; flex: 1; }
+.pay-transfer-card-title { color: #111; font-size: 12px; font-weight: 700; line-height: 1.1; }
+.pay-transfer-card-subtitle { margin-top: 2px; overflow: hidden; color: #8e8e93; font-size: 10px; white-space: nowrap; text-overflow: ellipsis; }
+.pay-transfer-card-amount { margin-bottom: 4px; color: #111; font-size: 20px; font-weight: 700; line-height: 1.05; letter-spacing: -0.03em; }
+.pay-transfer-card-desc { margin-bottom: 0; color: #636366; font-size: 11px; line-height: 1.35; word-break: break-word; }
+.pay-receipt-card { width: min(76vw, 280px) !important; max-width: 280px !important; padding: 16px; border-radius: 12px; background: #fff; color: #111; box-sizing: border-box; }
+
+/* 语音卡片 */
+.voice-message-bubble { min-width: 0; max-width: min(70%, 240px) !important; padding: 10px 14px; overflow: visible; }
+.voice-message-bubble-inner { width: auto; min-height: 0; display: flex; align-items: center; gap: 8px; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; cursor: pointer; font: inherit; text-align: left; }
+.voice-message-mic { display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: inherit; font-size: 14px; }
+.voice-message-wave { display: flex; align-items: center; gap: 3px; min-width: 0; }
+.voice-message-wave span { display: block; width: 3px; border-radius: 999px; background: currentColor; opacity: 0.82; }
+.voice-message-duration { font-size: 12px; font-weight: 700; line-height: 1; white-space: nowrap; opacity: 0.76; }
+.voice-message-transcript { margin-top: 7px; padding-top: 7px; border-top: 1px solid rgba(255,255,255,0.22); font-size: 13px; line-height: 1.45; white-space: normal; word-break: break-word; }
+.ai-bubble .voice-message-transcript { color: #2c2c2e; border-top-color: rgba(0,0,0,0.12); }
+
+/* 贴纸 */
+.sticker-message-wrap { width: auto !important; max-width: min(44vw, 150px) !important; display: inline-flex; flex-direction: column; align-items: flex-end; padding: 0; background: transparent; }
+.ai-row .sticker-message-wrap { align-items: flex-start; }
+.sticker-message-img { width: auto !important; max-width: min(40vw, 132px) !important; max-height: min(40vw, 132px) !important; display: block; object-fit: contain; background: transparent; }
+.sticker-message-meta { margin-top: 3px; color: #8e8e93; text-shadow: none; }
+.sticker-group-wrap { max-width: min(78%, 190px); }
+
+/* 朋友圈转发卡片 */
+.moment-forward-bubble { width: min(62vw, 220px) !important; min-width: 0 !important; max-width: min(62vw, 220px) !important; display: flex; align-items: center; gap: 12px; margin: 4px 0; padding: 10px !important; border: 1px solid #e5e5ea !important; border-radius: 16px; background: #fff !important; color: #111; box-sizing: border-box; cursor: pointer; }
+
+/* 链接卡片 */
+.chat-link-card { width: min(64vw, 228px); overflow: hidden; border: 1px solid rgba(0,0,0,0.07); border-radius: 15px; background: #fbfbfd; color: #111; cursor: pointer; text-align: left; }
+.chat-link-card-cover { height: 74px; display: flex; align-items: center; justify-content: center; overflow: hidden; background: linear-gradient(135deg, #1c1c1e, #6b6b70); color: #fff; font-size: 22px; }
+.chat-link-card-cover img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.chat-link-card-body { padding: 9px 10px 10px; }
+.chat-link-card-platform { color: var(--link-card-color, #3a3a3c); font-size: 9px; font-weight: 900; letter-spacing: 0.05em; text-transform: uppercase; }
+.chat-link-card-title { margin-top: 3px; overflow: hidden; color: #111; font-size: 13px; font-weight: 800; line-height: 1.32; word-break: break-word; }
+.chat-link-card-summary { margin-top: 5px; overflow: hidden; color: #636366; font-size: 10px; line-height: 1.38; word-break: break-word; }
+.chat-link-card-footer { margin-top: 8px; padding-top: 7px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid #f2f2f7; color: #8e8e93; font-size: 9px; }
+.chat-link-card-footer span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+/* HTML / Loves 自定义卡片 */
+.html-bubble.im-card-bubble { position: relative; max-width: min(72%, 260px) !important; padding: 0; background: transparent; }
+.html-bubble.im-card-bubble > * { max-width: 100% !important; box-sizing: border-box !important; }
+.html-bubble.im-card-bubble .loves-invite-bubble { width: min(62vw, 220px) !important; max-width: 100% !important; box-sizing: border-box !important; }
+
+/* 通话记录与线下见面记录 */
+.voice-call-record-bubble { min-width: 176px !important; padding: 0; background: transparent; }
+.voice-call-record-card { display: flex; align-items: center; gap: 10px; overflow: hidden; padding: 10px 14px; border-radius: 18px; background: #f2f2f7; color: #111; cursor: pointer; }
+.offline-meeting-record-card { max-width: 84%; padding: 11px 15px; align-items: flex-start; background: rgba(0,0,0,0.05); text-align: left; }
+
+/* 系统通知、撤回提示与群私聊入口 */
+.chat-system-row { width: 100%; display: flex; justify-content: center; }
+.system-notice-card { max-width: 80%; padding: 10px 16px; border-radius: 18px; background: rgba(0,0,0,0.05); color: #000; font-size: 13px; line-height: 1.4; }
+.system-notice-narration { text-align: left; cursor: pointer; }
+.system-notice-default,
+.system-notice-offline_meeting_active { text-align: center; }
+.message-recalled-notice { color: #8e8e93; font-size: 12px; text-align: center; }
+.message-recalled-view-link { margin-left: 6px; color: #007aff; cursor: pointer; }
 }`;
                 navigator.clipboard.writeText(chatTemplate).then(() => {
                     if (window.showToast) window.showToast('已复制真实单聊 Chat 源码');
@@ -1617,10 +1709,10 @@
         if (themeStatusCopyBtn) {
             themeStatusCopyBtn.addEventListener('click', () => {
                 const statusTemplate = `/* iMessage 真实状态栏/资料卡源码
-   来源：css/imessage.css + js/imessage/4_chat_status.js
-   运行时结构：.chat-profile-panel-overlay 内的 .chat-profile-panel-card / .gmp-* */
+   运行时结构：.chat-profile-panel-overlay 内的 .chat-profile-panel-card / .gmp-*
+   提示：在主题编辑器里，:scope 代表当前聊天页根节点 */
 
-.chat-profile-panel-overlay {
+:scope .chat-profile-panel-overlay {
   position: absolute;
   inset: 0;
   z-index: 1100;
@@ -1913,6 +2005,77 @@
 .chat-profile-panel-tab-btn.active {
   background: #111;
   color: #fff;
+}
+
+/* 好感度、状态正文与历史 */
+.chat-profile-status-affection { display: flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; background: #f2f2f7; color: #8e8e93; font-size: 13px; font-weight: 700; }
+.chat-profile-status-affection-change { margin-top: 4px; color: #8e8e93; font-size: 10px; font-weight: 600; }
+.chat-profile-status-page { width: 100%; }
+.chat-profile-status-time { margin-bottom: 7px; color: #8e8e93; font-size: 11px; text-align: right; }
+.chat-profile-status-counter { margin-top: 10px; color: #8e8e93; font-size: 11px; font-weight: 700; text-align: center; }
+
+/* 悬浮操作、翻页、编辑和删除 */
+.chat-profile-panel-action-btn { width: 42px; height: 42px; flex: 0 0 42px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: #fff; color: #111; font-size: 15px; cursor: pointer; touch-action: manipulation; transition: transform 0.18s ease, background 0.18s ease; }
+.chat-profile-panel-action-btn.is-page { font-size: 14px; }
+.chat-profile-panel-action-btn.is-danger { color: #ff3b30; }
+.chat-profile-panel-action-btn:disabled { opacity: 0.34; cursor: default; transform: none; }
+.chat-profile-panel-action-btn:active { transform: scale(0.94); background: #f2f2f7; }
+.chat-profile-panel-tab-btn i,
+.chat-profile-panel-action-btn i,
+.chat-profile-panel-close i { pointer-events: none; }
+
+/* 普通事件列表 */
+.chat-profile-event-item { display: flex; align-items: flex-start; gap: 10px; padding: 12px 12px 12px 4px; border-radius: 18px; background: #f8f8fb; }
+.chat-profile-event-dot { width: 10px; height: 10px; margin-top: 6px; flex-shrink: 0; border-radius: 50%; background: #111; }
+.chat-profile-event-main { flex: 1; min-width: 0; }
+.chat-profile-event-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+.chat-profile-event-title { color: #111; font-size: 14px; font-weight: 700; line-height: 1.35; }
+.chat-profile-event-time { flex-shrink: 0; color: #8e8e93; font-size: 11px; white-space: nowrap; }
+.chat-profile-event-desc { color: #666; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+
+/* 珍视回忆事件卡 */
+.chat-profile-memory-request-card { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid #ececf2; border-radius: 20px; background: linear-gradient(180deg, #fff, #f8f8fb); }
+.chat-profile-memory-request-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.chat-profile-memory-request-title { color: #111827; font-size: 14px; font-weight: 700; line-height: 1.4; }
+.chat-profile-memory-request-badge { flex-shrink: 0; padding: 4px 10px; border-radius: 999px; background: #eef2ff; color: #4f46e5; font-size: 11px; font-weight: 700; letter-spacing: 0.02em; }
+.chat-profile-memory-request-badge.is-confirmed { background: #e8fff1; color: #149954; }
+.chat-profile-memory-request-badge.is-cancelled { background: #fff1f2; color: #e11d48; }
+.chat-profile-memory-request-content { color: #374151; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.chat-profile-memory-request-detail { padding: 10px 12px; border: 1px solid #ececf2; border-radius: 14px; background: rgba(255,255,255,0.72); color: #6b7280; font-size: 12px; line-height: 1.55; }
+.chat-profile-memory-request-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.chat-profile-memory-request-time { color: #9ca3af; font-size: 11px; }
+.chat-profile-memory-request-detail-trigger { padding: 0; border: 0; background: transparent; color: #111827; font-size: 12px; font-weight: 700; cursor: pointer; }
+.chat-profile-memory-request-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.chat-profile-memory-request-btn { min-height: 40px; border: 0; border-radius: 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.chat-profile-memory-request-btn.is-confirm { background: #111827; color: #fff; }
+.chat-profile-memory-request-btn.is-cancel { background: #f3f4f6; color: #6b7280; }
+.chat-profile-memory-request-btn:active,
+.chat-profile-memory-request-detail-trigger:active { transform: scale(0.97); opacity: 0.65; }
+
+/* 事件详情弹层 */
+.chat-profile-event-detail-overlay { position: absolute; inset: 0; z-index: 8; display: none; align-items: center; justify-content: center; padding: 18px; background: rgba(15,23,42,0.24); opacity: 0; transition: opacity 0.22s ease; }
+.chat-profile-event-detail-overlay.active { opacity: 1; }
+.chat-profile-event-detail-card { position: relative; width: min(100%, 284px); max-height: min(68vh, 420px); overflow-y: auto; padding: 18px 16px 16px; border-radius: 24px; background: rgba(255,255,255,0.97); transform: translateY(10px) scale(0.96); opacity: 0; transition: transform 0.22s ease, opacity 0.22s ease; }
+.chat-profile-event-detail-overlay.active .chat-profile-event-detail-card { transform: translateY(0) scale(1); opacity: 1; }
+.chat-profile-event-detail-close { position: absolute; top: 12px; right: 12px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: #f3f4f6; color: #111827; cursor: pointer; }
+.chat-profile-event-detail-label { min-height: 24px; display: inline-flex; align-items: center; margin-bottom: 12px; padding: 0 10px; border-radius: 999px; background: #f3f4f6; color: #6b7280; font-size: 11px; font-weight: 700; }
+.chat-profile-event-detail-title { margin-bottom: 8px; padding-right: 36px; color: #111827; font-size: 18px; font-weight: 800; line-height: 1.35; }
+.chat-profile-event-detail-time { margin-bottom: 14px; color: #9ca3af; font-size: 12px; }
+.chat-profile-event-detail-desc { margin-bottom: 12px; color: #374151; font-size: 14px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
+.chat-profile-event-detail-detail { padding: 12px 13px; border: 1px solid #ececf2; border-radius: 16px; background: #f8f8fb; color: #6b7280; font-size: 13px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
+
+/* 状态编辑弹层 */
+.chat-profile-status-edit-overlay { position: absolute; inset: 0; z-index: 12; display: none; align-items: center; justify-content: center; padding: 14px; background: rgba(0,0,0,0.32); opacity: 0; transition: opacity 0.18s ease; }
+.chat-profile-status-edit-overlay.active { opacity: 1; }
+.chat-profile-status-edit-card { width: 100%; max-height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: 20px; background: #fff; transform: translateY(8px) scale(0.98); transition: transform 0.18s ease; }
+.chat-profile-status-edit-overlay.active .chat-profile-status-edit-card { transform: translateY(0) scale(1); }
+.chat-profile-status-edit-title { color: #111; font-size: 18px; font-weight: 750; }
+.chat-profile-status-edit-card label { display: flex; flex-direction: column; gap: 5px; color: #666; font-size: 12px; font-weight: 700; }
+.chat-profile-status-edit-card textarea { width: 100%; box-sizing: border-box; padding: 10px 11px; border: 1px solid #e5e5ea; border-radius: 12px; background: #f8f8fb; color: #111; font: inherit; font-size: 14px; resize: none; outline: none; }
+.chat-profile-status-edit-readonly { color: #8e8e93; font-size: 12px; }
+.chat-profile-status-edit-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.chat-profile-status-edit-actions button { min-height: 40px; border: 0; border-radius: 12px; background: #f2f2f7; color: #111; font-size: 14px; font-weight: 700; }
+.chat-profile-status-edit-actions button.is-primary { background: #111; color: #fff; }
 }`;
                 navigator.clipboard.writeText(statusTemplate).then(() => {
                     if (window.showToast) window.showToast('已复制真实状态栏源码');

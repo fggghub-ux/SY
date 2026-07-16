@@ -38,27 +38,41 @@ test('dynamic narration continues the scene and rejects repetition of the prior 
     assert.match(aiSource, /高于角色默认语言、对话语言和上下文语言的硬性要求/);
 });
 
-test('offline prompts include the disabled English Green Apple writing style', async () => {
+test('offline prompts include creative guidance and the updated Green Apple writing style', async () => {
     const sheetSource = await readWorkspaceFile('js/imessage/4_chat_sheet.js');
 
-    assert.match(sheetSource, /id: 'style_green_apple',[\s\S]{0,100}name: '文风-青苹果',[\s\S]{0,100}enabled: false,[\s\S]{0,100}presetVersion: 2/);
-    assert.match(sheetSource, /<writing_style name="Green Apple">/);
-    assert.match(sheetSource, /The primary viewpoint must follow the active <perspective_rule>/);
-    assert.match(sheetSource, /Secondary viewpoints should shift frequently when appropriate/);
-    assert.match(sheetSource, /Every small contact must create a large emotional ripple/);
-    assert.match(sheetSource, /Do not use melodramatic misunderstandings/);
-    assert.match(sheetSource, /Use these works only as high-level calibration references/);
-    assert.match(sheetSource, /Do not copy their wording, characters, signature scenes/);
-    assert.match(sheetSource, /'player_choices',[\s\S]*'style_baimiao',[\s\S]*'style_green_apple'/);
+    assert.match(sheetSource, /id: 'style_creative_guidance',[\s\S]{0,120}name: '文学指导',[\s\S]{0,120}enabled: true,[\s\S]{0,120}presetVersion: 4/);
+    assert.match(sheetSource, /Literary Writing Guidance[\s\S]*Fundamental Logic[\s\S]*Literary Reference and Emulation[\s\S]*Draw extensively on and emulate relevant literary classics\.[\s\S]*Subtextual Dialogue/);
+    const creativeGuidance = sheetSource.match(/id: 'style_creative_guidance'[\s\S]*?content: `([\s\S]*?)`[\s\S]*?id: 'style_baimiao'/)?.[1] || '';
+    assert.ok(creativeGuidance);
+    assert.match(creativeGuidance, /^<literary_guidance>[\s\S]*<\/literary_guidance>$/);
+    assert.doesNotMatch(creativeGuidance, /<writing_style|文风-创作指导/);
+    assert.match(creativeGuidance, /II\. Language and Prose Rules[\s\S]*5\. Emotion Through Scenery[\s\S]*6\. Literary Reference and Emulation[\s\S]*III\. Character, Dialogue, and Foreshadowing[\s\S]*3\. Open-Ended Conclusions/);
+    assert.doesNotMatch(creativeGuidance, /IV\. Structure, Rhythm, and the Aesthetics of Restraint|Narrative Pacing/);
+    assert.doesNotMatch(creativeGuidance, /#/);
+    assert.doesNotMatch(creativeGuidance, /根据文体灵活调整/);
+    assert.match(sheetSource, /id: 'style_green_apple',[\s\S]{0,100}name: '文风-青苹果',[\s\S]{0,100}enabled: false,[\s\S]{0,100}presetVersion: 3/);
+    assert.match(sheetSource, /<writing_style name="文风-青苹果">/);
+    assert.match(sheetSource, /温柔清透，留白感强/);
+    assert.match(sheetSource, /一次互动只放大1个心动瞬间/);
+    assert.match(sheetSource, /环境即情绪（新海诚式）/);
+    assert.match(sheetSource, /拌嘴式反差萌（有川浩式）/);
+    assert.match(sheetSource, /'style_creative_guidance',[\s\S]*'style_baimiao',[\s\S]*'style_green_apple',[\s\S]*'barrage_comments',[\s\S]*'format_rules',[\s\S]*'player_choices'/);
     assert.match(sheetSource, /defaultPrompt\.id === 'style_green_apple'[\s\S]*normalized\.splice\(styleIndex >= 0 \? styleIndex \+ 1 : normalized\.length, 0, missingPrompt\)/);
+    assert.match(sheetSource, /refreshBuiltInContent = \(\['style_creative_guidance', 'style_green_apple'\]\.includes\(id\) \|\| fullCotIds\.includes\(id\)\)[\s\S]*sourcePresetVersion < targetPresetVersion/);
 });
 
 test('offline COT scans mounted writing styles without vectorizing them', async () => {
     const sheetSource = await readWorkspaceFile('js/imessage/4_chat_sheet.js');
 
-    assert.match(sheetSource, /id: 'cot_literary_guidance',[\s\S]{0,100}name: 'cot-文学指导',[\s\S]{0,100}enabled: true,[\s\S]{0,100}presetVersion: 2/);
-    assert.match(sheetSource, /id: 'cot_literary_guidance'[\s\S]*?scan the current system instruction for every enabled <writing_style>[\s\S]*?the later mounted <writing_style> block overrides the earlier one[\s\S]*?The active <perspective_rule> controls the primary viewpoint[\s\S]*?permits brief secondary-viewpoint shifts using that secondary character's first-person inner monologue[\s\S]*?id: 'cot_language_check'/);
-    assert.doesNotMatch(sheetSource, /id: 'cot_scene_planning'[\s\S]*?scan the current system instruction for every enabled <writing_style>[\s\S]*?id: 'cot_literary_guidance'/);
+    assert.match(sheetSource, /id: 'cot_literary_guidance',[\s\S]{0,100}name: 'cot-文学指导',[\s\S]{0,100}enabled: true,[\s\S]{0,100}presetVersion: 4/);
+    assert.match(sheetSource, /是否遵循已启用的 <literary_guidance> 标签；是否仿写并参照至少三部与当前题材、风格相关的名著。/);
+    assert.doesNotMatch(sheetSource.match(/id: 'cot_literary_guidance'[\s\S]*?content: `([\s\S]*?)`/)?.[1] || '', /文风创作指导标签/);
+    assert.match(sheetSource, /id: 'cot_scene_planning'[\s\S]*?是否结合世界书、人设、记忆、线上与线下上下文及角色动机规划当前情景/);
+    assert.match(sheetSource, /id: 'cot_language_check'[\s\S]*?是否按照角色默认语言书写台词/);
+    assert.match(sheetSource, /id: 'cot_output_audit'[\s\S]*?是否遵循全部启用的格式规则与任务要求/);
+    assert.match(sheetSource, /fullCotIds\.includes\(id\)[\s\S]*sourcePresetVersion < targetPresetVersion/);
+    assert.doesNotMatch(sheetSource, /Think through the active world-book facts|Before drafting, scan the current system instruction|Before ending the reasoning, verify that/);
     assert.match(sheetSource, /for \(let p of offlinePrompts\)[\s\S]*if \(!isEnabled\) continue;[\s\S]*p\.content\.trim\(\)/);
     assert.doesNotMatch(sheetSource, /<writing_style[^>]*source="vectorized_char_memory"/);
 });
@@ -69,9 +83,9 @@ test('offline reasoning keeps native fields separate and history prompts prose-o
         readWorkspaceFile('index.html')
     ]);
 
-    assert.match(indexSource, /offline_reasoning\.js\?v=20260716-tagged-cot-priority-v5[\s\S]*4_chat_sheet\.js\?v=20260716-offline-cot-last-v14/);
-    assert.match(sheetSource, /responseMessage\.reasoning_content,[\s\S]*responseMessage\.reasoning,[\s\S]*responseMessage\.reasoning_details/);
-    assert.match(sheetSource, /delta\.reasoning_content,[\s\S]*delta\.reasoning,[\s\S]*delta\.reasoning_details/);
+    assert.match(indexSource, /offline_reasoning\.js\?v=20260716-reasoning-autoparse-v6[\s\S]*4_chat_sheet\.js\?v=20260716-offline-cot-v5/);
+    assert.match(sheetSource, /extractResponseParts\(\[[\s\S]*responseMessage\.content[\s\S]*responseMessage\.reasoning[\s\S]*responseMessage\.reasoning_content[\s\S]*responseMessage\.reasoning_details/);
+    assert.match(sheetSource, /extractResponseParts\(\[[\s\S]*delta\.content[\s\S]*delta\.reasoning[\s\S]*delta\.reasoning_content[\s\S]*delta\.reasoning_details/);
     assert.match(sheetSource, /appendReasoningChunk[\s\S]*appendContentChunk/);
     assert.match(sheetSource, /content: normalized\.content,[\s\S]*reasoning: normalized\.reasoning/);
     assert.match(sheetSource, /let currentNativeReasoning =[\s\S]*normalizeResponse\(currentContent, currentNativeReasoning/);
@@ -81,28 +95,29 @@ test('offline reasoning keeps native fields separate and history prompts prose-o
     assert.doesNotMatch(sheetSource, /cloneOfflineMeetingMessages\(offlineMessages\)[\s\S]{0,500}reasoning: message\.reasoning/);
 });
 
-test('offline reasoning request settings control COT mounting and provider errors', async () => {
+test('offline reasoning is always requested internally and provider errors remain explicit', async () => {
     const sheetSource = await readWorkspaceFile('js/imessage/4_chat_sheet.js');
 
     assert.match(sheetSource, /const OFFLINE_COT_PROMPT_IDS = new Set\(\[[\s\S]*'cot_before'[\s\S]*'cot_output_audit'[\s\S]*'cot_after'/);
-    assert.match(sheetSource, /const requestReasoning = activeFriend\?\.offlineRequestReasoning !== false;[\s\S]*if \(!requestReasoning && OFFLINE_COT_PROMPT_IDS\.has\(p\.id\)\) continue/);
+    assert.match(sheetSource, /const requestReasoning = true;[\s\S]*if \(!requestReasoning && OFFLINE_COT_PROMPT_IDS\.has\(p\.id\)\) continue/);
+    assert.match(sheetSource, /const options = \{ includeBuiltin: false \};[\s\S]*getter\('system_depth', worldBookFriend, contextText, options\)/);
     assert.match(sheetSource, /p\.id === OFFLINE_CHAT_HISTORY_PROMPT_ID[\s\S]*mountHistory\(\);[\s\S]*apiMessages\.push\(\{ role: 'system', content: promptContent \}\)/);
     assert.match(sheetSource, /const mountHistory = \(\) => \{[\s\S]*apiMessages\.push\(\.\.\.historyMessages\.map/);
-    assert.match(sheetSource, /id: OFFLINE_CHAT_HISTORY_PROMPT_ID,[\s\S]*name: '上下文'[\s\S]*editable: false,[\s\S]*deletable: false,[\s\S]*alwaysEnabled: true,[\s\S]*presetVersion: 2/);
+    assert.match(sheetSource, /id: OFFLINE_CHAT_HISTORY_PROMPT_ID,[\s\S]*name: '上下文'[\s\S]*editable: false,[\s\S]*deletable: false,[\s\S]*alwaysEnabled: true,[\s\S]*presetVersion: 3/);
     assert.match(sheetSource, /const isHistoryAnchor = prompt\.id === OFFLINE_CHAT_HISTORY_PROMPT_ID[\s\S]*if \(!isHistoryAnchor\) \{[\s\S]*offline-settings-expand-btn/);
     assert.doesNotMatch(sheetSource, /System Instruction for Current Roleplay|System COT Instruction for This Reply/);
     assert.doesNotMatch(sheetSource, /const systemPrompt = isGroup/);
     assert.doesNotMatch(sheetSource, /assistant_prefill|assistantPrefill/);
     assert.doesNotMatch(sheetSource, /apiMessages\.push\(\{\s*role: 'assistant',\s*content: [`'"]<thinking>/);
-    assert.match(sheetSource, /buildReasoningRequestConfig\(\{[\s\S]*enabled: options\.requestReasoning !== false[\s\S]*maxTokens: options\.maxResponseTokens/);
+    assert.match(sheetSource, /buildReasoningRequestConfig\(\{[\s\S]*enabled: options\.requestReasoning !== false[\s\S]*maxTokens: OFFLINE_MAX_RESPONSE_TOKENS/);
     assert.match(sheetSource, /reasoningRequest\.hasReasoningParameter[\s\S]*response\.status === 400 \|\| response\.status === 422/);
     assert.match(sheetSource, /error\.code = isUnsupportedReasoningConfig \? 'reasoning_config_unsupported'/);
     assert.match(sheetSource, /generationError: error\?\.code === 'reasoning_config_unsupported'[\s\S]*'reasoning_unsupported'/);
     assert.match(sheetSource, /当前接口不支持自动推理配置/);
-    assert.match(sheetSource, /readFirstContentValue\([\s\S]*responseMessage\.content[\s\S]*responseMessage\.output_text/);
+    assert.match(sheetSource, /extractResponseParts\(\[[\s\S]*responseMessage\.content[\s\S]*responseMessage\.output_text/);
     assert.match(sheetSource, /returnedJsonInsteadOfStream[\s\S]*responseContentType\.includes\('application\/json'\)/);
     assert.match(sheetSource, /finishReason[\s\S]*reasoning_tokens_exhausted/);
-    assert.match(sheetSource, /思考已用完回复 Token，请在线下设置中提高最大回复 Token 后重试/);
+    assert.match(sheetSource, /思考已用完固定的 30000 回复 Token，请重试或更换模型/);
 });
 
 test('context menu measures actual panels and refits after opening More actions', async () => {
@@ -133,8 +148,8 @@ test('offline empty or failed generations persist a blank rerollable floor', asy
     assert.match(sheetSource, /persistOfflineMessages\(activeFriend, latestMessages\.concat\(failedMessage\)\)/);
     assert.match(sheetSource, /\$\{!isUser \? '<button[^']+data-offline-action="reroll"/);
     assert.match(sheetSource, /generationState: undefined,[\s\S]{0,100}generationError: undefined/);
-    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260715-dynamic-narration-zh-v3/);
-    assert.match(indexSource, /js\/imessage\/offline_reasoning\.js\?v=20260716-tagged-cot-priority-v5/);
-    assert.match(indexSource, /js\/imessage\/4_chat_sheet\.js\?v=20260716-offline-cot-last-v14/);
+    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260716-status-prompt-v2/);
+    assert.match(indexSource, /js\/imessage\/offline_reasoning\.js\?v=20260716-reasoning-autoparse-v6/);
+    assert.match(indexSource, /js\/imessage\/4_chat_sheet\.js\?v=20260716-offline-cot-v5/);
     assert.match(indexSource, /js\/imessage\/4_chat_(?:interface|main)\.js\?v=20260715-chat-context-menu-offline-retry-v1/g);
 });

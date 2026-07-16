@@ -15,5 +15,5 @@ test('data management shows only logical application data', () => {
     assert.match(settingsSource, /health\.breakdown\?\.logicalGroups/);
     assert.match(storageSource, /const logicalGroups = cloneDeep\(groups\)/);
     assert.match(storageSource, /logicalGroups,/);
-    assert.match(indexSource, /js\/settings\.js\?v=20260715-font-upload-v1/);
+    assert.match(indexSource, /js\/settings\.js\?v=20260716-theme-copy-source-v5/);
 });

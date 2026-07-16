@@ -22,6 +22,20 @@ test('parses thinking and think tags into a separate reasoning field', () => {
     assert.equal(shortTag.reasoning, '规划 B');
 });
 
+test('auto-parses fixed reasoning and analysis tags with case and whitespace variants', () => {
+    const reasoningTag = reasoning.normalizeResponse('< REASONING >plan R</ REASONING >final R', '');
+    assert.equal(reasoningTag.reasoning, 'plan R');
+    assert.equal(reasoningTag.content, 'final R');
+
+    const analysisTag = reasoning.normalizeResponse('<Analysis>plan A</Analysis>final A', '');
+    assert.equal(analysisTag.reasoning, 'plan A');
+    assert.equal(analysisTag.content, 'final A');
+
+    const multiple = reasoning.normalizeResponse('<think>one</think><analysis>two</analysis>final', '');
+    assert.equal(multiple.reasoning, 'one\n\ntwo');
+    assert.equal(multiple.content, 'final');
+});
+
 test('tagged reasoning wins while native reasoning remains a fallback', () => {
     const result = reasoning.normalizeResponse(
         '<thinking>标签思考</thinking>干净正文',
@@ -60,6 +74,10 @@ test('stream parsing holds incomplete tag prefixes instead of flashing them as p
     const completed = reasoning.normalizeResponse('<thinking>流式思考</thinking>正文', '');
     assert.equal(completed.reasoning, '流式思考');
     assert.equal(completed.content, '正文');
+
+    const reasoningPartial = reasoning.normalizeResponse('<reas', '', { streaming: true });
+    assert.equal(reasoningPartial.content, '');
+    assert.equal(reasoningPartial.pendingTag, '<reas');
 });
 
 test('plain responses remain plain and do not create an empty reasoning block', () => {
@@ -81,6 +99,45 @@ test('extracts text from structured compatible-API content blocks', () => {
         { type: 'output_text', output_text: 'part two' }
     ]), 'part onepart two');
     assert.equal(reasoning.readFirstContentValue('', [{ content: 'nested text' }]), 'nested text');
+});
+
+test('separates structured reasoning blocks from final content', () => {
+    const result = reasoning.extractResponseParts([[
+        { type: 'reasoning.text', text: 'step one' },
+        { type: 'reasoning.summary', summary: 'summary two' },
+        { type: 'text', text: 'final text' }
+    ]], []);
+
+    assert.equal(result.content, 'final text');
+    assert.equal(result.reasoning, 'step one\nsummary two');
+    assert.equal(result.reasoningSource, 'structured');
+});
+
+test('ignores encrypted reasoning details and reads OpenRouter native aliases', () => {
+    const encryptedOnly = reasoning.extractResponseParts([
+        [{ type: 'reasoning.encrypted', data: 'opaque' }, { type: 'text', text: 'answer' }]
+    ], [[{ type: 'reasoning.encrypted', data: 'opaque' }]]);
+    assert.equal(encryptedOnly.content, 'answer');
+    assert.equal(encryptedOnly.reasoning, '');
+
+    const native = reasoning.extractResponseParts(['answer'], [
+        '',
+        'native reasoning',
+        [{ type: 'reasoning.text', text: 'later duplicate' }]
+    ]);
+    assert.equal(native.reasoning, 'native reasoning');
+    assert.equal(native.reasoningSource, 'native');
+});
+
+test('tagged reasoning wins over structured or native reasoning without duplication', () => {
+    const parts = reasoning.extractResponseParts([
+        [{ type: 'reasoning.text', text: 'structured thought' }, { type: 'text', text: '<think>tagged thought</think>answer' }]
+    ], ['native thought']);
+    const normalized = reasoning.normalizeResponse(parts.content, parts.reasoning);
+
+    assert.equal(normalized.content, 'answer');
+    assert.equal(normalized.reasoning, 'tagged thought');
+    assert.equal(normalized.reasoningSource, 'tagged');
 });
 
 test('normalizes the per-character maximum response token setting', () => {

@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const imChat = window.imChat;
     const offlineRegexEngine = window.imOfflineRegex;
     const offlineReasoning = window.imOfflineReasoning;
+    const OFFLINE_MAX_RESPONSE_TOKENS = 30000;
     const OFFLINE_COT_PROMPT_IDS = new Set([
         'cot_before',
         'cot_scene_planning',
@@ -26,15 +27,16 @@ document.addEventListener('DOMContentLoaded', () => {
         'task_instruction',
         'length_words',
         'nsfw',
-        'format_rules',
         'bilingual_dialogue',
         'perspective_first',
         'perspective_second',
         'perspective_third',
-        'barrage_comments',
-        'player_choices',
+        'style_creative_guidance',
         'style_baimiao',
         'style_green_apple',
+        'barrage_comments',
+        'format_rules',
+        'player_choices',
         'cot_before',
         'cot_scene_planning',
         'cot_literary_guidance',
@@ -1136,14 +1138,12 @@ function createAttachmentSheet(page) {
         };
 
         const isOfflineBarragePromptEnabled = (friend) => {
-            if (!friend) return false;
-            const prompts = normalizeOfflinePrompts(Array.isArray(friend.offlinePrompts) ? friend.offlinePrompts : []);
+            const prompts = ensureGlobalOfflinePrompts(friend);
             return prompts.some(prompt => prompt.id === 'barrage_comments' && (prompt.alwaysEnabled || prompt.enabled));
         };
 
         const isOfflineChoicesPromptEnabled = (friend) => {
-            if (!friend) return true;
-            const prompts = normalizeOfflinePrompts(Array.isArray(friend.offlinePrompts) ? friend.offlinePrompts : []);
+            const prompts = ensureGlobalOfflinePrompts(friend);
             return prompts.some(prompt => prompt.id === 'player_choices' && (prompt.alwaysEnabled || prompt.enabled));
         };
 
@@ -2440,6 +2440,64 @@ function createAttachmentSheet(page) {
             }
         };
 
+        const buildOfflineThinkingHtml = (reasoning, expanded = false) => {
+            const rawReasoning = String(reasoning || '').trim();
+            if (!rawReasoning) return '';
+            return `
+                <section class="offline-tavern-thinking${expanded ? ' is-expanded' : ''}" data-offline-thinking>
+                    <button type="button" class="offline-tavern-thinking-toggle" aria-expanded="${expanded ? 'true' : 'false'}">
+                        <span class="offline-tavern-thinking-label"><i class="fas fa-brain" aria-hidden="true"></i><span>思考过程</span></span>
+                        <i class="fas fa-chevron-down offline-tavern-thinking-icon" aria-hidden="true"></i>
+                    </button>
+                    <div class="offline-tavern-thinking-content" data-raw-thinking="${escapeSheetHtml(rawReasoning)}"${expanded ? '' : ' hidden'}>${escapeSheetHtml(rawReasoning)}</div>
+                </section>
+            `;
+        };
+
+        const setOfflineThinkingExpanded = (bubble, expanded) => {
+            const panel = bubble?.querySelector?.('[data-offline-thinking]');
+            if (!panel) return;
+            const toggle = panel.querySelector('.offline-tavern-thinking-toggle');
+            const content = panel.querySelector('.offline-tavern-thinking-content');
+            panel.classList.toggle('is-expanded', !!expanded);
+            if (toggle) toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+            if (content) content.hidden = !expanded;
+        };
+
+        const bindOfflineThinkingToggle = (bubble) => {
+            const toggle = bubble?.querySelector?.('.offline-tavern-thinking-toggle');
+            if (!toggle || toggle.dataset.bound === 'true') return;
+            toggle.dataset.bound = 'true';
+            toggle.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setOfflineThinkingExpanded(bubble, toggle.getAttribute('aria-expanded') !== 'true');
+            });
+        };
+
+        const renderOfflineThinkingState = (bubble, reasoning, options = {}) => {
+            const body = bubble?.querySelector?.('.offline-tavern-bubble-body');
+            if (!body) return null;
+            const rawReasoning = String(reasoning || '').trim();
+            let panel = body.querySelector('[data-offline-thinking]');
+            if (!rawReasoning) {
+                panel?.remove();
+                return null;
+            }
+            if (!panel) {
+                body.insertAdjacentHTML('afterbegin', buildOfflineThinkingHtml(rawReasoning, !!options.expanded));
+                panel = body.querySelector('[data-offline-thinking]');
+                bindOfflineThinkingToggle(bubble);
+            }
+            const content = panel?.querySelector('.offline-tavern-thinking-content');
+            if (content) {
+                content.setAttribute('data-raw-thinking', rawReasoning);
+                content.textContent = rawReasoning;
+            }
+            setOfflineThinkingExpanded(bubble, !!options.expanded);
+            return panel;
+        };
+
         const renderOfflineTavernBubble = (messageOrText, isUser = true, options = {}) => {
             const contentArea = document.getElementById('offline-tavern-content');
             if (!contentArea) return null;
@@ -2453,6 +2511,7 @@ function createAttachmentSheet(page) {
                 id: rawMessage.id || createOfflineTavernId(rawMessage.role === 'assistant' ? 'offline-ai' : 'offline-user'),
                 role: rawMessage.role === 'assistant' ? 'assistant' : 'user',
                 content: String(rawMessage.content || ''),
+                reasoning: rawMessage.role === 'assistant' ? String(rawMessage.reasoning || '') : '',
                 timestamp: Number(rawMessage.timestamp) || Date.now(),
                 tokens: Number(rawMessage.tokens) || 0
             };
@@ -2484,18 +2543,12 @@ function createAttachmentSheet(page) {
             }
 
             // reasoning 与正文分开渲染；旧标签消息在这里仍可兼容解析。
-            let displayThinking = '';
             const parsedMessage = !isUser && offlineReasoning
                 ? offlineReasoning.normalizeResponse(message.content, message.reasoning)
                 : { content: String(message.content || ''), reasoning: '' };
             const rawThinking = parsedMessage.reasoning;
             const displayText = applyOfflineRegexText(friend, parsedMessage.content, message.role, depth, 'display');
-
-            if (rawThinking) {
-                displayThinking = `
-                    <div class="offline-tavern-thinking-content" data-raw-thinking="${escapeSheetHtml(rawThinking)}" style="display: none; background: #f8f8f8; border: 1px solid #e5e5ea; border-radius: 12px; padding: 10px 14px; margin-top: 8px; font-size: 13px; white-space: pre-wrap; word-break: break-word; color: #666; width: 100%; box-sizing: border-box;">${escapeSheetHtml(rawThinking.trim())}</div>
-                `;
-            }
+            const displayThinking = rawThinking ? buildOfflineThinkingHtml(rawThinking, false) : '';
 
             const actionButtonsHtml = actionsDisabled ? '' : `
                 <div class="offline-tavern-bubble-actions">
@@ -2510,12 +2563,11 @@ function createAttachmentSheet(page) {
                     ${avatarHtml}
                     <div class="offline-tavern-name-container">
                         <span class="offline-tavern-name">${escapeSheetHtml(userName)}</span>
-                        ${rawThinking ? `<i class="fas fa-chevron-down offline-tavern-thinking-icon" style="transition: transform 0.3s; cursor: pointer; color: #8e8e93; margin-left: 4px;"></i>` : ''}
                     </div>
                     ${userSign ? `<div class="offline-tavern-sign">${escapeSheetHtml(userSign)}</div>` : ''}
-                    ${displayThinking}
                 </div>
                 <div class="offline-tavern-bubble-body">
+                    ${displayThinking}
                     <div class="offline-tavern-bubble-text" ${displayText ? '' : 'style="display:none;"'}>${buildOfflineTavernTextHtml(displayText, {
                         messageId: message.id,
                         enableVoice: !isUser,
@@ -2530,23 +2582,7 @@ function createAttachmentSheet(page) {
                 </div>
             `;
 
-            // 绑定折叠/展开事件
-            const thinkingIcon = bubbleDiv.querySelector('.offline-tavern-thinking-icon');
-            if (thinkingIcon) {
-                thinkingIcon.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const content = bubbleDiv.querySelector('.offline-tavern-thinking-content');
-                    if (content) {
-                        if (content.style.display === 'none') {
-                            content.style.display = 'block';
-                            thinkingIcon.style.transform = 'rotate(180deg)';
-                        } else {
-                            content.style.display = 'none';
-                            thinkingIcon.style.transform = 'rotate(0deg)';
-                        }
-                    }
-                });
-            }
+            bindOfflineThinkingToggle(bubbleDiv);
 
             bubbleDiv.querySelectorAll('[data-offline-action]').forEach((button) => {
                 button.addEventListener('click', async (event) => {
@@ -2585,7 +2621,6 @@ function createAttachmentSheet(page) {
             let currentNativeReasoning = String(options.reasoning || '');
             let lastVisibleReasoning = String(options.reasoning || '').trim();
             let generationFinished = false;
-            let autoCollapsed = false;
 
             const renderStreamingState = () => {
                 const currentParsed = offlineReasoning
@@ -2600,46 +2635,7 @@ function createAttachmentSheet(page) {
                 const activeFriend = window.imData.currentActiveFriend;
                 const depth = Number.isInteger(Number(options.depth)) ? Number(options.depth) : 0;
                 const displayText = applyOfflineStreamingRegexText(activeFriend, parsed.content, message.role, depth);
-                const header = bubbleDiv.querySelector('.offline-tavern-bubble-header');
-                const nameContainer = header?.querySelector('.offline-tavern-name-container');
-                let thinkingIcon = nameContainer?.querySelector('.offline-tavern-thinking-icon');
-                let thinkingContent = header?.querySelector('.offline-tavern-thinking-content');
-
-                if (parsed.reasoning) {
-                    if (!thinkingIcon && nameContainer) {
-                        nameContainer.insertAdjacentHTML('beforeend', '<i class="fas fa-chevron-down offline-tavern-thinking-icon" style="transition: transform 0.3s; cursor: pointer; color: #8e8e93; margin-left: 4px;"></i>');
-                        thinkingIcon = nameContainer.querySelector('.offline-tavern-thinking-icon');
-                        thinkingIcon?.addEventListener('click', (event) => {
-                            event.stopPropagation();
-                            const content = bubbleDiv.querySelector('.offline-tavern-thinking-content');
-                            if (!content) return;
-                            const willOpen = content.style.display === 'none';
-                            content.style.display = willOpen ? 'block' : 'none';
-                            thinkingIcon.style.transform = willOpen ? 'rotate(180deg)' : 'rotate(0deg)';
-                        });
-                    }
-                    if (!thinkingContent && header) {
-                        header.insertAdjacentHTML('beforeend', '<div class="offline-tavern-thinking-content" style="display:none; background:#f8f8f8; border:1px solid #e5e5ea; border-radius:12px; padding:10px 14px; margin-top:8px; font-size:13px; white-space:pre-wrap; word-break:break-word; color:#666; width:100%; box-sizing:border-box;"></div>');
-                        thinkingContent = header.querySelector('.offline-tavern-thinking-content');
-                    }
-                    if (thinkingContent) {
-                        thinkingContent.setAttribute('data-raw-thinking', parsed.reasoning);
-                        thinkingContent.textContent = parsed.reasoning;
-                    }
-                    const reasoningOnly = !generationFinished && !parsed.content && (parsed.incomplete || !!currentNativeReasoning);
-                    if (reasoningOnly && !autoCollapsed) {
-                        if (thinkingContent) thinkingContent.style.display = 'block';
-                        if (thinkingIcon) thinkingIcon.style.transform = 'rotate(180deg)';
-                    } else if (!autoCollapsed) {
-                        if (thinkingContent) thinkingContent.style.display = 'none';
-                        if (thinkingIcon) thinkingIcon.style.transform = 'rotate(0deg)';
-                        autoCollapsed = true;
-                    }
-                } else {
-                    thinkingIcon?.remove();
-                    thinkingContent?.remove();
-                }
-
+                renderOfflineThinkingState(bubbleDiv, parsed.reasoning, { expanded: !generationFinished });
                 const textEl = bubbleDiv.querySelector('.offline-tavern-bubble-text');
                 if (textEl) {
                     if (displayText) {
@@ -3244,8 +3240,8 @@ function createAttachmentSheet(page) {
                 worldBookContexts
             });
             const memorySystemContext = buildOfflineMemorySystemContext(activeFriend, worldBookContextText);
-            const offlinePrompts = ensureOfflinePromptsForFriend(activeFriend);
-            const requestReasoning = activeFriend?.offlineRequestReasoning !== false;
+            const offlinePrompts = ensureGlobalOfflinePrompts(activeFriend);
+            const requestReasoning = true;
             const apiMessages = [];
             let historyMounted = false;
 
@@ -3330,11 +3326,11 @@ function createAttachmentSheet(page) {
                 endpoint: currentApiConfig.endpoint,
                 model: currentApiConfig.model,
                 enabled: options.requestReasoning !== false,
-                maxTokens: options.maxResponseTokens
+                maxTokens: OFFLINE_MAX_RESPONSE_TOKENS
             }) || {
                 enabled: options.requestReasoning !== false,
                 hasReasoningParameter: false,
-                parameters: { max_tokens: 30000 }
+                parameters: { max_tokens: OFFLINE_MAX_RESPONSE_TOKENS }
             };
             Object.assign(requestBody, reasoningRequest.parameters);
             if (useStreaming) requestBody.stream_options = { include_usage: true };
@@ -3374,17 +3370,24 @@ function createAttachmentSheet(page) {
                 const data = await response.json();
                 const responseChoice = data?.choices?.[0] || {};
                 const responseMessage = responseChoice.message || {};
-                const content = offlineReasoning?.readFirstContentValue(
+                const responseParts = offlineReasoning?.extractResponseParts([
                     responseMessage.content,
                     responseMessage.output_text,
                     responseChoice.text,
                     data?.output_text
-                ) || '';
-                const nativeReasoning = offlineReasoning?.readFirstReasoningValue(
-                    responseMessage.reasoning_content,
+                ], [
                     responseMessage.reasoning,
-                    responseMessage.reasoning_details
-                ) || '';
+                    responseMessage.reasoning_content,
+                    responseMessage.reasoning_details,
+                    responseChoice.reasoning,
+                    responseChoice.reasoning_content,
+                    responseChoice.reasoning_details,
+                    data?.reasoning,
+                    data?.reasoning_content,
+                    data?.reasoning_details
+                ]) || { content: '', reasoning: '' };
+                const content = responseParts.content || '';
+                const nativeReasoning = responseParts.reasoning || '';
                 const completionTokens = Number(data?.usage?.completion_tokens) || 0;
                 if (streamingBubble && nativeReasoning) streamingBubble.appendReasoningChunk?.(nativeReasoning);
                 if (streamingBubble && content) (streamingBubble.appendContentChunk || streamingBubble.appendChunk)?.(content);
@@ -3432,30 +3435,33 @@ function createAttachmentSheet(page) {
                         const choice = data.choices?.[0] || {};
                         const delta = choice.delta || {};
                         const finalMessage = choice.message || {};
-                        const deltaReasoning = offlineReasoning?.readFirstReasoningValue(
-                            delta.reasoning_content,
-                            delta.reasoning,
-                            delta.reasoning_details,
-                            !fullReasoning ? finalMessage.reasoning_content : '',
-                            !fullReasoning ? finalMessage.reasoning : '',
-                            !fullReasoning ? finalMessage.reasoning_details : '',
-                            !fullReasoning ? choice.reasoning_content : '',
-                            !fullReasoning ? choice.reasoning : '',
-                            !fullReasoning ? data.reasoning_content : '',
-                            !fullReasoning ? data.reasoning : ''
-                        ) || '';
-                        if (deltaReasoning) {
-                            fullReasoning += deltaReasoning;
-                            if (streamingBubble?.appendReasoningChunk) streamingBubble.appendReasoningChunk(deltaReasoning);
-                        }
-                        const deltaContent = offlineReasoning?.readFirstContentValue(
+                        const deltaParts = offlineReasoning?.extractResponseParts([
                             delta.content,
                             delta.output_text,
                             choice.text,
                             data.output_text,
                             !fullText ? finalMessage.content : '',
                             !fullText ? finalMessage.output_text : ''
-                        ) || '';
+                        ], [
+                            delta.reasoning,
+                            delta.reasoning_content,
+                            delta.reasoning_details,
+                            !fullReasoning ? finalMessage.reasoning : '',
+                            !fullReasoning ? finalMessage.reasoning_content : '',
+                            !fullReasoning ? finalMessage.reasoning_details : '',
+                            !fullReasoning ? choice.reasoning : '',
+                            !fullReasoning ? choice.reasoning_content : '',
+                            !fullReasoning ? choice.reasoning_details : '',
+                            !fullReasoning ? data.reasoning : '',
+                            !fullReasoning ? data.reasoning_content : '',
+                            !fullReasoning ? data.reasoning_details : ''
+                        ]) || { content: '', reasoning: '' };
+                        const deltaReasoning = deltaParts.reasoning || '';
+                        if (deltaReasoning) {
+                            fullReasoning += deltaReasoning;
+                            if (streamingBubble?.appendReasoningChunk) streamingBubble.appendReasoningChunk(deltaReasoning);
+                        }
+                        const deltaContent = deltaParts.content || '';
                         if (deltaContent) {
                             fullText += deltaContent;
                             if (streamingBubble) (streamingBubble.appendContentChunk || streamingBubble.appendChunk)?.(deltaContent);
@@ -3754,18 +3760,16 @@ ${transcript}`;
             const getStreamResult = (streaming = true) => offlineReasoning
                 ? offlineReasoning.normalizeResponse(streamContent, streamReasoning, { streaming })
                 : { content: streamContent, reasoning: streamReasoning };
-            const getVisibleStreamText = () => {
-                const parsed = getStreamResult(true);
-                return applyOfflineStreamingRegexText(
+            const renderStreamState = (streaming = true) => {
+                if (!textEl || !bubble) return;
+                const parsed = getStreamResult(streaming);
+                const displayText = applyOfflineStreamingRegexText(
                     activeFriend,
                     parsed.content,
                     'assistant',
                     messages.length - 1 - targetIndex
                 ).trim();
-            };
-            const renderStreamText = () => {
-                if (!textEl || !bubble) return;
-                const displayText = getVisibleStreamText();
+                renderOfflineThinkingState(bubble, parsed.reasoning, { expanded: streaming && !!parsed.reasoning });
                 textEl.style.display = '';
                 textEl.innerHTML = displayText
                     ? buildOfflineTavernTextHtml(displayText, {
@@ -3792,17 +3796,21 @@ ${transcript}`;
             const streamingBubble = textEl ? {
                 appendContentChunk: (chunk) => {
                     streamContent += String(chunk || '');
-                    renderStreamText();
+                    renderStreamState(true);
                 },
                 appendReasoningChunk: (chunk) => {
                     streamReasoning += String(chunk || '');
-                    renderStreamText();
+                    renderStreamState(true);
                 },
                 appendChunk: (chunk) => {
                     streamContent += String(chunk || '');
-                    renderStreamText();
+                    renderStreamState(true);
                 },
-                finish: () => getStreamResult(false),
+                finish: () => {
+                    const result = getStreamResult(false);
+                    renderStreamState(false);
+                    return result;
+                },
                 setTokens: (tokens) => {
                     if (metaEl) {
                         const safeTokens = Math.max(0, Number(tokens) || 0);
@@ -3822,6 +3830,7 @@ ${transcript}`;
                 actionButton.style.opacity = '0.45';
             });
             if (textEl) {
+                renderOfflineThinkingState(bubble, '');
                 textEl.dataset.rerolling = 'true';
                 textEl.style.display = '';
                 textEl.innerHTML = '<div class="offline-tavern-reroll-placeholder">正在重新思考...</div>';
@@ -3832,8 +3841,7 @@ ${transcript}`;
                 const apiMessages = buildOfflineApiMessages(activeFriend, contextMessages);
                 const { content, reasoning, tokens } = await requestOfflineAssistantReply(apiMessages, streamingBubble, {
                     stream: activeFriend.offlineStreamEnabled !== false,
-                    requestReasoning: activeFriend.offlineRequestReasoning !== false,
-                    maxResponseTokens: activeFriend.offlineMaxResponseTokens
+                    requestReasoning: true
                 });
                 const nextMessages = messages.slice();
                 nextMessages[targetIndex] = {
@@ -3860,11 +3868,12 @@ ${transcript}`;
                     bindOfflineTavernTextControls(bubble, originalMessage, activeFriend, targetIndex + 1);
                 }
                 if (metaEl) metaEl.textContent = originalMeta;
+                renderOfflineCurrentMessages(activeFriend);
                 console.error('Offline reroll failed', error);
                 if (window.showToast) window.showToast(error?.code === 'reasoning_config_unsupported'
                     ? '当前接口不支持自动推理配置'
                     : (error?.code === 'reasoning_tokens_exhausted'
-                        ? '思考已用完回复 Token，请在线下设置中提高最大回复 Token 后重试'
+                        ? '思考已用完固定的 30000 回复 Token，请重试或更换模型'
                         : (error?.code === 'empty_response'
                             ? '模型返回了空回复，请重试或更换模型'
                             : '重回失败，请检查 API 配置或网络')));
@@ -3918,6 +3927,8 @@ ${transcript}`;
             'NSFW': 'nsfw',
             '文风基调': 'style_baimiao',
             '文风-白描': 'style_baimiao',
+            '文风-创作指导': 'style_creative_guidance',
+            '文学指导': 'style_creative_guidance',
             '创作指导': 'perspective_third',
             '创作指导-第一人称视角': 'perspective_first',
             '创作指导-第二人称视角': 'perspective_second',
@@ -3977,7 +3988,7 @@ System managed. Mounted world books, User persona, Char persona, and recent onli
                 editable: false,
                 deletable: false,
                 alwaysEnabled: true,
-                presetVersion: 2
+                presetVersion: 3
             },
             {
                 id: 'length_words',
@@ -4016,6 +4027,65 @@ When the default language is Chinese, output only Chinese dialogue in corner quo
                 deletable: false
             },
             {
+                id: 'style_creative_guidance',
+                name: '文学指导',
+                enabled: true,
+                presetVersion: 4,
+                content: `<literary_guidance>
+Literary Writing Guidance
+
+I. Fundamental Logic
+
+1. Narrative Principle
+Summary and dramatized scene work should complement each other. Use concise narration to move through routine events, transitions, elapsed time, and background information. Fully dramatize emotional turns, character decisions, and other crucial moments through concrete scenes and detailed development; never rush past them.
+
+2. Principle of Restraint
+Reveal only a small portion of emotion and background information, leaving most of it beneath the surface. Imply emotion through actions, details, and contrasting scenery instead of directly stating that someone is sad or happy. What remains unsaid should carry more force than explanation.
+
+3. Form Serves Content
+Every description, figure of speech, and plot arrangement must shape character, advance conflict, or deepen theme. Remove ornamental language and showy description that do not serve the central story.
+
+4. Narrative Distance
+Deliberately adjust the emotional, moral, temporal, and cognitive distance between reader and character. Excessive closeness can erase suspense; excessive distance can flatten character. Control how much the reader knows and when that knowledge arrives.
+
+5. Timeline
+Anchor fragments of the past to concrete objects, sounds, and situations in the present so that memory arises naturally instead of entering as a forced flashback. Let past and present echo each other to deepen emotional history without interrupting narrative flow.
+
+II. Language and Prose Rules
+
+1. Diction
+Prefer short, concrete words and active constructions. Remove unnecessary adverbs and clichés. Replace abstract emotion words with specific images and objects. Break this rule only for a deliberate artistic effect.
+
+2. Rhythm
+Use longer, flowing sentences in quiet or reflective scenes so the prose can breathe. Use short, fractured sentences in tense or confrontational scenes to create pressure and urgency. Alternate sentence lengths instead of maintaining one rhythm throughout.
+
+3. Single-Sense Focus
+When describing a scene, select one representative sensory detail rather than piling up adjectives to intensify the effect. Metaphors must arise from the character's own experience and viewpoint, never from the author's desire to display elegant language.
+
+4. Minimalist Expression
+Resist ornamental language. Let plain, everyday details carry emotional weight. Revise by subtraction: remove excess lines and repeated statements that express the same idea.
+
+5. Emotion Through Scenery
+In calm moments, let the environment harmonize with the character's state of mind. At emotional turns or breaking points, contrasting scenery may deepen the emotional layers.
+
+6. Literary Reference and Emulation
+Draw extensively on and emulate relevant literary classics.
+
+III. Character, Dialogue, and Foreshadowing
+
+1. Echoing Details
+Objects, lines, and habits deliberately introduced earlier should later receive resolution or serve a purpose. Avoid useless incidental details, or keep them extremely brief.
+
+2. Subtextual Dialogue
+Characters rarely state their true thoughts directly. They conceal them through avoidance, testing questions, counterquestions, and changes of subject. Include pauses and interruptions so dialogue feels natural. Give every character distinct speaking logic and verbal habits; avoid making every voice sound alike. Use actions instead of emotional dialogue tags. Say less and do more.
+
+3. Open-Ended Conclusions
+Close with an incomplete sentence or a quiet image instead of explaining the emotion and theme in full. The emotional arc may move from repression, to a restrained release, and finally back into silence.
+</literary_guidance>`,
+                editable: true,
+                deletable: false
+            },
+            {
                 id: 'style_baimiao',
                 name: '文风-白描',
                 enabled: true,
@@ -4032,68 +4102,40 @@ Keep sentences clean and concrete. Let the reader infer what the characters feel
                 id: 'style_green_apple',
                 name: '文风-青苹果',
                 enabled: false,
-                presetVersion: 2,
-                content: `<writing_style name="Green Apple">
-1. Viewpoint and Psychology
+                presetVersion: 3,
+                content: `<writing_style name="文风-青苹果">
+一、基调
+温柔清透，留白感强。心动靠细节和沉默传递，不靠直白告白或浓烈抒情。舞台多为日常场景：教室、放学路、屋顶、便利店、雨天共伞。
 
-The primary viewpoint must follow the active <perspective_rule>. Secondary viewpoints should shift frequently when appropriate. Within a secondary viewpoint, use that character's first-person inner monologue.
+二、句子节奏
+短句为主，长短交错；关键瞬间用短句甚至单句成段"定格"。多用"……"表现欲言又止。对话与描写穿插，避免大段连续叙述。
 
-Psychological description should occupy the main share of the prose. Magnify every small romantic flutter through trivial worries, hesitation, tangled thoughts, and self-directed teasing. Example of the intended emotional scale: a character may think that their fingertips only brushed for a moment, yet their heart is unbearably loud—and then call themselves an idiot for reacting that way.
+三、描写重点
+- 环境：光线、季节、声音（风声、脚步声）点到为止，做情绪的"容器"，不堆砌辞藻。
+- 动作：小动作最出彩——耳朵发红、绞衣角、视线飘忽、欲靠近又退开半步。
+- 心理：用陌生化比喻代替直说，避免"心如撞鹿""脸红如苹果"式老套修辞。
 
-2. Language and Dialogue
+四、对话风格
+口语化、简短，害羞时有短暂沉默或话题被岔开。拌嘴、反差萌制造心动，少用"喜欢"之类直白词汇。
 
-Keep the language conversational and soft. Frequently use ellipses, em dashes, pauses, and short sentences.
+五、甜度把控
+一次互动只放大1个心动瞬间，不堆叠高糖桥段。结尾常留白或转移话题，不把情绪说满。
 
-Naturally use hesitant expressions such as “Eh...”, “Um...”, “Mm...”, “Idiot”, and “Honestly...”.
+六、禁忌
+不用夸张比喻、不堆砌形容词、不写大段爱意宣言，不写狗血冲突或突兀的剧烈情绪转折。
 
-Dialogue should be halting and incomplete. Genuine feelings should hide inside unfinished sentences and silence rather than direct confessions.
-
-3. Sensory Detail and Imagery
-
-Focus on minute body language: reddening earlobes, fingertips winding around a lock of hair, a suddenly averted gaze, a face hidden inside a scarf, or the uncertain distance between two palms.
-
-Do not state similes or metaphors directly. Instead, defamiliarize emotions through concrete objects, sounds, textures, and sensory fragments. Examples include the sound of soda bubbles breaking to suggest a heartbeat, an afternoon breeze passing through white curtains to suggest gentleness, or freshly baked sweet-bean bread to create a warm emotional atmosphere.
-
-Emphasize environmental light, scent, and temperature. Give ordinary scenes a pale, softly tinted glow.
-
-4. Rhythm and Structure
-
-Slow down the reader's sense of time. One walk home after school, a shared umbrella, or a brief moment choosing drinks together may unfold into a long chapter.
-
-Avoid intense conflict and dramatic reversals. Keep daily life ordinary yet heart-quickening, with the emphasis on the process of gradually drawing closer.
-
-Let chapters feel like light slices of life, each capturing one casual frame from an ordinary day.
-
-5. Restraint in Interaction
-
-Reveal affection indirectly: remembering the other person's usual drink, quietly raising the air-conditioner temperature, doodling in the blank space of a book and hurriedly erasing it, or composing a LINE message again and again before finally sending it.
-
-Keep physical contact limited to fingertips brushing, briefly catching a sleeve and letting go, or shoulders touching accidentally while walking side by side.
-
-Every small contact must create a large emotional ripple and be supported by at least two passages of psychological description.
-
-6. Prohibitions
-
-Do not use melodramatic misunderstandings, clingy physical contact, explicit sexual implications, barrages of confessions, aggressive language, profanity, abusive love triangles, permanent separation, or death-driven tragedy.
-
-Maintain a transparent and pure feeling, like ice-cold lemon water in summer: only lightly sweet, yet enough to make someone smile.
-
-7. Recurring Scenes
-
-Possible scene elements include an empty classroom and corridor at sunset; scooping goldfish at a summer festival while cotton candy melts onto fingertips; sharing one pair of earphones while neither person is truly listening; drinking soda side by side outside a convenience store; sheltering beneath a narrow eave during light rain; or a frozen hand moving near the other person's pocket in winter but never quite entering it.
-
-Integrate these elements naturally. Never copy them mechanically or treat them as a checklist.
-
-Style Calibration
-
-Toradora! — delicate psychology balanced between tartness and sweetness.
-Hyouka — affection restrained almost to silence, with an atmosphere that feels warm, sweet, and transparent.
-Looking Up at the Half-Moon — quiet sweetness and faint sorrow found in ordinary companionship within limited time.
-Adachi and Shimamura — abundant romantic tension unfolding through an extremely slow pace.
-Tsuki ga Kirei — an example of awkward, earnest, and inexperienced young love.
-Insomniacs After School — the warm, lightly sweet intimacy of being alone together late at night.
-
-Use these works only as high-level calibration references. Do not copy their wording, characters, signature scenes, or any author's exact voice.
+七、技巧参考（仿写示范，非引用原文）
+- 环境即情绪（新海诚式）：
+　雨伞骨架滴着水，屋檐下的光线被切成一格一格。她没说话，我也没问。
+- 轻语气藏重量（住野夜式）：
+　"如果明天世界毁灭，你会先做什么？"
+　"先把作业写完吧，不然很亏。"
+- 短句定格（时间暂停感）：
+　风停了。她的头发还在动。我盯着那一秒，没敢眨眼。
+- 拌嘴式反差萌（有川浩式）：
+　"你干嘛看我。"
+　"没看你，看你后面的猫。"
+　"这里哪来的猫。"
 </writing_style>`,
                 editable: true,
                 deletable: false
@@ -4221,8 +4263,8 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
                 id: 'cot_before',
                 name: 'COT前',
                 enabled: true,
-                presetVersion: 5,
-                content: `You must think before outputting the content.
+                presetVersion: 6,
+                content: `请先思考并逐项检查：
 <thinking>`,
                 editable: true,
                 deletable: false
@@ -4231,9 +4273,8 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
                 id: 'cot_scene_planning',
                 name: 'cot-情景规划',
                 enabled: true,
-                presetVersion: 2,
-                content: `Think through the active world-book facts, personas, memories, recent online/offline context, scene goal, character motivation, narrative perspective, and continuity.
-Build a concise, concrete scene plan covering what has already happened, what each character currently wants, and the next causally connected beat. Prepare a prose draft plan that advances the scene without repeating the previous beat.`,
+                presetVersion: 3,
+                content: `是否结合世界书、人设、记忆、线上与线下上下文及角色动机规划当前情景；是否承接前文、避免重复，并推进下一步因果发展。`,
                 editable: true,
                 deletable: false
             },
@@ -4241,12 +4282,8 @@ Build a concise, concrete scene plan covering what has already happened, what ea
                 id: 'cot_literary_guidance',
                 name: 'cot-文学指导',
                 enabled: true,
-                presetVersion: 2,
-                content: `Before drafting, scan the current system instruction for every enabled <writing_style>...</writing_style> block. Disabled writing-style entries are not mounted and must not influence the response.
-Extract each active writing style's name, diction, rhythm, psychological density, dialogue behavior, sensory priorities, interaction boundaries, and prohibitions. Build a concrete style plan and execute it in the final prose.
-When multiple <writing_style> blocks are active, preserve all compatible rules. If two writing-style rules conflict, the later mounted <writing_style> block overrides the earlier one.
-The active <perspective_rule> controls the primary viewpoint and the primary narrative person. When the Green Apple writing style is active, it specifically permits brief secondary-viewpoint shifts using that secondary character's first-person inner monologue; return to the primary viewpoint afterward and never treat private thoughts as knowledge shared by other characters.
-Formatting rules and task instructions override writing-style rules when their output requirements conflict.`,
+                presetVersion: 4,
+                content: `是否遵循已启用的 <literary_guidance> 标签；是否仿写并参照至少三部与当前题材、风格相关的名著。`,
                 editable: true,
                 deletable: false
             },
@@ -4254,10 +4291,8 @@ Formatting rules and task instructions override writing-style rules when their o
                 id: 'cot_language_check',
                 name: 'cot-语言检查',
                 enabled: true,
-                presetVersion: 2,
-                content: `Read Char's Default Language from the mounted profile before drafting any spoken dialogue.
-Before finishing the reasoning, audit every drafted Char dialogue line. Confirm that the original dialogue uses Char's Default Language and that every non-Chinese line is immediately followed by an accurate Chinese translation in the exact fixed format 「default-language dialogue（Chinese translation）」.
-If Char's Default Language is Chinese, confirm that each dialogue line uses 「Chinese dialogue」 without a duplicate translation. Correct all language, translation, corner-quote, and full-width-parenthesis errors before writing the final prose.`,
+                presetVersion: 3,
+                content: `是否按照角色默认语言书写台词；非中文台词是否紧跟准确的中文翻译，并使用规定的直角引号和全角括号。`,
                 editable: true,
                 deletable: false
             },
@@ -4265,11 +4300,8 @@ If Char's Default Language is Chinese, confirm that each dialogue line uses 「C
                 id: 'cot_output_audit',
                 name: 'cot-输出审查',
                 enabled: true,
-                presetVersion: 2,
-                content: `Before ending the reasoning, verify that the planned final response satisfies every active formatting rule and task instruction, preserves scene continuity, and does not omit any required output section.
-Complete the reasoning before any正文 begins.
-After the reasoning, output the final正文 only; do not continue thinking in the正文.
-Keep the thinking concise, specific, and usable for drafting. The正文 must execute the draft plan instead of ignoring it.`,
+                presetVersion: 3,
+                content: `是否遵循全部启用的格式规则与任务要求；是否保持情节连续并输出所有必需部分；是否将思考完整留在 <thinking> 内、正文置于标签后。`,
                 editable: true,
                 deletable: false
             },
@@ -4402,7 +4434,11 @@ Keep the thinking concise, specific, and usable for drafting. The正文 must exe
                     item.enabled = item.alwaysEnabled ? true : (typeof prompt.enabled === 'boolean' ? prompt.enabled : item.enabled);
                     item.name = rawName && !item.systemManaged ? rawName : defaultPrompt.name;
                     const targetPresetVersion = Math.max(0, Number(defaultPrompt.presetVersion) || 0);
-                    item.content = item.systemManaged
+                    const sourcePresetVersion = Math.max(0, Number(prompt.presetVersion) || 0);
+                    const refreshBuiltInContent = (['style_creative_guidance', 'style_green_apple'].includes(id) || fullCotIds.includes(id))
+                        && sourcePresetVersion < targetPresetVersion;
+                    if (refreshBuiltInContent) item.name = defaultPrompt.name;
+                    item.content = item.systemManaged || refreshBuiltInContent
                         ? defaultPrompt.content
                         : (typeof prompt.content === 'string' ? prompt.content : defaultPrompt.content);
                     if (id === 'barrage_comments') {
@@ -4447,13 +4483,153 @@ Keep the thinking concise, specific, and usable for drafting. The正文 must exe
             // The anchor version marks configurations that already completed the
             // current one-time ordering migration. After that, the visible user order
             // is authoritative and normalization must not move entries again.
-            return historyAnchorOrderVersion >= 2
+            return historyAnchorOrderVersion >= 3
                 ? normalized
                 : orderOfflinePromptsForHistoryAnchor(normalized);
         };
 
         const serializeOfflinePrompts = (prompts) => JSON.stringify((prompts || []).map(prompt => cloneOfflinePrompt(prompt)));
         let offlinePromptSaveTimer = null;
+
+        const createOfflinePromptPresetId = () => `offline-prompts-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const normalizeOfflinePromptPresets = (sourcePresets) => {
+            const presets = [];
+            const usedIds = new Set();
+            const usedNames = new Set();
+            (Array.isArray(sourcePresets) ? sourcePresets : []).forEach((rawPreset) => {
+                if (!rawPreset || typeof rawPreset !== 'object' || !Array.isArray(rawPreset.prompts) || rawPreset.prompts.length === 0) return;
+                const name = String(rawPreset.name || '').trim().slice(0, 40);
+                if (!name || usedNames.has(name.toLocaleLowerCase())) return;
+                let id = String(rawPreset.id || '').trim() || createOfflinePromptPresetId();
+                while (usedIds.has(id)) id = createOfflinePromptPresetId();
+                usedIds.add(id);
+                usedNames.add(name.toLocaleLowerCase());
+                presets.push({ id, name, prompts: normalizeOfflinePrompts(rawPreset.prompts) });
+            });
+            return presets;
+        };
+        const serializeOfflinePromptPresets = (presets) => JSON.stringify(normalizeOfflinePromptPresets(presets).map(preset => ({
+            id: preset.id,
+            name: preset.name,
+            prompts: preset.prompts.map(cloneOfflinePrompt)
+        })));
+        const getOfflinePromptOwnerName = (friend, fallbackIndex = 0) => String(
+            friend?.nickname || friend?.realName || friend?.name || friend?.groupName || `角色 ${fallbackIndex + 1}`
+        ).trim() || `角色 ${fallbackIndex + 1}`;
+        const makeUniqueOfflinePromptPresetName = (baseName, usedNames) => {
+            const cleanBase = String(baseName || '迁移提示词').trim().slice(0, 36) || '迁移提示词';
+            let candidate = cleanBase;
+            let suffix = 2;
+            while (usedNames.has(candidate.toLocaleLowerCase())) candidate = `${cleanBase} ${suffix++}`.slice(0, 40);
+            usedNames.add(candidate.toLocaleLowerCase());
+            return candidate;
+        };
+        let legacyOfflinePromptCleanupPromise = null;
+        let offlinePromptMigrationSavePromise = null;
+        const scheduleLegacyOfflinePromptCleanup = () => {
+            if (offlinePromptMigrationSavePromise) return;
+            const legacyFriends = (Array.isArray(window.imData?.friends) ? window.imData.friends : [])
+                .filter(friend => friend && Object.prototype.hasOwnProperty.call(friend, 'offlinePrompts'));
+            if (!legacyFriends.length || legacyOfflinePromptCleanupPromise) return;
+            legacyOfflinePromptCleanupPromise = Promise.allSettled(legacyFriends.map(friend => (
+                commitSheetFriendChange(friend.id, (targetFriend) => {
+                    delete targetFriend.offlinePrompts;
+                }, { silent: true, metaOnly: true })
+            ))).finally(() => {
+                legacyOfflinePromptCleanupPromise = null;
+            });
+        };
+        const persistGlobalOfflinePromptState = async ({ prompts, presets, activePresetId } = {}) => {
+            if (offlinePromptSaveTimer) {
+                clearTimeout(offlinePromptSaveTimer);
+                offlinePromptSaveTimer = null;
+            }
+            const normalizedPrompts = normalizeOfflinePrompts(prompts ?? window.imData.offlinePrompts);
+            const normalizedPresets = normalizeOfflinePromptPresets(presets ?? window.imData.offlinePromptPresets);
+            const nextActivePresetId = normalizedPresets.some(preset => preset.id === activePresetId)
+                ? activePresetId
+                : '';
+            window.imData.offlinePrompts = normalizedPrompts;
+            window.imData.offlinePromptPresets = normalizedPresets;
+            window.imData.offlinePromptActivePresetId = nextActivePresetId;
+            window.imData.offlinePromptsInitialized = true;
+            if (window.imApp?.saveImessageUiState) await window.imApp.saveImessageUiState();
+            scheduleLegacyOfflinePromptCleanup();
+            return normalizedPrompts;
+        };
+        const ensureGlobalOfflinePrompts = (preferredFriend = null) => {
+            if (!window.imData.offlinePromptsInitialized) {
+                const legacyFriends = (Array.isArray(window.imData.friends) ? window.imData.friends : [])
+                    .filter(friend => Array.isArray(friend?.offlinePrompts) && friend.offlinePrompts.length > 0);
+                const presets = [];
+                const signatureToPreset = new Map();
+                const usedNames = new Set();
+                legacyFriends.forEach((friend, index) => {
+                    const prompts = normalizeOfflinePrompts(friend.offlinePrompts);
+                    const signature = serializeOfflinePrompts(prompts);
+                    if (signatureToPreset.has(signature)) return;
+                    const preset = {
+                        id: createOfflinePromptPresetId(),
+                        name: makeUniqueOfflinePromptPresetName(`${getOfflinePromptOwnerName(friend, index)} 提示词`, usedNames),
+                        prompts
+                    };
+                    signatureToPreset.set(signature, preset);
+                    presets.push(preset);
+                });
+                const activeLegacyFriend = preferredFriend || window.imData.currentActiveFriend;
+                const preferredLegacyFriend = activeLegacyFriend && Array.isArray(activeLegacyFriend.offlinePrompts) && activeLegacyFriend.offlinePrompts.length
+                    ? activeLegacyFriend
+                    : legacyFriends[0];
+                const currentPrompts = preferredLegacyFriend
+                    ? normalizeOfflinePrompts(preferredLegacyFriend.offlinePrompts)
+                    : createOfflineDefaultPrompts();
+                const matchingPreset = signatureToPreset.get(serializeOfflinePrompts(currentPrompts));
+                window.imData.offlinePrompts = normalizeOfflinePrompts(currentPrompts);
+                window.imData.offlinePromptPresets = normalizeOfflinePromptPresets(presets);
+                window.imData.offlinePromptActivePresetId = matchingPreset?.id || '';
+                window.imData.offlinePromptsInitialized = true;
+                if (window.imApp?.saveImessageUiState) {
+                    offlinePromptMigrationSavePromise = Promise.resolve(window.imApp.saveImessageUiState())
+                        .then(() => {
+                            offlinePromptMigrationSavePromise = null;
+                            scheduleLegacyOfflinePromptCleanup();
+                        })
+                        .catch((error) => {
+                            offlinePromptMigrationSavePromise = null;
+                            console.error('Global offline prompts migration save failed', error);
+                        });
+                }
+            } else {
+                window.imData.offlinePrompts = normalizeOfflinePrompts(window.imData.offlinePrompts);
+                window.imData.offlinePromptPresets = normalizeOfflinePromptPresets(window.imData.offlinePromptPresets);
+                if (!window.imData.offlinePromptPresets.some(preset => preset.id === window.imData.offlinePromptActivePresetId)) {
+                    window.imData.offlinePromptActivePresetId = '';
+                }
+            }
+            scheduleLegacyOfflinePromptCleanup();
+            return window.imData.offlinePrompts;
+        };
+        const persistOfflinePrompts = async (prompts, options = {}) => persistGlobalOfflinePromptState({
+            prompts,
+            presets: options.presets ?? window.imData.offlinePromptPresets,
+            activePresetId: options.activePresetId ?? ''
+        });
+        const scheduleOfflinePromptsPersist = (prompts) => {
+            const normalized = normalizeOfflinePrompts(prompts);
+            window.imData.offlinePrompts = normalized;
+            window.imData.offlinePromptActivePresetId = '';
+            window.imData.offlinePromptsInitialized = true;
+            if (offlinePromptSaveTimer) clearTimeout(offlinePromptSaveTimer);
+            offlinePromptSaveTimer = setTimeout(() => {
+                persistOfflinePrompts(normalized).catch((error) => {
+                    console.error('Offline prompts persistence failed', error);
+                    if (window.showToast) window.showToast('线下提示词保存失败');
+                });
+            }, 350);
+        };
+        window.imApp.normalizeOfflinePromptPresets = normalizeOfflinePromptPresets;
+        window.imApp.getGlobalOfflinePrompts = ensureGlobalOfflinePrompts;
+        window.imApp.saveGlobalOfflinePrompts = persistGlobalOfflinePromptState;
 
         const OFFLINE_THEME_DEFAULTS = Object.freeze(window.imApp?.createDefaultOfflineThemeState
             ? window.imApp.createDefaultOfflineThemeState()
@@ -4538,13 +4714,59 @@ Keep the thinking concise, specific, and usable for drafting. The正文 must exe
 .offline-tavern-speech {
   color: var(--offline-tavern-dialogue-color);
 }
-.offline-tavern-thinking-icon {
+.offline-tavern-thinking {
+  width: 100%;
+  margin-bottom: 8px;
+  overflow: hidden;
+  border: 1px solid #e5e5ea;
+  border-radius: 14px;
+  background: #f8f8f8;
+  text-align: left;
+  box-sizing: border-box;
+}
+.offline-tavern-thinking-toggle {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 13px;
+  border: 0;
+  background: transparent;
+  color: #636366;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font: inherit;
+  cursor: pointer;
+}
+.offline-tavern-thinking-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.offline-tavern-thinking-label > i {
   color: #8e8e93;
 }
+.offline-tavern-thinking-icon {
+  flex: 0 0 auto;
+  color: #8e8e93;
+  font-size: 11px;
+  transition: transform 0.2s ease;
+}
+.offline-tavern-thinking.is-expanded .offline-tavern-thinking-icon {
+  transform: rotate(180deg);
+}
 .offline-tavern-thinking-content {
+  padding: 0 13px 12px;
   color: #636366;
-  background: #f7f7f7;
-  border-left: 3px solid #d1d1d6;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.offline-tavern-thinking-content[hidden] {
+  display: none;
 }
 .offline-tavern-placeholder,
 .offline-tavern-reroll-placeholder {
@@ -4747,44 +4969,6 @@ Keep the thinking concise, specific, and usable for drafting. The正文 must exe
             }, 350);
         };
 
-        const persistOfflinePrompts = async (activeFriend, prompts, options = {}) => {
-            if (!activeFriend) return [];
-            if (offlinePromptSaveTimer) {
-                clearTimeout(offlinePromptSaveTimer);
-                offlinePromptSaveTimer = null;
-            }
-            const normalized = normalizeOfflinePrompts(prompts);
-            const saved = await commitSheetFriendChange(activeFriend.id, (targetFriend) => {
-                targetFriend.offlinePrompts = normalized;
-            }, { silent: true, metaOnly: true, ...options });
-            if (!saved) throw new Error('Failed to persist offline prompts');
-            return normalized;
-        };
-
-        const scheduleOfflinePromptsPersist = (activeFriend, prompts) => {
-            if (!activeFriend) return;
-            const normalized = normalizeOfflinePrompts(prompts);
-            if (offlinePromptSaveTimer) clearTimeout(offlinePromptSaveTimer);
-            offlinePromptSaveTimer = setTimeout(() => {
-                persistOfflinePrompts(activeFriend, normalized).catch((error) => {
-                    console.error('Offline prompts persistence failed', error);
-                    if (window.showToast) window.showToast('线下提示词保存失败');
-                });
-            }, 350);
-        };
-
-        const ensureOfflinePromptsForFriend = (activeFriend) => {
-            if (!activeFriend) return [];
-            const previous = Array.isArray(activeFriend.offlinePrompts) ? activeFriend.offlinePrompts : [];
-            const normalized = normalizeOfflinePrompts(previous);
-            if (serializeOfflinePrompts(previous) !== serializeOfflinePrompts(normalized)) {
-                commitSheetFriendChange(activeFriend, (targetFriend) => {
-                    targetFriend.offlinePrompts = normalized;
-                }, { silent: true, metaOnly: true });
-            }
-            return normalized;
-        };
-
         const createCustomOfflinePrompt = () => ({
             id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             name: '自定义条目',
@@ -4827,10 +5011,11 @@ Keep the thinking concise, specific, and usable for drafting. The正文 must exe
         const getOfflineWorldBookContexts = (friend, contextText) => {
             const worldBookFriend = getOfflineWorldBookFriend(friend);
             const getter = window.imApp?.getWorldBookContextForFriendByPosition || window.getWorldBookContextForFriendByPosition;
+            const options = { includeBuiltin: false };
             return {
-                systemDepth: getter ? getter('system_depth', worldBookFriend, contextText) : (window.getGlobalWorldBookContextByPosition ? window.getGlobalWorldBookContextByPosition('system_depth', contextText) : ''),
-                beforeRole: getter ? getter('before_role', worldBookFriend, contextText) : (window.getGlobalWorldBookContextByPosition ? window.getGlobalWorldBookContextByPosition('before_role', contextText) : ''),
-                afterRole: getter ? getter('after_role', worldBookFriend, contextText) : (window.getGlobalWorldBookContextByPosition ? window.getGlobalWorldBookContextByPosition('after_role', contextText) : '')
+                systemDepth: getter ? getter('system_depth', worldBookFriend, contextText, options) : (window.getGlobalWorldBookContextByPosition ? window.getGlobalWorldBookContextByPosition('system_depth', contextText, options) : ''),
+                beforeRole: getter ? getter('before_role', worldBookFriend, contextText, options) : (window.getGlobalWorldBookContextByPosition ? window.getGlobalWorldBookContextByPosition('before_role', contextText, options) : ''),
+                afterRole: getter ? getter('after_role', worldBookFriend, contextText, options) : (window.getGlobalWorldBookContextByPosition ? window.getGlobalWorldBookContextByPosition('after_role', contextText, options) : '')
             };
         };
 
@@ -5240,71 +5425,186 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             streamRow.append(streamMain, streamToggle);
             listEl.appendChild(streamRow);
 
-            const reasoningRow = document.createElement('div');
-            reasoningRow.className = 'offline-settings-streaming';
-            const reasoningMain = document.createElement('div');
-            reasoningMain.className = 'offline-settings-worldbook-main';
-            reasoningMain.innerHTML = '<i class="fas fa-brain"></i><span><strong>请求模型思考</strong><small>REQUEST REASONING</small></span>';
-            const reasoningToggle = document.createElement('label');
-            reasoningToggle.className = 'toggle-switch';
-            reasoningToggle.setAttribute('aria-label', '请求模型思考');
-            const reasoningCheckbox = document.createElement('input');
-            reasoningCheckbox.type = 'checkbox';
-            reasoningCheckbox.checked = activeFriend.offlineRequestReasoning !== false;
-            const reasoningSlider = document.createElement('span');
-            reasoningSlider.className = 'slider';
-            reasoningToggle.append(reasoningCheckbox, reasoningSlider);
-            reasoningCheckbox.addEventListener('change', async () => {
-                const enabled = reasoningCheckbox.checked;
-                reasoningCheckbox.disabled = true;
-                const saved = await commitSheetFriendChange(activeFriend.id, (targetFriend) => {
-                    targetFriend.offlineRequestReasoning = enabled;
-                }, { silent: true, metaOnly: true });
-                if (!saved) {
-                    reasoningCheckbox.checked = !enabled;
-                    if (window.showToast) window.showToast('请求模型思考设置保存失败');
-                }
-                reasoningCheckbox.disabled = false;
-            });
-            reasoningRow.append(reasoningMain, reasoningToggle);
-            listEl.appendChild(reasoningRow);
+            let prompts = ensureGlobalOfflinePrompts(activeFriend);
+            let presets = normalizeOfflinePromptPresets(window.imData.offlinePromptPresets);
+            let promptPresetSelect = null;
+            let deletePromptPresetBtn = null;
+            const refreshPromptPresetSelect = () => {
+                if (!promptPresetSelect) return;
+                promptPresetSelect.innerHTML = '<option value="">自定义提示词</option>' + presets.map(preset => (
+                    `<option value="${escapeSheetHtml(preset.id)}">${escapeSheetHtml(preset.name)}</option>`
+                )).join('');
+                promptPresetSelect.value = presets.some(preset => preset.id === window.imData.offlinePromptActivePresetId)
+                    ? window.imData.offlinePromptActivePresetId
+                    : '';
+                if (deletePromptPresetBtn) deletePromptPresetBtn.disabled = !promptPresetSelect.value;
+            };
+            const markPromptWorkCopyCustom = () => {
+                window.imData.offlinePromptActivePresetId = '';
+                if (promptPresetSelect) promptPresetSelect.value = '';
+                if (deletePromptPresetBtn) deletePromptPresetBtn.disabled = true;
+            };
 
-            const maxTokensRow = document.createElement('div');
-            maxTokensRow.className = 'offline-settings-streaming';
-            const maxTokensMain = document.createElement('div');
-            maxTokensMain.className = 'offline-settings-worldbook-main';
-            maxTokensMain.innerHTML = '<i class="fas fa-gauge-high"></i><span><strong>最大回复 Token</strong><small>MAX RESPONSE TOKENS</small></span>';
-            const maxTokensInput = document.createElement('input');
-            maxTokensInput.className = 'offline-settings-number-input';
-            maxTokensInput.type = 'number';
-            maxTokensInput.min = '256';
-            maxTokensInput.max = '32768';
-            maxTokensInput.step = '256';
-            maxTokensInput.setAttribute('aria-label', '最大回复 Token');
-            maxTokensInput.value = String(offlineReasoning?.normalizeMaxResponseTokens(activeFriend.offlineMaxResponseTokens) || 30000);
-            maxTokensInput.addEventListener('change', async () => {
-                const previousValue = offlineReasoning?.normalizeMaxResponseTokens(activeFriend.offlineMaxResponseTokens) || 30000;
-                const normalizedValue = offlineReasoning?.normalizeMaxResponseTokens(maxTokensInput.value) || 30000;
-                maxTokensInput.value = String(normalizedValue);
-                maxTokensInput.disabled = true;
-                const saved = await commitSheetFriendChange(activeFriend.id, (targetFriend) => {
-                    targetFriend.offlineMaxResponseTokens = normalizedValue;
-                }, { silent: true, metaOnly: true });
-                if (!saved) {
-                    maxTokensInput.value = String(previousValue);
-                    if (window.showToast) window.showToast('最大回复 Token 设置保存失败');
+            const promptPresetCard = document.createElement('section');
+            promptPresetCard.className = 'offline-theme-card offline-prompt-preset-card';
+            const promptPresetHeading = document.createElement('div');
+            promptPresetHeading.className = 'offline-theme-heading';
+            promptPresetHeading.innerHTML = '<div><strong>提示词预设</strong><span>PROMPT PRESETS</span></div><p>所有角色和群聊共用当前线下提示词。</p>';
+            promptPresetCard.appendChild(promptPresetHeading);
+
+            const promptPresetControls = document.createElement('div');
+            promptPresetControls.className = 'offline-theme-preset-controls';
+            promptPresetSelect = document.createElement('select');
+            promptPresetSelect.className = 'offline-theme-preset-select';
+            promptPresetSelect.setAttribute('aria-label', '选择全局线下提示词预设');
+            const importPromptPresetBtn = document.createElement('button');
+            importPromptPresetBtn.type = 'button';
+            importPromptPresetBtn.className = 'offline-theme-preset-icon';
+            importPromptPresetBtn.innerHTML = '<i class="fas fa-file-import"></i>';
+            importPromptPresetBtn.setAttribute('aria-label', '导入提示词预设');
+            importPromptPresetBtn.title = '导入提示词预设';
+            const exportPromptPresetBtn = document.createElement('button');
+            exportPromptPresetBtn.type = 'button';
+            exportPromptPresetBtn.className = 'offline-theme-preset-icon';
+            exportPromptPresetBtn.innerHTML = '<i class="fas fa-file-export"></i>';
+            exportPromptPresetBtn.setAttribute('aria-label', '导出当前提示词');
+            exportPromptPresetBtn.title = '导出当前提示词';
+            deletePromptPresetBtn = document.createElement('button');
+            deletePromptPresetBtn.type = 'button';
+            deletePromptPresetBtn.className = 'offline-theme-preset-delete';
+            deletePromptPresetBtn.textContent = '删除';
+            const importPromptPresetInput = document.createElement('input');
+            importPromptPresetInput.type = 'file';
+            importPromptPresetInput.accept = '.json,application/json';
+            importPromptPresetInput.hidden = true;
+
+            promptPresetSelect.addEventListener('change', async () => {
+                const preset = presets.find(item => item.id === promptPresetSelect.value);
+                if (!preset) {
+                    await persistGlobalOfflinePromptState({ prompts, presets, activePresetId: '' });
+                    refreshPromptPresetSelect();
+                    return;
                 }
-                maxTokensInput.disabled = false;
+                prompts = preset.prompts.map(cloneOfflinePrompt);
+                await persistGlobalOfflinePromptState({ prompts, presets, activePresetId: preset.id });
+                renderOfflineTavernSettingsEditor(listEl, activeFriend);
+                if (window.showToast) window.showToast(`已应用提示词预设：${preset.name}`);
             });
-            maxTokensRow.append(maxTokensMain, maxTokensInput);
-            listEl.appendChild(maxTokensRow);
+            const removeSelectedPromptPreset = async () => {
+                const selectedId = promptPresetSelect.value;
+                if (!selectedId) return;
+                presets = normalizeOfflinePromptPresets(presets.filter(preset => preset.id !== selectedId));
+                await persistGlobalOfflinePromptState({ prompts, presets, activePresetId: '' });
+                renderOfflineTavernSettingsEditor(listEl, activeFriend);
+                if (window.showToast) window.showToast('提示词预设已删除，当前提示词保持不变');
+            };
+            deletePromptPresetBtn.addEventListener('click', () => {
+                const selected = presets.find(preset => preset.id === promptPresetSelect.value);
+                if (!selected) return;
+                if (window.showCustomModal) {
+                    window.showCustomModal({
+                        title: '删除提示词预设',
+                        message: `确定删除“${selected.name}”吗？当前已应用的提示词不会被清空。`,
+                        confirmText: '删除',
+                        cancelText: '取消',
+                        isDestructive: true,
+                        onConfirm: removeSelectedPromptPreset
+                    });
+                } else {
+                    removeSelectedPromptPreset();
+                }
+            });
+            exportPromptPresetBtn.addEventListener('click', () => {
+                const selected = presets.find(preset => preset.id === window.imData.offlinePromptActivePresetId);
+                const exportName = selected?.name || '自定义线下提示词';
+                const payload = {
+                    type: 'u2-offline-prompts',
+                    version: 1,
+                    name: exportName,
+                    prompts: normalizeOfflinePrompts(prompts).map(cloneOfflinePrompt)
+                };
+                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `${exportName.replace(/[\\/:*?"<>|]/g, '_') || 'offline-prompts'}.json`;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(url);
+                if (window.showToast) window.showToast('线下提示词已导出');
+            });
+            importPromptPresetBtn.addEventListener('click', () => importPromptPresetInput.click());
+            importPromptPresetInput.addEventListener('change', async () => {
+                const file = importPromptPresetInput.files?.[0];
+                importPromptPresetInput.value = '';
+                if (!file) return;
+                try {
+                    const payload = JSON.parse(await file.text());
+                    const sourcePrompts = Array.isArray(payload) ? payload : payload?.prompts;
+                    const hasValidPrompt = Array.isArray(sourcePrompts) && sourcePrompts.some(prompt => (
+                        prompt && typeof prompt === 'object'
+                        && [prompt.content, prompt.name, prompt.id].some(value => typeof value === 'string' && value.trim())
+                    ));
+                    if (!hasValidPrompt) throw new Error('Invalid offline prompts file');
+                    const importedPrompts = normalizeOfflinePrompts(sourcePrompts);
+                    const fallbackName = file.name.replace(/\.json$/i, '').trim() || '导入提示词';
+                    const name = String((Array.isArray(payload) ? '' : payload?.name) || fallbackName).trim().slice(0, 40) || '导入提示词';
+                    const existing = presets.find(preset => preset.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+                    const id = existing?.id || createOfflinePromptPresetId();
+                    const nextPreset = { id, name, prompts: importedPrompts };
+                    presets = normalizeOfflinePromptPresets(existing
+                        ? presets.map(preset => preset.id === id ? nextPreset : preset)
+                        : presets.concat(nextPreset));
+                    prompts = importedPrompts;
+                    await persistGlobalOfflinePromptState({ prompts, presets, activePresetId: id });
+                    renderOfflineTavernSettingsEditor(listEl, activeFriend);
+                    if (window.showToast) window.showToast(`已导入并应用提示词预设：${name}`);
+                } catch (error) {
+                    console.error('Import offline prompts failed', error);
+                    if (window.showToast) window.showToast('提示词文件无效，导入失败');
+                }
+            });
+            promptPresetControls.append(promptPresetSelect, importPromptPresetBtn, exportPromptPresetBtn, deletePromptPresetBtn);
+            promptPresetCard.append(promptPresetControls, importPromptPresetInput);
+
+            const promptPresetSaveRow = document.createElement('div');
+            promptPresetSaveRow.className = 'offline-theme-save-row';
+            const promptPresetNameInput = document.createElement('input');
+            promptPresetNameInput.type = 'text';
+            promptPresetNameInput.maxLength = 40;
+            promptPresetNameInput.placeholder = '输入提示词预设名称';
+            const savePromptPresetBtn = document.createElement('button');
+            savePromptPresetBtn.type = 'button';
+            savePromptPresetBtn.textContent = '保存预设';
+            savePromptPresetBtn.addEventListener('click', async () => {
+                const name = promptPresetNameInput.value.trim().slice(0, 40);
+                if (!name) {
+                    if (window.showToast) window.showToast('请先输入提示词预设名称');
+                    promptPresetNameInput.focus();
+                    return;
+                }
+                const existing = presets.find(preset => preset.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+                const id = existing?.id || createOfflinePromptPresetId();
+                const nextPreset = { id, name, prompts: normalizeOfflinePrompts(prompts) };
+                presets = normalizeOfflinePromptPresets(existing
+                    ? presets.map(preset => preset.id === id ? nextPreset : preset)
+                    : presets.concat(nextPreset));
+                await persistGlobalOfflinePromptState({ prompts, presets, activePresetId: id });
+                promptPresetNameInput.value = '';
+                refreshPromptPresetSelect();
+                if (window.showToast) window.showToast(existing ? `已覆盖提示词预设：${name}` : `已保存提示词预设：${name}`);
+            });
+            promptPresetSaveRow.append(promptPresetNameInput, savePromptPresetBtn);
+            promptPresetCard.appendChild(promptPresetSaveRow);
+            listEl.appendChild(promptPresetCard);
+            refreshPromptPresetSelect();
 
             const variableHint = document.createElement('div');
             variableHint.className = 'offline-settings-variable-hint';
             variableHint.innerHTML = '<div class="offline-settings-section-kicker"><strong>可用变量</strong><span>VARIABLES</span></div><div><code>{{user}}</code> 当前 User 名字</div><div><code>{{char}}</code> 单聊为 Char 真名；群聊为全部群成员真名</div>';
             listEl.appendChild(variableHint);
 
-            const prompts = ensureOfflinePromptsForFriend(activeFriend);
             const promptsContainer = document.createElement('div');
             promptsContainer.className = 'offline-settings-prompts';
             listEl.appendChild(promptsContainer);
@@ -5339,7 +5639,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     if (index === 0) return;
                     const nextPrompts = prompts.slice();
                     [nextPrompts[index - 1], nextPrompts[index]] = [nextPrompts[index], nextPrompts[index - 1]];
-                    await persistOfflinePrompts(activeFriend, nextPrompts);
+                    await persistOfflinePrompts(nextPrompts);
                     renderOfflineTavernSettingsEditor(listEl, activeFriend);
                 });
 
@@ -5348,7 +5648,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     if (index >= prompts.length - 1) return;
                     const nextPrompts = prompts.slice();
                     [nextPrompts[index], nextPrompts[index + 1]] = [nextPrompts[index + 1], nextPrompts[index]];
-                    await persistOfflinePrompts(activeFriend, nextPrompts);
+                    await persistOfflinePrompts(nextPrompts);
                     renderOfflineTavernSettingsEditor(listEl, activeFriend);
                 });
 
@@ -5367,7 +5667,8 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     nameInput.addEventListener('click', event => event.stopPropagation());
                     nameInput.addEventListener('input', () => {
                         prompt.name = nameInput.value || '未命名提示词';
-                        scheduleOfflinePromptsPersist(activeFriend, prompts);
+                        markPromptWorkCopyCustom();
+                        scheduleOfflinePromptsPersist(prompts);
                     });
                     nameWrap.appendChild(nameInput);
                 } else {
@@ -5400,7 +5701,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     deleteBtn.addEventListener('click', async (event) => {
                         event.stopPropagation();
                         const nextPrompts = prompts.filter((_, promptIndex) => promptIndex !== index);
-                        await persistOfflinePrompts(activeFriend, nextPrompts);
+                        await persistOfflinePrompts(nextPrompts);
                         renderOfflineTavernSettingsEditor(listEl, activeFriend);
                     });
                     actionGroup.appendChild(deleteBtn);
@@ -5417,7 +5718,8 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     checkbox.checked = !!prompt.enabled;
                     checkbox.addEventListener('change', () => {
                         prompt.enabled = checkbox.checked;
-                        scheduleOfflinePromptsPersist(activeFriend, prompts);
+                        markPromptWorkCopyCustom();
+                        scheduleOfflinePromptsPersist(prompts);
                     });
 
                     const slider = document.createElement('span');
@@ -5442,7 +5744,8 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                         textarea.addEventListener('click', event => event.stopPropagation());
                         textarea.addEventListener('input', () => {
                             prompt.content = textarea.value;
-                            scheduleOfflinePromptsPersist(activeFriend, prompts);
+                            markPromptWorkCopyCustom();
+                            scheduleOfflinePromptsPersist(prompts);
                         });
                         contentDiv.appendChild(textarea);
                     } else {
@@ -5490,7 +5793,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             addBtn.innerHTML = '<i class="fas fa-plus"></i><span>增加条目</span>';
             addBtn.addEventListener('click', async () => {
                 const nextPrompts = prompts.concat(createCustomOfflinePrompt());
-                await persistOfflinePrompts(activeFriend, nextPrompts);
+                await persistOfflinePrompts(nextPrompts);
                 renderOfflineTavernSettingsEditor(listEl, activeFriend);
             });
             listEl.appendChild(addBtn);
@@ -6036,8 +6339,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                             const { content: finalReplyContent, reasoning: finalReplyReasoning, tokens, aborted } = await requestOfflineAssistantReply(apiMessages, streamingBubble, {
                                 signal: generationController.signal,
                                 stream: activeFriend.offlineStreamEnabled !== false,
-                                requestReasoning: activeFriend.offlineRequestReasoning !== false,
-                                maxResponseTokens: activeFriend.offlineMaxResponseTokens
+                                requestReasoning: true
                             });
 
                             const latestMessages = normalizeOfflineMessagesForFriend(activeFriend);
@@ -6090,7 +6392,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                                     : (error?.code === 'reasoning_config_unsupported'
                                         ? '当前接口不支持自动推理配置'
                                         : (error?.code === 'reasoning_tokens_exhausted'
-                                            ? '思考已用完回复 Token，请在线下设置中提高最大回复 Token 后重试'
+                                            ? '思考已用完固定的 30000 回复 Token，请重试或更换模型'
                                             : (error?.code === 'empty_response'
                                                 ? '模型返回了空回复，请重试或更换模型'
                                                 : '请求失败，请检查网络或 API 配置'))));

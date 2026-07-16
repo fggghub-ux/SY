@@ -265,7 +265,7 @@ test('restores saved iMessage theme CSS after contact data hydration and chat pa
 
     assert.ok((interfaceSource.match(/window\.imApp\.applyFriendCss\(friend\)/g) || []).length >= 2);
     assert.match(indexSource, /js\/imessage\/4_chat_interface\.js\?v=20260715-chat-context-menu-offline-retry-v1/);
-    assert.match(indexSource, /js\/imessage\/5_settings\.js\?v=20260713-offline-memory-v1/);
+    assert.match(indexSource, /js\/imessage\/5_settings\.js\?v=20260716-status-prompt-v3/);
 });
 
 test('keeps iOS modal, theme preset, stickers, and private-chat safeguards', async () => {
@@ -364,7 +364,11 @@ test('keeps group time awareness, role recall toggle, Chinese generated thoughts
     assert.match(aiSource, /线下见面与线上消息同样算作一次互动/);
     assert.match(aiSource, /lastCharOrMeetingBeforeUser/);
     assert.match(aiSource, /thought 字段必须使用自然中文/);
-    assert.match(aiSource, /【中文强制】thought、location、action、mood、expression、events 以及 memoryPayload/);
+    assert.match(aiSource, /JSON 必须且只能包含字段：thought、affectionChange、events/);
+    assert.match(aiSource, /hasCustomStatusPrompt/);
+    assert.match(aiSource, /<custom_status_prompt>/);
+    assert.doesNotMatch(aiSource, /thought 必须严格输出空字符串/);
+    assert.doesNotMatch(aiSource, /JSON 必须包含字段：thought、location、action、mood、expression/);
     assert.match(aiSource, /memberProfiles\[memberProfileKey\]/);
     assert.match(aiSource, /updatedAt\s*=\s*Date\.now\(\)/);
     assert.match(aiSource, /singleChatRoleRecallPrompt/);
@@ -397,6 +401,8 @@ test('keeps group time awareness, role recall toggle, Chinese generated thoughts
     assert.match(coreSource, /targetFriend\.messages\s*=\s*\[\]/);
     assert.match(coreSource, /normalized\.relationship\s*=/);
     assert.match(coreSource, /normalized\.allowRoleRecall\s*=\s*normalized\.allowRoleRecall\s*!==\s*false/);
+    assert.match(coreSource, /normalized\.statusPromptEnabled\s*=\s*normalized\.statusPromptEnabled\s*===\s*true/);
+    assert.match(coreSource, /migrateSingleChatProfileStatus/);
     assert.match(coreSource, /targetFriend\.memberProfiles\s*=\s*\{\}/);
     assert.match(coreSource, /notes:\s*''/);
     assert.match(coreSource, /cleared\.lastSummaryMessageCount\s*=\s*0/);
@@ -405,6 +411,13 @@ test('keeps group time awareness, role recall toggle, Chinese generated thoughts
 
     assert.match(settingsSource, /chatRoleRecallToggle\.checked\s*=\s*friend\.allowRoleRecall\s*!==\s*false/);
     assert.match(settingsSource, /targetFriend\.allowRoleRecall\s*=\s*nextValue/);
+    assert.match(indexSource, /id="status-prompt-btn"/);
+    assert.match(indexSource, /id="status-prompt-sheet"/);
+    assert.match(indexSource, /id="status-prompt-enabled-toggle"/);
+    assert.match(indexSource, /id="status-prompt-input"/);
+    assert.doesNotMatch(indexSource, /id="(?:status-simple-type-select|status-style-select|status-preview-host|status-css-input)"/);
+    assert.match(settingsSource, /targetFriend\.statusPromptEnabled\s*=\s*nextEnabled/);
+    assert.match(settingsSource, /targetFriend\.statusPrompt\s*=\s*nextPrompt/);
     assert.match(indexSource, /id="friend-relationship-input"/);
     assert.match(indexSource, /id="char-relationship-input"/);
     assert.match(indexSource, /Char 认为你们的关系/);
@@ -421,6 +434,13 @@ test('applies tuned relationship, personality, and time-gap rules to single and 
     assert.doesNotMatch(aiSource, /【关系与记忆使用方式】/);
     assert.match(aiSource, /人格基石: \[3-5个核心关键词，例如：温柔稳定、责任感强、细腻敏感、阳光幽默\]/);
     assert.match(aiSource, /当前关系: \$\{isSingleChat \? \(relationship \|\| '未填写'\)/);
+    assert.match(aiSource, /\[年下\]：爱情需求度高、黏人/);
+    assert.match(aiSource, /\[年上\]：理智的爱恋/);
+    assert.match(aiSource, /性格标签:\n外向\/自信:/);
+    assert.match(aiSource, /User在分享开心事吗？我是否在用上帝视角贬低？/);
+    assert.match(aiSource, /算你识相\/乖\/算你有良心/);
+    assert.match(aiSource, /彻底摒弃赛博爹妈感/);
+    assert.match(aiSource, /禁止讲大道理、给建议、或者说“早跟你说了吧”吗？/);
     assert.match(aiSource, /\*\*外向\/敏感\*\* ：回复快，主动开启话题并很爱分享感受/);
     assert.match(aiSource, /\*\*内向\/温柔\*\* ：回复偏慢，用词柔软且有分寸/);
     assert.match(aiSource, /现在的时间段是：\$\{currentTimePeriod\}/);
@@ -506,9 +526,9 @@ test('uses visible keyword-triggered memory recall for single and group chats', 
     assert.match(settingsSource, /summaryPayload\.memoryTags/);
     assert.match(statusSource, /triggerKeywords = window\.imChat\?\.normalizeMemoryTriggerKeywords/);
     assert.match(cssSource, /\.memory-recall-narration-pill/);
-    assert.match(indexSource, /4_chat_ai\.js\?v=20260715-dynamic-narration-zh-v3/);
+    assert.match(indexSource, /4_chat_ai\.js\?v=20260716-status-prompt-v2/);
     assert.match(indexSource, /4_chat_bubbles\.js\?v=20260713-offline-summary-modal-v3/);
-    assert.match(indexSource, /5_settings\.js\?v=20260713-offline-memory-v1/);
+    assert.match(indexSource, /5_settings\.js\?v=20260716-status-prompt-v3/);
 });
 
 test('uses per-member group languages, content-sized private bubbles, and fresh edited-message context', async () => {
@@ -537,8 +557,8 @@ test('uses per-member group languages, content-sized private bubbles, and fresh 
     assert.match(coreSource, /const getApiContextFingerprint = \(message\) => JSON\.stringify/);
     assert.match(coreSource, /getApiContextFingerprint\(targetMessage\) !== previousContextFingerprint/);
     assert.match(coreSource, /window\.imApp\.clearFriendRuntimeMessageContext\(targetFriend\)/);
-    assert.match(indexSource, /js\/imessage\/2_core\.js\?v=20260715-offline-token-30000-v4/);
-    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260715-dynamic-narration-zh-v3/);
+    assert.match(indexSource, /js\/imessage\/2_core\.js\?v=20260716-offline-token-v1/);
+    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260716-status-prompt-v2/);
     assert.match(indexSource, /js\/imessage\/4_chat_main\.js\?v=20260715-chat-context-menu-offline-retry-v1/);
 });
 
@@ -577,5 +597,5 @@ test('uses stable long-press selection and purges deleted chat context without s
     assert.match(narrationRenderer, /row\.className = 'chat-system-row'/);
     assert.doesNotMatch(narrationRenderer, /chat-checkbox-wrapper/);
     assert.match(cssSource, /\.im-chat-cancel-batch-btn\s*\{[\s\S]*?color:\s*#111111/);
-    assert.match(indexSource, /css\/imessage\.css\?v=20260715-offline-reasoning-request-v9/);
+    assert.match(indexSource, /css\/imessage\.css\?v=20260716-status-prompt-v3/);
 });

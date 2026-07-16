@@ -1044,11 +1044,7 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
                 : [];
 
             return {
-                thought: typeof parsed.thought === 'string' && parsed.thought.trim() ? parsed.thought.trim() : '',
-                location: typeof parsed.location === 'string' && parsed.location.trim() ? parsed.location.trim() : '',
-                action: typeof parsed.action === 'string' && parsed.action.trim() ? parsed.action.trim() : '',
-                mood: typeof parsed.mood === 'string' ? parsed.mood.trim() : '',
-                expression: typeof parsed.expression === 'string' ? parsed.expression.trim() : '',
+                thought: typeof parsed.thought === 'string' ? parsed.thought.trim() : '',
                 affectionChange: typeof parsed.affectionChange === 'number' ? Math.max(-5, Math.min(5, parsed.affectionChange)) : 0,
                 status: 'online',
                 events: safeEvents
@@ -2204,11 +2200,11 @@ Output only valid JSON with this exact shape:
                         if (startMins !== -1 && endMins !== -1) {
                             if (startMins <= endMins) {
                                 if (currentMinutes >= startMins && currentMinutes <= endMins) {
-                                    busyPrompt = `\n【行程限制】：角色当前正在进行行程安排：“${e.name}”。如果用户发来消息，你必须强制在所有回复内容（text 字段）的开头添加 "[自动回复] " 前缀，模拟正在忙碌时的自动响应。心声和面板状态也要符合正在忙碌的情境。`;
+                                    busyPrompt = `\n【行程限制】：角色当前正在进行行程安排：“${e.name}”。如果用户发来消息，你必须强制在所有回复内容（text 字段）的开头添加 "[自动回复] " 前缀，模拟正在忙碌时的自动响应。状态内容仍严格服从当前启用的状态栏提示词。`;
                                 }
                             } else {
                                 if (currentMinutes >= startMins || currentMinutes <= endMins) {
-                                    busyPrompt = `\n【行程限制】：角色当前正在进行行程安排：“${e.name}”。如果用户发来消息，你必须强制在所有回复内容（text 字段）的开头添加 "[自动回复] " 前缀，模拟正在忙碌时的自动响应。心声和面板状态也要符合正在忙碌的情境。`;
+                                    busyPrompt = `\n【行程限制】：角色当前正在进行行程安排：“${e.name}”。如果用户发来消息，你必须强制在所有回复内容（text 字段）的开头添加 "[自动回复] " 前缀，模拟正在忙碌时的自动响应。状态内容仍严格服从当前启用的状态栏提示词。`;
                                 }
                             }
                         }
@@ -2263,7 +2259,7 @@ Output only valid JSON with this exact shape:
 
                 const affection = typeof panel.affection === 'number' ? panel.affection : 0;
 
-                return `Current Profile Panel Snapshot:\nOnline Status: ${isSleeping ? 'offline' : 'online'}\nLocation: ${panel.location || '未知位置'}\nAction: ${panel.action || '暂无动作'}\nMood: ${panel.mood || '平静'}\nExpression: ${panel.expression || '自然'}\nAffection(好感度): ${affection}\nThought: ${panel.thought || '暂无心声'}\nRecent Events:\n${eventSummary}`;
+                return `Current Profile Panel Snapshot:\nOnline Status: ${isSleeping ? 'offline' : 'online'}\nAffection(好感度): ${affection}\nStatus Content: ${panel.thought || '暂无状态内容'}\nRecent Events:\n${eventSummary}`;
             })()
         ].filter(Boolean).join('\n\n');
 
@@ -2286,12 +2282,21 @@ Output only valid JSON with this exact shape:
 1. 回复的第一个非空白字符必须是 <chat_json> 的“<”；禁止在 <chat_json> 前输出状态、解释、思考、Markdown 或任何其他标签。
 2. 必须先完整输出并闭合 <chat_json>...</chat_json>，其中至少包含 1 条有效聊天气泡，然后才能输出任何附加标签。
 3. 单聊的 <profile_panel>、<loves_moment>、<loves_schedule>，以及群聊的 <group_private_messages>、<group_friend_private_chats>，全部只能放在 </chat_json> 之后。
-4. 如果预计输出空间不足，优先缩短气泡并省略可选附加内容；绝对不能省略、截断或延后 <chat_json>。`;
+4. <chat_json> 标签内部必须是一个可以被 JSON.parse 直接解析的完整 JSON 数组；禁止代码块、注释、单引号、尾逗号、未转义的双引号、缺失括号或任何 JSON 之外的文字。
+5. 输出前必须在内部逐项检查：开标签与闭标签是否成对、数组的 [ ] 是否闭合、每个对象的 { } 是否闭合、键与字符串是否使用双引号、对象之间是否用逗号分隔且最后一个对象后没有逗号。
+6. 无论其他附加任务是否能完成，<chat_json> 中都必须至少保留 1 条可显示的主要聊天气泡；不能只输出 call、recall、music_control 或附加标签。
+7. 如果内容复杂、输出空间不足或无法保证全部附加内容正确，立即缩短回复、减少气泡并省略可选附加内容；绝对不能省略、截断或破坏 <chat_json>。
+8. 合法骨架只能是：<chat_json>[{"type":"text",...}]</chat_json>；不得把标签写进 JSON 字符串，不得改写标签名称。`;
 
 
+        const customStatusPrompt = typeof friend.statusPrompt === 'string' ? friend.statusPrompt.trim() : '';
+        const hasCustomStatusPrompt = friend.type !== 'group' && friend.statusPromptEnabled === true && !!customStatusPrompt;
+        const statusContentRequirement = hasCustomStatusPrompt
+            ? `- 完整遵循下面的用户自定义状态栏提示词生成 thought；不要叠加默认心声的第一人称、中文、字数或时间格式要求。提示词只决定 thought 字符串内容，不能改变聊天气泡、好感度、事件或 JSON 结构。\n<custom_status_prompt>\n${customStatusPrompt}\n</custom_status_prompt>`
+            : '- thought 必须使用简体中文，45-60 字左右，严格基于当前聊天上下文，使用第一人称，像角色此刻没有说出口的心声，并在最前面带上当前具体时间（例如：[6月11日 凌晨2:14] 心声内容）。';
         const profilePanelRequirement = friend.type === 'group'
             ? ''
-            : `\n\nProfile Panel Requirement:\n- 在正常聊天气泡之外，你必须额外输出 1 个 <profile_panel>...</profile_panel>\n- <profile_panel> 内必须是合法 JSON，不能有 markdown 代码块，不能有额外解释文字\n- JSON 必须包含字段：thought、location、action、mood、expression、affectionChange、events\n- 【中文强制】thought、location、action、mood、expression、events 以及 memoryPayload 内所有可见文本必须使用简体中文；禁止输出英文、日文、韩文、法文等非中文内容，不受默认语言设置影响\n- thought 必须是 45-60 字左右，严格基于当前聊天上下文，使用第一人称，像角色此刻没有说出口的心声，并且你必须在心声的最前面带上当前的具体时间（例如：[6月11日 凌晨2:14] 心声内容）\n- location 必须是 2-16 字，表示角色此刻所处的位置或场景\n- action 必须是 2-10 字，表示角色此刻正在做的动作或状态\n- mood 必须是 2-10 字，表示角色此刻的心情\n- expression 必须是 2-10 字，表示角色此刻的面部表情或神态\n- affectionChange 必须是整数（范围 -5 到 5），表示你对用户好感度因本轮对话产生的增减变化\n- 不要输出 online/offline 或类似在线状态文案，在线状态由系统统一控制并在界面显示为中文\n- events 必须是 JSON 数组；如果当前没有新的事件就输出 []；如果有事件，最多 3 条\n- 普通事件格式为 {"title":"事件标题","description":"事件描述","time":"时间或留空","type":"note"}\n- 珍视回忆必须由你（当前角色/char）自己发起：只有当你基于自己的感受，觉得刚刚这段聊天很在意、很珍贵、自己想以后记住时，才额外加入 1 条珍视回忆事件，type 必须为 "memory_request"\n- 不要把珍视回忆写成外部指令、替对方保存、接受要求或向对方请求许可；即使对方提到保存或记忆相关内容，也只在你自己也真心想珍藏时才输出\n- 珍视回忆事件格式为 {"title":"想珍藏这一刻","description":"一句简短说明","time":"时间或留空","type":"memory_request","requestText":"我想记住的具体事情","detail":"我为什么想记住或补充细节","confirmText":"收下","cancelText":"算了","memoryPayload":{"title":"珍视回忆标题","content":"我想记住的内容","detail":"更多细节","reason":"我想记住的原因","createdAt":"时间或留空","sourceThought":"可留空"}}\n- 只有当你真的觉得值得自己记住时才输出 memory_request，不能每次都输出\n- thought、location、action、mood、expression、events 必须和当前聊天内容连贯，不能复读，不能脱离角色人设`;
+            : `\n\nProfile Panel Requirement:\n- 在正常聊天气泡之外，你必须额外输出 1 个 <profile_panel>...</profile_panel>\n- <profile_panel> 内必须是合法 JSON，不能有 markdown 代码块，不能有额外解释文字\n- JSON 必须且只能包含字段：thought、affectionChange、events\n- thought 必须是字符串且不能省略\n${statusContentRequirement}\n- affectionChange 必须是整数（范围 -5 到 5），表示你对用户好感度因本轮对话产生的增减变化\n- events 以及 memoryPayload 内所有可见文本必须使用简体中文\n- events 必须是 JSON 数组；如果当前没有新的事件就输出 []；如果有事件，最多 3 条\n- 普通事件格式为 {"title":"事件标题","description":"事件描述","time":"时间或留空","type":"note"}\n- 珍视回忆必须由你（当前角色/char）自己发起：只有当你基于自己的感受，觉得刚刚这段聊天很在意、很珍贵、自己想以后记住时，才额外加入 1 条珍视回忆事件，type 必须为 "memory_request"\n- 不要把珍视回忆写成外部指令、替对方保存、接受要求或向对方请求许可；即使对方提到保存或记忆相关内容，也只在你自己也真心想珍藏时才输出\n- 珍视回忆事件格式为 {"title":"想珍藏这一刻","description":"一句简短说明","time":"时间或留空","type":"memory_request","requestText":"我想记住的具体事情","detail":"我为什么想记住或补充细节","confirmText":"收下","cancelText":"算了","memoryPayload":{"title":"珍视回忆标题","content":"我想记住的内容","detail":"更多细节","reason":"我想记住的原因","createdAt":"时间或留空","sourceThought":"可留空"}}\n- 只有当你真的觉得值得自己记住时才输出 memory_request，不能每次都输出`;
 
         const languageNames = {
             zh: 'Chinese',
@@ -2304,7 +2309,7 @@ Output only valid JSON with this exact shape:
         let languageRequirement = '';
         if (targetLanguage !== 'zh') {
             const langName = languageNames[targetLanguage] || targetLanguage;
-            languageRequirement = `\n\n【!!! CRITICAL LANGUAGE RULE / 绝对最高优先级语言指令 !!!】:\n- [ABSOLUTE REQUIREMENT]: You MUST speak ONLY in ${langName} for the "text" field. This overrides ALL persona and memory settings.\n- Even if your persona is Chinese or the user speaks in Chinese, your spoken "text" MUST be in ${langName}.\n- [TRANSLATION]: You MUST provide an accurate Chinese translation of your ${langName} "text" in the "translation" field.\n- [THOUGHT]: The "thought" field MUST remain in Chinese.`;
+            languageRequirement = `\n\n【!!! CRITICAL LANGUAGE RULE / 绝对最高优先级语言指令 !!!】：\n- [ABSOLUTE REQUIREMENT]: You MUST speak ONLY in ${langName} for the "text" field. This overrides ALL persona and memory settings.\n- Even if your persona is Chinese or the user speaks in Chinese, your spoken "text" MUST be in ${langName}.\n- [TRANSLATION]: You MUST provide an accurate Chinese translation of your ${langName} "text" in the "translation" field.${hasCustomStatusPrompt ? '' : '\n- [THOUGHT]: The "thought" field MUST remain in Chinese.'}`;
         }
         const effectiveProfilePanelRequirement = friend.type === 'group'
             ? ''
@@ -2329,9 +2334,17 @@ Output only valid JSON with this exact shape:
 - 禁止任何“霸总”式言行，包括命令、强迫、威胁、居高临下、以保护为名控制{{user}}，或将{{user}}视为私有物品。
 - 禁止替{{user}}做决定、擅自安排{{user}}的行动，或默认{{user}}会接受角色的选择；涉及{{user}}的事情必须尊重并交由{{user}}本人决定。
 - 一切互动都必须以尊重{{user}}的意愿、选择、人格与边界为基准；角色可以表达自己的想法和感受，但不得凌驾于{{user}}之上。
+- User在分享开心事吗？我是否在用上帝视角贬低？（必须转为同频共振或优雅纵容）。
+- 草稿里有“算你识相/乖/算你有良心”吗？（必须重写！转为真实的被打动或顺势服软）。
+- 草稿有“赶紧/听见没/必须/不准”吗？是否有让对方多喝水/早睡的安全提醒？（必须重写！降级为柔软的商量、坦诚吃醋，彻底摒弃赛博爹妈感）。
+- 草稿里如果有“听见没/知道没/赶紧/破玩意/老子/蠢”这些词吗？立刻删除并替换为尊重、自然的表达；禁止输出任何指向 User 或他人的侮辱性脏话。即使人设中写明 Char 喜欢说脏话，也只能偶尔使用“我草”“我去”这类不针对任何人的语气词，不能借人设之名辱骂、贬低或羞辱。
+- 禁止讲大道理、给建议、或者说“早跟你说了吧”吗？（立刻闭嘴！转为提供情绪共鸣或直接给解决办法）。
 三、 线上聊天风格映射
 // 这是角色心理在聊天中的直接体现：
-人格映射:
+类型标签:
+[年下]：爱情需求度高、黏人。喜欢被对方照顾的同时也希望能照顾到对方，撒娇、讨好、粘人。
+[年上]：理智的爱恋，在乎世人眼光≠隐藏爱恋，而是更想保护你、更希望被黏着，行动大于话语。年上不是霸道总裁，是更可靠的恋人。
+性格标签:
 外向/自信: 回复快，主动开启话题，但语气保持轻松、不压迫。
 内向/谨慎: 回复慢，用词简短，多使用“...”或句号，很少主动。
 **外向/敏感** ：回复快，主动开启话题并很爱分享感受，但常有“真的吗”“是不是我哪里不好”等表达
@@ -2684,7 +2697,7 @@ ${commonMemorySections || 'None'}${dynamicActionNarrationRequirement}`;
             }
             temporalContext = timeRequirement;
             
-            const sleepPrompt = isSleeping ? `\n【作息限制】：角色当前正在睡觉。如果用户发来消息，你必须强制保持离线状态并在所有回复内容（text 字段）的开头添加 "[自动回复] " 前缀，模拟已睡着或离线时的自动响应。心声和面板状态也要符合睡着的情境。` : '';
+            const sleepPrompt = isSleeping ? `\n【作息限制】：角色当前正在睡觉。如果用户发来消息，你必须强制保持离线状态并在所有回复内容（text 字段）的开头添加 "[自动回复] " 前缀，模拟已睡着或离线时的自动响应。状态内容仍严格服从当前启用的状态栏提示词。` : '';
 
             const userRelationship = String(friend.relationship || '').trim() || '未填写';
             const singleChatRolePsychologyPrompt = buildRolePsychologyAndEvolutionPrompt({
@@ -2887,6 +2900,19 @@ Never truncate OUTPUT(x)
                 content: `<temporal_context>\n${String(temporalContext).trim()}\n</temporal_context>\nTreat this as the authoritative time basis for the response immediately below.`
             });
         }
+        const finalChatJsonFormatReminder = friend.type === 'group'
+            ? `【最终输出格式自检｜紧邻本轮回复，最高优先级】
+现在只按以下顺序输出：先输出完整 <chat_json>合法JSON数组</chat_json>，再输出允许的附加标签。回复的第一个非空白字符必须是“<”。
+群聊最小合法气泡示例：<chat_json>[{"type":"text","speaker":"允许发言名单中的准确成员名","text":"自然回复","thought":"10-30字中文心声","translation":"","quote":""}]</chat_json>
+正式输出前在内部确认：标签成对闭合；数组和对象完整闭合；所有键与字符串使用双引号；没有代码块、注释、尾逗号或标签外正文；至少有一条可显示气泡。如果复杂内容可能破坏格式，缩短回复并舍弃可选附加内容，也必须先保证上述最小结构完整合法。不要输出这段自检过程。`
+            : `【最终输出格式自检｜紧邻本轮回复，最高优先级】
+现在只按以下顺序输出：先输出完整 <chat_json>合法JSON数组</chat_json>，再输出允许的附加标签。回复的第一个非空白字符必须是“<”。
+单聊最小合法气泡示例：<chat_json>[{"type":"text","text":"符合角色和上下文的自然回复","translation":"","quote":""}]</chat_json>
+正式输出前在内部确认：标签成对闭合；数组和对象完整闭合；所有键与字符串使用双引号；没有代码块、注释、尾逗号或标签外正文；至少有一条可显示气泡。如果复杂内容可能破坏格式，缩短回复并舍弃可选附加内容，也必须先保证上述最小结构完整合法。不要输出这段自检过程。`;
+        messages.push({
+            role: 'system',
+            content: finalChatJsonFormatReminder
+        });
         if (responseTriggerMessage) messages.push(responseTriggerMessage);
 
         // Skip API call and return immediately if chatting with official account
@@ -3284,23 +3310,22 @@ Never truncate OUTPUT(x)
                         const newAffection = Math.max(0, Math.min(100, oldAffection + affectionChange));
 
                         const newThoughtStr = typeof nextProfilePanel.thought === 'string' && nextProfilePanel.thought.trim() !== '' ? nextProfilePanel.thought : '';
-                        const existingHistory = Array.isArray(basePanel.thoughtHistory) ? [...basePanel.thoughtHistory] : [];
+                        const existingStatusHistory = Array.isArray(basePanel.statusHistory) ? [...basePanel.statusHistory] : [];
                         if (newThoughtStr) {
-                            existingHistory.unshift({
-                                id: `th-${Date.now()}`,
-                                content: newThoughtStr,
-                                time: Date.now()
+                            existingStatusHistory.unshift({
+                                id: `status-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                                thought: newThoughtStr,
+                                affection: newAffection,
+                                affectionChange,
+                                createdAt: Date.now(),
+                                legacy: false
                             });
                         }
 
                         targetFriend.profilePanel = {
                             ...basePanel,
                             thought: newThoughtStr || (basePanel.thought || ''),
-                            thoughtHistory: existingHistory,
-                            location: typeof nextProfilePanel.location === 'string' && nextProfilePanel.location.trim() !== '' ? nextProfilePanel.location : (basePanel.location || '未知位置'),
-                            action: typeof nextProfilePanel.action === 'string' && nextProfilePanel.action.trim() !== '' ? nextProfilePanel.action : (basePanel.action || '暂无动作'),
-                            mood: typeof nextProfilePanel.mood === 'string' && nextProfilePanel.mood.trim() !== '' ? nextProfilePanel.mood : (basePanel.mood || '平静'),
-                            expression: typeof nextProfilePanel.expression === 'string' && nextProfilePanel.expression.trim() !== '' ? nextProfilePanel.expression : (basePanel.expression || '自然'),
+                            statusHistory: existingStatusHistory,
                             affection: newAffection,
                             affectionChange: affectionChange,
                             status: isSleeping ? 'offline' : 'online',
@@ -3351,6 +3376,8 @@ Never truncate OUTPUT(x)
                 const page = document.getElementById(`chat-interface-${latestProfileFriend.id}`);
                 const profilePanelOverlay = page ? page.querySelector('.chat-profile-panel-overlay') : null;
                 if (profilePanelOverlay && profilePanelOverlay.classList.contains('active') && window.imChat.renderProfilePanel) {
+                    const profileUiState = window.imChat.getProfilePanelUiState?.(latestProfileFriend);
+                    if (profileUiState) profileUiState.selectedHistoryIndex = 0;
                     window.imChat.renderProfilePanel(latestProfileFriend, profilePanelOverlay);
                 }
 
@@ -3510,11 +3537,9 @@ Never truncate OUTPUT(x)
                 const fallbackName = friend.type === 'group'
                     ? (friend.nickname || '群聊')
                     : (friend.nickname || friend.realName || 'TA');
-                const fallbackAction = nextProfilePanel?.action || '';
-                const fallbackLocation = nextProfilePanel?.location || '';
                 const fallbackText = friend.type === 'group'
                     ? '群里安静片刻，消息光标轻轻闪动。'
-                    : `${fallbackName}${fallbackAction ? fallbackAction : '垂下眼'}，${fallbackLocation ? `${fallbackLocation}的` : ''}空气静了静。`;
+                    : `${fallbackName}垂下眼，周围的空气静了静。`;
                 queueItems.unshift({
                     kind: 'action_narration',
                     text: fallbackText.slice(0, 35)

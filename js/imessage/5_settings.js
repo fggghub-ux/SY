@@ -49,6 +49,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const relationshipPickerList = document.getElementById('relationship-picker-list');
     const confirmRelationshipBtn = document.getElementById('confirm-relationship-btn');
     const relationshipAddNpcBtn = document.getElementById('relationship-add-npc-btn');
+    const statusPromptSheet = document.getElementById('status-prompt-sheet');
+    const statusPromptBtn = document.getElementById('status-prompt-btn');
+    const statusPromptEnabledToggle = document.getElementById('status-prompt-enabled-toggle');
+    const statusPromptInput = document.getElementById('status-prompt-input');
+    const saveStatusPromptBtn = document.getElementById('save-status-prompt-btn');
+    const DEFAULT_STATUS_PROMPT = '生成角色此刻没有说出口的心声。使用简体中文、第一人称，约45-60字，并在开头带上当前具体时间。内容必须贴合本轮聊天、人设和关系进展。';
 
     let tempRelationshipDrafts = [];
     let isRelationshipPickerVisible = false;
@@ -678,6 +684,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
             bindAccountList.appendChild(item);
         });
+    }
+
+    async function persistProfileStatusMigration(friend) {
+        if (!friend || friend.type === 'group' || !window.imApp.migrateSingleChatProfileStatus) return true;
+        const changed = window.imApp.migrateSingleChatProfileStatus(friend);
+        if (!changed && !friend._profileStatusNeedsPersistence) return true;
+
+        return commitNamedFriendChange(friend, (targetFriend) => {
+            window.imApp.migrateSingleChatProfileStatus(targetFriend);
+            delete targetFriend._profileStatusNeedsPersistence;
+        }, { silent: true });
+    }
+
+    function renderStatusPromptSettings(friend) {
+        if (!friend) return;
+        const enabled = friend.statusPromptEnabled === true;
+        if (statusPromptEnabledToggle) statusPromptEnabledToggle.checked = enabled;
+        if (statusPromptInput) {
+            const savedPrompt = typeof friend.statusPrompt === 'string' ? friend.statusPrompt.trim() : '';
+            statusPromptInput.value = savedPrompt || DEFAULT_STATUS_PROMPT;
+            statusPromptInput.disabled = !enabled;
+        }
     }
 
     function getIdentityNames(identity = {}) {
@@ -1902,6 +1930,57 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.target === bindAccountSheet) {
                 closeView(bindAccountSheet);
             }
+        });
+    }
+
+    if (statusPromptSheet) {
+        statusPromptSheet.addEventListener('click', (e) => {
+            if (e.target === statusPromptSheet) closeView(statusPromptSheet);
+        });
+    }
+
+    if (statusPromptBtn) {
+        statusPromptBtn.addEventListener('click', () => {
+            const friend = window.imData.currentSettingsFriend;
+            if (!friend) return;
+            void persistProfileStatusMigration(friend);
+            renderStatusPromptSettings(friend);
+            openView(statusPromptSheet);
+        });
+    }
+
+    if (statusPromptEnabledToggle) {
+        statusPromptEnabledToggle.addEventListener('change', () => {
+            if (statusPromptInput) statusPromptInput.disabled = !statusPromptEnabledToggle.checked;
+        });
+    }
+
+    if (saveStatusPromptBtn) {
+        saveStatusPromptBtn.addEventListener('click', async () => {
+            const friend = window.imData.currentSettingsFriend;
+            if (!friend) return;
+            const nextEnabled = statusPromptEnabledToggle?.checked === true;
+            const nextPrompt = statusPromptInput?.value || '';
+            saveStatusPromptBtn.disabled = true;
+
+            const saved = await commitSettingsFriendChange((targetFriend) => {
+                targetFriend.statusPromptEnabled = nextEnabled;
+                targetFriend.statusPrompt = nextPrompt;
+                if (window.imApp.migrateSingleChatProfileStatus) {
+                    window.imApp.migrateSingleChatProfileStatus(targetFriend);
+                }
+                delete targetFriend._profileStatusNeedsPersistence;
+            }, { silent: true });
+
+            saveStatusPromptBtn.disabled = false;
+            if (!saved) {
+                renderStatusPromptSettings(window.imData.currentSettingsFriend);
+                showToast('状态栏设置保存失败');
+                return;
+            }
+
+            showToast('状态栏设置已保存');
+            closeView(statusPromptSheet);
         });
     }
 
@@ -3637,7 +3716,6 @@ document.addEventListener('DOMContentLoaded', () => {
         updateStatusBarBtnCount(friend);
 
         // Update stickers count display
-        updateStickersBtnCount(friend);
         
         return friend;
     }
@@ -3722,6 +3800,8 @@ document.addEventListener('DOMContentLoaded', () => {
             openNpcChatSettingsForFriend(latestFriend);
             return;
         }
+
+        void persistProfileStatusMigration(latestFriend);
 
         const initializedFriend = initChatSettingsForFriend(latestFriend);
         if (!initializedFriend || !chatSettingsSheet) return;
@@ -4059,14 +4139,14 @@ document.addEventListener('DOMContentLoaded', () => {
             combinedCss += scopeThemeCss(friend.chatCss, prefix);
             combinedCss += '\n';
         }
-        
-        // Status CSS
+
+        // Status CSS remains managed by Theme and is scoped to this chat page.
         if (friend.statusCssEnabled && friend.statusCss) {
             const prefix = `#chat-interface-${friend.id}`;
             combinedCss += scopeThemeCss(friend.statusCss, prefix);
             combinedCss += '\n';
         }
-
+        
         styleTag.textContent = combinedCss;
     }
     
@@ -4176,237 +4256,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- Thought History Logic (Replaced Stickers) ---
-    const bindStickersSheet = document.getElementById('bind-stickers-sheet');
-    const bindStickersList = document.getElementById('bind-stickers-list');
-    const bindStickersEmpty = document.getElementById('bind-stickers-empty');
-    const confirmBindStickersBtn = document.getElementById('confirm-bind-stickers-btn');
-    const clearAllStatusbarBtn = document.getElementById('clear-all-statusbar-btn');
-    const stickersBtn = document.getElementById('stickers-btn');
-    const stickersBtnCount = document.getElementById('stickers-btn-count');
-
-    if (bindStickersSheet) {
-        bindStickersSheet.addEventListener('click', (e) => {
-            if (e.target === bindStickersSheet) closeView(bindStickersSheet);
-        });
-    }
-
-    if (stickersBtn && bindStickersSheet) {
-        stickersBtn.addEventListener('click', () => {
-            if (!window.imData.currentSettingsFriend) return;
-            renderThoughtHistoryList();
-            openView(bindStickersSheet);
-        });
-    }
-
-    if (confirmBindStickersBtn) {
-        confirmBindStickersBtn.addEventListener('click', () => {
-            closeView(bindStickersSheet);
-        });
-    }
-
-    function createEmptyStatusBarPanel() {
-        return {
-            activeTab: 'thought',
-            thought: '',
-            location: '未知位置',
-            action: '暂无动作',
-            mood: '平静',
-            expression: '自然',
-            affection: 0,
-            affectionChange: 0,
-            status: 'online',
-            thoughtHistory: [],
-            events: []
-        };
-    }
-
-    function refreshOpenProfilePanel(friend) {
-        if (!friend) return;
-        const page = document.getElementById(`chat-interface-${friend.id}`);
-        const profilePanelOverlay = page ? page.querySelector('.chat-profile-panel-overlay') : null;
-        if (
-            profilePanelOverlay &&
-            profilePanelOverlay.classList.contains('active') &&
-            window.imChat &&
-            typeof window.imChat.renderProfilePanel === 'function'
-        ) {
-            window.imChat.renderProfilePanel(friend, profilePanelOverlay);
-        }
-    }
-
-    if (clearAllStatusbarBtn) {
-        clearAllStatusbarBtn.addEventListener('click', () => {
-            if (!window.imData.currentSettingsFriend) return;
-
-            showCustomModal({
-                title: '清空状态栏',
-                message: '确定彻底清空当前角色的状态栏数据吗？这会删除当前心声、心声历史、状态栏事件、位置、动作、心情、表情和好感记录。',
-                isDestructive: true,
-                confirmText: '清空全部',
-                onConfirm: async () => {
-                    const saved = await commitSettingsFriendChange((targetFriend) => {
-                        if (!targetFriend) return;
-                        targetFriend.profilePanel = createEmptyStatusBarPanel();
-                        targetFriend.latestThought = '';
-                        targetFriend.status = 'online';
-                    }, {
-                        syncActive: true,
-                        silent: true
-                    });
-
-                    if (saved) {
-                        const latestFriend = window.imData.currentSettingsFriend;
-                        renderThoughtHistoryList();
-                        updateStickersBtnCount(latestFriend);
-                        refreshOpenProfilePanel(latestFriend);
-                        showToast('状态栏已清空');
-                    } else {
-                        showToast('状态栏清空失败');
-                    }
-                }
-            });
-        });
-    }
-
-    function updateStickersBtnCount(friend) {
-        if (stickersBtnCount) {
-            const count = (friend.profilePanel?.thoughtHistory || []).length;
-            stickersBtnCount.textContent = count > 0 ? `${count}条` : '';
-        }
-    }
-
-    function escapeThoughtHistoryHtml(value) {
-        return String(value ?? '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-    }
-
-    function renderThoughtHistoryList() {
-        if (!bindStickersList) return;
-        bindStickersList.innerHTML = '';
-        if (bindStickersEmpty) bindStickersEmpty.style.display = 'none';
-
-        const friend = window.imData.currentSettingsFriend;
-        if (!friend) return;
-        
-        const history = friend.profilePanel?.thoughtHistory || [];
-
-        if (history.length === 0) {
-            if (bindStickersEmpty) {
-                bindStickersEmpty.style.display = 'block';
-            } else {
-                bindStickersList.innerHTML = '<div style="text-align: center; color: #8e8e93; padding: 20px;">暂无心声历史记录</div>';
-            }
-            return;
-        }
-
-        history.forEach(item => {
-            const el = document.createElement('div');
-            el.style.cssText = 'display: flex; flex-direction: column; margin-bottom: 16px; align-items: flex-start; max-width: 95%;';
-
-            const timeStr = item.time ? new Date(item.time).toLocaleString() : '';
-            const safeContent = escapeThoughtHistoryHtml(item.content);
-
-            el.innerHTML = `
-                <div style="font-size: 12px; color: #8e8e93; margin-bottom: 4px; display: flex; justify-content: space-between; width: 100%; padding-left: 4px;">
-                    <span>${escapeThoughtHistoryHtml(timeStr)}</span>
-                    <div style="display: flex; gap: 14px; font-size: 13px;">
-                        <span class="edit-thought-btn" style="color: #007aff; cursor: pointer; padding: 0 2px;"><i class="fas fa-edit"></i></span>
-                        <span class="del-thought-btn" style="color: #ff3b30; cursor: pointer; padding: 0 2px;"><i class="fas fa-times"></i></span>
-                    </div>
-                </div>
-                <div class="thought-content-display" style="font-size: 15px; color: #000; line-height: 1.5; white-space: pre-wrap; background: #ffffff; padding: 12px 16px; border-radius: 18px; border-top-left-radius: 4px; ">${safeContent}</div>
-                <div class="thought-edit-area" style="display: none; width: 100%;">
-                    <textarea style="width: 100%; height: 80px; box-sizing: border-box; background: #ffffff; padding: 12px; border-radius: 12px; border: 1px solid #007aff; resize: none; font-size: 15px;  outline: none; font-family: inherit;">${safeContent}</textarea>
-                </div>
-            `;
-
-            const displayArea = el.querySelector('.thought-content-display');
-            const editArea = el.querySelector('.thought-edit-area');
-            const textarea = el.querySelector('textarea');
-            const editBtn = el.querySelector('.edit-thought-btn');
-            let isEditing = false;
-            
-            editBtn.addEventListener('click', async () => {
-                if (!isEditing) {
-                    // Switch to edit mode
-                    isEditing = true;
-                    editBtn.innerHTML = '<i class="fas fa-check" style="color: #34c759; font-size: 16px;"></i>';
-                    displayArea.style.display = 'none';
-                    editArea.style.display = 'block';
-                    textarea.focus();
-                } else {
-                    // Switch to view mode / save
-                    const newContent = textarea.value.trim();
-                    if (!newContent) {
-                        showToast('心声不能为空');
-                        return;
-                    }
-                    
-                    if (newContent !== item.content) {
-                        const saved = await commitSettingsFriendChange((targetFriend) => {
-                            if (targetFriend.profilePanel && targetFriend.profilePanel.thoughtHistory) {
-                                const targetItem = targetFriend.profilePanel.thoughtHistory.find(t => t.id === item.id);
-                                if (targetItem) {
-                                    targetItem.content = newContent;
-                                }
-                            }
-                        }, { silent: true });
-                        
-                        if (saved) {
-                            item.content = newContent;
-                            displayArea.textContent = newContent;
-                            showToast('心声已更新');
-                        } else {
-                            showToast('心声更新失败');
-                            textarea.value = item.content; // revert
-                        }
-                    }
-
-                    isEditing = false;
-                    editBtn.innerHTML = '<i class="fas fa-edit"></i>';
-                    displayArea.style.display = 'block';
-                    editArea.style.display = 'none';
-                }
-            });
-
-            el.querySelector('.del-thought-btn').addEventListener('click', () => {
-                showCustomModal({
-                    title: '删除心声',
-                    message: '确定删除这条心声记录吗？',
-                    isDestructive: true,
-                    confirmText: '删除',
-                    onConfirm: async () => {
-                        const saved = await commitSettingsFriendChange((targetFriend) => {
-                            if (targetFriend.profilePanel && targetFriend.profilePanel.thoughtHistory) {
-                                targetFriend.profilePanel.thoughtHistory = targetFriend.profilePanel.thoughtHistory.filter(t => t.id !== item.id);
-                            }
-                        }, { silent: true });
-                        
-                        if (saved) {
-                            showToast('已删除心声');
-                            renderThoughtHistoryList();
-                            updateStickersBtnCount(window.imData.currentSettingsFriend);
-                        } else {
-                            showToast('删除失败');
-                        }
-                    }
-                });
-            });
-
-            bindStickersList.appendChild(el);
-        });
-    }
-
     // Expose Functions
     window.imApp.initChatSettingsForFriend = initChatSettingsForFriend;
     window.imApp.openChatSettingsForFriend = openChatSettingsForFriend;
     window.imApp.updateStatusBarBtnCount = updateStatusBarBtnCount;
-    window.imApp.updateStickersBtnCount = updateStickersBtnCount;
     window.imApp.applyFriendBg = applyFriendBg;
     window.imApp.initTimestampSetting = initTimestampSetting;
     window.imApp.applyFriendCss = applyFriendCss;

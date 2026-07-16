@@ -5,10 +5,20 @@
 })(typeof window !== 'undefined' ? window : globalThis, function () {
     'use strict';
 
-    const COMPLETE_TAG_PATTERN = /<\s*(\/?)\s*(think(?:ing)?)\s*>/gi;
-    const PARTIAL_TAG_CANDIDATES = [
-        '<think>', '<thinking>', '</think>', '</thinking>'
-    ];
+    const REASONING_TAG_NAMES = ['think', 'thinking', 'reasoning', 'analysis'];
+    const COMPLETE_TAG_PATTERN = new RegExp(`<\\s*(\\/?)\\s*(${REASONING_TAG_NAMES.join('|')})\\s*>`, 'gi');
+    const PARTIAL_TAG_CANDIDATES = REASONING_TAG_NAMES.flatMap(tag => [`<${tag}>`, `</${tag}>`]);
+    const VISIBLE_REASONING_BLOCK_TYPES = new Set([
+        'reasoning',
+        'reasoning.text',
+        'reasoning.summary',
+        'thinking',
+        'thinking.text',
+        'thinking.summary',
+        'analysis',
+        'analysis.text',
+        'analysis.summary'
+    ]);
 
     const normalizeText = (value) => String(value == null ? '' : value).replace(/\r\n/g, '\n');
 
@@ -64,6 +74,27 @@
         };
     };
 
+    const getStructuredBlockType = (value) => value && typeof value === 'object'
+        ? String(value.type || value.kind || '').trim().toLowerCase()
+        : '';
+
+    const isEncryptedReasoningBlock = (value) => {
+        const type = getStructuredBlockType(value);
+        return type === 'reasoning.encrypted'
+            || type === 'thinking.encrypted'
+            || type === 'analysis.encrypted'
+            || value?.encrypted === true;
+    };
+
+    const isVisibleReasoningBlock = (value) => {
+        if (!value || typeof value !== 'object' || isEncryptedReasoningBlock(value)) return false;
+        const type = getStructuredBlockType(value);
+        return value.thought === true
+            || value.is_reasoning === true
+            || value.isReasoning === true
+            || VISIBLE_REASONING_BLOCK_TYPES.has(type);
+    };
+
     const readReasoningValue = (value) => {
         if (typeof value === 'string') return value;
         if (value == null) return '';
@@ -71,7 +102,8 @@
             return value.map(readReasoningValue).filter(Boolean).join('\n');
         }
         if (typeof value === 'object') {
-            for (const key of ['text', 'content', 'reasoning_content', 'reasoning', 'summary']) {
+            if (isEncryptedReasoningBlock(value)) return '';
+            for (const key of ['text', 'summary', 'thinking', 'reasoning_content', 'reasoning', 'content']) {
                 const text = readReasoningValue(value[key]);
                 if (text) return text;
             }
@@ -92,6 +124,7 @@
         if (value == null) return '';
         if (Array.isArray(value)) return value.map(readContentValue).filter(Boolean).join('');
         if (typeof value === 'object') {
+            if (isVisibleReasoningBlock(value) || isEncryptedReasoningBlock(value)) return '';
             for (const key of ['text', 'output_text', 'content', 'value']) {
                 const text = readContentValue(value[key]);
                 if (text) return text;
@@ -106,6 +139,41 @@
             if (text) return text;
         }
         return '';
+    };
+
+    const readStructuredReasoningValue = (value) => {
+        if (value == null || typeof value === 'string') return '';
+        if (Array.isArray(value)) {
+            return value.map(readStructuredReasoningValue).filter(Boolean).join('\n');
+        }
+        if (typeof value !== 'object' || isEncryptedReasoningBlock(value)) return '';
+        if (isVisibleReasoningBlock(value)) return readReasoningValue(value);
+        for (const key of ['content', 'parts', 'output', 'items']) {
+            const text = readStructuredReasoningValue(value[key]);
+            if (text) return text;
+        }
+        return '';
+    };
+
+    const readFirstStructuredReasoningValue = (...values) => {
+        for (const value of values) {
+            const text = readStructuredReasoningValue(value);
+            if (text) return text;
+        }
+        return '';
+    };
+
+    const extractResponseParts = (contentValues, reasoningValues) => {
+        const contentCandidates = Array.isArray(contentValues) ? contentValues : [contentValues];
+        const reasoningCandidates = Array.isArray(reasoningValues) ? reasoningValues : [reasoningValues];
+        const content = readFirstContentValue(...contentCandidates);
+        const structuredReasoning = readFirstStructuredReasoningValue(...contentCandidates);
+        const nativeReasoning = readFirstReasoningValue(...reasoningCandidates);
+        return {
+            content,
+            reasoning: structuredReasoning || nativeReasoning,
+            reasoningSource: structuredReasoning ? 'structured' : (nativeReasoning ? 'native' : '')
+        };
     };
 
     const findPartialTagSuffix = (text) => {
@@ -198,6 +266,9 @@
         readFirstContentValue,
         readReasoningValue,
         readFirstReasoningValue,
+        readStructuredReasoningValue,
+        readFirstStructuredReasoningValue,
+        extractResponseParts,
         parseTaggedReasoning,
         normalizeResponse
     };

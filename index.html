@@ -32,7 +32,7 @@
     <link rel="stylesheet" href="css/login.css?v=20260712-login-notice-v1">
     <link rel="stylesheet" href="css/home.css">
     <link rel="stylesheet" href="css/worldbook.css">
-    <link rel="stylesheet" href="css/imessage.css?v=20260715-offline-reasoning-request-v9">
+    <link rel="stylesheet" href="css/imessage.css?v=20260716-status-prompt-v3">
     <link rel="stylesheet" href="css/pay.css?v=20260714-ios-neutral-v1">
     <link rel="stylesheet" href="css/bstage.css">
     <link rel="stylesheet" href="css/tiktok.css?v=20260712-tiktok-feed-cleanup-v1">
@@ -3393,29 +3393,6 @@
                 </div>
             </div>
 
-<div class="bottom-sheet-overlay detail-sheet-overlay" id="bind-stickers-sheet" style="z-index: 700;">
-                <div class="bottom-sheet" style="height: 80%; display: flex; flex-direction: column;">
-                    <div class="sheet-handle"></div>
-                    <div class="sheet-title">状态栏心声历史</div>
-                    <div style="padding: 0 16px 12px; display: flex; justify-content: flex-end;">
-                        <button type="button" id="clear-all-statusbar-btn" style="border: none; background: #ffe5e5; color: #ff3b30; border-radius: 999px; padding: 7px 12px; font-size: 13px; font-weight: 700; cursor: pointer;">
-                            <i class="fas fa-trash-alt" style="margin-right: 5px;"></i>清空全部
-                        </button>
-                    </div>
-                    <div class="detail-sheet-content" style="flex: 1; overflow-y: auto; padding: 0 16px 16px;">
-                        <div id="bind-stickers-list" style="display: flex; flex-direction: column; gap: 10px;">
-                            <!-- Thought history injected here -->
-                        </div>
-                        <div id="bind-stickers-empty" style="display: none; text-align: center; color: #8e8e93; padding: 40px 16px; font-size: 14px;">
-                            暂无状态栏心声记录
-                        </div>
-                    </div>
-                    <div style="padding: 0 16px 20px; flex-shrink: 0;">
-                        <div class="sheet-action confirm-action" id="confirm-bind-stickers-btn" style="background-color: #1c1c1e; color: #fff; margin: 0;">关闭</div>
-                    </div>
-                </div>
-            </div>
-
 <div class="bottom-sheet-overlay detail-sheet-overlay" id="relationship-sheet" style="z-index: 700;">
                 <div class="bottom-sheet" style="height: 85%; display: flex; flex-direction: column; padding: 0;">
                     <div class="sheet-handle" style="margin-top: 10px;"></div>
@@ -3437,6 +3414,27 @@
                             <div class="sheet-action" id="relationship-add-npc-btn" style="flex: 1; margin: 0; background-color: #34c759; color: #fff;">添加NPC</div>
                             <div class="sheet-action confirm-action" id="confirm-relationship-btn" style="flex: 1; margin: 0; background-color: #1c1c1e; color: #fff;">保存</div>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bottom-sheet-overlay detail-sheet-overlay" id="status-prompt-sheet" style="z-index: 710;">
+                <div class="bottom-sheet status-prompt-sheet-card">
+                    <div class="sheet-handle"></div>
+                    <div class="sheet-title">状态栏</div>
+                    <div class="status-prompt-sheet-content">
+                        <div class="settings-group fully-rounded status-prompt-toggle-group">
+                            <div class="settings-item status-prompt-toggle-row">
+                                <div class="status-prompt-toggle-copy">
+                                    <span class="status-prompt-toggle-icon"><i class="fas fa-wand-magic-sparkles"></i></span>
+                                    <span><span class="settings-text">自定义提示词</span><span class="status-builder-hint">关闭时使用默认心声规则</span></span>
+                                </div>
+                                <label class="toggle-switch"><input type="checkbox" id="status-prompt-enabled-toggle"><span class="slider"></span></label>
+                            </div>
+                        </div>
+                        <label class="status-prompt-input-label" for="status-prompt-input">提示词内容</label>
+                        <textarea id="status-prompt-input" class="global-textarea"></textarea>
+                        <button type="button" class="sheet-action confirm-action" id="save-status-prompt-btn">保存</button>
                     </div>
                 </div>
             </div>
@@ -4229,15 +4227,14 @@
 
                             <!-- 其他工具 -->
                             <div class="settings-group fully-rounded" style="margin: 10px 16px;">
-                                <div class="settings-item" id="stickers-btn">
-                                    <div class="settings-icon" style="background-color: #ff9500;"><i class="fas fa-id-card"></i></div>
-                                    <div class="settings-text">状态栏</div>
-                                    <span id="stickers-btn-count" style="font-size: 13px; color: #8e8e93; margin-right: 4px;"></span>
-                                    <i class="fas fa-chevron-right arrow"></i>
-                                </div>
-                                <div class="settings-item" id="relationship-btn" style="border-bottom: none;">
+                                <div class="settings-item" id="relationship-btn">
                                     <div class="settings-icon" style="background-color: #5856d6;"><i class="fas fa-project-diagram"></i></div>
                                     <div class="settings-text">关系网</div>
+                                    <i class="fas fa-chevron-right arrow"></i>
+                                </div>
+                                <div class="settings-item" id="status-prompt-btn" style="border-bottom: none;">
+                                    <div class="settings-icon" style="background-color: #34c759;"><i class="fas fa-heart"></i></div>
+                                    <div class="settings-text">状态栏</div>
                                     <i class="fas fa-chevron-right arrow"></i>
                                 </div>
                             </div>
@@ -7554,24 +7551,24 @@
     
     <!-- 引入 iMessage 模块分段代码 -->
     <script src="js/imessage/data_utils.js?v=20260713-offline-memory-v1"></script>
-    <script src="js/imessage/2_core.js?v=20260715-offline-token-30000-v4"></script>
+    <script src="js/imessage/2_core.js?v=20260716-offline-token-v1"></script>
     <script src="js/imessage/3_contacts.js"></script>
     <script src="js/imessage/3_groups.js?v=20260711-summary-cursor-v1"></script>
     <script src="js/imessage/4_chat_common.js"></script>
-    <script src="js/imessage/4_chat_status.js?v=20260712-memory-tags-recall-v1"></script>
+    <script src="js/imessage/4_chat_status.js?v=20260716-status-prompt-v2"></script>
     <script src="js/imessage/4_chat_payment.js?v=20260705-offline-identity-v2"></script>
     <script src="js/imessage/4_chat_bubbles.js?v=20260713-offline-summary-modal-v3"></script>
     <script src="js/imessage/minimax_tts.js"></script>
-    <script src="js/imessage/4_chat_ai.js?v=20260715-dynamic-narration-zh-v3"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260716-status-prompt-v2"></script>
     <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
-    <script src="js/imessage/offline_reasoning.js?v=20260716-tagged-cot-priority-v5"></script>
-    <script src="js/imessage/4_chat_sheet.js?v=20260716-offline-cot-last-v14"></script>
+    <script src="js/imessage/offline_reasoning.js?v=20260716-reasoning-autoparse-v6"></script>
+    <script src="js/imessage/4_chat_sheet.js?v=20260716-offline-cot-v5"></script>
     <script src="js/imessage/4_chat_link.js?v=20260706-bugfix-v1"></script>
     <script src="js/imessage/4_chat_list.js"></script>
     <script src="js/imessage/4_chat_interface.js?v=20260715-chat-context-menu-offline-retry-v1"></script>
     <script src="js/imessage/4_chat_voice_call.js?v=20260713-android-viewport-v2"></script>
     <script src="js/imessage/4_chat_main.js?v=20260715-chat-context-menu-offline-retry-v1"></script>
-    <script src="js/imessage/5_settings.js?v=20260713-offline-memory-v1"></script>
+    <script src="js/imessage/5_settings.js?v=20260716-status-prompt-v3"></script>
     <script src="js/imessage/6_moments.js?v=20260713-moments-comment-delete-v4"></script>
 
     <!-- 引入其他应用模块 -->
@@ -7583,7 +7580,7 @@
     <script src="js/worldbook.js"></script>
     <!-- 引入核心 UI 管理与设置模块脚本 -->
     <script src="js/ui.js"></script>
-    <script src="js/settings.js?v=20260715-font-upload-v1"></script>
+    <script src="js/settings.js?v=20260716-theme-copy-source-v5"></script>
     <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="js/library.js?v=20260715-reader-streaming-v1"></script>
     <script src="js/loves.js?v=20260712-friend-mac-v8"></script>

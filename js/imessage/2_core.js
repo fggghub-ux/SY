@@ -23,6 +23,10 @@ window.imData = {
     },
     offlineThemePresets: [],
     offlineThemeInitialized: false,
+    offlinePrompts: [],
+    offlinePromptPresets: [],
+    offlinePromptActivePresetId: '',
+    offlinePromptsInitialized: false,
     tempSelectedBookIds: [],
     tempRelationshipDrafts: [],
     isRelationshipPickerVisible: false,
@@ -463,18 +467,93 @@ window.imApp.isCharacterSleeping = function(friend) {
     }
 };
 
+window.imApp.normalizeProfileStatusHistory = function(friend = {}) {
+    const panel = friend?.profilePanel && typeof friend.profilePanel === 'object'
+        ? friend.profilePanel
+        : {};
+    const hasStatusHistory = Array.isArray(panel.statusHistory) && panel.statusHistory.length > 0;
+    const source = hasStatusHistory
+        ? panel.statusHistory
+        : (Array.isArray(panel.thoughtHistory) ? panel.thoughtHistory : []);
+    const currentThought = String(panel.thought || friend?.latestThought || '').trim();
+
+    const history = source.map((item, index) => {
+        const sourceItem = item && typeof item === 'object' ? item : {};
+        const thought = String(sourceItem.thought ?? sourceItem.content ?? '').trim();
+        const canEnrichCurrent = !hasStatusHistory
+            && index === 0
+            && thought
+            && thought === currentThought;
+        const readNumber = (key) => {
+            if (typeof sourceItem[key] === 'number' && Number.isFinite(sourceItem[key])) {
+                return sourceItem[key];
+            }
+            if (canEnrichCurrent && typeof panel[key] === 'number' && Number.isFinite(panel[key])) {
+                return panel[key];
+            }
+            return null;
+        };
+
+        return {
+            id: String(sourceItem.id || `status-${sourceItem.createdAt || sourceItem.time || index}`),
+            thought,
+            affection: readNumber('affection'),
+            affectionChange: readNumber('affectionChange'),
+            createdAt: sourceItem.createdAt || sourceItem.time || null,
+            legacy: sourceItem.legacy === true || (!hasStatusHistory && !canEnrichCurrent)
+        };
+    }).filter(item => item.thought);
+
+    if (history.length === 0 && currentThought) {
+        history.push({
+            id: `status-current-${friend?.id || 'friend'}`,
+            thought: currentThought,
+            affection: typeof panel.affection === 'number' ? panel.affection : 0,
+            affectionChange: typeof panel.affectionChange === 'number' ? panel.affectionChange : 0,
+            createdAt: null,
+            legacy: false
+        });
+    }
+
+    return history;
+};
+
+window.imApp.migrateSingleChatProfileStatus = function(friend = {}) {
+    if (!friend || friend.type === 'group') return false;
+    const legacyKeys = ['location', 'action', 'mood', 'expression'];
+    let changed = false;
+    const stripLegacyFields = (target) => {
+        if (!target || typeof target !== 'object') return;
+        legacyKeys.forEach((key) => {
+            if (Object.prototype.hasOwnProperty.call(target, key)) {
+                delete target[key];
+                changed = true;
+            }
+        });
+    };
+
+    const panel = friend.profilePanel;
+    if (panel && typeof panel === 'object') {
+        stripLegacyFields(panel);
+        ['statusHistory', 'thoughtHistory'].forEach((historyKey) => {
+            if (!Array.isArray(panel[historyKey])) return;
+            panel[historyKey].forEach(stripLegacyFields);
+        });
+    }
+
+    return changed;
+};
+
 window.imApp.createDefaultProfilePanel = function(friend = {}) {
+    window.imApp.migrateSingleChatProfileStatus(friend);
     return {
         activeTab: 'thought',
         thought: friend?.profilePanel?.thought || friend?.latestThought || '',
-        location: friend?.profilePanel?.location || '未知位置',
-        action: friend?.profilePanel?.action || '暂无动作',
-        mood: friend?.profilePanel?.mood || '平静',
-        expression: friend?.profilePanel?.expression || '自然',
         affection: typeof friend?.profilePanel?.affection === 'number' ? friend.profilePanel.affection : 0,
         affectionChange: typeof friend?.profilePanel?.affectionChange === 'number' ? friend.profilePanel.affectionChange : 0,
         status: friend?.profilePanel?.status || friend?.status || 'online',
         thoughtHistory: Array.isArray(friend?.profilePanel?.thoughtHistory) ? friend.profilePanel.thoughtHistory : [],
+        statusHistory: window.imApp.normalizeProfileStatusHistory(friend),
         events: Array.isArray(friend?.profilePanel?.events)
             ? friend.profilePanel.events.map((eventItem, index) => ({
                 id: eventItem?.id != null ? eventItem.id : `event-${index}`,
@@ -532,17 +611,12 @@ window.imApp.normalizeFriendData = function(friend) {
     normalized.showTimestamp = !!normalized.showTimestamp;
     normalized.timeAware = normalized.timeAware !== false;
     normalized.allowRoleRecall = normalized.allowRoleRecall !== false;
+    normalized.statusPromptEnabled = normalized.statusPromptEnabled === true;
+    normalized.statusPrompt = typeof normalized.statusPrompt === 'string' ? normalized.statusPrompt : '';
     normalized.offlineStreamEnabled = normalized.offlineStreamEnabled !== false;
-    normalized.offlineRequestReasoning = normalized.offlineRequestReasoning !== false;
-    const offlineMaxResponseTokens = Number(normalized.offlineMaxResponseTokens);
-    const offlineMaxResponseTokensVersion = Math.max(0, Number(normalized.offlineMaxResponseTokensVersion) || 0);
-    const shouldMigrateLegacyTokenDefault = offlineMaxResponseTokensVersion < 1 && offlineMaxResponseTokens === 4096;
-    normalized.offlineMaxResponseTokens = shouldMigrateLegacyTokenDefault
-        ? 30000
-        : (Number.isFinite(offlineMaxResponseTokens) && offlineMaxResponseTokens > 0
-            ? Math.min(32768, Math.max(256, Math.round(offlineMaxResponseTokens)))
-            : 30000);
-    normalized.offlineMaxResponseTokensVersion = 1;
+    normalized.offlineRequestReasoning = true;
+    normalized.offlineMaxResponseTokens = 30000;
+    normalized.offlineMaxResponseTokensVersion = 2;
     normalized.dynamicActionNarrationEnabled = !!normalized.dynamicActionNarrationEnabled;
     normalized.timestampPosition = normalized.timestampPosition === 'outside' ? 'outside' : 'inside';
     normalized.boundBooks = Array.isArray(normalized.boundBooks) ? normalized.boundBooks : [];
@@ -566,7 +640,21 @@ window.imApp.normalizeFriendData = function(friend) {
     normalized.linkedAccountBot = window.imApp.normalizeLinkedAccountBot(normalized.linkedAccountBot);
     normalized.linkedAccountChats = window.imApp.normalizeLinkedAccountChats(normalized.linkedAccountChats);
 
-    normalized.profilePanel = window.imApp.createDefaultProfilePanel(friend);
+    if (!isGroupChat && normalized.profilePanel && typeof normalized.profilePanel === 'object') {
+        normalized.profilePanel = {
+            ...normalized.profilePanel,
+            statusHistory: Array.isArray(normalized.profilePanel.statusHistory)
+                ? normalized.profilePanel.statusHistory.map(item => (item && typeof item === 'object' ? { ...item } : item))
+                : normalized.profilePanel.statusHistory,
+            thoughtHistory: Array.isArray(normalized.profilePanel.thoughtHistory)
+                ? normalized.profilePanel.thoughtHistory.map(item => (item && typeof item === 'object' ? { ...item } : item))
+                : normalized.profilePanel.thoughtHistory
+        };
+        if (window.imApp.migrateSingleChatProfileStatus(normalized)) {
+            normalized._profileStatusNeedsPersistence = true;
+        }
+    }
+    normalized.profilePanel = window.imApp.createDefaultProfilePanel(normalized);
     normalized.latestThought = normalized.profilePanel.thought;
     normalized.status = normalized.profilePanel.status || normalized.status || 'online';
 
@@ -3076,7 +3164,7 @@ window.imApp.clearRuntimeCache = function() {
     }
 };
 
-window.getGlobalWorldBookContextByPosition = function(position = 'before_role', contextText = '') {
+window.getGlobalWorldBookContextByPosition = function(position = 'before_role', contextText = '', options = {}) {
     const normalizeEntry = window.normalizeWorldBookEntry
         ? window.normalizeWorldBookEntry
         : function(entry = {}) {
@@ -3183,7 +3271,7 @@ window.getGlobalWorldBookContextByPosition = function(position = 'before_role', 
         sections.push(section.trim());
     }
 
-    if (window.getBuiltinWorldBookContext) {
+    if (options.includeBuiltin !== false && window.getBuiltinWorldBookContext) {
         const builtinSection = window.getBuiltinWorldBookContext(position, contextText);
         if (builtinSection) {
             sections.push(builtinSection.trim());
@@ -3202,7 +3290,7 @@ window.getGlobalWorldBookContext = function(contextText = '') {
     return sections.join('\n\n').trim();
 };
 
-window.imApp.getWorldBookContextForFriendByPosition = function(position = 'before_role', friend = null, contextText = '') {
+window.imApp.getWorldBookContextForFriendByPosition = function(position = 'before_role', friend = null, contextText = '', options = {}) {
     const normalizeEntry = window.normalizeWorldBookEntry
         ? window.normalizeWorldBookEntry
         : function(entry = {}) {
@@ -3269,7 +3357,7 @@ window.imApp.getWorldBookContextForFriendByPosition = function(position = 'befor
 
     const sections = [];
     const globalContext = window.getGlobalWorldBookContextByPosition
-        ? window.getGlobalWorldBookContextByPosition(position, contextText)
+        ? window.getGlobalWorldBookContextByPosition(position, contextText, options)
         : '';
 
     if (globalContext) {
@@ -3323,11 +3411,11 @@ window.imApp.getWorldBookContextForFriendByPosition = function(position = 'befor
     return sections.join('\n\n').trim();
 };
 
-window.getWorldBookContextForFriendByPosition = function(position = 'before_role', friend = null, contextText = '') {
-    return window.imApp.getWorldBookContextForFriendByPosition(position, friend, contextText);
+window.getWorldBookContextForFriendByPosition = function(position = 'before_role', friend = null, contextText = '', options = {}) {
+    return window.imApp.getWorldBookContextForFriendByPosition(position, friend, contextText, options);
 };
 
-window.imApp.getWorldBookContextForFriendByPosition = function(position = 'before_role', friend = null, contextText = '') {
+window.imApp.getWorldBookContextForFriendByPosition = function(position = 'before_role', friend = null, contextText = '', options = {}) {
     const normalizeEntry = window.normalizeWorldBookEntry
         ? window.normalizeWorldBookEntry
         : function(entry = {}) {
@@ -3394,7 +3482,7 @@ window.imApp.getWorldBookContextForFriendByPosition = function(position = 'befor
 
     const sections = [];
     const globalContext = window.getGlobalWorldBookContextByPosition
-        ? window.getGlobalWorldBookContextByPosition(position, contextText)
+        ? window.getGlobalWorldBookContextByPosition(position, contextText, options)
         : '';
 
     if (globalContext) {
@@ -3448,8 +3536,8 @@ window.imApp.getWorldBookContextForFriendByPosition = function(position = 'befor
     return sections.join('\n\n').trim();
 };
 
-window.getWorldBookContextForFriendByPosition = function(position = 'before_role', friend = null, contextText = '') {
-    return window.imApp.getWorldBookContextForFriendByPosition(position, friend, contextText);
+window.getWorldBookContextForFriendByPosition = function(position = 'before_role', friend = null, contextText = '', options = {}) {
+    return window.imApp.getWorldBookContextForFriendByPosition(position, friend, contextText, options);
 };
 
 window.getImFriends = () => window.imData.friends;
@@ -3575,7 +3663,11 @@ window.imApp.getImessageUiState = function() {
         cssPresets: Array.isArray(uiState.cssPresets) ? uiState.cssPresets : [],
         offlineTheme,
         offlineThemePresets,
-        hasOfflineTheme: !!(uiState.offlineTheme && typeof uiState.offlineTheme === 'object')
+        hasOfflineTheme: !!(uiState.offlineTheme && typeof uiState.offlineTheme === 'object'),
+        offlinePrompts: Array.isArray(uiState.offlinePrompts) ? uiState.offlinePrompts : [],
+        offlinePromptPresets: Array.isArray(uiState.offlinePromptPresets) ? uiState.offlinePromptPresets : [],
+        offlinePromptActivePresetId: String(uiState.offlinePromptActivePresetId || '').trim(),
+        offlinePromptsInitialized: uiState.offlinePromptsInitialized === true
     };
 };
 
@@ -3589,7 +3681,11 @@ window.imApp.saveImessageUiState = function() {
             ...(currentState && currentState.uiState && typeof currentState.uiState === 'object' ? currentState.uiState : {}),
             cssPresets: Array.isArray(window.imData.cssPresets) ? window.imData.cssPresets : [],
             offlineTheme: window.imApp.normalizeOfflineThemeState(window.imData.offlineTheme),
-            offlineThemePresets: window.imApp.normalizeOfflineThemePresets(window.imData.offlineThemePresets)
+            offlineThemePresets: window.imApp.normalizeOfflineThemePresets(window.imData.offlineThemePresets),
+            offlinePrompts: Array.isArray(window.imData.offlinePrompts) ? window.imData.offlinePrompts : [],
+            offlinePromptPresets: Array.isArray(window.imData.offlinePromptPresets) ? window.imData.offlinePromptPresets : [],
+            offlinePromptActivePresetId: String(window.imData.offlinePromptActivePresetId || '').trim(),
+            offlinePromptsInitialized: window.imData.offlinePromptsInitialized === true
         }
     };
 
@@ -3653,11 +3749,15 @@ window.imApp.initializeData = async function() {
 
         const globalUiState = window.imApp.getImessageUiState
             ? window.imApp.getImessageUiState()
-            : { cssPresets: [], offlineTheme: window.imApp.createDefaultOfflineThemeState(), offlineThemePresets: [], hasOfflineTheme: false };
+            : { cssPresets: [], offlineTheme: window.imApp.createDefaultOfflineThemeState(), offlineThemePresets: [], hasOfflineTheme: false, offlinePrompts: [], offlinePromptPresets: [], offlinePromptActivePresetId: '', offlinePromptsInitialized: false };
         window.imData.cssPresets = Array.isArray(globalUiState.cssPresets) ? globalUiState.cssPresets : [];
         window.imData.offlineTheme = window.imApp.normalizeOfflineThemeState(globalUiState.offlineTheme);
         window.imData.offlineThemePresets = window.imApp.normalizeOfflineThemePresets(globalUiState.offlineThemePresets);
         window.imData.offlineThemeInitialized = !!globalUiState.hasOfflineTheme;
+        window.imData.offlinePrompts = Array.isArray(globalUiState.offlinePrompts) ? globalUiState.offlinePrompts : [];
+        window.imData.offlinePromptPresets = Array.isArray(globalUiState.offlinePromptPresets) ? globalUiState.offlinePromptPresets : [];
+        window.imData.offlinePromptActivePresetId = String(globalUiState.offlinePromptActivePresetId || '').trim();
+        window.imData.offlinePromptsInitialized = globalUiState.offlinePromptsInitialized === true;
 
         window.imData.ready = true;
 

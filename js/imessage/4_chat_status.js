@@ -27,6 +27,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function ensureProfilePanelData(friend) {
         if (!friend) return window.imApp.createDefaultProfilePanel({});
+        if (window.imApp.migrateSingleChatProfileStatus) {
+            window.imApp.migrateSingleChatProfileStatus(friend);
+        }
         const nextPanel = window.imApp.createDefaultProfilePanel(friend);
         friend.profilePanel = nextPanel;
         friend.latestThought = nextPanel.thought;
@@ -52,12 +55,16 @@ document.addEventListener('DOMContentLoaded', () => {
         ) {
             stateMap[safeFriendId] = {
                 open: false,
-                activeTab: 'thought'
+                activeTab: 'thought',
+                selectedHistoryIndex: 0
             };
         }
 
         if (!['thought', 'events'].includes(stateMap[safeFriendId].activeTab)) {
             stateMap[safeFriendId].activeTab = 'thought';
+        }
+        if (!Number.isInteger(stateMap[safeFriendId].selectedHistoryIndex) || stateMap[safeFriendId].selectedHistoryIndex < 0) {
+            stateMap[safeFriendId].selectedHistoryIndex = 0;
         }
 
         return stateMap[safeFriendId];
@@ -79,6 +86,68 @@ document.addEventListener('DOMContentLoaded', () => {
     function getProfilePanelEvents(friend) {
         const panel = window.imChat.getProfilePanelData(friend);
         return Array.isArray(panel.events) ? panel.events : [];
+    }
+
+    function escapeProfilePanelHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function getProfileStatusHistory(friend) {
+        const panel = window.imChat.getProfilePanelData(friend);
+        return Array.isArray(panel.statusHistory) ? panel.statusHistory : [];
+    }
+
+    function getSelectedProfileStatus(friend) {
+        const history = getProfileStatusHistory(friend);
+        const uiState = window.imChat.getProfilePanelUiState(friend);
+        const index = Math.max(0, Math.min(uiState.selectedHistoryIndex || 0, Math.max(0, history.length - 1)));
+        uiState.selectedHistoryIndex = index;
+        return { history, index, snapshot: history[index] || null };
+    }
+
+    function applySnapshotAsCurrent(panel, friend, snapshot) {
+        if (!panel || !friend) return;
+        panel.thought = snapshot?.thought || '';
+        panel.affection = typeof snapshot?.affection === 'number' ? snapshot.affection : 0;
+        panel.affectionChange = typeof snapshot?.affectionChange === 'number' ? snapshot.affectionChange : 0;
+        friend.latestThought = panel.thought;
+    }
+
+    async function editProfileStatusSnapshot(friendOrId, snapshotId, updates) {
+        const targetFriend = window.imApp.getFriendById(friendOrId);
+        if (!targetFriend || !snapshotId || !updates) return false;
+
+        return commitStatusFriendChange(targetFriend, (friend) => {
+            const panel = ensureProfilePanelData(friend);
+            const history = Array.isArray(panel.statusHistory) ? panel.statusHistory : [];
+            const index = history.findIndex(item => String(item.id) === String(snapshotId));
+            if (index < 0) return;
+            const snapshot = history[index];
+            if (typeof updates.thought === 'string') snapshot.thought = updates.thought.trim();
+            snapshot.legacy = false;
+            panel.statusHistory = history;
+            if (index === 0) applySnapshotAsCurrent(panel, friend, snapshot);
+        }, { silent: true });
+    }
+
+    async function deleteProfileStatusSnapshot(friendOrId, snapshotId) {
+        const targetFriend = window.imApp.getFriendById(friendOrId);
+        if (!targetFriend || !snapshotId) return false;
+
+        return commitStatusFriendChange(targetFriend, (friend) => {
+            const panel = ensureProfilePanelData(friend);
+            const history = Array.isArray(panel.statusHistory) ? panel.statusHistory : [];
+            const index = history.findIndex(item => String(item.id) === String(snapshotId));
+            if (index < 0) return;
+            history.splice(index, 1);
+            panel.statusHistory = history;
+            if (index === 0) applySnapshotAsCurrent(panel, friend, history[0] || null);
+        }, { silent: true });
     }
 
     function getProfilePanelMetrics() {
@@ -306,36 +375,25 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }
 
-        if (!panel.thought || !panel.thought.trim()) {
+        const { history, index: selectedIndex } = getSelectedProfileStatus(friend);
+        if (history.length === 0) {
             return `
                 <div class="chat-profile-panel-empty">
-                    <div class="chat-profile-panel-empty-title">暂无心声</div>
-                    <div class="chat-profile-panel-empty-desc">这里会展示这个角色此刻的心声。</div>
+                    <div class="chat-profile-panel-empty-title">暂无状态</div>
+                    <div class="chat-profile-panel-empty-desc">生成新的聊天回复后，这里会保存完整状态记录。</div>
                 </div>
             `;
         }
 
+        const snapshot = history[selectedIndex];
+        const createdAt = snapshot.createdAt ? new Date(snapshot.createdAt) : null;
+        const timeLabel = createdAt && !Number.isNaN(createdAt.getTime()) ? createdAt.toLocaleString() : '时间未记录';
+        const field = (value) => escapeProfilePanelHtml(value || '未记录');
         return `
-            <div class="chat-profile-panel-section">
-                <div class="gmp-inner-voice chat-profile-panel-thought">${panel.thought.trim()}</div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 2px;">
-                    <div style="background: #f2f2f7; border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px;">
-                        <div style="font-size: 11px; color: #8e8e93; font-weight: 700;">位置</div>
-                        <div style="font-size: 13px; color: #333; line-height: 1.4; word-break: break-all; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${panel.location || '未知'}</div>
-                    </div>
-                    <div style="background: #f2f2f7; border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px;">
-                        <div style="font-size: 11px; color: #8e8e93; font-weight: 700;">动作</div>
-                        <div style="font-size: 13px; color: #333; line-height: 1.4; word-break: break-all; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${panel.action || '暂无'}</div>
-                    </div>
-                    <div style="background: #f2f2f7; border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px;">
-                        <div style="font-size: 11px; color: #8e8e93; font-weight: 700;">心情</div>
-                        <div style="font-size: 13px; color: #333; line-height: 1.4; word-break: break-all; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${panel.mood || '平静'}</div>
-                    </div>
-                    <div style="background: #f2f2f7; border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px;">
-                        <div style="font-size: 11px; color: #8e8e93; font-weight: 700;">表情</div>
-                        <div style="font-size: 13px; color: #333; line-height: 1.4; word-break: break-all; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${panel.expression || '自然'}</div>
-                    </div>
-                </div>
+            <div class="chat-profile-status-page" data-selected-index="${selectedIndex}" data-status-id="${escapeProfilePanelHtml(snapshot.id)}">
+                <div class="chat-profile-status-time">${escapeProfilePanelHtml(timeLabel)}</div>
+                <div class="gmp-inner-voice chat-profile-panel-thought">${field(snapshot.thought)}</div>
+                <div class="chat-profile-status-counter"><span>${selectedIndex + 1}</span> / ${history.length}</div>
             </div>
         `;
     }
@@ -381,8 +439,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const signature = friend.signature || '这个人很懒，什么都没写';
         const onlineLabel = formatProfileStatusLabel(panel.status || friend.status || 'online', isSleeping);
         
-        const affection = typeof friend.profilePanel?.affection === 'number' ? friend.profilePanel.affection : (typeof panel.affection === 'number' ? panel.affection : 0);
-        const affectionChange = typeof friend.profilePanel?.affectionChange === 'number' ? friend.profilePanel.affectionChange : (typeof panel.affectionChange === 'number' ? panel.affectionChange : 0);
+        const statusSelection = getSelectedProfileStatus(friend);
+        const selectedStatus = statusSelection.snapshot;
+        const canPageNewer = statusSelection.index > 0;
+        const canPageOlder = statusSelection.index < statusSelection.history.length - 1;
+        const affection = typeof selectedStatus?.affection === 'number'
+            ? selectedStatus.affection
+            : (typeof panel.affection === 'number' ? panel.affection : 0);
+        const affectionChange = typeof selectedStatus?.affectionChange === 'number'
+            ? selectedStatus.affectionChange
+            : (typeof panel.affectionChange === 'number' ? panel.affectionChange : 0);
         const affectionChangeStr = affectionChange >= 0 ? `+${affectionChange}` : `${affectionChange}`;
 
         panelEl.innerHTML = `
@@ -401,10 +467,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="gmp-name-row" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
                             <div class="gmp-name">${name}</div>
                             <div style="display: flex; flex-direction: column; align-items: flex-end;">
-                                <div style="background: #f2f2f7; color: #8e8e93; padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 4px;">
-                                    <i class="fas fa-heart"></i> ${affection}
+                                <div class="chat-profile-status-affection" style="background: #f2f2f7; color: #8e8e93; padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 4px;">
+                                    <i class="fas fa-heart"></i> <span>${affection}</span>
                                 </div>
-                                ${affectionChange !== 0 ? `<div style="font-size: 10px; color: #8e8e93; margin-top: 4px; font-weight: 600;">${affectionChangeStr}</div>` : ''}
+                                <div class="chat-profile-status-affection-change" style="font-size: 10px; color: #8e8e93; margin-top: 4px; font-weight: 600; ${affectionChange === 0 ? 'display:none;' : ''}">${affectionChangeStr}</div>
                             </div>
                         </div>
                         <div class="gmp-signature">${signature}</div>
@@ -424,15 +490,30 @@ document.addEventListener('DOMContentLoaded', () => {
                             <div class="chat-profile-event-detail-detail"></div>
                         </div>
                     </div>
+                    <div class="chat-profile-status-edit-overlay" style="display:none;">
+                        <form class="chat-profile-status-edit-card">
+                            <div class="chat-profile-status-edit-title">编辑状态</div>
+                            <label>状态内容<textarea name="thought" rows="6" required></textarea></label>
+                            <div class="chat-profile-status-edit-readonly"></div>
+                            <div class="chat-profile-status-edit-actions">
+                                <button type="button" data-action="cancel-status-edit">取消</button>
+                                <button type="submit" class="is-primary">保存</button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
                 
-                <div class="chat-profile-panel-floating-tabs" style="display: flex; flex-direction: row; gap: 20px; margin-top: 24px; z-index: 100;">
-                    <button type="button" class="chat-profile-panel-tab-btn ${activeTab === 'thought' ? 'active' : ''}" data-tab="thought" style="width: 52px; height: 52px; border-radius: 50%; border: none; background: ${activeTab === 'thought' ? '#111' : '#fff'}; color: ${activeTab === 'thought' ? '#fff' : '#111'};  display: flex; justify-content: center; align-items: center; font-size: 22px; cursor: pointer; transition: transform 0.2s, background 0.2s;">
+                <div class="chat-profile-panel-floating-tabs" style="display: flex; flex-direction: row; gap: 8px; margin-top: 18px; z-index: 100;">
+                    <button type="button" class="chat-profile-panel-action-btn is-page" data-action="page-status" data-direction="newer" aria-label="上一条状态" ${canPageNewer ? '' : 'disabled'}><i class="fas fa-chevron-left"></i></button>
+                    <button type="button" class="chat-profile-panel-tab-btn ${activeTab === 'thought' ? 'active' : ''}" data-tab="thought" style="width: 42px; height: 42px; border-radius: 50%; border: none; background: ${activeTab === 'thought' ? '#111' : '#fff'}; color: ${activeTab === 'thought' ? '#fff' : '#111'};  display: flex; justify-content: center; align-items: center; font-size: 17px; cursor: pointer; transition: transform 0.2s, background 0.2s;">
                         <i class="fas fa-heart"></i>
                     </button>
-                    <button type="button" class="chat-profile-panel-tab-btn ${activeTab === 'events' ? 'active' : ''}" data-tab="events" style="width: 52px; height: 52px; border-radius: 50%; border: none; background: ${activeTab === 'events' ? '#111' : '#fff'}; color: ${activeTab === 'events' ? '#fff' : '#111'};  display: flex; justify-content: center; align-items: center; font-size: 22px; cursor: pointer; transition: transform 0.2s, background 0.2s;">
+                    <button type="button" class="chat-profile-panel-tab-btn ${activeTab === 'events' ? 'active' : ''}" data-tab="events" style="width: 42px; height: 42px; border-radius: 50%; border: none; background: ${activeTab === 'events' ? '#111' : '#fff'}; color: ${activeTab === 'events' ? '#fff' : '#111'};  display: flex; justify-content: center; align-items: center; font-size: 17px; cursor: pointer; transition: transform 0.2s, background 0.2s;">
                         <i class="fas fa-flag"></i>
                     </button>
+                    <button type="button" class="chat-profile-panel-action-btn" data-action="edit-status" aria-label="编辑状态"><i class="fas fa-pen"></i></button>
+                    <button type="button" class="chat-profile-panel-action-btn is-danger" data-action="delete-status" aria-label="删除状态"><i class="fas fa-trash-alt"></i></button>
+                    <button type="button" class="chat-profile-panel-action-btn is-page" data-action="page-status" data-direction="older" aria-label="下一条状态" ${canPageOlder ? '' : 'disabled'}><i class="fas fa-chevron-right"></i></button>
                 </div>
             </div>
         `;
@@ -460,6 +541,194 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.imChat.hideProfileEventDetail(panelEl);
             });
         }
+
+        const statusCard = panelEl.querySelector('.chat-profile-panel-card');
+        if (statusCard && activeTab === 'thought') {
+            let pointerId = null;
+            let startX = 0;
+            let startY = 0;
+            let currentDeltaX = 0;
+            let dragging = false;
+
+            const restoreCardPosition = () => {
+                statusCard.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
+                statusCard.style.transform = 'translateX(0) scale(1)';
+                statusCard.style.opacity = '1';
+            };
+
+            statusCard.addEventListener('pointerdown', (e) => {
+                const latestFriend = window.imApp.getFriendById(friend) || friend;
+                if (getSelectedProfileStatus(latestFriend).history.length < 2) return;
+                if (e.target.closest('button, input, textarea, .chat-profile-status-edit-overlay, .chat-profile-event-detail-overlay')) return;
+                pointerId = e.pointerId;
+                startX = e.clientX;
+                startY = e.clientY;
+                currentDeltaX = 0;
+                dragging = true;
+                statusCard.style.transition = 'none';
+                statusCard.setPointerCapture?.(pointerId);
+            });
+
+            statusCard.addEventListener('pointermove', (e) => {
+                if (!dragging || e.pointerId !== pointerId) return;
+                const deltaX = e.clientX - startX;
+                const deltaY = e.clientY - startY;
+                if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 8) {
+                    dragging = false;
+                    restoreCardPosition();
+                    return;
+                }
+                if (Math.abs(deltaX) < 6) return;
+                e.preventDefault();
+                currentDeltaX = deltaX;
+                const progress = Math.min(1, Math.abs(deltaX) / Math.max(1, statusCard.clientWidth));
+                statusCard.style.transform = `translateX(${deltaX}px) scale(${1 - progress * 0.025})`;
+                statusCard.style.opacity = String(1 - progress * 0.22);
+            });
+
+            const finishCardSwipe = (e) => {
+                if (!dragging || e.pointerId !== pointerId) return;
+                dragging = false;
+                statusCard.releasePointerCapture?.(pointerId);
+                const latestFriend = window.imApp.getFriendById(friend) || friend;
+                const { history, index } = getSelectedProfileStatus(latestFriend);
+                const direction = currentDeltaX < -55 ? 1 : (currentDeltaX > 55 ? -1 : 0);
+                const nextIndex = index + direction;
+                if (!direction || nextIndex < 0 || nextIndex >= history.length) {
+                    restoreCardPosition();
+                    return;
+                }
+
+                const exitX = currentDeltaX < 0 ? -(statusCard.clientWidth + 80) : statusCard.clientWidth + 80;
+                statusCard.style.transition = 'transform 0.18s ease, opacity 0.18s ease';
+                statusCard.style.transform = `translateX(${exitX}px) scale(0.96)`;
+                statusCard.style.opacity = '0';
+                setTimeout(() => {
+                    window.imChat.getProfilePanelUiState(latestFriend).selectedHistoryIndex = nextIndex;
+                    const refreshedFriend = window.imApp.getFriendById(latestFriend) || latestFriend;
+                    window.imChat.renderProfilePanel(refreshedFriend, panelEl);
+                }, 180);
+            };
+
+            statusCard.addEventListener('pointerup', finishCardSwipe);
+            statusCard.addEventListener('pointercancel', () => {
+                dragging = false;
+                restoreCardPosition();
+            });
+        }
+
+        panelEl.querySelectorAll('[data-action="page-status"]').forEach((button) => {
+            button.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (button.disabled) return;
+                const latestFriend = window.imApp.getFriendById(friend) || friend;
+                const { history, index } = getSelectedProfileStatus(latestFriend);
+                const direction = button.getAttribute('data-direction') === 'newer' ? -1 : 1;
+                const nextIndex = index + direction;
+                if (nextIndex < 0 || nextIndex >= history.length) return;
+
+                const uiState = window.imChat.getProfilePanelUiState(latestFriend);
+                uiState.selectedHistoryIndex = nextIndex;
+                uiState.activeTab = 'thought';
+                await commitStatusFriendChange(latestFriend, (targetFriend) => {
+                    if (!targetFriend) return;
+                    ensureProfilePanelData(targetFriend).activeTab = 'thought';
+                }, { silent: true });
+                const refreshedFriend = window.imApp.getFriendById(latestFriend) || latestFriend;
+                window.imChat.renderProfilePanel(refreshedFriend, panelEl);
+            });
+        });
+
+        const editOverlay = panelEl.querySelector('.chat-profile-status-edit-overlay');
+        const editForm = panelEl.querySelector('.chat-profile-status-edit-card');
+        const closeStatusEditor = () => {
+            if (!editOverlay) return;
+            editOverlay.classList.remove('active');
+            setTimeout(() => {
+                if (!editOverlay.classList.contains('active')) editOverlay.style.display = 'none';
+            }, 180);
+        };
+        panelEl.querySelector('[data-action="cancel-status-edit"]')?.addEventListener('click', closeStatusEditor);
+        editOverlay?.addEventListener('click', (e) => {
+            if (e.target === editOverlay) closeStatusEditor();
+        });
+
+        panelEl.querySelector('[data-action="edit-status"]')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const latestFriend = window.imApp.getFriendById(friend) || friend;
+            const { snapshot } = getSelectedProfileStatus(latestFriend);
+            if (!snapshot || !editOverlay || !editForm) {
+                if (window.showToast) window.showToast('暂无可编辑的状态');
+                return;
+            }
+            editForm.dataset.statusId = snapshot.id;
+            const thoughtInput = editForm.elements.namedItem('thought');
+            if (thoughtInput) thoughtInput.value = snapshot.thought || '';
+            const readonly = editForm.querySelector('.chat-profile-status-edit-readonly');
+            if (readonly) {
+                const affectionText = typeof snapshot.affection === 'number' ? snapshot.affection : '未记录';
+                const changeText = typeof snapshot.affectionChange === 'number'
+                    ? (snapshot.affectionChange >= 0 ? `+${snapshot.affectionChange}` : snapshot.affectionChange)
+                    : '未记录';
+                readonly.textContent = `好感度 ${affectionText} · 本次变化 ${changeText}`;
+            }
+            editOverlay.style.display = 'flex';
+            requestAnimationFrame(() => editOverlay.classList.add('active'));
+        });
+
+        editForm?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const thought = String(editForm.elements.namedItem('thought')?.value || '').trim();
+            if (!thought) {
+                if (window.showToast) window.showToast('状态内容不能为空');
+                return;
+            }
+            const saved = await editProfileStatusSnapshot(friend, editForm.dataset.statusId, { thought });
+            if (!saved) {
+                if (window.showToast) window.showToast('状态更新失败');
+                return;
+            }
+            closeStatusEditor();
+            const latestFriend = window.imApp.getFriendById(friend) || friend;
+            window.imChat.renderProfilePanel(latestFriend, panelEl);
+            if (window.showToast) window.showToast('状态已更新');
+        });
+
+        panelEl.querySelector('[data-action="delete-status"]')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const latestFriend = window.imApp.getFriendById(friend) || friend;
+            const { history, index, snapshot } = getSelectedProfileStatus(latestFriend);
+            if (!snapshot) {
+                if (window.showToast) window.showToast('暂无可删除的状态');
+                return;
+            }
+            const confirmDelete = async () => {
+                const saved = await deleteProfileStatusSnapshot(latestFriend, snapshot.id);
+                if (!saved) {
+                    if (window.showToast) window.showToast('状态删除失败');
+                    return;
+                }
+                const uiState = window.imChat.getProfilePanelUiState(latestFriend);
+                uiState.selectedHistoryIndex = Math.max(0, Math.min(index, history.length - 2));
+                const refreshedFriend = window.imApp.getFriendById(latestFriend) || latestFriend;
+                window.imChat.renderProfilePanel(refreshedFriend, panelEl);
+                if (window.showToast) window.showToast('状态已删除');
+            };
+            if (window.showCustomModal) {
+                window.showCustomModal({
+                    title: '删除状态',
+                    message: index === 0 ? '删除最新状态后，上一条状态会自动接替为当前状态。' : '确定删除当前查看的这条历史状态吗？',
+                    confirmText: '删除',
+                    cancelText: '取消',
+                    isDestructive: true,
+                    onConfirm: confirmDelete
+                });
+            } else {
+                confirmDelete();
+            }
+        });
 
         const eventActionButtons = panelEl.querySelectorAll('[data-action="confirm-memory-request"], [data-action="cancel-memory-request"], [data-action="open-event-detail"]');
         eventActionButtons.forEach((btn) => {
@@ -546,8 +815,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function showProfilePanel(friend, panelEl) {
         if (!friend || !panelEl) return;
+        const hadLegacyFields = window.imApp.migrateSingleChatProfileStatus
+            ? window.imApp.migrateSingleChatProfileStatus(friend)
+            : false;
+        if ((hadLegacyFields || friend._profileStatusNeedsPersistence) && window.imApp.commitScopedFriendChange) {
+            void window.imApp.commitScopedFriendChange(friend, (targetFriend) => {
+                window.imApp.migrateSingleChatProfileStatus(targetFriend);
+                delete targetFriend._profileStatusNeedsPersistence;
+            }, { syncActive: true, metaOnly: true, silent: true });
+        }
         const uiState = window.imChat.getProfilePanelUiState(friend);
         uiState.open = true;
+        uiState.selectedHistoryIndex = 0;
         window.imChat.renderProfilePanel(friend, panelEl);
         panelEl.style.display = 'flex';
         requestAnimationFrame(() => {
@@ -578,8 +857,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function applyFriendStatusBarCss() {
-        // 状态栏资料卡当前没有独立的动态 CSS 注入需求；
-        // 保留该方法作为稳定兼容出口，供现有调用方继续安全调用。
         return;
     }
 
@@ -587,6 +864,10 @@ document.addEventListener('DOMContentLoaded', () => {
     window.imChat.getProfilePanelUiState = getProfilePanelUiState;
     window.imChat.setProfilePanelTab = setProfilePanelTab;
     window.imChat.getProfilePanelEvents = getProfilePanelEvents;
+    window.imChat.getProfileStatusHistory = getProfileStatusHistory;
+    window.imChat.getSelectedProfileStatus = getSelectedProfileStatus;
+    window.imChat.editProfileStatusSnapshot = editProfileStatusSnapshot;
+    window.imChat.deleteProfileStatusSnapshot = deleteProfileStatusSnapshot;
     window.imChat.getProfilePanelMetrics = getProfilePanelMetrics;
     window.imChat.buildCherishedMemoryEntryFromEvent = buildCherishedMemoryEntryFromEvent;
     window.imChat.mergeCherishedMemoryText = mergeCherishedMemoryText;

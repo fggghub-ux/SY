@@ -88,6 +88,10 @@ test('offline theme editor exposes source, presets, immediate apply, and full re
         ':scope',
         '.offline-chat-header',
         '.offline-chat-bubble',
+        '.offline-chat-thinking',
+        '.offline-chat-thinking-toggle',
+        '.offline-chat-thinking-label',
+        '.offline-chat-thinking-icon',
         '.offline-chat-thinking-content',
         '.offline-chat-history-card',
         '.offline-chat-barrage-row',
@@ -97,6 +101,15 @@ test('offline theme editor exposes source, presets, immediate apply, and full re
     ]) {
         assert.ok(copiedSource.includes(selector), `missing copied source selector: ${selector}`);
     }
+    const runtimeThinkingClasses = Array.from(new Set(
+        sheetSource.match(/\boffline-tavern-thinking(?:-[a-z0-9-]+)?\b/g) || []
+    ));
+    for (const runtimeClass of runtimeThinkingClasses) {
+        const copiedClass = runtimeClass.replace('offline-tavern', 'offline-chat');
+        assert.ok(copiedSource.includes(`.${copiedClass}`), `missing copied thinking selector: .${copiedClass}`);
+    }
+    assert.match(copiedSource, /\.offline-chat-thinking\.is-expanded \.offline-chat-thinking-icon/);
+    assert.match(copiedSource, /\.offline-chat-thinking-content\[hidden\]/);
     assert.doesNotMatch(copiedSource, /tavern/i);
 
     assert.match(cssSource, /\.offline-theme-css-input\s*\{/);
@@ -106,7 +119,7 @@ test('offline theme editor exposes source, presets, immediate apply, and full re
     assert.match(cssSource, /\.offline-theme-button-row button\.primary\s*\{[\s\S]*?grid-column:\s*1 \/ -1/);
     assert.match(sheetSource, /replaceAll\('offline-tavern', 'offline-chat'\)/);
     assert.match(sheetSource, /replaceAll\('offline-chat', 'offline-tavern'\)/);
-    assert.match(indexSource, /css\/imessage\.css\?v=20260715-offline-reasoning-request-v9/);
-    assert.match(indexSource, /js\/imessage\/2_core\.js\?v=20260715-offline-token-30000-v4/);
-    assert.match(indexSource, /js\/imessage\/4_chat_sheet\.js\?v=20260716-offline-cot-last-v14/);
+    assert.match(indexSource, /css\/imessage\.css\?v=20260716-status-prompt-v3/);
+    assert.match(indexSource, /js\/imessage\/2_core\.js\?v=20260716-offline-token-v1/);
+    assert.match(indexSource, /js\/imessage\/4_chat_sheet\.js\?v=20260716-offline-cot-v5/);
 });
