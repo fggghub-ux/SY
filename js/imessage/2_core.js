@@ -981,6 +981,7 @@ window.imApp.isRecallableUserMessage = function(message) {
         'system_notice',
         'pay_transfer',
         'group_red_packet',
+        'group_poll',
         'voice_call_record',
         'offline_meeting_record',
         'html'
@@ -1128,7 +1129,22 @@ window.imApp.formatMessageForApiContext = function(message, friend, options = {}
         };
     }
 
-    if (normalizedMessage.type === 'fake_link') {
+    if (normalizedMessage.type === 'group_poll') {
+        const pollOptions = Array.isArray(normalizedMessage.pollOptions) ? normalizedMessage.pollOptions : [];
+        const pollVotes = Array.isArray(normalizedMessage.pollVotes) ? normalizedMessage.pollVotes : [];
+        const optionById = new Map(pollOptions.map(option => [String(option?.id || ''), String(option?.text || '')]));
+        const voteLines = pollVotes.map(vote => {
+            const voterName = String(vote?.voterName || vote?.voterId || '未知成员');
+            const optionText = optionById.get(String(vote?.optionId || '')) || '未知选项';
+            return `${voterName} → ${optionText}`;
+        });
+        apiContent = [
+            `[User 发起了一项公开单选群投票：${normalizedMessage.pollQuestion || '未命名投票'}]`,
+            `选项：${pollOptions.map(option => option?.text || '').filter(Boolean).join(' / ') || '无'}`,
+            `投票结果：${voteLines.length > 0 ? voteLines.join('；') : '暂时无人投票'}`,
+            normalizedMessage.pollStatus === 'pending' ? '角色投票仍在进行中。' : ''
+        ].filter(Boolean).join('\n');
+    } else if (normalizedMessage.type === 'fake_link') {
         apiContent = window.imApp.formatFakeLinkMessageForApiContext(normalizedMessage, options);
     } else if (normalizedMessage.type === 'voice_message') {
         const voiceText = normalizedMessage.transcript || normalizedMessage.text || '';

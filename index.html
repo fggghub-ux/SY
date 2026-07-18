@@ -32,7 +32,7 @@
     <link rel="stylesheet" href="css/login.css?v=20260712-login-notice-v1">
     <link rel="stylesheet" href="css/home.css">
     <link rel="stylesheet" href="css/worldbook.css">
-    <link rel="stylesheet" href="css/imessage.css?v=20260716-status-prompt-v3">
+    <link rel="stylesheet" href="css/imessage.css?v=20260716-status-prompt-v3-group-poll-v3">
     <link rel="stylesheet" href="css/pay.css?v=20260714-ios-neutral-v1">
     <link rel="stylesheet" href="css/bstage.css">
     <link rel="stylesheet" href="css/tiktok.css?v=20260712-tiktok-feed-cleanup-v1">
@@ -3737,9 +3737,13 @@
                     </div>
                     <div class="detail-sheet-content im-group-more-content">
                         <div class="settings-group fully-rounded" style="margin: 0 0 12px;">
-                            <div class="settings-item" id="group-call-btn" style="border-bottom: none; cursor: pointer;">
+                            <div class="settings-item" id="group-call-btn" style="cursor: pointer;">
                                 <div class="settings-icon" style="background-color: #34c759;"><i class="fas fa-phone-alt"></i></div>
                                 <div class="settings-text">群通话</div>
+                            </div>
+                            <div class="settings-item" id="group-poll-btn" style="border-bottom: none; cursor: pointer;">
+                                <div class="settings-icon" style="background-color: #5856d6;"><i class="fas fa-poll-h"></i></div>
+                                <div class="settings-text">群投票</div>
                             </div>
                         </div>
                         <div class="group-summary-more-panel">
@@ -3747,6 +3751,32 @@
                             <div class="group-summary-more-title">群聊总结</div>
                             <div class="group-summary-more-list" id="group-summary-more-list"></div>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+<div class="bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay" id="group-poll-create-sheet" style="z-index: 650;">
+                <div class="wb-centered-modal-card wb-group-modal-card group-poll-create-card">
+                    <div class="wb-centered-modal-header group-poll-create-header">
+                        <div class="wb-centered-modal-title">发起群投票</div>
+                        <button type="button" class="group-poll-create-close" id="group-poll-create-close" aria-label="关闭">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="group-poll-create-body">
+                        <label class="group-poll-create-label" for="group-poll-question-input">投票内容</label>
+                        <textarea id="group-poll-question-input" class="group-poll-question-input" maxlength="120" rows="3" placeholder="例如：周末一起去哪里？"></textarea>
+                        <div class="group-poll-create-options-header">
+                            <span class="group-poll-create-label">选项</span>
+                            <span id="group-poll-option-count">2 / 10</span>
+                        </div>
+                        <div id="group-poll-options-list" class="group-poll-options-list"></div>
+                        <button type="button" id="group-poll-add-option-btn" class="group-poll-add-option-btn">
+                            <i class="fas fa-plus"></i><span>添加选项</span>
+                        </button>
+                    </div>
+                    <div class="group-poll-create-footer">
+                        <button type="button" id="group-poll-submit-btn" class="group-poll-submit-btn">发布投票</button>
                     </div>
                 </div>
             </div>
@@ -7579,7 +7609,7 @@
     </section>
 </div>
 
-<script src="js/storage/app_storage.js?v=20260715-library-content-store-v1"></script>
+<script src="js/storage/app_storage.js?v=20260715-library-content-store-v1-group-poll-v3"></script>
     <script src="js/storage/imessage_storage.js?v=20260710-storage-v8-idb1"></script>
     <script src="storage.js?v=20260710-storage-v7-cache1"></script>
     <script src="js/app_state_bridge.js?v=20260710-bstage-chat-recovery-v1"></script>
@@ -7592,22 +7622,22 @@
     
     <!-- 引入 iMessage 模块分段代码 -->
     <script src="js/imessage/data_utils.js?v=20260713-offline-memory-v1"></script>
-    <script src="js/imessage/2_core.js?v=20260716-offline-token-v1"></script>
+    <script src="js/imessage/2_core.js?v=20260716-offline-token-v1-group-poll-v1"></script>
     <script src="js/imessage/3_contacts.js"></script>
-    <script src="js/imessage/3_groups.js?v=20260711-summary-cursor-v1"></script>
+    <script src="js/imessage/3_groups.js?v=20260718-group-poll-v4"></script>
     <script src="js/imessage/4_chat_common.js"></script>
     <script src="js/imessage/4_chat_status.js?v=20260716-status-prompt-v2"></script>
     <script src="js/imessage/4_chat_payment.js?v=20260705-offline-identity-v2"></script>
-    <script src="js/imessage/4_chat_bubbles.js?v=20260713-offline-summary-modal-v3"></script>
+    <script src="js/imessage/4_chat_bubbles.js?v=20260713-offline-summary-modal-v3-group-poll-v3"></script>
     <script src="js/imessage/minimax_tts.js"></script>
-    <script src="js/imessage/4_chat_ai.js?v=20260716-status-prompt-v2"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260716-status-prompt-v2-group-poll-v2"></script>
     <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
     <script src="js/imessage/offline_reasoning.js?v=20260716-reasoning-autoparse-v6"></script>
     <script src="js/imessage/4_chat_sheet.js?v=20260716-offline-cot-v5"></script>
     <script src="js/imessage/4_chat_link.js?v=20260706-bugfix-v1"></script>
     <script src="js/imessage/4_chat_list.js"></script>
     <script src="js/imessage/4_chat_interface.js?v=20260715-chat-context-menu-offline-retry-v1"></script>
-    <script src="js/imessage/4_chat_voice_call.js?v=20260713-android-viewport-v2"></script>
+    <script src="js/imessage/4_chat_voice_call.js?v=20260718-android-single-resize-v3-group-call-flow-v1"></script>
     <script src="js/imessage/4_chat_main.js?v=20260715-chat-context-menu-offline-retry-v1"></script>
     <script src="js/imessage/5_settings.js?v=20260716-status-prompt-v3"></script>
     <script src="js/imessage/6_moments.js?v=20260713-moments-comment-delete-v4"></script>

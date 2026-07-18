@@ -28,7 +28,7 @@ test('voice call input handlers are removed on reopen and hangup', () => {
 });
 
 test('voice-call script is cache-busted after the Android input change', () => {
-    assert.match(indexSource, /js\/imessage\/4_chat_voice_call\.js\?v=20260713-android-viewport-v2/);
+    assert.match(indexSource, /js\/imessage\/4_chat_voice_call\.js\?v=20260718-android-single-resize-v3/);
     assert.ok(indexSource.indexOf('js/mobile_input_compat.js') < indexSource.indexOf('js/imessage/4_chat_voice_call.js'));
 });
 
@@ -41,6 +41,9 @@ test('narrow call inputs cannot push action buttons outside the viewport', () =>
 
 test('Android calls follow visualViewport and compact nonessential call chrome', () => {
     assert.match(voiceCallSource, /function bindCallVisualViewport\(input, root, options = \{\}\)/);
+    assert.match(voiceCallSource, /const layoutAlreadyResized = restingLayoutHeight - layoutHeight > 100/);
+    assert.match(voiceCallSource, /const viewportHeight = layoutAlreadyResized \? layoutHeight : visualHeight/);
+    assert.match(voiceCallSource, /const viewportTop = layoutAlreadyResized \? 0 :/);
     assert.match(voiceCallSource, /root\.style\.height = `\$\{viewportHeight\}px`/);
     assert.match(voiceCallSource, /root\.classList\.toggle\('im-call-keyboard-open', keyboardOpen\)/);
     assert.match(voiceCallSource, /collapseElements: \[infoArea, newActionsRow\]/);

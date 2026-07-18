@@ -1901,6 +1901,50 @@ Output only valid JSON with this exact shape:
         void checkAutonomousActivities('refresh');
     }
 
+    function getGroupPollForNextReply(friend) {
+        if (friend?.type !== 'group' || !Array.isArray(friend.messages)) return null;
+        return [...friend.messages].reverse().find(message => {
+            if (message?.type !== 'group_poll') return false;
+            if (!Array.isArray(message.pollOptions) || message.pollOptions.length < 2) return false;
+            const votes = Array.isArray(message.pollVotes) ? message.pollVotes : [];
+            const hasUserVote = votes.some(vote => vote?.voterType === 'user');
+            return hasUserVote && ['idle', 'error', 'pending'].includes(String(message.pollStatus || 'idle'));
+        }) || null;
+    }
+
+    function buildGroupPollVotePrompt(friend, pollMessage) {
+        if (!pollMessage) return '';
+        const options = Array.isArray(pollMessage.pollOptions) ? pollMessage.pollOptions : [];
+        const votes = Array.isArray(pollMessage.pollVotes) ? pollMessage.pollVotes : [];
+        const optionById = new Map(options.map(option => [String(option.id), String(option.text || '')]));
+        const members = (Array.isArray(friend.members) ? friend.members : [])
+            .map(memberId => (window.imData?.friends || []).find(item => String(item.id) === String(memberId)))
+            .filter(Boolean);
+        const votedMemberIds = new Set(votes
+            .filter(vote => vote?.voterType === 'member')
+            .map(vote => String(vote.voterId)));
+        const existingVoteLines = votes.map(vote => {
+            const voterName = vote.voterName || vote.voterId || '未知投票者';
+            const optionText = optionById.get(String(vote.optionId)) || '未知选项';
+            return `- ${voterName}（${vote.voterType === 'user' ? 'User' : `memberId=${vote.voterId}`}）已投：${optionText}（optionId=${vote.optionId}）`;
+        });
+        const unvotedMemberLines = members
+            .filter(member => !votedMemberIds.has(String(member.id)))
+            .map(member => `- ${member.nickname || member.realName || member.id}: memberId=${member.id}`);
+
+        return `【本轮群投票附加任务｜随普通群聊回复一起完成】
+完整沿用本轮群聊提示词、世界书、群设定、成员人设、关系、记忆、语言、时间和近期聊天；照常先生成自然的群聊 <chat_json>，并在其后追加一个 <group_poll_votes>...</group_poll_votes>。
+投票题目：${pollMessage.pollQuestion || ''}
+可用选项：
+${options.map(option => `- ${option.text}：optionId=${option.id}`).join('\n')}
+当前公开投票（所有角色都能看见，必须保持，不得改票或重复投票）：
+${existingVoteLines.length > 0 ? existingVoteLines.join('\n') : '- 暂无'}
+本轮仍可投票的角色：
+${unvotedMemberLines.length > 0 ? unvotedMemberLines.join('\n') : '- 无'}
+让尚未投票的角色依据各自人设和当前上下文独立选择一个选项，也允许弃权。只能使用上面列出的准确 memberId 和 optionId；已投过的角色不得再次出现；每个角色最多一票。
+标签内必须是纯 JSON 数组，格式：[{"memberId":"准确成员ID","optionId":"准确选项ID"}]。若无人新增投票则输出 []。不要为投票单独生成额外聊天气泡。`;
+    }
+
     async function handleAiReply(friend, container, btnEl, options = {}) {
         console.log('handleAiReply invoked', { friend, btnEl, source: options.source || 'manual' });
         const friendKey = getFriendKey(friend);
@@ -1932,6 +1976,10 @@ Output only valid JSON with this exact shape:
             }
             if (!isConversationCurrent()) return;
             friend = getLiveFriendById(friend.id) || friend;
+            if (friend.type === 'group' && window.imApp?.ensureFriendMessagesLoaded) {
+                await window.imApp.ensureFriendMessagesLoaded(friend);
+                friend = getLiveFriendById(friend.id) || friend;
+            }
 
             if (container) {
                 typingRow = document.createElement('div');
@@ -1949,6 +1997,8 @@ Output only valid JSON with this exact shape:
 
             friend.memory = window.imApp.normalizeFriendData(friend).memory;
             captureRegenerateRunSnapshot(friend, apiRunId);
+            const activeGroupPollMessage = getGroupPollForNextReply(friend);
+            const groupPollVotePrompt = buildGroupPollVotePrompt(friend, activeGroupPollMessage);
 
         const isSleeping = window.imApp.isCharacterSleeping(friend);
         const recentText = getRecentContextText(friend);
@@ -2281,7 +2331,7 @@ Output only valid JSON with this exact shape:
         const chatOutputPriorityPrompt = `\n【严格输出顺序｜聊天气泡最高优先级】：
 1. 回复的第一个非空白字符必须是 <chat_json> 的“<”；禁止在 <chat_json> 前输出状态、解释、思考、Markdown 或任何其他标签。
 2. 必须先完整输出并闭合 <chat_json>...</chat_json>，其中至少包含 1 条有效聊天气泡，然后才能输出任何附加标签。
-3. 单聊的 <profile_panel>、<loves_moment>、<loves_schedule>，以及群聊的 <group_private_messages>、<group_friend_private_chats>，全部只能放在 </chat_json> 之后。
+3. 单聊的 <profile_panel>、<loves_moment>、<loves_schedule>，以及群聊的 <group_poll_votes>、<group_private_messages>、<group_friend_private_chats>，全部只能放在 </chat_json> 之后。
 4. <chat_json> 标签内部必须是一个可以被 JSON.parse 直接解析的完整 JSON 数组；禁止代码块、注释、单引号、尾逗号、未转义的双引号、缺失括号或任何 JSON 之外的文字。
 5. 输出前必须在内部逐项检查：开标签与闭标签是否成对、数组的 [ ] 是否闭合、每个对象的 { } 是否闭合、键与字符串是否使用双引号、对象之间是否用逗号分隔且最后一个对象后没有逗号。
 6. 无论其他附加任务是否能完成，<chat_json> 中都必须至少保留 1 条可显示的主要聊天气泡；不能只输出 call、recall、music_control 或附加标签。
@@ -2866,6 +2916,12 @@ Never truncate OUTPUT(x)
                 content: String(options.extraSystemPrompt)
             });
         }
+        if (groupPollVotePrompt) {
+            messages.push({
+                role: 'system',
+                content: groupPollVotePrompt
+            });
+        }
 
         const togetherReadingContext = window.libraryApp?.getTogetherReadingContext
             ? window.libraryApp.getTogetherReadingContext(friend)
@@ -2903,7 +2959,7 @@ Never truncate OUTPUT(x)
         const finalChatJsonFormatReminder = friend.type === 'group'
             ? `【最终输出格式自检｜紧邻本轮回复，最高优先级】
 现在只按以下顺序输出：先输出完整 <chat_json>合法JSON数组</chat_json>，再输出允许的附加标签。回复的第一个非空白字符必须是“<”。
-群聊最小合法气泡示例：<chat_json>[{"type":"text","speaker":"允许发言名单中的准确成员名","text":"自然回复","thought":"10-30字中文心声","translation":"","quote":""}]</chat_json>
+${groupPollVotePrompt ? '当前存在群投票附加任务：必须在 </chat_json> 后输出完整 <group_poll_votes>合法JSON数组</group_poll_votes>；不得修改或重复已有角色票。\n' : ''}群聊最小合法气泡示例：<chat_json>[{"type":"text","speaker":"允许发言名单中的准确成员名","text":"自然回复","thought":"10-30字中文心声","translation":"","quote":""}]</chat_json>
 正式输出前在内部确认：标签成对闭合；数组和对象完整闭合；所有键与字符串使用双引号；没有代码块、注释、尾逗号或标签外正文；至少有一条可显示气泡。如果复杂内容可能破坏格式，缩短回复并舍弃可选附加内容，也必须先保证上述最小结构完整合法。不要输出这段自检过程。`
             : `【最终输出格式自检｜紧邻本轮回复，最高优先级】
 现在只按以下顺序输出：先输出完整 <chat_json>合法JSON数组</chat_json>，再输出允许的附加标签。回复的第一个非空白字符必须是“<”。
@@ -3018,6 +3074,38 @@ Never truncate OUTPUT(x)
             let groupPrivateMessageBatches = [];
             let groupFriendPrivateChats = [];
             if (friend.type === 'group') {
+                const groupPollVotesBlock = activeGroupPollMessage
+                    ? window.imChat.extractTaggedBlock(fullReply, 'group_poll_votes')
+                    : '';
+                if (groupPollVotesBlock) {
+                    fullReply = window.imChat.removeTaggedBlock(fullReply, 'group_poll_votes');
+                    const parsedPollVotes = window.imChat.parseJsonArrayFromText(groupPollVotesBlock);
+                    if (Array.isArray(parsedPollVotes) && window.imChat?.applyGroupPollRoleVotes) {
+                        const memberIds = new Set((Array.isArray(friend.members) ? friend.members : []).map(String));
+                        const optionIds = new Set((activeGroupPollMessage.pollOptions || []).map(option => String(option.id)));
+                        const alreadyVotedMemberIds = new Set((activeGroupPollMessage.pollVotes || [])
+                            .filter(vote => vote?.voterType === 'member')
+                            .map(vote => String(vote.voterId)));
+                        const seenMemberIds = new Set();
+                        const validPollVotes = parsedPollVotes.reduce((result, vote) => {
+                            const memberId = String(vote?.memberId || '');
+                            const optionId = String(vote?.optionId || '');
+                            if (!memberIds.has(memberId)
+                                || !optionIds.has(optionId)
+                                || alreadyVotedMemberIds.has(memberId)
+                                || seenMemberIds.has(memberId)) return result;
+                            seenMemberIds.add(memberId);
+                            result.push({ memberId, optionId });
+                            return result;
+                        }, []);
+                        await window.imChat.applyGroupPollRoleVotes(friend.id, activeGroupPollMessage.id, validPollVotes);
+                    } else {
+                        console.warn('[iMessage] Ignored malformed group_poll_votes payload');
+                    }
+                } else if (activeGroupPollMessage) {
+                    console.warn('[iMessage] Group reply omitted the requested group_poll_votes block');
+                }
+
                 const privateMessagesBlock = window.imChat.extractTaggedBlock(fullReply, 'group_private_messages');
                 if (privateMessagesBlock) {
                     fullReply = window.imChat.removeTaggedBlock(fullReply, 'group_private_messages');

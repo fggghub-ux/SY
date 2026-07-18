@@ -568,12 +568,93 @@ function renderGroupRedPacketBubble(msg, friend, container, timestamp = Date.now
         window.imChat.scrollToBottom(container);
     }
 
+    function renderGroupPollBubble(msg, friend, container, timestamp = Date.now()) {
+        if (!msg || !friend || friend.type !== 'group' || !container) return;
+        const options = Array.isArray(msg.pollOptions) ? msg.pollOptions : [];
+        const votes = Array.isArray(msg.pollVotes) ? msg.pollVotes : [];
+        const userVote = votes.find(vote => vote?.voterType === 'user');
+        const status = String(msg.pollStatus || 'completed');
+        const messageId = window.imChat.ensureMessageId(msg, 'poll');
+
+        const optionHtml = options.map(option => {
+            const optionId = String(option?.id || '');
+            const optionVotes = votes.filter(vote => String(vote?.optionId || '') === optionId);
+            const voterHtml = optionVotes.map(vote => {
+                const isUser = vote?.voterType === 'user';
+                const member = isUser
+                    ? null
+                    : (window.imData?.friends || []).find(item => String(item.id) === String(vote?.voterId));
+                const profile = isUser ? getEffectiveUserProfile(friend) : null;
+                const voterName = vote?.voterName || member?.nickname || member?.realName || (isUser ? profile?.name : '群成员');
+                const avatarUrl = member?.avatarUrl || profile?.avatarUrl || 'assets/moren.jpg';
+                return `<span class="group-poll-voter"><img src="${escapeHtml(avatarUrl)}" alt="">${escapeHtml(voterName)}</span>`;
+            }).join('');
+            return `
+                <button type="button" class="group-poll-card-option${String(userVote?.optionId || '') === optionId ? ' is-user-selected' : ''}" data-poll-option-id="${escapeHtml(optionId)}">
+                    <span class="group-poll-card-option-main">
+                        <span class="group-poll-radio"></span>
+                        <span class="group-poll-option-text">${escapeHtml(option?.text || '')}</span>
+                        <span class="group-poll-option-count">${optionVotes.length} 票</span>
+                    </span>
+                    ${voterHtml ? `<span class="group-poll-voters">${voterHtml}</span>` : ''}
+                </button>
+            `;
+        }).join('');
+
+        let statusText = `${votes.length} 人已投`;
+        if (status === 'idle') {
+            statusText = userVote ? '已选择，发送群聊回复后角色会投票' : '请选择你的选项';
+        } else if (status === 'pending') {
+            statusText = '等待群聊回复';
+        } else if (status === 'error') {
+            statusText = userVote ? '已选择，发送群聊回复后角色会投票' : '请选择你的选项';
+        }
+
+        const row = document.createElement('div');
+        row.className = 'chat-row user-row group-poll-row';
+        row.setAttribute('data-timestamp', String(timestamp));
+        row.setAttribute('data-message-id', messageId);
+        row.innerHTML = `
+            <div class="chat-checkbox-wrapper" style="display:${window.imData.batchSelectMode ? 'flex' : 'none'};width:40px;justify-content:center;align-items:flex-end;padding-bottom:10px;flex-shrink:0;cursor:pointer;transition:all .2s;">
+                <i class="far fa-circle chat-checkbox" data-timestamp="${timestamp}" style="color:#c7c7cc;font-size:22px;"></i>
+            </div>
+            <div style="flex:1;display:flex;justify-content:flex-end;min-width:0;">
+                <div class="chat-bubble user-bubble im-card-bubble" style="padding:0;background:transparent;">
+                    <div class="group-poll-card">
+                        <div class="group-poll-card-head">
+                            <div class="group-poll-card-kicker"><i class="fas fa-poll-h"></i> 群投票 · 公开单选</div>
+                            <div class="group-poll-card-title">${escapeHtml(msg.pollQuestion || '群投票')}</div>
+                        </div>
+                        <div class="group-poll-card-options">${optionHtml}</div>
+                        <div class="group-poll-card-footer"><span>${statusText}</span></div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        row.querySelectorAll('.group-poll-card-option').forEach(button => {
+            button.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                const optionId = button.getAttribute('data-poll-option-id') || '';
+                if (optionId && window.imChat?.selectGroupPollOption) {
+                    window.imChat.selectGroupPollOption(friend.id, messageId, optionId);
+                }
+            });
+        });
+        container.appendChild(row);
+    }
+
 function renderMessageBubble(msg, friend, container, timestamp = Date.now()) {
         if (!msg || !container) return false;
 
         window.imChat.ensureMessageId(msg, msg.type === 'pay_transfer' ? 'pay' : 'msg');
         const msgTime = timestamp || msg.timestamp || Date.now();
 
+        if (msg.type === 'group_poll') {
+            renderGroupPollBubble(msg, friend, container, msgTime);
+            return true;
+        }
         if (msg.type === 'moment_forward') {
             window.imChat.renderMomentForwardBubble(msg, friend, container, msgTime);
             return true;
@@ -2342,6 +2423,7 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
     window.imChat.renderStickerMessageBubble = renderStickerMessageBubble;
     window.imChat.openRecalledMessageDetail = openRecalledMessageDetail;
     window.imChat.renderMessageBubble = renderMessageBubble;
+    window.imChat.renderGroupPollBubble = renderGroupPollBubble;
     window.imChat.appendMessageToContainer = appendMessageToContainer;
     window.imChat.replaceMessageInContainer = replaceMessageInContainer;
     window.imChat.removeMessageFromContainer = removeMessageFromContainer;

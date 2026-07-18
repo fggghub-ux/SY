@@ -1538,7 +1538,57 @@
             claimRecords: safe.claimRecords,
             claimedMemberIds: safe.claimedMemberIds,
             speakerMemberId: safe.speakerMemberId,
+            pollId: typeof safe.pollId === 'string' ? safe.pollId : '',
+            pollQuestion: typeof safe.pollQuestion === 'string' ? safe.pollQuestion : '',
+            pollOptions: Array.isArray(safe.pollOptions)
+                ? sanitizePersistentValue(cloneDeep(safe.pollOptions))
+                : [],
+            pollVotes: Array.isArray(safe.pollVotes)
+                ? sanitizePersistentValue(cloneDeep(safe.pollVotes))
+                : [],
+            pollStatus: ['idle', 'pending', 'completed', 'error'].includes(safe.pollStatus) ? safe.pollStatus : '',
+            pollError: typeof safe.pollError === 'string' ? safe.pollError : '',
             payload: safe.payload || null
+        };
+    }
+
+    function recoverLegacyGroupPollFields(row) {
+        if (!row || row.type !== 'group_poll') return null;
+        const content = String(row.content || '');
+        const questionMatch = content.match(/^\[群投票：([^\n\]]+)/);
+        const optionsMatch = content.match(/\n选项：([^\n\]]+)/);
+        if (!questionMatch || !optionsMatch) return null;
+        const optionTexts = optionsMatch[1].split(/\s*\/\s*/).map(text => text.trim()).filter(Boolean);
+        if (optionTexts.length < 2) return null;
+        const safeMessageId = String(row.id || 'legacy').replace(/[^a-zA-Z0-9_-]/g, '-');
+        const pollOptions = optionTexts.map((text, index) => ({
+            id: `legacy-${safeMessageId}-option-${index + 1}`,
+            text
+        }));
+        const optionIdByText = new Map(pollOptions.map(option => [option.text, option.id]));
+        const currentUserName = String(window.userState?.name || 'User');
+        const votesMatch = content.match(/\n当前投票：([^\n\]]+)/);
+        const pollVotes = !votesMatch || votesMatch[1].trim() === '暂无'
+            ? []
+            : votesMatch[1].split('；').map((entry, index) => {
+                const parts = entry.split('→').map(text => text.trim());
+                const optionId = optionIdByText.get(parts[1]);
+                if (!parts[0] || !optionId) return null;
+                const isUser = parts[0] === currentUserName || parts[0] === 'User';
+                return {
+                    voterId: isUser ? '__user__' : `legacy-${safeMessageId}-voter-${index + 1}`,
+                    voterName: parts[0],
+                    optionId,
+                    voterType: isUser ? 'user' : 'member'
+                };
+            }).filter(Boolean);
+        return {
+            pollId: `legacy-${safeMessageId}`,
+            pollQuestion: questionMatch[1].trim(),
+            pollOptions,
+            pollVotes,
+            pollStatus: 'completed',
+            pollError: ''
         };
     }
 
@@ -1546,6 +1596,7 @@
         const inferredRecallActorRole = row.noticeKind === 'message_recalled'
             ? (String(row.content || '').trim().startsWith('你撤回了') ? 'user' : 'assistant')
             : '';
+        const legacyGroupPoll = recoverLegacyGroupPollFields(row);
         return {
             id: row.id,
             role: row.role,
@@ -1614,6 +1665,18 @@
             claimRecords: row.claimRecords,
             claimedMemberIds: row.claimedMemberIds,
             speakerMemberId: row.speakerMemberId,
+            pollId: row.pollId || legacyGroupPoll?.pollId || '',
+            pollQuestion: row.pollQuestion || legacyGroupPoll?.pollQuestion || '',
+            pollOptions: Array.isArray(row.pollOptions) && row.pollOptions.length > 0
+                ? cloneDeep(row.pollOptions)
+                : (legacyGroupPoll?.pollOptions || []),
+            pollVotes: Array.isArray(row.pollVotes) && row.pollVotes.length > 0
+                ? cloneDeep(row.pollVotes)
+                : (legacyGroupPoll?.pollVotes || []),
+            pollStatus: ['idle', 'pending', 'completed', 'error'].includes(row.pollStatus)
+                ? row.pollStatus
+                : (legacyGroupPoll?.pollStatus || ''),
+            pollError: row.pollError || legacyGroupPoll?.pollError || '',
             payload: row.payload,
             __messageOrder: Number(row.order) || 0
         };
@@ -1795,6 +1858,8 @@
                 previewText = `[转账] ${lastMessage.description || ''}`.trim();
             } else if (lastMessage.type === 'group_red_packet') {
                 previewText = `[群红包] ${lastMessage.description || ''}`.trim();
+            } else if (lastMessage.type === 'group_poll') {
+                previewText = `[群投票] ${lastMessage.pollQuestion || ''}`.trim();
             } else if (lastMessage.type === 'system_notice') {
                 if (lastMessage.noticeKind === 'group_left') {
                     previewText = '你已退出群聊';

@@ -27,14 +27,26 @@
         const originalBottomPadding = bottomControls?.style.paddingBottom || '';
         const originalDisplays = collapseElements.map((element) => element.style.display);
         let restingHeight = Math.max(window.innerHeight || 0, viewport?.height || 0);
+        let restingLayoutHeight = Math.round(window.innerHeight || restingHeight);
 
         const applyViewport = () => {
-            const viewportHeight = Math.round(viewport?.height || window.innerHeight || 0);
-            const viewportTop = Math.round(viewport?.offsetTop || 0);
+            const layoutHeight = Math.round(window.innerHeight || viewport?.height || 0);
+            const visualHeight = Math.round(viewport?.height || layoutHeight);
+            const layoutAlreadyResized = restingLayoutHeight - layoutHeight > 100;
+            // Some Android WebViews resize the layout viewport and then report an
+            // already-reduced visual viewport again. Following visualViewport in
+            // that mode applies the keyboard height twice. If the layout itself
+            // has moved, it is already the authoritative visible height; otherwise
+            // visualViewport handles overlay-style keyboards.
+            const viewportHeight = layoutAlreadyResized ? layoutHeight : visualHeight;
+            const viewportTop = layoutAlreadyResized ? 0 : Math.round(viewport?.offsetTop || 0);
             if (viewportHeight <= 0) return;
 
             const focused = document.activeElement === input;
-            if (!focused) restingHeight = Math.max(restingHeight, viewportHeight);
+            if (!focused && !root.classList.contains('im-call-keyboard-open')) {
+                restingHeight = Math.max(restingHeight, viewportHeight);
+                restingLayoutHeight = Math.max(restingLayoutHeight, layoutHeight);
+            }
             const keyboardOpen = restingHeight - viewportHeight > 100 &&
                 (focused || root.classList.contains('im-call-keyboard-open'));
 
@@ -1331,13 +1343,14 @@ ${recentMsgs || '无'}
 systemPrompt += `\n【!!!重要指示!!!】:
 你现在正处于真实的群聊实时语音通话中。
 【要求】:
-1. 本轮必须让所有已接入的非 User 群成员各发言一次，不能遗漏，也不要额外添加名单外的人。
-2. 已接入成员名单：${activeSpeakerNames.length > 0 ? activeSpeakerNames.join('、') : 'None'}。
-3. 每个成员只输出 1 条简短自然的语音回复，务必口语化，像真人在打电话，不要长篇大论。
-4. action 必须是能被通话感知到的动作、环境声或语气描写，必须包含该成员名字，不要写心声、内心、心理活动。
-5. text 是该成员真正说出口的原文台词；translation 必须是 text 对应的自然中文翻译，即使 text 本身是中文也要给出中文复述，不要留空。
-6. 严禁输出 thought、inner、心声、心理活动等字段；即使想表达情绪，也只能放在 action 的外显动作或语气里。
-7. 【输出格式】：必须返回纯 JSON 数组，格式为：[{"senderName":"成员名","action":"动作/环境描写","text":"原文台词","translation":"中文翻译"}]。`;
+1. 这是一段连续发生的多人通话，不是点名发言。根据上一句的具体内容、语气和关系自然选择谁接话；后一条必须回应、补充、打断、追问或纠正前一条，禁止每个人各说一段互不相关的话。
+2. 每次生成 3-8 条按实际发生顺序排列的简短发言。无需让所有成员出现，也不限制一名成员只能说一次；允许两三个人围绕同一件事连续来回。有至少两名可用成员时，本轮通常应形成至少两人之间的接话。
+3. 已接入成员名单：${activeSpeakerNames.length > 0 ? activeSpeakerNames.join('、') : 'None'}。senderName 必须严格使用名单中的准确名字，禁止添加名单外的人，禁止替 User 发言。
+4. 每条 text 都必须是成员真正说出口的短句，口语化、即时、自然；避免长篇独白、总结式轮流发言和重复上一句。
+5. action 只能写通话中能被听见或看见的简短动作、环境声或外显语气，可以为空；不得用 action 偷渡心声、动机、感受判断或心理解释。
+6. translation 必须是 text 对应的自然中文翻译；text 本身是中文时也给出自然中文复述，不要留空。
+7. 严禁输出 thought、inner、monologue、心声、内心、心理活动等字段或内容。不要先思考后回答，不要展示任何未说出口的信息。
+8. 【输出格式】：只返回纯 JSON 数组，数组顺序就是实际接话顺序。每项只能包含 senderName、action、text、translation 四个字段，格式为：[{"senderName":"成员名","action":"可感知动作/环境声或空字符串","text":"原文台词","translation":"中文翻译"}]。`;
                     let endpoint = apiConfig.endpoint;
                     if(endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
                     if(!endpoint.endsWith('/chat/completions')) {
@@ -1381,6 +1394,12 @@ systemPrompt += `\n【!!!重要指示!!!】:
                             }
                         }
                         if (!Array.isArray(parsed)) parsed = [parsed];
+                        parsed = parsed.slice(0, 8).map(item => ({
+                            senderName: typeof item?.senderName === 'string' ? item.senderName.trim() : '',
+                            action: typeof item?.action === 'string' ? item.action.trim() : '',
+                            text: typeof item?.text === 'string' ? item.text.trim() : '',
+                            translation: typeof item?.translation === 'string' ? item.translation.trim() : ''
+                        }));
                     } catch (e) {
                         console.error("Failed to parse JSON in group call", e, fullReply);
                         parsed = [];
@@ -1389,7 +1408,7 @@ systemPrompt += `\n【!!!重要指示!!!】:
 
                     if (!groupCallTarget) return; // if hung up during fetch
 
-                    parsed.forEach(msgObj => {
+                    parsed.forEach((msgObj, messageIndex) => {
                         if (msgObj.senderName && (msgObj.text || msgObj.action)) {
                             // Find member id by name
                             let friend = groupMembers.find(m => 
@@ -1399,20 +1418,10 @@ systemPrompt += `\n【!!!重要指示!!!】:
                                 (m.realName && msgObj.senderName.includes(m.realName))
                             );
                             
-                            // 兜底方案，如果找不到对应角色，默认使用第一位非用户的群成员
-                            if (!friend && groupMembers.length > 0) {
-                                friend = groupMembers.find(m => m.id !== '__user__') || groupMembers[0];
-                            }
-
                             if (friend) {
                                 setTimeout(() => {
                                     addGroupCallBubble(msgObj.text || '', friend.id, messagesArea, msgObj.action || '', msgObj.translation || '');
-                                }, 500); // slight delay
-                            } else {
-                                // 极端情况依然没找到，强行以纯文本显示
-                                setTimeout(() => {
-                                    addGroupCallBubble(msgObj.text || '', null, messagesArea, msgObj.action || '', msgObj.translation || '');
-                                }, 500);
+                                }, 450 + (messageIndex * 700));
                             }
                         }
                     });

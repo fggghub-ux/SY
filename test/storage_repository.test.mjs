@@ -344,6 +344,75 @@ test('plain-text message commits update only message and compact summary records
     assert.deepEqual(messages.map((message) => message.id), ['atomic-message-1', 'atomic-message-2']);
 });
 
+test('group poll options and voter records survive message reload', async () => {
+    const friend = {
+        id: 'group-poll-storage',
+        type: 'group',
+        nickname: 'Poll Group',
+        messages: [],
+        messagesLoaded: true,
+        unreadCount: 0
+    };
+    await window.appStorage.saveFriend(friend);
+    const pollMessage = {
+        id: 'poll-message-1',
+        role: 'user',
+        type: 'group_poll',
+        timestamp: 300,
+        content: '[群投票：晚饭吃什么]',
+        pollId: 'poll-1',
+        pollQuestion: '晚饭吃什么',
+        pollOptions: [
+            { id: 'option-a', text: '火锅' },
+            { id: 'option-b', text: '烤肉' }
+        ],
+        pollVotes: [
+            { voterId: 'member-1', voterName: '小林', optionId: 'option-a', voterType: 'member' },
+            { voterId: '__user__', voterName: 'User', optionId: 'option-b', voterType: 'user' }
+        ],
+        pollStatus: 'completed',
+        pollError: ''
+    };
+    friend.messages.push(pollMessage);
+    await window.appStorage.commitFriendMessage(friend, pollMessage, 0);
+
+    const reloaded = await window.appStorage.loadMessagesByFriendId(friend.id);
+    assert.equal(reloaded.length, 1);
+    assert.equal(reloaded[0].pollQuestion, '晚饭吃什么');
+    assert.deepEqual(reloaded[0].pollOptions, pollMessage.pollOptions);
+    assert.deepEqual(reloaded[0].pollVotes, pollMessage.pollVotes);
+    assert.equal(reloaded[0].pollStatus, 'completed');
+});
+
+test('legacy group poll summaries recover voters after the old field loss', async () => {
+    const friend = {
+        id: 'legacy-group-poll-storage',
+        type: 'group',
+        nickname: 'Legacy Poll Group',
+        messages: [],
+        messagesLoaded: true,
+        unreadCount: 0
+    };
+    await window.appStorage.saveFriend(friend);
+    const legacyMessage = {
+        id: 'legacy-poll-message',
+        role: 'user',
+        type: 'group_poll',
+        timestamp: 301,
+        content: '[群投票：周末去哪\n选项：公园 / 电影院\n当前投票：小林 → 公园；User → 电影院]'
+    };
+    friend.messages.push(legacyMessage);
+    await window.appStorage.commitFriendMessage(friend, legacyMessage, 0);
+
+    const [reloaded] = await window.appStorage.loadMessagesByFriendId(friend.id);
+    assert.equal(reloaded.pollQuestion, '周末去哪');
+    assert.deepEqual(reloaded.pollOptions.map(option => option.text), ['公园', '电影院']);
+    assert.deepEqual(reloaded.pollVotes.map(vote => vote.voterName), ['小林', 'User']);
+    assert.equal(reloaded.pollVotes[0].optionId, reloaded.pollOptions[0].id);
+    assert.equal(reloaded.pollVotes[1].optionId, reloaded.pollOptions[1].id);
+    assert.equal(reloaded.pollStatus, 'completed');
+});
+
 test('identical embedded chat images share one lossless content-addressed asset', async () => {
     const dataUrl = 'data:image/png;base64,iVBORw0KGgo=';
     const friend = { id: 'media-friend', messages: [], messagesLoaded: true, unreadCount: 0 };

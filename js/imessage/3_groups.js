@@ -15,6 +15,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const groupMoreSheet = document.getElementById('group-more-sheet');
     const groupMemberManageSheet = document.getElementById('group-member-manage-sheet');
     const groupCallBtn = document.getElementById('group-call-btn');
+    const groupPollBtn = document.getElementById('group-poll-btn');
+    const groupPollCreateSheet = document.getElementById('group-poll-create-sheet');
+    const groupPollCreateClose = document.getElementById('group-poll-create-close');
+    const groupPollQuestionInput = document.getElementById('group-poll-question-input');
+    const groupPollOptionsList = document.getElementById('group-poll-options-list');
+    const groupPollOptionCount = document.getElementById('group-poll-option-count');
+    const groupPollAddOptionBtn = document.getElementById('group-poll-add-option-btn');
+    const groupPollSubmitBtn = document.getElementById('group-poll-submit-btn');
     const groupCallInviteSheet = document.getElementById('group-call-invite-sheet');
     const groupCallMembersList = document.getElementById('group-call-members-list');
     const groupCallStartBtn = document.getElementById('group-call-start-btn');
@@ -1182,6 +1190,215 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    function createGroupPollOptionId(index = 0) {
+        return `poll-option-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`;
+    }
+
+    function resetGroupPollForm() {
+        if (groupPollQuestionInput) groupPollQuestionInput.value = '';
+        if (!groupPollOptionsList) return;
+        groupPollOptionsList.innerHTML = '';
+        addGroupPollOptionRow();
+        addGroupPollOptionRow();
+        updateGroupPollOptionControls();
+    }
+
+    function updateGroupPollOptionControls() {
+        if (!groupPollOptionsList) return;
+        const rows = Array.from(groupPollOptionsList.querySelectorAll('.group-poll-option-row'));
+        rows.forEach((row, index) => {
+            const indexEl = row.querySelector('.group-poll-option-index');
+            const removeBtn = row.querySelector('.group-poll-option-remove');
+            if (indexEl) indexEl.textContent = String(index + 1);
+            if (removeBtn) removeBtn.hidden = rows.length <= 2;
+        });
+        if (groupPollOptionCount) groupPollOptionCount.textContent = `${rows.length} / 10`;
+        if (groupPollAddOptionBtn) groupPollAddOptionBtn.disabled = rows.length >= 10;
+    }
+
+    function addGroupPollOptionRow(value = '') {
+        if (!groupPollOptionsList) return;
+        const currentCount = groupPollOptionsList.querySelectorAll('.group-poll-option-row').length;
+        if (currentCount >= 10) return;
+        const row = document.createElement('div');
+        row.className = 'group-poll-option-row';
+        row.innerHTML = `
+            <span class="group-poll-option-index">${currentCount + 1}</span>
+            <input type="text" class="group-poll-option-input" maxlength="60" placeholder="选项 ${currentCount + 1}" value="${escapeGroupHtml(value)}">
+            <button type="button" class="group-poll-option-remove" aria-label="删除选项"><i class="fas fa-minus-circle"></i></button>
+        `;
+        row.querySelector('.group-poll-option-remove')?.addEventListener('click', () => {
+            if (groupPollOptionsList.querySelectorAll('.group-poll-option-row').length <= 2) return;
+            row.remove();
+            updateGroupPollOptionControls();
+        });
+        groupPollOptionsList.appendChild(row);
+        updateGroupPollOptionControls();
+    }
+
+    function getGroupPollFormValues() {
+        const question = String(groupPollQuestionInput?.value || '').trim();
+        const options = Array.from(groupPollOptionsList?.querySelectorAll('.group-poll-option-input') || [])
+            .map(input => String(input.value || '').trim());
+        return { question, options };
+    }
+
+    function validateGroupPollForm(question, options) {
+        if (!question) return '请输入投票内容';
+        if (options.length < 2) return '至少需要两个选项';
+        if (options.some(option => !option)) return '请填写完整的投票选项';
+        const normalizedOptions = options.map(option => option.toLocaleLowerCase());
+        if (new Set(normalizedOptions).size !== normalizedOptions.length) return '投票选项不能重复';
+        return '';
+    }
+
+    function buildGroupPollContextText(message) {
+        const question = String(message?.pollQuestion || '').trim();
+        const options = Array.isArray(message?.pollOptions) ? message.pollOptions : [];
+        const votes = Array.isArray(message?.pollVotes) ? message.pollVotes : [];
+        const optionById = new Map(options.map(option => [String(option.id), option.text]));
+        const voteLines = votes.map(vote => `${vote.voterName || vote.voterId} → ${optionById.get(String(vote.optionId)) || '未知选项'}`);
+        return `[群投票：${question}\n选项：${options.map(option => option.text).join(' / ')}\n当前投票：${voteLines.length > 0 ? voteLines.join('；') : '暂无'}]`;
+    }
+
+    function getGroupPollMessage(groupId, messageId) {
+        const group = resolveLatestGroup(groupId);
+        if (!group || !Array.isArray(group.messages)) return null;
+        return group.messages.find(message => String(message?.id) === String(messageId) && message?.type === 'group_poll') || null;
+    }
+
+    function rerenderGroupPollMessage(groupId, messageId) {
+        const group = resolveLatestGroup(groupId);
+        const message = getGroupPollMessage(groupId, messageId);
+        const page = document.getElementById(`chat-interface-${groupId}`);
+        const container = page?.querySelector('.ins-chat-messages');
+        if (group && message && container && window.imChat?.replaceMessageInContainer) {
+            window.imChat.replaceMessageInContainer(group, container, message, { id: messageId }, { scroll: false });
+        }
+    }
+
+    async function updateGroupPollMessage(groupId, messageId, mutator) {
+        const saved = await window.imApp.updateFriendMessage(groupId, { id: messageId }, (message) => {
+            if (!message || message.type !== 'group_poll') return;
+            mutator(message);
+            message.content = buildGroupPollContextText(message);
+        }, { silent: true });
+        if (saved) rerenderGroupPollMessage(groupId, messageId);
+        return saved;
+    }
+
+    window.imChat = window.imChat || {};
+    window.imChat.applyGroupPollRoleVotes = async function(groupId, messageId, roleVotes) {
+        const group = resolveLatestGroup(groupId);
+        const message = getGroupPollMessage(groupId, messageId);
+        if (!group || !message || !Array.isArray(roleVotes)) return false;
+        const members = (Array.isArray(group.members) ? group.members : [])
+            .map(memberId => (window.imData?.friends || []).find(friend => String(friend.id) === String(memberId)))
+            .filter(Boolean);
+        const memberById = new Map(members.map(member => [String(member.id), member]));
+        const optionIds = new Set((message.pollOptions || []).map(option => String(option.id)));
+
+        return updateGroupPollMessage(groupId, messageId, targetMessage => {
+            const existingVotes = Array.isArray(targetMessage.pollVotes) ? targetMessage.pollVotes : [];
+            const votedMemberIds = new Set(existingVotes
+                .filter(vote => vote?.voterType === 'member')
+                .map(vote => String(vote.voterId)));
+            const acceptedVotes = [];
+            roleVotes.forEach(vote => {
+                const memberId = String(vote?.memberId || vote?.voterId || '');
+                const optionId = String(vote?.optionId || '');
+                const member = memberById.get(memberId);
+                if (!member || !optionIds.has(optionId) || votedMemberIds.has(memberId)) return;
+                votedMemberIds.add(memberId);
+                acceptedVotes.push({
+                    voterId: memberId,
+                    voterName: member.nickname || member.realName || memberId,
+                    optionId,
+                    voterType: 'member'
+                });
+            });
+            targetMessage.pollVotes = [...existingVotes, ...acceptedVotes];
+            targetMessage.pollStatus = 'completed';
+            targetMessage.pollError = '';
+        });
+    };
+    window.imChat.selectGroupPollOption = async function(groupId, messageId, optionId) {
+        const message = getGroupPollMessage(groupId, messageId);
+        if (!message || !(message.pollOptions || []).some(option => String(option.id) === String(optionId))) return false;
+        const userName = window.userState?.name || 'User';
+        return updateGroupPollMessage(groupId, messageId, targetMessage => {
+            const memberVotes = (Array.isArray(targetMessage.pollVotes) ? targetMessage.pollVotes : [])
+                .filter(vote => vote?.voterType === 'member');
+            targetMessage.pollVotes = [{
+                voterId: '__user__',
+                voterName: userName,
+                optionId: String(optionId),
+                voterType: 'user'
+            }, ...memberVotes];
+            targetMessage.pollStatus = 'idle';
+            targetMessage.pollError = '';
+        });
+    };
+
+    if (groupPollBtn) {
+        groupPollBtn.addEventListener('click', () => {
+            if (!resolveLatestGroup(currentViewingGroup)) return;
+            resetGroupPollForm();
+            closeView(groupMoreSheet);
+            if (window.openView) window.openView(groupPollCreateSheet);
+            setTimeout(() => groupPollQuestionInput?.focus(), 120);
+        });
+    }
+
+    groupPollCreateClose?.addEventListener('click', () => closeView(groupPollCreateSheet));
+    groupPollAddOptionBtn?.addEventListener('click', () => {
+        addGroupPollOptionRow();
+        const inputs = groupPollOptionsList?.querySelectorAll('.group-poll-option-input');
+        inputs?.[inputs.length - 1]?.focus();
+    });
+
+    groupPollSubmitBtn?.addEventListener('click', async () => {
+        const group = resolveLatestGroup(currentViewingGroup);
+        if (!group) return;
+        const { question, options } = getGroupPollFormValues();
+        const validationError = validateGroupPollForm(question, options);
+        if (validationError) {
+            if (window.showToast) window.showToast(validationError);
+            return;
+        }
+
+        groupPollSubmitBtn.disabled = true;
+        const timestamp = Date.now();
+        const message = {
+            id: window.imChat?.createMessageId ? window.imChat.createMessageId('poll') : `poll-${timestamp}`,
+            role: 'user',
+            type: 'group_poll',
+            timestamp,
+            pollId: `group-poll-${timestamp}-${Math.random().toString(36).slice(2, 8)}`,
+            pollQuestion: question,
+            pollOptions: options.map((text, index) => ({ id: createGroupPollOptionId(index), text })),
+            pollVotes: [],
+            pollStatus: 'idle',
+            pollError: ''
+        };
+        message.content = buildGroupPollContextText(message);
+
+        try {
+            const saved = await window.imApp.appendFriendMessage(group.id, message);
+            if (!saved) return;
+            const liveGroup = resolveLatestGroup(group.id) || group;
+            const page = document.getElementById(`chat-interface-${group.id}`);
+            const container = page?.querySelector('.ins-chat-messages');
+            if (container && window.imChat?.appendMessageToContainer) {
+                window.imChat.appendMessageToContainer(liveGroup, container, message);
+            }
+            closeView(groupPollCreateSheet);
+            closeView(document.getElementById('group-details-sheet'));
+        } finally {
+            groupPollSubmitBtn.disabled = false;
+        }
+    });
 
     let selectedGroupCallMembers = [];
 
