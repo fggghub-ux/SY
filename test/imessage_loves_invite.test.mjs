@@ -20,5 +20,15 @@ test('Loves acceptance markers are removed before structured chat parsing', asyn
 
 test('the page loads the cache-busted Loves invite parser', async () => {
     const index = await readWorkspaceFile('index.html');
-    assert.match(index, /js\/imessage\/4_chat_ai\.js\?v=20260716-status-prompt-v2/);
+    assert.match(index, /js\/imessage\/4_chat_ai\.js\?v=20260718-single-chat-prompt-v2/);
+});
+
+test('the black Loves invite button keeps its label white', async () => {
+    const [index, css] = await Promise.all([
+        readWorkspaceFile('index.html'),
+        readWorkspaceFile('css/loves.css')
+    ]);
+
+    assert.match(index, /css\/loves\.css\?v=20260718-invite-text-v1/);
+    assert.match(css, /\.loves-note-action-invite\s*\{[\s\S]*?background:\s*var\(--loves-accent\);[\s\S]*?color:\s*#fff\s*!important;[\s\S]*?-webkit-text-fill-color:\s*#fff;/);
 });

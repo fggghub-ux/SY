@@ -5514,7 +5514,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     removeSelectedPromptPreset();
                 }
             });
-            exportPromptPresetBtn.addEventListener('click', () => {
+            exportPromptPresetBtn.addEventListener('click', async () => {
                 const selected = presets.find(preset => preset.id === window.imData.offlinePromptActivePresetId);
                 const exportName = selected?.name || '自定义线下提示词';
                 const payload = {
@@ -5524,15 +5524,13 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     prompts: normalizeOfflinePrompts(prompts).map(cloneOfflinePrompt)
                 };
                 const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = `${exportName.replace(/[\\/:*?"<>|]/g, '_') || 'offline-prompts'}.json`;
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
-                URL.revokeObjectURL(url);
-                if (window.showToast) window.showToast('线下提示词已导出');
+                const result = await window.u2ExportFile({
+                    blob,
+                    fileName: `${exportName.replace(/[\\/:*?"<>|]/g, '_') || 'offline-prompts'}.json`,
+                    title: 'U2 线下提示词'
+                });
+                if ((result === 'shared' || result === 'downloaded') && window.showToast) window.showToast('线下提示词已导出');
+                else if (result === 'failed' && window.showToast) window.showToast('线下提示词导出失败');
             });
             importPromptPresetBtn.addEventListener('click', () => importPromptPresetInput.click());
             importPromptPresetInput.addEventListener('change', async () => {
@@ -5914,7 +5912,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     removeSelectedPreset();
                 }
             });
-            exportPresetBtn.addEventListener('click', () => {
+            exportPresetBtn.addEventListener('click', async () => {
                 const selected = presets.find(preset => preset.id === theme.activePresetId);
                 const exportName = selected?.name || '自定义线下主题';
                 const payload = {
@@ -5928,15 +5926,13 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     }
                 };
                 const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = `${exportName.replace(/[\\/:*?"<>|]/g, '_') || 'offline-theme'}.json`;
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
-                URL.revokeObjectURL(url);
-                if (window.showToast) window.showToast('线下主题已导出');
+                const result = await window.u2ExportFile({
+                    blob,
+                    fileName: `${exportName.replace(/[\\/:*?"<>|]/g, '_') || 'offline-theme'}.json`,
+                    title: 'U2 线下主题'
+                });
+                if ((result === 'shared' || result === 'downloaded') && window.showToast) window.showToast('线下主题已导出');
+                else if (result === 'failed' && window.showToast) window.showToast('线下主题导出失败');
             });
             importPresetBtn.addEventListener('click', () => importPresetInput.click());
             importPresetInput.addEventListener('change', async () => {

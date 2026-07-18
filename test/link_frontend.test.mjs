@@ -441,17 +441,30 @@ test('applies tuned relationship, personality, and time-gap rules to single and 
     assert.match(aiSource, /算你识相\/乖\/算你有良心/);
     assert.match(aiSource, /彻底摒弃赛博爹妈感/);
     assert.match(aiSource, /禁止讲大道理、给建议、或者说“早跟你说了吧”吗？/);
+    assert.match(aiSource, /\$\{isSingleChat \? '- 禁止执着于旧话题，例如当user明确表达不困时/);
+    assert.match(aiSource, /草稿中有“快睡”，“赶紧”，“真是的”等字样马上删除！/);
     assert.match(aiSource, /\*\*外向\/敏感\*\* ：回复快，主动开启话题并很爱分享感受/);
     assert.match(aiSource, /\*\*内向\/温柔\*\* ：回复偏慢，用词柔软且有分寸/);
     assert.match(aiSource, /现在的时间段是：\$\{currentTimePeriod\}/);
     assert.match(aiSource, /\*\*间隔 < 2小时\*\*/);
     assert.match(aiSource, /\*\*间隔 2-8小时\*\*/);
     assert.match(aiSource, /\*\*隔夜（跨越了凌晨）\*\*/);
+    assert.match(aiSource, /【跨天话题重置】：当上一条消息来自昨晚或更早日期/);
+    assert.match(aiSource, /停止机械延续昨晚的催睡、争执、追问或已经结束的话题/);
     assert.match(aiSource, /\*\*间隔 > 24小时\*\*/);
     assert.match(aiSource, /const rolePsychologyAndEvolutionPrompt = buildRolePsychologyAndEvolutionPrompt\(\)/);
     assert.match(aiSource, /isSingleChat: true,[\s\S]*?relationship: userRelationship/);
     assert.match(aiSource, /与 User 的关系: \$\{String\(member\.relationship/);
     assert.match(aiSource, /根据群聊最近一次互动距离现在的间隔调整承接方式/);
+
+    const singleChatPrompt = aiSource.slice(
+        aiSource.indexOf('const singleChatRoleRecallPrompt'),
+        aiSource.indexOf('systemPrompt += `\\n\\n<GEMINI_OVERRIDE_CORE>')
+    );
+    assert.match(singleChatPrompt, /用“是\[正确词汇\]”的方式修正/);
+    assert.match(singleChatPrompt, /角色: 是餐馆/);
+    assert.doesNotMatch(singleChatPrompt, /\*是\[正确词汇\]|角色: \*是餐馆/);
+    assert.match(aiSource, /\$\{friend\.type === 'group' \? `6\. 无论其他附加任务是否能完成/);
 });
 
 test('prioritizes complete chat bubbles and places temporal context immediately before the response trigger', async () => {
@@ -526,7 +539,7 @@ test('uses visible keyword-triggered memory recall for single and group chats', 
     assert.match(settingsSource, /summaryPayload\.memoryTags/);
     assert.match(statusSource, /triggerKeywords = window\.imChat\?\.normalizeMemoryTriggerKeywords/);
     assert.match(cssSource, /\.memory-recall-narration-pill/);
-    assert.match(indexSource, /4_chat_ai\.js\?v=20260716-status-prompt-v2/);
+    assert.match(indexSource, /4_chat_ai\.js\?v=20260718-single-chat-prompt-v2/);
     assert.match(indexSource, /4_chat_bubbles\.js\?v=20260713-offline-summary-modal-v3/);
     assert.match(indexSource, /5_settings\.js\?v=20260716-status-prompt-v3/);
 });
@@ -558,7 +571,7 @@ test('uses per-member group languages, content-sized private bubbles, and fresh 
     assert.match(coreSource, /getApiContextFingerprint\(targetMessage\) !== previousContextFingerprint/);
     assert.match(coreSource, /window\.imApp\.clearFriendRuntimeMessageContext\(targetFriend\)/);
     assert.match(indexSource, /js\/imessage\/2_core\.js\?v=20260716-offline-token-v1/);
-    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260716-status-prompt-v2/);
+    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260718-single-chat-prompt-v2/);
     assert.match(indexSource, /js\/imessage\/4_chat_main\.js\?v=20260715-chat-context-menu-offline-retry-v1/);
 });
 

@@ -307,7 +307,7 @@ test('offline single chat follows the bound account identity and refreshes visib
     assert.match(settingsSource, /window\.imChat\?\.refreshOfflineUserIdentity[\s\S]*?window\.imChat\.refreshOfflineUserIdentity\(friend\)/);
     assert.match(settingsSource, /updateChatBindIdLabel\(window\.imData\.currentSettingsFriend\);[\s\S]*?refreshChatPageForFriend\(window\.imData\.currentSettingsFriend\);/);
     assert.match(html, /offline_reasoning\.js\?v=20260716-reasoning-autoparse-v6/);
-    assert.match(html, /4_chat_sheet\.js\?v=20260716-offline-cot-v5/);
+    assert.match(html, /4_chat_sheet\.js\?v=20260718-ios-pwa-export-v1/);
     assert.match(html, /5_settings\.js\?v=20260716-status-prompt-v3/);
 });
 
@@ -324,7 +324,7 @@ test('Char moment images use external grayscale photos and reveal descriptions o
     assert.match(source, /Every images\[\]\.description must be written only in natural Simplified Chinese/);
     assert.equal((source.match(/getMomentImageSource\(/g) || []).length >= 5, true);
     assert.doesNotMatch(source, /createMomentDescriptionImageUrl|drawMomentImageDescription/);
-    assert.match(html, /6_moments\.js\?v=20260713-moments-comment-delete-v4/);
+    assert.match(html, /6_moments\.js\?v=20260718-moments-target-reply-v1/);
 });
 
 test('moment-generated private chat follows the friend language and stores Chinese translations', async () => {
@@ -337,7 +337,7 @@ test('moment-generated private chat follows the friend language and stores Chine
     assert.match(source, /const targetLanguage = normalizeMomentLanguage\(friend\.language \|\| 'zh'\)/);
     assert.match(source, /buildMomentLanguageContract\(targetLanguage, 'every chatReplies item'\)/);
     assert.match(source, /content: cleanReplies\[index\]\.text[\s\S]*?msgObj\.translation = cleanReplies\[index\]\.translation[\s\S]*?msgObj\.showTranslation = false/);
-    assert.match(html, /6_moments\.js\?v=20260713-moments-comment-delete-v4/);
+    assert.match(html, /6_moments\.js\?v=20260718-moments-target-reply-v1/);
 });
 
 test('offline chat dialogue and settings use the fullscreen studio presentation', async () => {

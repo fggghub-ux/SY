@@ -65,5 +65,5 @@ test('single-chat Theme source includes every current single-chat message-card f
 
 test('loads the cache-busted Theme copy-source script', async () => {
     const html = await read('../index.html');
-    assert.match(html, /js\/settings\.js\?v=20260716-theme-copy-source-v5/);
+    assert.match(html, /js\/settings\.js\?v=20260718-ios-pwa-export-v1/);
 });

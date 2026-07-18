@@ -69,3 +69,21 @@ test('moments renders translation controls and a persisted unread message bubble
     assert.match(coreSource, /thoughtTranslation:/);
     assert.match(coreSource, /read: false/);
 });
+
+test('moment nested replies use only the replied-to character, including on user moments', async () => {
+    const momentsSource = await fs.readFile(new URL('../js/imessage/6_moments.js', import.meta.url), 'utf8');
+    const targetBuilder = momentsSource.slice(
+        momentsSource.indexOf('function buildMomentCommentReplyTargets('),
+        momentsSource.indexOf('function cleanMomentApiJsonText(')
+    );
+
+    assert.match(targetBuilder, /addTarget\(replyFriend, relation, role\)/);
+    assert.doesNotMatch(targetBuilder, /relationships\.forEach|relation network/);
+    assert.match(momentsSource, /async function generateMomentUserCommentReplies\(moment, replyFriend, userComment, targetComment = null\)/);
+    assert.match(momentsSource, /getWorldBookContextForFriendByPosition\('system_depth', replyFriend, worldBookContextText\)/);
+    assert.match(momentsSource, /buildApiContextMessages\(replyFriend/);
+    assert.match(momentsSource, /const replyFriend = explicitReplyFriend \|\| \(targetComment[\s\S]*?findFriendForMomentComment\(targetComment\)[\s\S]*?findFriendForMomentAuthor\(latestMoment\)\)/);
+    assert.match(momentsSource, /triggerMomentUserCommentReplies\(momentId, userComment, targetComment, friend\)/);
+    assert.match(momentsSource, /if \(findFriendForMomentAuthor\(latestMoment\)\)[\s\S]*?triggerMomentUserCommentReplies\(momentId, newComment\)/);
+    assert.match(momentsSource, /const handledMomentReplyCommentIds = new Set\(\)/);
+});

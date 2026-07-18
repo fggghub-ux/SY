@@ -169,7 +169,7 @@ test('changed Android input assets are cache-busted', () => {
     assert.match(indexSource, /css\/imessage\.css\?v=20260716-status-prompt-v3/);
     assert.match(indexSource, /css\/settings\.css\?v=20260715-font-upload-v1/);
     assert.match(indexSource, /js\/mobile_input_compat\.js\?v=20260713-bstage-enter-v1/);
-    assert.match(indexSource, /js\/settings\.js\?v=20260716-theme-copy-source-v5/);
+    assert.match(indexSource, /js\/settings\.js\?v=20260718-ios-pwa-export-v1/);
     assert.match(indexSource, /id="storage-clean-cache-btn"[^>]*>优化存储<\/button>/);
     assert.match(settingsSource, /appStorage\.optimizeStorage\(\{ progressCallback: updateOperation \}\)/);
 });

@@ -153,6 +153,54 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    const friendProfileImportBtn = document.getElementById('friend-profile-import-btn');
+    const friendProfileImportInput = document.getElementById('friend-profile-import-input');
+
+    async function readFriendProfileFile(file) {
+        const lowerName = String(file?.name || '').toLowerCase();
+        if (lowerName.endsWith('.doc')) {
+            throw new Error('暂不支持旧版 DOC，请另存为 DOCX 或 TXT 后导入');
+        }
+        if (lowerName.endsWith('.docx')) {
+            if (!window.mammoth?.extractRawText) {
+                throw new Error('DOCX 解析组件未加载，请检查网络后重试');
+            }
+            const result = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+            return String(result?.value || '').replace(/\u0000/g, '').trim();
+        }
+        if (!lowerName.endsWith('.txt') && !lowerName.endsWith('.text')) {
+            throw new Error('仅支持 TXT 和 DOCX 文件');
+        }
+        return String(await file.text()).replace(/\u0000/g, '').trim();
+    }
+
+    if (friendProfileImportBtn && friendProfileImportInput) {
+        friendProfileImportBtn.addEventListener('click', () => friendProfileImportInput.click());
+        friendProfileImportInput.addEventListener('change', async () => {
+            const file = friendProfileImportInput.files?.[0];
+            friendProfileImportInput.value = '';
+            if (!file) return;
+
+            try {
+                const importedPersona = await readFriendProfileFile(file);
+                if (!importedPersona) throw new Error('文件内容为空');
+
+                const personaInput = document.getElementById('friend-persona-input');
+                const nicknameInput = document.getElementById('friend-nickname-input');
+                const fileBaseName = String(file.name || '')
+                    .replace(/\.(?:txt|text|docx)$/i, '')
+                    .trim();
+
+                if (personaInput) personaInput.value = importedPersona;
+                if (nicknameInput && fileBaseName) nicknameInput.value = fileBaseName;
+                if (showToast) showToast('角色设定已导入，请确认后添加');
+            } catch (error) {
+                console.error('Failed to import friend profile', error);
+                if (showToast) showToast(error?.message || '角色设定导入失败');
+            }
+        });
+    }
+
     function setFriendAvatar(url) {
         const friendAvatarImg = document.getElementById('friend-avatar-img');
         const friendAvatarPreview = document.getElementById('friend-avatar-preview');

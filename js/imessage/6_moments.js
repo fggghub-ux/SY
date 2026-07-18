@@ -1353,8 +1353,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             (userName && text === userName);
     }
 
-    function buildMomentCommentReplyTargets(authorFriend) {
-        const friends = Array.isArray(window.imData.friends) ? window.imData.friends : [];
+    function buildMomentCommentReplyTargets(replyFriend, relation = '', role = 'author') {
         const targets = [];
         const seenIds = new Set();
 
@@ -1375,16 +1374,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         }
 
-        addTarget(authorFriend, 'Moment author', 'author');
-
-        const relationships = Array.isArray(authorFriend?.memory?.relationships)
-            ? authorFriend.memory.relationships
-            : [];
-        relationships.forEach((rel) => {
-            const npc = friends.find((item) => String(item?.id || '') === String(rel?.npcId || ''));
-            if (!npc || npc.type !== 'npc') return;
-            addTarget(npc, rel?.relation || '', 'npc');
-        });
+        addTarget(replyFriend, relation, role);
 
         return targets;
     }
@@ -1459,53 +1449,64 @@ document.addEventListener('DOMContentLoaded', async () => {
         }).join('\n\n');
     }
 
-    async function generateMomentUserCommentReplies(moment, authorFriend, userComment, targetComment = null) {
-        if (!moment || !authorFriend || !userComment || !hasCurrentMomentApiConfig()) return [];
+    async function generateMomentUserCommentReplies(moment, replyFriend, userComment, targetComment = null) {
+        if (!moment || !replyFriend || !userComment || !hasCurrentMomentApiConfig()) return [];
 
-        const targets = buildMomentCommentReplyTargets(authorFriend);
+        const targets = buildMomentCommentReplyTargets(
+            replyFriend,
+            targetComment ? 'Character whose comment the User replied to' : 'Moment author',
+            targetComment ? 'comment_target' : 'author'
+        );
         if (targets.length === 0) return [];
 
         if (window.imApp?.ensureFriendMessagesLoaded) {
-            await window.imApp.ensureFriendMessagesLoaded(authorFriend.id);
+            await window.imApp.ensureFriendMessagesLoaded(replyFriend.id);
         }
 
         const imageDescriptions = getMomentImageDescriptions(moment);
+        const authorFriend = findFriendForMomentAuthor(moment);
+        const momentAuthorName = isUserMoment(moment)
+            ? (window.userState?.name || moment.name || moment.userName || 'User')
+            : (moment.name || moment.userName || getDisplayNameForMomentSpeaker(authorFriend));
+        const momentAuthorPersona = isUserMoment(moment)
+            ? (window.userState?.persona || 'ordinary user')
+            : (authorFriend?.persona || 'ordinary user');
         const worldBookContextText = [
             moment.text || '',
             imageDescriptions || '',
             userComment.content || '',
             targetComment?.content || '',
-            authorFriend?.memory?.overview || ''
+            replyFriend?.memory?.overview || ''
         ].filter(Boolean).join('\n');
 
         const systemDepthWorldBookContext = window.imApp?.getWorldBookContextForFriendByPosition
-            ? window.imApp.getWorldBookContextForFriendByPosition('system_depth', authorFriend, worldBookContextText)
+            ? window.imApp.getWorldBookContextForFriendByPosition('system_depth', replyFriend, worldBookContextText)
             : (window.getGlobalWorldBookContextByPosition ? window.getGlobalWorldBookContextByPosition('system_depth') : '');
         const beforeRoleWorldBookContext = window.imApp?.getWorldBookContextForFriendByPosition
-            ? window.imApp.getWorldBookContextForFriendByPosition('before_role', authorFriend, worldBookContextText)
+            ? window.imApp.getWorldBookContextForFriendByPosition('before_role', replyFriend, worldBookContextText)
             : (window.getGlobalWorldBookContextByPosition ? window.getGlobalWorldBookContextByPosition('before_role') : '');
         const afterRoleWorldBookContext = window.imApp?.getWorldBookContextForFriendByPosition
-            ? window.imApp.getWorldBookContextForFriendByPosition('after_role', authorFriend, worldBookContextText)
+            ? window.imApp.getWorldBookContextForFriendByPosition('after_role', replyFriend, worldBookContextText)
             : (window.getGlobalWorldBookContextByPosition ? window.getGlobalWorldBookContextByPosition('after_role') : '');
 
         const effectiveUserPersona = window.imApp?.getEffectivePersonaForFriend
-            ? window.imApp.getEffectivePersonaForFriend(authorFriend)
+            ? window.imApp.getEffectivePersonaForFriend(replyFriend)
             : (window.userState?.persona || '');
         const contextMessages = window.imApp.buildApiContextMessages
-            ? window.imApp.buildApiContextMessages(authorFriend, {
+            ? window.imApp.buildApiContextMessages(replyFriend, {
                 userName: window.userState?.name || 'User'
             })
             : [];
 
         const systemPrompt = `${systemDepthWorldBookContext ? `System Depth Rules (Highest Priority):\n${systemDepthWorldBookContext}\n\n` : ''}${beforeRoleWorldBookContext ? `Before Role Rules:\n${beforeRoleWorldBookContext}\n\n` : ''}You are generating public replies under an iMessage Moments post.
-Moment author character: ${authorFriend.realName || authorFriend.nickname}.
-Moment author persona: ${authorFriend.persona || 'ordinary user'}.
+Moment author: ${momentAuthorName}.
+Moment author persona: ${momentAuthorPersona}.
 User (${window.userState?.name || 'User'}) persona: ${effectiveUserPersona || window.userState?.persona || 'ordinary user'}.
 ${afterRoleWorldBookContext ? `\nAfter Role Rules:\n${afterRoleWorldBookContext}\n` : ''}
 
 ${NO_USER_SELF_COMMENT_RULE}
 
-Generate replies from every allowed speaker below. Each speaker should reply to the user's newest public comment with 1 to 3 short natural public nested comments. The moment author should answer as themself. NPC speakers should answer according to their persona and relationship network.
+Generate 1 to 3 short natural public nested comments from the single allowed speaker below. When the User replied to an existing comment, continue only as the character who wrote that existing comment. Never add replies from the Moment author or related NPCs unless that character is the allowed speaker.
 
 Allowed speakers:
 ${formatMomentReplyTargetsForPrompt(targets)}
@@ -1517,7 +1518,7 @@ Output strict JSON only, with this exact shape:
 Do not output markdown, code fences, explanations, chain-of-thought, [Comment] tags, or any speaker not listed above.`;
 
         const userPromptParts = [
-            `Moment author: ${moment.name || moment.userName || getDisplayNameForMomentSpeaker(authorFriend)}`,
+            `Moment author: ${momentAuthorName}`,
             `Moment text:\n${moment.text || '(no text)'}`,
             imageDescriptions ? `Image descriptions:\n${imageDescriptions}` : '',
             targetComment ? `The user is replying under this existing comment by ${targetComment.name}:\n${targetComment.content}` : 'The user made a top-level public comment.',
@@ -1580,11 +1581,20 @@ Do not output markdown, code fences, explanations, chain-of-thought, [Comment] t
         return true;
     }
 
-    async function triggerMomentUserCommentReplies(momentId, userComment, targetComment = null) {
+    const handledMomentReplyCommentIds = new Set();
+
+    async function triggerMomentUserCommentReplies(momentId, userComment, targetComment = null, explicitReplyFriend = null) {
         const latestMoment = findMomentById(momentId);
-        const authorFriend = findFriendForMomentAuthor(latestMoment);
-        if (!latestMoment || !authorFriend || !userComment) {
-            if (window.showToast) window.showToast('暂无可生成的回复');
+        if (!latestMoment || !userComment) {
+            if (window.showToast) window.showToast('朋友圈或评论已不存在');
+            return false;
+        }
+
+        const replyFriend = explicitReplyFriend || (targetComment
+            ? findFriendForMomentComment(targetComment)
+            : findFriendForMomentAuthor(latestMoment));
+        if (!replyFriend) {
+            if (targetComment && window.showToast) window.showToast('找不到这条评论对应的角色');
             return false;
         }
 
@@ -1593,8 +1603,12 @@ Do not output markdown, code fences, explanations, chain-of-thought, [Comment] t
             return false;
         }
 
+        const requestId = String(userComment.id || '').trim();
+        if (requestId && handledMomentReplyCommentIds.has(requestId)) return false;
+        if (requestId) handledMomentReplyCommentIds.add(requestId);
+
         try {
-            const replyEntries = await generateMomentUserCommentReplies(latestMoment, authorFriend, userComment, targetComment);
+            const replyEntries = await generateMomentUserCommentReplies(latestMoment, replyFriend, userComment, targetComment);
             if (!Array.isArray(replyEntries) || replyEntries.length === 0) {
                 if (window.showToast) window.showToast('暂无可生成的回复');
                 return false;
@@ -1668,6 +1682,7 @@ Do not output markdown, code fences, explanations, chain-of-thought, [Comment] t
                 if (!replyText) return;
 
                 const userComment = {
+                    id: `moment-comment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
                     name: window.userState?.name || 'Me',
                     userId: 'me',
                     content: replyText,
@@ -1686,7 +1701,7 @@ Do not output markdown, code fences, explanations, chain-of-thought, [Comment] t
                 refreshViewsForMomentUser(findMomentById(momentId));
 
                 if (window.showToast) window.showToast('正在生成角色回复...');
-                await triggerMomentUserCommentReplies(momentId, userComment, targetComment);
+                await triggerMomentUserCommentReplies(momentId, userComment, targetComment, friend);
             }
         });
     }
@@ -2006,6 +2021,7 @@ Do not output markdown, code fences, explanations, chain-of-thought, [Comment] t
                         if (!text || !text.trim()) return;
 
                         const newComment = {
+                            id: `moment-comment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
                             name: window.userState ? window.userState.name : 'Me',
                             userId: 'me',
                             content: text.trim()
@@ -2022,8 +2038,10 @@ Do not output markdown, code fences, explanations, chain-of-thought, [Comment] t
 
                         const latestMoment = findMomentById(momentId);
                         refreshViewsForMomentUser(latestMoment);
-                        if (window.showToast) window.showToast('正在生成角色回复...');
-                        await triggerMomentUserCommentReplies(momentId, newComment);
+                        if (findFriendForMomentAuthor(latestMoment)) {
+                            if (window.showToast) window.showToast('正在生成角色回复...');
+                            await triggerMomentUserCommentReplies(momentId, newComment);
+                        }
                     }
                 });
             }

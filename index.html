@@ -42,7 +42,7 @@
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
-    <link rel="stylesheet" href="css/loves.css?v=20260714-ios-neutral-pink-v1">
+    <link rel="stylesheet" href="css/loves.css?v=20260718-invite-text-v1">
     <link rel="stylesheet" href="css/library.css?v=20260715-reader-streaming-v1">
     <!-- App Styles -->
     <link rel="stylesheet" href="css/settings.css?v=20260715-font-upload-v1">
@@ -2932,6 +2932,16 @@
                 <div class="sheet-title">主题美化</div>
                 
                 <div class="detail-sheet-content" style="padding-bottom: 30px; overflow-y: auto; flex: 1;">
+                    <div style="display: flex; margin: 0 16px 20px; padding: 10px; gap: 10px; background: #ffffff; border: 1px solid rgba(60, 60, 67, 0.08); border-radius: 16px; box-shadow: 0 3px 12px rgba(0, 0, 0, 0.04);">
+                        <button class="sheet-action" id="theme-export-btn" type="button" style="flex: 1; margin: 0; border: 1px solid rgba(0, 122, 255, 0.12); background: #eef5ff; color: var(--blue-color); font-size: 14px; border-radius: 12px; height: 44px; display: flex; justify-content: center; align-items: center; box-shadow: none;">
+                            <i class="fas fa-file-export" style="margin-right: 6px;"></i> 导出主题
+                        </button>
+                        <button class="sheet-action" id="theme-import-btn" type="button" style="flex: 1; margin: 0; border: 1px solid rgba(60, 60, 67, 0.08); background: #f2f2f7; color: #1c1c1e; font-size: 14px; border-radius: 12px; height: 44px; display: flex; justify-content: center; align-items: center; box-shadow: none;">
+                            <i class="fas fa-file-import" style="margin-right: 6px;"></i> 导入主题
+                        </button>
+                        <input type="file" id="theme-import-file-input" accept=".json,application/json" style="display:none;">
+                    </div>
+
                     <!-- Background Customization -->
                     <div class="settings-group fully-rounded" style="margin: 0 16px 20px;">
                         <div class="settings-item" style="cursor: default; border-bottom: 1px solid var(--separator-color);">
@@ -4137,7 +4147,13 @@
         <div class="bottom-sheet-overlay detail-sheet-overlay" id="add-friend-sheet" style="z-index: 500;">
             <div class="bottom-sheet" style="max-height: 85%; height: 80%; display: flex; flex-direction: column;">
                     <div class="sheet-handle"></div>
-                    <div class="sheet-title" style="white-space: nowrap;">Add New Friend</div>
+                    <div style="position: relative; min-height: 36px; margin-bottom: 20px; display: flex; align-items: center; justify-content: center;">
+                        <div class="sheet-title" style="white-space: nowrap; margin: 0;">Add New Friend</div>
+                        <button id="friend-profile-import-btn" type="button" aria-label="导入角色设定" title="导入 TXT / DOCX" style="position: absolute; right: 0; top: 0; width: 36px; height: 36px; padding: 0; border: 1px solid #d1d1d6; border-radius: 50%; background: #ffffff; color: #1c1c1e; box-shadow: none; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px;">
+                            <i class="fas fa-file-import" aria-hidden="true"></i>
+                        </button>
+                        <input type="file" id="friend-profile-import-input" accept=".txt,.text,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none;">
+                    </div>
                     
                     <div class="detail-sheet-content">
                         <!-- Avatar Upload -->
@@ -7614,6 +7630,7 @@
     <script src="storage.js?v=20260710-storage-v7-cache1"></script>
     <script src="js/app_state_bridge.js?v=20260710-bstage-chat-recovery-v1"></script>
     <script src="js/bootstrap_globals.js"></script>
+    <script src="js/export_file.js?v=20260718-ios-pwa-export-v1"></script>
     <script src="js/about_info_modal.js?v=20260712-login-notice-v1"></script>
     <script src="js/login.js?v=20260713-auth-disabled-v1"></script>
     <script src="js/mobile_input_compat.js?v=20260713-bstage-enter-v1"></script>
@@ -7623,24 +7640,24 @@
     <!-- 引入 iMessage 模块分段代码 -->
     <script src="js/imessage/data_utils.js?v=20260713-offline-memory-v1"></script>
     <script src="js/imessage/2_core.js?v=20260716-offline-token-v1-group-poll-v1"></script>
-    <script src="js/imessage/3_contacts.js"></script>
+    <script src="js/imessage/3_contacts.js?v=20260718-friend-profile-import-v1"></script>
     <script src="js/imessage/3_groups.js?v=20260718-group-poll-v4"></script>
     <script src="js/imessage/4_chat_common.js"></script>
     <script src="js/imessage/4_chat_status.js?v=20260716-status-prompt-v2"></script>
     <script src="js/imessage/4_chat_payment.js?v=20260705-offline-identity-v2"></script>
     <script src="js/imessage/4_chat_bubbles.js?v=20260713-offline-summary-modal-v3-group-poll-v3"></script>
     <script src="js/imessage/minimax_tts.js"></script>
-    <script src="js/imessage/4_chat_ai.js?v=20260716-status-prompt-v2-group-poll-v2"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260718-single-chat-prompt-v2-group-poll-v2"></script>
     <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
     <script src="js/imessage/offline_reasoning.js?v=20260716-reasoning-autoparse-v6"></script>
-    <script src="js/imessage/4_chat_sheet.js?v=20260716-offline-cot-v5"></script>
+    <script src="js/imessage/4_chat_sheet.js?v=20260718-ios-pwa-export-v1"></script>
     <script src="js/imessage/4_chat_link.js?v=20260706-bugfix-v1"></script>
     <script src="js/imessage/4_chat_list.js"></script>
     <script src="js/imessage/4_chat_interface.js?v=20260715-chat-context-menu-offline-retry-v1"></script>
     <script src="js/imessage/4_chat_voice_call.js?v=20260718-android-single-resize-v3-group-call-flow-v1"></script>
     <script src="js/imessage/4_chat_main.js?v=20260715-chat-context-menu-offline-retry-v1"></script>
     <script src="js/imessage/5_settings.js?v=20260716-status-prompt-v3"></script>
-    <script src="js/imessage/6_moments.js?v=20260713-moments-comment-delete-v4"></script>
+    <script src="js/imessage/6_moments.js?v=20260718-moments-target-reply-v1"></script>
 
     <!-- 引入其他应用模块 -->
     <script src="js/pay.js?v=20260710-storage-ready-v1"></script>
@@ -7651,7 +7668,7 @@
     <script src="js/worldbook.js"></script>
     <!-- 引入核心 UI 管理与设置模块脚本 -->
     <script src="js/ui.js"></script>
-    <script src="js/settings.js?v=20260716-theme-copy-source-v5"></script>
+    <script src="js/settings.js?v=20260718-ios-pwa-export-v1"></script>
     <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="js/library.js?v=20260715-reader-streaming-v1"></script>
     <script src="js/loves.js?v=20260712-friend-mac-v8"></script>

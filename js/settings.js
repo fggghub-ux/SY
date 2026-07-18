@@ -2282,9 +2282,128 @@
             });
         }
         // Theme Background
+        const HOME_THEME_PACKAGE_FORMAT = 'u2-home-theme';
+        const HOME_THEME_PACKAGE_VERSION = 1;
+        const themeExportBtn = document.getElementById('theme-export-btn');
+        const themeImportBtn = document.getElementById('theme-import-btn');
+        const themeImportFileInput = document.getElementById('theme-import-file-input');
         const themeBgUploadBtn = document.getElementById('theme-bg-upload-btn');
         const themeBgResetBtn = document.getElementById('theme-bg-reset-btn');
         const themeBgFileInput = document.getElementById('theme-bg-file-input');
+
+        function buildHomeThemePackage() {
+            return {
+                format: HOME_THEME_PACKAGE_FORMAT,
+                version: HOME_THEME_PACKAGE_VERSION,
+                exportedAt: new Date().toISOString(),
+                background: themeState.bgUrl ?? null,
+                apps: themeState.apps.map(app => ({
+                    id: String(app.id),
+                    name: String(app.name || ''),
+                    icon: app.icon ?? null
+                }))
+            };
+        }
+
+        function parseHomeThemePackage(rawText) {
+            let payload;
+            try {
+                payload = JSON.parse(String(rawText || ''));
+            } catch (error) {
+                throw new Error('主题文件不是有效的 JSON');
+            }
+
+            if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+                throw new Error('主题文件结构无效');
+            }
+            if (payload.format !== HOME_THEME_PACKAGE_FORMAT) {
+                throw new Error('这不是 U2 主屏主题文件');
+            }
+            if (payload.version !== HOME_THEME_PACKAGE_VERSION) {
+                throw new Error(`不支持的主题文件版本：${payload.version ?? '未知'}`);
+            }
+            if (!Object.prototype.hasOwnProperty.call(payload, 'background') ||
+                (payload.background !== null && typeof payload.background !== 'string')) {
+                throw new Error('主题背景数据无效');
+            }
+            if (!Array.isArray(payload.apps)) {
+                throw new Error('主题图标数据无效');
+            }
+
+            const importedApps = new Map();
+            payload.apps.forEach((app) => {
+                if (!app || typeof app !== 'object' || Array.isArray(app)) {
+                    throw new Error('主题图标项目无效');
+                }
+                const id = typeof app.id === 'string' ? app.id.trim() : '';
+                if (!id || (app.icon !== null && typeof app.icon !== 'string')) {
+                    throw new Error('主题图标项目缺少有效 ID 或图标');
+                }
+                if (importedApps.has(id)) {
+                    throw new Error(`主题图标 ID 重复：${id}`);
+                }
+                importedApps.set(id, app.icon);
+            });
+
+            return {
+                background: payload.background,
+                apps: importedApps
+            };
+        }
+
+        function applyImportedHomeTheme(importedTheme) {
+            themeState.bgUrl = importedTheme.background;
+            themeState.apps.forEach((app) => {
+                if (importedTheme.apps.has(String(app.id))) {
+                    app.icon = importedTheme.apps.get(String(app.id));
+                }
+            });
+            applyThemeBackground(themeState);
+            applyThemeAppIcons(themeState);
+            renderThemeAppList();
+            saveGlobalData();
+        }
+
+        if (themeExportBtn) {
+            themeExportBtn.addEventListener('click', async () => {
+                try {
+                    const serialized = JSON.stringify(buildHomeThemePackage(), null, 2);
+                    const blob = new Blob([serialized], { type: 'application/json;charset=utf-8' });
+                    const result = await window.u2ExportFile({
+                        blob,
+                        fileName: `u2-home-theme-${new Date().toISOString().slice(0, 10)}.json`,
+                        title: 'U2 主屏主题'
+                    });
+                    if (result === 'shared' || result === 'downloaded') showToast('主屏主题已导出');
+                    else if (result === 'failed') showToast('主题导出失败');
+                } catch (error) {
+                    console.error('Failed to export home theme', error);
+                    showToast('主题导出失败');
+                }
+            });
+        }
+
+        if (themeImportBtn && themeImportFileInput) {
+            themeImportBtn.addEventListener('click', () => themeImportFileInput.click());
+            themeImportFileInput.addEventListener('change', async () => {
+                const file = themeImportFileInput.files?.[0];
+                themeImportFileInput.value = '';
+                if (!file) return;
+                if (!String(file.name || '').toLowerCase().endsWith('.json')) {
+                    showToast('请选择 JSON 主题文件');
+                    return;
+                }
+
+                try {
+                    const importedTheme = parseHomeThemePackage(await file.text());
+                    applyImportedHomeTheme(importedTheme);
+                    showToast('主屏主题已导入');
+                } catch (error) {
+                    console.error('Failed to import home theme', error);
+                    showToast(error?.message || '主题导入失败');
+                }
+            });
+        }
         
         if (themeBgUploadBtn) themeBgUploadBtn.addEventListener('click', () => themeBgFileInput?.click());
         if (themeBgResetBtn) {
@@ -4232,16 +4351,14 @@
                         showOperation('正在准备导出数据...');
                         const blob = await window.appStorage.exportAllData(updateOperation);
                         updateOperation({ message: '准备下载...', progress: 99 });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `u2phone_backup_${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.json`;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        setTimeout(() => URL.revokeObjectURL(url), 5000);
                         hideOperation();
-                        showToast('数据导出成功');
+                        const result = await window.u2ExportFile({
+                            blob,
+                            fileName: `u2phone_backup_${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.json`,
+                            title: 'U2 完整数据备份'
+                        });
+                        if (result === 'shared' || result === 'downloaded') showToast('数据导出成功');
+                        else if (result === 'failed') showToast('导出失败，请重试');
                     } catch (err) {
                         console.error('Export failed:', err);
                         hideOperation();
