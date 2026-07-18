@@ -272,7 +272,7 @@
 .friend-gen-heading h3 {
     margin: 0;
     letter-spacing: 0;
-    color: #20231f;
+    color: #282426;
     font-size: 18px;
     line-height: 1.25;
 }
@@ -282,9 +282,9 @@
     margin-bottom: 10px;
     padding: 10px 12px;
     box-sizing: border-box;
-    border: 1px solid #dfe3dc;
+    border: 1px solid #e3dce0;
     border-radius: 8px;
-    background: #fafaf8;
+    background: #fbf9fa;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -293,18 +293,18 @@
 }
 
 .friend-real-time-option > span { min-width: 0; display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; }
-.friend-real-time-option > span > i { grid-row: span 2; color: #666; font-size: 14px; }
+.friend-real-time-option > span > i { grid-row: span 2; color: #9b7888; font-size: 14px; }
 .friend-real-time-option strong, .friend-real-time-option small { display: block; letter-spacing: 0; }
-.friend-real-time-option strong { color: #2c2c2c; font-size: 13px; }
-.friend-real-time-option small { margin-top: 2px; color: #898989; font-size: 10px; line-height: 1.35; }
-.friend-real-time-option > input { width: 17px; height: 17px; flex-shrink: 0; accent-color: #2b2b2b; }
+.friend-real-time-option strong { color: #302b2e; font-size: 13px; }
+.friend-real-time-option small { margin-top: 2px; color: #8b8387; font-size: 10px; line-height: 1.35; }
+.friend-real-time-option > input { width: 17px; height: 17px; flex-shrink: 0; accent-color: #a77d90; }
 .friend-mac-real-time { margin-bottom: 10px; border-color: #d5d5d3; background: #fff; }
 
 .friend-gen-limits {
     overflow: hidden;
-    border: 1px solid #e1e3de;
+    border: 1px solid #e3dce0;
     border-radius: 8px;
-    background: #fafaf8;
+    background: #fbf9fa;
 }
 
 .friend-gen-limit-row {
@@ -315,7 +315,7 @@
     grid-template-columns: 24px minmax(92px, .75fr) minmax(0, 1.35fr);
     align-items: center;
     gap: 8px;
-    border-bottom: 1px solid #e7e9e4;
+    border-bottom: 1px solid #ebe5e8;
     transition: opacity 160ms ease, background 160ms ease;
 }
 
@@ -325,7 +325,7 @@
 
 .friend-gen-limit-name {
     min-width: 0;
-    color: #30342f;
+    color: #332e31;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -345,9 +345,14 @@
 }
 
 .friend-gen-limit-name .settings-icon.is-light {
-    border: 1px solid #e5e7e2;
-    background: #fff;
+    border: 1px solid #e5dce1;
+    background: #f3ecef !important;
+    color: #8f697b !important;
 }
+
+.friend-gen-limit-row:nth-child(3n + 1) .settings-icon:not(.is-light) { background: #3f3a3d !important; }
+.friend-gen-limit-row:nth-child(3n + 2) .settings-icon:not(.is-light) { background: #ad8497 !important; }
+.friend-gen-limit-row:nth-child(3n) .settings-icon:not(.is-light) { background: #777074 !important; }
 
 .friend-gen-check {
     position: relative;
@@ -367,7 +372,7 @@
     width: 22px;
     height: 22px;
     box-sizing: border-box;
-    border: 1.5px solid #b8beb5;
+    border: 1.5px solid #c3b8bd;
     border-radius: 6px;
     background: #fff;
     color: transparent;
@@ -378,13 +383,13 @@
 }
 
 .friend-gen-check input:checked + span {
-    border-color: #697765;
-    background: #697765;
+    border-color: #a77d90;
+    background: #a77d90;
     color: #fff;
 }
 
 .friend-gen-check input:focus-visible + span {
-    outline: 2px solid #9eaa9a;
+    outline: 2px solid #c7aaba;
     outline-offset: 2px;
 }
 
@@ -407,10 +412,10 @@
     min-width: 0;
     height: 36px;
     padding-left: 9px;
-    border: 1px solid #dde1da;
+    border: 1px solid #e0d8dc;
     border-radius: 7px;
-    background: #f1f3ef;
-    color: #747a72;
+    background: #f2edef;
+    color: #7e757a;
     display: grid;
     grid-template-columns: minmax(0, 1fr) 42px;
     align-items: center;
@@ -424,21 +429,21 @@
     padding: 0;
     box-sizing: border-box;
     border: 0;
-    border-left: 1px solid #d7dbd4;
+    border-left: 1px solid #dcd2d7;
     background: transparent;
-    color: #242824;
+    color: #2d282b;
     font-size: 13px;
     text-align: center;
     outline: none;
 }
 
 .friend-gen-limit-row.is-disabled {
-    background: #f6f7f4;
+    background: #f5f2f3;
     opacity: .5;
 }
 
 .friend-gen-limit-row.is-disabled .friend-gen-limit-inputs label {
-    background: #eceeea;
+    background: #ece7e9;
 }
 
 .friend-gen-limit-inputs input:disabled {
@@ -452,7 +457,7 @@
     margin-top: 14px;
     border: 0;
     border-radius: 8px;
-    background: #252a25;
+    background: #302b2e;
     color: #fff;
     display: flex;
     align-items: center;
@@ -464,22 +469,22 @@
 }
 
 .friend-gen-submit:active {
-    background: #4f5a4d;
+    background: #765f69;
 }
 
 #friend-phone-settings-sheet {
-    --friend-settings-bg: #f1f3ef;
-    --friend-settings-surface: #fafaf8;
-    --friend-settings-ink: #20231f;
-    --friend-settings-muted: #7a8078;
-    --friend-settings-line: #dfe3dc;
+    --friend-settings-bg: #f2eef0;
+    --friend-settings-surface: #fbf9fa;
+    --friend-settings-ink: #282426;
+    --friend-settings-muted: #827a7e;
+    --friend-settings-line: #e2dade;
     background: var(--friend-settings-bg);
     color: var(--friend-settings-ink);
 }
 
 .friend-settings-nav {
-    border-bottom: 1px solid rgba(80, 88, 78, .08);
-    background: rgba(241, 243, 239, .94);
+    border-bottom: 1px solid rgba(70, 58, 64, .08);
+    background: rgba(242, 238, 240, .94);
 }
 
 .friend-settings-nav-title {
@@ -496,7 +501,7 @@
     padding: 0 8px;
     border: 0;
     background: transparent;
-    color: #5f6d5c;
+    color: #8f697b;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -543,11 +548,11 @@
 }
 
 .friend-settings-wallpaper .settings-icon {
-    background: #697765 !important;
+    background: #ad8497 !important;
 }
 
 .friend-settings-wallpaper .arrow {
-    color: #9ba098;
+    color: #aaa0a5;
 }
 
 .friend-settings-wallpaper .friend-phone-bg-reset {
@@ -571,14 +576,13 @@
 
 .reverse-bubble-left {
     align-self: flex-start;
-    background: #e5e5ea;
-    color: #000;
-    padding: 10px 14px;
+    background: #111;
+    color: #fff;
+    padding: 7px 11px;
     border-radius: 18px;
-    border-bottom-left-radius: 4px;
-    max-width: 75%;
-    font-size: 15px;
-    line-height: 1.4;
+    max-width: 82%;
+    font-size: 14px;
+    line-height: 1.35;
     word-break: break-word;
 }
 
@@ -586,13 +590,17 @@
     align-self: flex-end;
     background: #34c759;
     color: #fff;
-    padding: 10px 14px;
+    padding: 7px 11px;
     border-radius: 18px;
-    border-bottom-right-radius: 4px;
-    max-width: 75%;
-    font-size: 15px;
-    line-height: 1.4;
+    max-width: 82%;
+    font-size: 14px;
+    line-height: 1.35;
     word-break: break-word;
+}
+
+#reverse-chat-messages {
+    gap: 6px !important;
+    padding: 12px 14px 18px !important;
 }
 
 .lovers-friend-phone-view.active {
@@ -803,6 +811,93 @@
 .friend-mac-generate { width: 100%; height: 44px; margin-top: 14px; border: 0; border-radius: 7px; background: #242424; color: #fff; display: flex; align-items: center; justify-content: center; gap: 9px; cursor: pointer; font-size: 13px; }
 .friend-mac-generate:disabled { opacity: .55; cursor: wait; }
 .friend-mac-generated-at { display: block; margin-top: 11px; color: #888; text-align: center; font-size: 10px; }
+
+/* 好友手机：双语翻译、真实生成时间与状态快照 */
+.friend-phone-translate-toggle {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 7px;
+    color: #007aff;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.4;
+    cursor: pointer;
+    user-select: none;
+}
+
+.friend-phone-translate-toggle:focus-visible,
+.friend-phone-bubble-translatable:focus-visible {
+    outline: 2px solid #007aff;
+    outline-offset: 2px;
+}
+
+.friend-phone-translation {
+    display: block;
+    margin-top: 7px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: #f2f2f7;
+    color: #4b4b50;
+    font-size: 13px;
+    font-style: normal;
+    font-weight: 400;
+    line-height: 1.55;
+    white-space: normal;
+    word-break: break-word;
+}
+
+.friend-phone-translation[hidden] { display: none !important; }
+.friend-phone-bubble-translatable { cursor: pointer; }
+.friend-phone-bubble-translation { border-top: 1px solid rgba(127,127,127,.24); background: transparent; color: inherit; padding: 8px 0 0; }
+
+.friend-phone-generated-time {
+    display: block;
+    margin-top: 4px;
+    color: #8e8e93;
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1.3;
+}
+
+.friend-phone-generated-time.is-dark { color: rgba(255,255,255,.62); }
+.friend-phone-message-time-divider { align-self: center; color: #8e8e93; font-size: 10px; margin: 3px 0 1px; }
+.friend-phone-context-note { align-self: center; color: #8e8e93; font-size: 10px; margin-bottom: 4px; }
+
+.friend-phone-history-picker {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+    padding: 10px 12px;
+    border: 1px solid #ececf0;
+    border-radius: 13px;
+    background: #fff;
+    color: #555;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.friend-phone-history-picker select {
+    min-width: 0;
+    max-width: 70%;
+    border: 0;
+    outline: 0;
+    background: #f2f2f7;
+    color: #111;
+    padding: 7px 9px;
+    border-radius: 9px;
+    font-size: 12px;
+}
+
+#friend-safari-private-mode .friend-phone-translate-toggle,
+#friend-game-view .friend-phone-translate-toggle { color: #75aaff; }
+
+#friend-safari-private-mode .friend-phone-translation,
+#friend-game-view .friend-phone-translation {
+    background: #2c2c2e;
+    color: #e5e5ea;
+}
 
 @media (max-width: 620px) {
     .friend-mac-owner { left: 18px; top: calc(var(--safe-top) + 72px); }
@@ -1606,7 +1701,11 @@
     font-weight: 750;
 }
 
-.loves-note-action-invite { background: var(--loves-accent); color: #fff; }
+.loves-note-action-invite {
+    background: var(--loves-accent);
+    color: #fff !important;
+    -webkit-text-fill-color: #fff;
+}
 .loves-note-action-enter { background: var(--loves-accent-soft); color: var(--loves-pink-ink); }
 .loves-note-action-invite:active,
 .loves-note-action-enter:active { background: var(--loves-pink); }

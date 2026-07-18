@@ -64,6 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
             latestThought: cloneRegenerateSnapshotValue(liveFriend.latestThought),
             status: cloneRegenerateSnapshotValue(liveFriend.status),
             lovesData: cloneRegenerateSnapshotValue(liveFriend.lovesData),
+            favoriteUserMessages: cloneRegenerateSnapshotValue(liveFriend.favoriteUserMessages),
             schedule: cloneRegenerateSnapshotValue(liveFriend.memory?.schedule)
         });
         trimRegenerateRunSnapshots();
@@ -90,6 +91,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (snapshot.lovesData === undefined) delete targetFriend.lovesData;
             else targetFriend.lovesData = cloneRegenerateSnapshotValue(snapshot.lovesData);
+
+            if (snapshot.favoriteUserMessages === undefined) delete targetFriend.favoriteUserMessages;
+            else targetFriend.favoriteUserMessages = cloneRegenerateSnapshotValue(snapshot.favoriteUserMessages);
 
             targetFriend.memory = targetFriend.memory || (window.imApp?.createDefaultMemory ? window.imApp.createDefaultMemory() : {});
             if (snapshot.schedule === undefined) {
@@ -2003,6 +2007,9 @@ ${unvotedMemberLines.length > 0 ? unvotedMemberLines.join('\n') : '- 无'}
         const isSleeping = window.imApp.isCharacterSleeping(friend);
         const recentText = getRecentContextText(friend);
         const currentUserRecallSource = getCurrentUserRecallSource(friend);
+        const favoriteMessageCandidate = window.imChat?.buildFavoriteCandidate
+            ? window.imChat.buildFavoriteCandidate(friend, options)
+            : null;
 
         function formatDetailedTime(timestamp) {
             if (!timestamp) return '';
@@ -2321,6 +2328,14 @@ ${unvotedMemberLines.length > 0 ? unvotedMemberLines.join('\n') : '- 无'}
             hasFamilyCardStr = window.hasFamilyCard(friend.id) ? '是' : '否';
         }
         const familyCardRequirement = `\n\n【亲属卡互动】：当前你是否已经给过User亲属卡：${hasFamilyCardStr}。\n- 如果User在聊天中暗示或明示想要“亲属卡”，且你当前【未给过】亲属卡，你可以输出一个特定的支付对象：{"type":"payment","paymentAction":"family_card","amount":1000,"description":"亲属卡"}，这会给User发一张1000额度的亲属卡。\n- 如果你当前【已经给过】亲属卡，且User再次暗示或明示想要“亲属卡”，系统限制一人只能给一张，你不能再给一张，但你可以输出 {"type":"payment","paymentAction":"family_card_increase","amount":500,"description":"亲属卡提额"} 来给现有的亲属卡提升500额度，并在对话中提醒TA已经给过一张了只能提额。`;
+        const favoriteMessageRequirement = favoriteMessageCandidate
+            ? `\n\n【角色收藏 User 消息｜低频自主行为】：
+- 本轮唯一允许收藏的候选消息是：${JSON.stringify(favoriteMessageCandidate)}。
+- 请先完全依据当前角色人设、与你和 User 的关系及此刻真实感受判断。只有这句话确实让你觉得重要、可爱、触动、值得纪念或以后还想重看时，才收藏；这是低频行为，不要为了展示功能而每轮收藏。
+- 想收藏时，在 </chat_json> 之后额外输出且只输出一个 <message_favorite>{"messageId":"${favoriteMessageCandidate.messageId}","reason":"约20字的收藏原因"}</message_favorite>；messageId 必须原样填写。
+- reason 必须使用符合角色口吻的第一人称简体中文，目标 16-24 字，具体说明为什么这句话对你有意义；禁止泛泛写“很有意义”“值得收藏”。
+- 不想收藏时完全不要输出 <message_favorite>，也不要在聊天正文中解释是否收藏。`
+            : '';
 
         const pendingRegenerateContext = friend.pendingRegenerateContext || null;
         const userInputModalityRule = '\nUser 发送的内容/消息为线上打字发送的文字消息，除非上下文明确标注为“语音消息”的才为user发的语音';
@@ -2331,7 +2346,7 @@ ${unvotedMemberLines.length > 0 ? unvotedMemberLines.join('\n') : '- 无'}
         const chatOutputPriorityPrompt = `\n【严格输出顺序｜聊天气泡最高优先级】：
 1. 回复的第一个非空白字符必须是 <chat_json> 的“<”；禁止在 <chat_json> 前输出状态、解释、思考、Markdown 或任何其他标签。
 2. 必须先完整输出并闭合 <chat_json>...</chat_json>，其中至少包含 1 条有效聊天气泡，然后才能输出任何附加标签。
-3. 单聊的 <profile_panel>、<loves_moment>、<loves_schedule>，以及群聊的 <group_poll_votes>、<group_private_messages>、<group_friend_private_chats>，全部只能放在 </chat_json> 之后。
+3. 单聊的 <profile_panel>、<loves_moment>、<loves_schedule>、<message_favorite>，以及群聊的 <group_poll_votes>、<group_private_messages>、<group_friend_private_chats>，全部只能放在 </chat_json> 之后。
 4. <chat_json> 标签内部必须是一个可以被 JSON.parse 直接解析的完整 JSON 数组；禁止代码块、注释、单引号、尾逗号、未转义的双引号、缺失括号或任何 JSON 之外的文字。
 5. 输出前必须在内部逐项检查：开标签与闭标签是否成对、数组的 [ ] 是否闭合、每个对象的 { } 是否闭合、键与字符串是否使用双引号、对象之间是否用逗号分隔且最后一个对象后没有逗号。
 ${friend.type === 'group' ? `6. 无论其他附加任务是否能完成，<chat_json> 中都必须至少保留 1 条可显示的主要聊天气泡；不能只输出 call、recall、music_control 或附加标签。
@@ -2797,7 +2812,7 @@ ${chatOutputPriorityPrompt}
 11. 你必须额外输出 1 个 <profile_panel>...</profile_panel>，用于更新角色资料卡。${languageRequirement}
 
 Character Memory:
-${commonMemorySections || 'None'}${effectiveProfilePanelRequirement}${lovesSpaceRequirement}${lovesActionRequirement}${familyCardRequirement}${dynamicActionNarrationRequirement}`;
+${commonMemorySections || 'None'}${effectiveProfilePanelRequirement}${lovesSpaceRequirement}${lovesActionRequirement}${familyCardRequirement}${favoriteMessageRequirement}${dynamicActionNarrationRequirement}`;
         }
 
         systemPrompt += `\n\n<GEMINI_OVERRIDE_CORE>
@@ -2967,6 +2982,7 @@ ${groupPollVotePrompt ? '当前存在群投票附加任务：必须在 </chat_js
             : `【最终输出格式自检｜紧邻本轮回复，最高优先级】
 现在只按以下顺序输出：先输出完整 <chat_json>合法JSON数组</chat_json>，再输出允许的附加标签。回复的第一个非空白字符必须是“<”。
 单聊最小合法气泡示例：<chat_json>[{"type":"text","text":"符合角色和上下文的自然回复","translation":"","quote":""}]</chat_json>
+如果本轮提供了“角色收藏 User 消息”候选且你自主决定收藏，<message_favorite> 必须放在 </chat_json> 后；不收藏则完全省略该标签。
 正式输出前在内部确认：标签成对闭合；数组和对象完整闭合；所有键与字符串使用双引号；没有代码块、注释、尾逗号或标签外正文；至少有一条可显示气泡。如果复杂内容可能破坏格式，缩短回复并舍弃可选附加内容，也必须先保证上述最小结构完整合法。不要输出这段自检过程。`;
         messages.push({
             role: 'system',
@@ -3072,6 +3088,22 @@ ${groupPollVotePrompt ? '当前存在群投票附加任务：必须在 </chat_js
             fullReply = window.imChat.removeTaggedBlock(fullReply, 'chat_json');
             if (isLengthFinishReason(responseFinishReason)) {
                 console.warn('[iMessage] response reached its output limit after a valid chat_json; incomplete auxiliary blocks will be ignored');
+            }
+
+            let pendingFavoriteUserMessage = null;
+            const favoriteMessageBlock = window.imChat.extractTaggedBlock(fullReply, 'message_favorite');
+            if (favoriteMessageBlock) {
+                fullReply = window.imChat.removeTaggedBlock(fullReply, 'message_favorite');
+                if (favoriteMessageCandidate && window.imChat?.parseFavoriteSelection) {
+                    pendingFavoriteUserMessage = window.imChat.parseFavoriteSelection(
+                        favoriteMessageBlock,
+                        favoriteMessageCandidate,
+                        apiRunId
+                    );
+                }
+                if (!pendingFavoriteUserMessage) {
+                    console.warn('[iMessage] Ignored invalid message_favorite payload');
+                }
             }
 
             let groupPrivateMessageBatches = [];
@@ -4526,7 +4558,20 @@ ${groupPollVotePrompt ? '当前存在群投票附加任务：必须在 </chat_js
             }
 
             if (!isConversationCurrent()) return;
-            const latestFriend = getLiveFriendById(friend.id) || friend;
+            let latestFriend = getLiveFriendById(friend.id) || friend;
+            if (pendingFavoriteUserMessage && window.imChat?.commitFavoriteUserMessage) {
+                const favoriteSaved = await window.imChat.commitFavoriteUserMessage(latestFriend.id, pendingFavoriteUserMessage);
+                if (!favoriteSaved) {
+                    console.warn('[iMessage] Failed to persist message_favorite payload', {
+                        friendId: latestFriend.id,
+                        messageId: pendingFavoriteUserMessage.messageId,
+                        apiRunId
+                    });
+                } else if (window.imChat?.showFavoriteSavedNotice) {
+                    window.imChat.showFavoriteSavedNotice(latestFriend, getSafeContainer(), apiRunId);
+                }
+                latestFriend = getLiveFriendById(friend.id) || latestFriend;
+            }
             const redPacketChanged = latestFriend.type === 'group'
                 ? window.imChat.processPendingGroupRedPackets(latestFriend)
                 : false;

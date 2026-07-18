@@ -95,9 +95,10 @@
     function registerCallSendInput(input, options = {}) {
         if (!input || typeof options.onSend !== 'function') return function() {};
 
-        const sendAndDismiss = () => {
+        const dismissAfterSend = options.dismissAfterSend !== false;
+        const sendAndMaybeDismiss = () => {
             const sent = options.onSend();
-            if (sent !== false) input.blur();
+            if (dismissAfterSend && sent !== false) input.blur();
             return sent;
         };
 
@@ -106,7 +107,7 @@
                 input,
                 root: options.root || null,
                 scrollContainer: options.scrollContainer || null,
-                onSend: sendAndDismiss,
+                onSend: sendAndMaybeDismiss,
                 blurAfterSend: false,
                 enterKeyHint: 'send',
                 restoreWindowScroll: false
@@ -122,7 +123,7 @@
             if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || event.isComposing || event.keyCode === 229) return;
             event.preventDefault();
             if (!String(input.value || '').trim()) return;
-            sendAndDismiss();
+            sendAndMaybeDismiss();
         };
         input.setAttribute('enterkeyhint', 'send');
         input.addEventListener('keydown', handleKeydown);
@@ -894,6 +895,7 @@ ${recentMessages}`;
                 scrollContainer: newMessagesArea,
                 bottomControls: newInputRow?.parentElement,
                 collapseElements: [infoArea, newActionsRow],
+                dismissAfterSend: false,
                 onSend: () => {
                     if (!isConnected || !newInput.value.trim()) return false;
                     newSendBtn.click();

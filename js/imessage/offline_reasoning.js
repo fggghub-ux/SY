@@ -5,9 +5,10 @@
 })(typeof window !== 'undefined' ? window : globalThis, function () {
     'use strict';
 
-    const REASONING_TAG_NAMES = ['think', 'thinking', 'reasoning', 'analysis'];
+    const REASONING_TAG_NAMES = ['cot', 'think', 'thinking', 'reasoning', 'analysis'];
     const COMPLETE_TAG_PATTERN = new RegExp(`<\\s*(\\/?)\\s*(${REASONING_TAG_NAMES.join('|')})\\s*>`, 'gi');
     const PARTIAL_TAG_CANDIDATES = REASONING_TAG_NAMES.flatMap(tag => [`<${tag}>`, `</${tag}>`]);
+    const REASONING_BOUNDARY_PATTERN = new RegExp(`<\\s*\\/?\\s*(?:${REASONING_TAG_NAMES.join('|')})\\s*>`, 'gi');
     const VISIBLE_REASONING_BLOCK_TYPES = new Set([
         'reasoning',
         'reasoning.text',
@@ -28,6 +29,65 @@
         const numeric = Number(value);
         if (!Number.isFinite(numeric) || numeric <= 0) return DEFAULT_MAX_RESPONSE_TOKENS;
         return Math.min(32768, Math.max(256, Math.round(numeric)));
+    };
+
+    const stripReasoningBoundaryTags = (value) => normalizeText(value)
+        .replace(REASONING_BOUNDARY_PATTERN, '')
+        .trim();
+
+    const normalizeCotEntryTitle = (value, index) => {
+        const title = normalizeText(value).replace(/[\r\n]+/g, ' ').trim();
+        return title || `COT ${index + 1}`;
+    };
+
+    const buildCotInstructionBlock = (entries) => {
+        const checklist = (Array.isArray(entries) ? entries : [])
+            .filter(entry => entry && entry.enabled !== false)
+            .map((entry, index) => ({
+                title: normalizeCotEntryTitle(entry.name, index),
+                instruction: stripReasoningBoundaryTags(entry.content)
+            }))
+            .filter(entry => entry.instruction);
+        const expectedTitles = checklist.map(entry => `【${entry.title}】`);
+        if (!checklist.length) return { content: '', expectedTitles: [], checklist: [] };
+
+        const checklistText = checklist
+            .map(entry => `【${entry.title}】\n${entry.instruction}`)
+            .join('\n\n');
+        const titleShape = expectedTitles.join('、');
+        return {
+            content: `<offline_cot_instruction>
+在输出正文之前，先根据下面所有已启用的 COT 条目逐项思考，并输出一份简洁、可见的思考摘要。
+思考摘要必须完整放在一对 <thinking> 与 </thinking> 标签内；正文必须紧跟在 </thinking> 之后并位于标签外。
+思考摘要必须按当前顺序使用这些标题，标题文字不得改写、合并或遗漏：${titleShape}
+每个标题下都要明确回应对应要求，不要只复述标题。
+
+${checklistText}
+</offline_cot_instruction>`,
+            expectedTitles,
+            checklist
+        };
+    };
+
+    const validateCotResponse = (content, expectedTitles) => {
+        const source = normalizeText(content);
+        const titles = (Array.isArray(expectedTitles) ? expectedTitles : [])
+            .map(title => String(title || '').trim())
+            .filter(Boolean);
+        if (!titles.length) {
+            return { valid: true, hasCompleteTag: true, missingTitles: [], parsed: parseTaggedReasoning(source) };
+        }
+        const parsed = parseTaggedReasoning(source);
+        const openingPattern = new RegExp(`<\\s*(?:${REASONING_TAG_NAMES.join('|')})\\s*>`, 'i');
+        const closingPattern = new RegExp(`<\\s*\\/\\s*(?:${REASONING_TAG_NAMES.join('|')})\\s*>`, 'i');
+        const hasCompleteTag = openingPattern.test(source) && closingPattern.test(source) && !parsed.incomplete;
+        const missingTitles = titles.filter(title => !parsed.reasoning.includes(title));
+        return {
+            valid: hasCompleteTag && missingTitles.length === 0,
+            hasCompleteTag,
+            missingTitles,
+            parsed
+        };
     };
 
     const detectReasoningApiMode = (endpoint, model) => {
@@ -260,6 +320,9 @@
 
     return {
         normalizeMaxResponseTokens,
+        stripReasoningBoundaryTags,
+        buildCotInstructionBlock,
+        validateCotResponse,
         detectReasoningApiMode,
         buildReasoningRequestConfig,
         readContentValue,

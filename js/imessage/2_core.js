@@ -585,6 +585,33 @@ window.imApp.createDefaultProfilePanel = function(friend = {}) {
     };
 };
 
+window.imApp.normalizeFavoriteUserMessages = function(items) {
+    const seenMessageIds = new Set();
+    return (Array.isArray(items) ? items : [])
+        .map((item, index) => {
+            if (!item || typeof item !== 'object') return null;
+            const messageId = String(item.messageId || '').trim();
+            const messageText = String(item.messageText || '').trim();
+            const reason = Array.from(String(item.reason || '').trim()).slice(0, 30).join('');
+            if (!messageId || !messageText || !reason || seenMessageIds.has(messageId)) return null;
+            seenMessageIds.add(messageId);
+            const createdAt = Math.max(0, Number(item.createdAt) || 0);
+            const messageTimestamp = Math.max(0, Number(item.messageTimestamp) || 0);
+            return {
+                id: String(item.id || `favorite-${messageId}-${createdAt || index}`),
+                messageId,
+                messageText,
+                messageType: item.messageType === 'voice_message' ? 'voice_message' : 'text',
+                messageTimestamp,
+                reason,
+                createdAt,
+                sourceApiRunId: String(item.sourceApiRunId || '')
+            };
+        })
+        .filter(Boolean)
+        .sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+};
+
 window.imApp.normalizeFriendData = function(friend) {
     const normalized = { ...friend };
     normalized.id = normalized.id != null ? normalized.id : Date.now();
@@ -598,6 +625,7 @@ window.imApp.normalizeFriendData = function(friend) {
     normalized.avatarUrl = normalized.avatarUrl || null;
     normalized.avatarAssetId = normalized.avatarAssetId || null;
     normalized.messages = Array.isArray(normalized.messages) ? normalized.messages : [];
+    normalized.favoriteUserMessages = window.imApp.normalizeFavoriteUserMessages(normalized.favoriteUserMessages);
     normalized.chatBg = normalized.chatBg || null;
     normalized.chatBgAssetId = normalized.chatBgAssetId || null;
     normalized.customCssEnabled = !!normalized.customCssEnabled;

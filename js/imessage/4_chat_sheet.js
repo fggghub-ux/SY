@@ -2694,7 +2694,14 @@ function createAttachmentSheet(page) {
                         ? { ...parsed, reasoning: lastVisibleReasoning }
                         : parsed;
                 },
-                getFullText: () => currentContent
+                getFullText: () => currentContent,
+                reset: () => {
+                    currentContent = '';
+                    currentNativeReasoning = '';
+                    lastVisibleReasoning = '';
+                    generationFinished = false;
+                    renderStreamingState();
+                }
             };
         };
 
@@ -3243,7 +3250,15 @@ function createAttachmentSheet(page) {
             const offlinePrompts = ensureGlobalOfflinePrompts(activeFriend);
             const requestReasoning = true;
             const apiMessages = [];
+            const enabledCotPrompts = offlinePrompts.filter(prompt => (
+                OFFLINE_COT_PROMPT_IDS.has(prompt?.id)
+                && (prompt.alwaysEnabled || prompt.enabled)
+            ));
+            const cotCompilation = offlineReasoning?.buildCotInstructionBlock
+                ? offlineReasoning.buildCotInstructionBlock(enabledCotPrompts)
+                : { content: '', expectedTitles: [] };
             let historyMounted = false;
+            let cotMounted = false;
 
             const mountHistory = () => {
                 if (historyMounted) return;
@@ -3261,7 +3276,13 @@ function createAttachmentSheet(page) {
                 }
                 const isEnabled = p.alwaysEnabled || p.enabled;
                 if (!isEnabled) continue;
-                if (!requestReasoning && OFFLINE_COT_PROMPT_IDS.has(p.id)) continue;
+                if (OFFLINE_COT_PROMPT_IDS.has(p.id)) {
+                    if (requestReasoning && !cotMounted && cotCompilation.content) {
+                        apiMessages.push({ role: 'system', content: cotCompilation.content });
+                        cotMounted = true;
+                    }
+                    continue;
+                }
                 let promptContent = '';
                 if (p.id === 'data_zone') promptContent = replaceOfflinePromptVariables(dataZoneContext, identityContext);
                 else if (p.id === 'memory_system') promptContent = replaceOfflinePromptVariables(memorySystemContext, identityContext);
@@ -3271,7 +3292,12 @@ function createAttachmentSheet(page) {
             }
 
             mountHistory();
-            return apiMessages;
+            return {
+                messages: apiMessages,
+                cotValidation: {
+                    expectedTitles: cotCompilation.expectedTitles || []
+                }
+            };
         };
 
         const requestOfflineAssistantReply = async (apiMessages, streamingBubble = null, options = {}) => {
@@ -3482,6 +3508,41 @@ function createAttachmentSheet(page) {
             }
 
             return finishStream(fullText, fullReasoning, completionTokens, aborted || !!signal?.aborted, finishReason);
+        };
+
+        const requestOfflineAssistantReplyWithCotValidation = async (requestContext, streamingBubble = null, options = {}) => {
+            const apiMessages = Array.isArray(requestContext) ? requestContext : (requestContext?.messages || []);
+            const expectedTitles = Array.isArray(requestContext?.cotValidation?.expectedTitles)
+                ? requestContext.cotValidation.expectedTitles
+                : [];
+            const firstResult = await requestOfflineAssistantReply(apiMessages, streamingBubble, options);
+            if (firstResult.aborted || !expectedTitles.length || !offlineReasoning?.validateCotResponse) return firstResult;
+
+            const firstRawContent = streamingBubble?.getFullText?.() || '';
+            const firstValidation = offlineReasoning.validateCotResponse(firstRawContent, expectedTitles);
+            if (firstValidation.valid) return firstResult;
+
+            streamingBubble?.reset?.();
+            const correctionDetails = [
+                !firstValidation.hasCompleteTag ? '缺少完整的思考开始或结束标签' : '',
+                firstValidation.missingTitles.length ? `缺少标题：${firstValidation.missingTitles.join('、')}` : ''
+            ].filter(Boolean).join('；');
+            const correctionPrompt = `<offline_cot_correction>
+上一版响应未通过 COT 结构校验（${correctionDetails || '结构不完整'}）。
+请重新生成完整响应。必须先输出一对完整的 <thinking>...</thinking>，并按顺序逐字使用这些标题：${expectedTitles.join('、')}。
+每个标题下写对应的简洁思考摘要，然后在 </thinking> 后输出完整正文。不要解释本次纠正。
+</offline_cot_correction>`;
+            const secondResult = await requestOfflineAssistantReply(
+                apiMessages.concat({ role: 'system', content: correctionPrompt }),
+                streamingBubble,
+                options
+            );
+            if (secondResult.aborted) return secondResult;
+
+            const secondRawContent = streamingBubble?.getFullText?.() || '';
+            const secondValidation = offlineReasoning.validateCotResponse(secondRawContent, expectedTitles);
+            if (!secondValidation.valid && window.showToast) window.showToast('模型未完全按 COT 预设输出');
+            return secondResult;
         };
 
         const formatOfflineMeetingTranscript = (activeFriend, messages) => {
@@ -3818,7 +3879,12 @@ ${transcript}`;
                     }
                 },
                 getResult: () => getStreamResult(false),
-                getFullText: () => streamContent
+                getFullText: () => streamContent,
+                reset: () => {
+                    streamContent = '';
+                    streamReasoning = '';
+                    renderStreamState(true);
+                }
             } : null;
 
             if (button) {
@@ -3838,8 +3904,8 @@ ${transcript}`;
 
             try {
                 const contextMessages = messages.slice(0, targetIndex);
-                const apiMessages = buildOfflineApiMessages(activeFriend, contextMessages);
-                const { content, reasoning, tokens } = await requestOfflineAssistantReply(apiMessages, streamingBubble, {
+                const requestContext = buildOfflineApiMessages(activeFriend, contextMessages);
+                const { content, reasoning, tokens } = await requestOfflineAssistantReplyWithCotValidation(requestContext, streamingBubble, {
                     stream: activeFriend.offlineStreamEnabled !== false,
                     requestReasoning: true
                 });
@@ -6331,8 +6397,8 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                                 throw new Error('Failed to create streaming bubble');
                             }
 
-                            const apiMessages = buildOfflineApiMessages(activeFriend, messagesWithUser);
-                            const { content: finalReplyContent, reasoning: finalReplyReasoning, tokens, aborted } = await requestOfflineAssistantReply(apiMessages, streamingBubble, {
+                            const requestContext = buildOfflineApiMessages(activeFriend, messagesWithUser);
+                            const { content: finalReplyContent, reasoning: finalReplyReasoning, tokens, aborted } = await requestOfflineAssistantReplyWithCotValidation(requestContext, streamingBubble, {
                                 signal: generationController.signal,
                                 stream: activeFriend.offlineStreamEnabled !== false,
                                 requestReasoning: true
