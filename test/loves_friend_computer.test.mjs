@@ -65,8 +65,8 @@ test('friend computer view exposes six Mac apps and versioned assets', async () 
     ['resume', 'mail', 'calendar', 'notes', 'files', 'settings'].forEach(app => {
         assert.match(html, new RegExp(`data-computer-app="${app}"`));
     });
-    assert.match(html, /css\/loves\.css\?v=20260718-invite-text-v1/);
-    assert.match(html, /js\/loves\.js\?v=20260712-friend-mac-v8/);
+    assert.match(html, /css\/loves\.css\?v=20260719-friend-phone-message-v6/);
+    assert.match(html, /js\/loves\.js\?v=20260719-friend-phone-message-v7/);
     assert.match(css, /@media \(max-width: 620px\)/);
     assert.match(source, /friend\.computerData = this\.normalizeFriendComputerData/);
     assert.match(source, /selected\.forEach\(key =>/);
@@ -80,7 +80,8 @@ test('friend computer view exposes six Mac apps and versioned assets', async () 
     assert.match(source, /'url\("assets\/bizhi\.jpg"\)'/);
     assert.doesNotMatch(html, /friend-mac-menubar/);
     assert.match(html, /class="friend-mac-floating-back"/);
-    assert.match(html, /id="friend-phone-real-time-toggle"[^>]*checked/);
+    assert.match(html, /使用真实时间/);
+    assert.match(html, /id="friend-phone-real-time-toggle"/);
     assert.match(source, /id="friend-computer-real-time-toggle"/);
     assert.match(source, /friend\.phoneIncludeRealTime !== false/);
     assert.match(source, /friend\.computerIncludeRealTime !== false/);

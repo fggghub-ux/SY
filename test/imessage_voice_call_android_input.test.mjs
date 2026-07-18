@@ -22,13 +22,22 @@ test('voice calls use the shared Android input compatibility layer', () => {
     assert.doesNotMatch(voiceCallSource, /inputEl\.addEventListener\('keydown'/);
 });
 
+test('single-call Enter send keeps keyboard focus while group call keeps existing dismissal', () => {
+    assert.match(voiceCallSource, /const dismissAfterSend = options\.dismissAfterSend !== false/);
+    assert.match(voiceCallSource, /if \(dismissAfterSend && sent !== false\) input\.blur\(\)/);
+    assert.match(voiceCallSource, /if \(!String\(input\.value \|\| ''\)\.trim\(\)\) return;\s*sendAndMaybeDismiss\(\)/);
+    assert.match(voiceCallSource, /singleCallInputCleanup = registerCallSendInput\(newInput, \{[\s\S]*?collapseElements: \[infoArea, newActionsRow\],[\s\S]*?dismissAfterSend: false,[\s\S]*?onSend:/);
+    assert.match(voiceCallSource, /newSendBtn\.addEventListener\('click', async \(\) => \{[\s\S]*?newInput\.value = ''/);
+    assert.match(voiceCallSource, /groupCallInputCleanup = registerCallSendInput\(inputEl, \{[\s\S]*?collapseElements: \[avatarsGrid\],\s*onSend:/);
+});
+
 test('voice call input handlers are removed on reopen and hangup', () => {
     assert.ok((voiceCallSource.match(/singleCallInputCleanup\(\)/g) || []).length >= 2);
     assert.ok((voiceCallSource.match(/groupCallInputCleanup\(\)/g) || []).length >= 2);
 });
 
 test('voice-call script is cache-busted after the Android input change', () => {
-    assert.match(indexSource, /js\/imessage\/4_chat_voice_call\.js\?v=20260718-android-single-resize-v3/);
+    assert.match(indexSource, /js\/imessage\/4_chat_voice_call\.js\?v=20260718-single-enter-focus-v1/);
     assert.ok(indexSource.indexOf('js/mobile_input_compat.js') < indexSource.indexOf('js/imessage/4_chat_voice_call.js'));
 });
 

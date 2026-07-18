@@ -99,5 +99,5 @@ test('offline reasoning remains separated from prose and visible in a disclosure
     assert.match(source, /renderOfflineThinkingState\(bubble, parsed\.reasoning, \{ expanded: streaming && !!parsed\.reasoning \}\)/);
     assert.match(source, /finish: \(\) => \{[\s\S]*renderStreamState\(false\)/);
     assert.match(source, /renderOfflineCurrentMessages\(activeFriend\);[\s\S]*console\.error\('Offline reroll failed'/);
-    assert.match(indexSource, /js\/imessage\/4_chat_sheet\.js\?v=20260718-ios-pwa-export-v1/);
+    assert.match(indexSource, /js\/imessage\/4_chat_sheet\.js\?v=20260718-offline-cot-v1/);
 });

@@ -20,6 +20,50 @@ test('parses thinking and think tags into a separate reasoning field', () => {
     const shortTag = reasoning.normalizeResponse('<think>规划 B</think>正文 B', '');
     assert.equal(shortTag.content, '正文 B');
     assert.equal(shortTag.reasoning, '规划 B');
+
+    const cotTag = reasoning.normalizeResponse('<cot>规划 C</cot>正文 C', '');
+    assert.equal(cotTag.content, '正文 C');
+    assert.equal(cotTag.reasoning, '规划 C');
+});
+
+test('compiles independently editable COT entries into one tagged instruction block', () => {
+    const compiled = reasoning.buildCotInstructionBlock([
+        { name: 'COT前', enabled: true, content: '请逐项检查：\n<thinking>' },
+        { name: 'cot-情景规划', enabled: true, content: '<cot>检查情景连续性。</cot>' },
+        { name: 'cot-语言检查', enabled: false, content: '不应出现' },
+        { name: 'cot-输出审查', enabled: true, content: '检查输出格式。' },
+        { name: 'COT后', enabled: true, content: '</thinking>' }
+    ]);
+
+    assert.deepEqual(compiled.expectedTitles, ['【COT前】', '【cot-情景规划】', '【cot-输出审查】']);
+    assert.match(compiled.content, /<offline_cot_instruction>[\s\S]*【COT前】[\s\S]*【cot-情景规划】[\s\S]*【cot-输出审查】[\s\S]*<\/offline_cot_instruction>/);
+    assert.doesNotMatch(compiled.content, /不应出现/);
+    assert.ok(compiled.checklist.every(entry => !/<\/?(?:cot|thinking)>/i.test(entry.instruction)));
+    assert.doesNotMatch(compiled.content, /<cot>|<\/cot>/);
+});
+
+test('validates complete tagged COT output and reports missing preset titles', () => {
+    const expectedTitles = ['【cot-情景规划】', '【cot-输出审查】'];
+    const valid = reasoning.validateCotResponse(
+        '<thinking>【cot-情景规划】承接前文。\n【cot-输出审查】格式完整。</thinking>正文',
+        expectedTitles
+    );
+    assert.equal(valid.valid, true);
+
+    const missingTitle = reasoning.validateCotResponse(
+        '<cot>【cot-情景规划】承接前文。</cot>正文',
+        expectedTitles
+    );
+    assert.equal(missingTitle.valid, false);
+    assert.equal(missingTitle.hasCompleteTag, true);
+    assert.deepEqual(missingTitle.missingTitles, ['【cot-输出审查】']);
+
+    const missingClose = reasoning.validateCotResponse(
+        '<thinking>【cot-情景规划】承接前文。\n【cot-输出审查】格式完整。',
+        expectedTitles
+    );
+    assert.equal(missingClose.valid, false);
+    assert.equal(missingClose.hasCompleteTag, false);
 });
 
 test('auto-parses fixed reasoning and analysis tags with case and whitespace variants', () => {
@@ -78,6 +122,10 @@ test('stream parsing holds incomplete tag prefixes instead of flashing them as p
     const reasoningPartial = reasoning.normalizeResponse('<reas', '', { streaming: true });
     assert.equal(reasoningPartial.content, '');
     assert.equal(reasoningPartial.pendingTag, '<reas');
+
+    const cotPartial = reasoning.normalizeResponse('<co', '', { streaming: true });
+    assert.equal(cotPartial.content, '');
+    assert.equal(cotPartial.pendingTag, '<co');
 });
 
 test('plain responses remain plain and do not create an empty reasoning block', () => {

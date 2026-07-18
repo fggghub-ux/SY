@@ -162,7 +162,7 @@ test('all JSON export entry points use the shared exporter loaded before consume
         fs.readFile(new URL('../js/imessage/4_chat_sheet.js', import.meta.url), 'utf8')
     ]);
 
-    assert.match(html, /export_file\.js\?v=20260718-ios-pwa-export-v1[\s\S]*4_chat_sheet\.js\?v=20260718-ios-pwa-export-v1[\s\S]*settings\.js\?v=20260718-ios-pwa-export-v1/);
+    assert.match(html, /export_file\.js\?v=20260718-ios-pwa-export-v1[\s\S]*4_chat_sheet\.js\?v=20260718-offline-cot-v1[\s\S]*settings\.js\?v=20260718-ios-pwa-export-v1/);
     assert.equal((settingsSource.match(/window\.u2ExportFile\(/g) || []).length, 2);
     assert.equal((chatSheetSource.match(/window\.u2ExportFile\(/g) || []).length, 2);
     assert.doesNotMatch(settingsSource, /URL\.createObjectURL/);

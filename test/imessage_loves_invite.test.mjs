@@ -29,6 +29,6 @@ test('the black Loves invite button keeps its label white', async () => {
         readWorkspaceFile('css/loves.css')
     ]);
 
-    assert.match(index, /css\/loves\.css\?v=20260718-invite-text-v1/);
+    assert.match(index, /css\/loves\.css\?v=20260719-friend-phone-message-v6/);
     assert.match(css, /\.loves-note-action-invite\s*\{[\s\S]*?background:\s*var\(--loves-accent\);[\s\S]*?color:\s*#fff\s*!important;[\s\S]*?-webkit-text-fill-color:\s*#fff;/);
 });
