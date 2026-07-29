@@ -38,6 +38,7 @@
     };
 
     // --- Custom Modal System ---
+    if (typeof window.showCustomModal !== 'function') {
     window.showCustomModal = function(options) {
         const overlay = document.getElementById('custom-modal-overlay');
         if (!overlay) return;
@@ -109,6 +110,7 @@
 
         window.openView(overlay);
     };
+    }
 
     // --- Toast Notification System ---
     let toastTimeout = null;

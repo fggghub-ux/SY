@@ -56,10 +56,10 @@ test('offline prompt settings retain order, expose streaming, and keep reasoning
     assert.match(cssSource, /\.offline-settings-expand-btn \{[\s\S]*border-radius: 50%/);
     assert.match(cssSource, /\.offline-settings-streaming \{/);
     assert.match(cssSource, /\.offline-settings-number-input \{/);
-    assert.match(indexSource, /css\/imessage\.css\?v=20260716-status-prompt-v3/);
+    assert.match(indexSource, /css\/imessage\.css\?v=[^"']*status-prompt-v3/);
 });
 
-test('offline prompts use one global work copy with named preset import and migration', async () => {
+test('offline prompts use one global work copy with named presets and migration', async () => {
     const [source, coreSource] = await Promise.all([
         readWorkspaceFile('js/imessage/4_chat_sheet.js'),
         readWorkspaceFile('js/imessage/2_core.js')
@@ -79,9 +79,8 @@ test('offline prompts use one global work copy with named preset import and migr
     assert.match(source, /offlinePromptMigrationSavePromise[\s\S]*scheduleLegacyOfflinePromptCleanup/);
     assert.match(source, /window\.imApp\.saveGlobalOfflinePrompts = persistGlobalOfflinePromptState/);
     assert.match(source, /所有角色和群聊共用当前线下提示词/);
-    assert.match(source, /type: 'u2-offline-prompts',[\s\S]*version: 1/);
-    assert.match(source, /const sourcePrompts = Array\.isArray\(payload\) \? payload : payload\?\.prompts/);
-    assert.match(source, /preset\.name\.toLocaleLowerCase\(\) === name\.toLocaleLowerCase\(\)/);
+    assert.doesNotMatch(source, /importPromptPresetBtn|exportPromptPresetBtn|importPromptPresetInput/);
+    assert.doesNotMatch(source, /导入提示词预设|导出当前提示词|u2-offline-prompts/);
     assert.match(source, /markPromptWorkCopyCustom\(\);[\s\S]*scheduleOfflinePromptsPersist\(prompts\)/);
     assert.match(source, /提示词预设已删除，当前提示词保持不变/);
 });
@@ -94,7 +93,8 @@ test('offline reasoning remains separated from prose and visible in a disclosure
 
     assert.match(source, /reasoning: rawMessage\.role === 'assistant' \? String\(rawMessage\.reasoning \|\| ''\) : ''/);
     assert.match(source, /class="offline-tavern-thinking-toggle" aria-expanded=/);
-    assert.match(source, />思考过程<\/span>/);
+    assert.match(source, />COT<\/span>/);
+    assert.doesNotMatch(source.slice(source.indexOf('const buildOfflineThinkingHtml'), source.indexOf('const setOfflineThinkingExpanded')), /fa-brain/);
     assert.match(source, /renderOfflineThinkingState\(bubbleDiv, parsed\.reasoning, \{ expanded: !generationFinished \}\)/);
     assert.match(source, /renderOfflineThinkingState\(bubble, parsed\.reasoning, \{ expanded: streaming && !!parsed\.reasoning \}\)/);
     assert.match(source, /finish: \(\) => \{[\s\S]*renderStreamState\(false\)/);

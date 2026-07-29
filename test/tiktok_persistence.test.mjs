@@ -43,7 +43,7 @@ test('TikTok DMs persist translated-bubble expansion and activity summaries no l
     const activityMarkup = indexSource.slice(indexSource.indexOf('id="tk-activity-list"'), indexSource.indexOf('id="tk-chat-dms-container"'));
     assert.doesNotMatch(activityMarkup, /fa-chevron-right arrow/);
     assert.match(indexSource, /js\/tiktok\/3_home\.js\?v=20260712-tiktok-feed-cleanup-v1/);
-    assert.match(indexSource, /css\/tiktok\.css\?v=20260712-tiktok-feed-cleanup-v1/);
+    assert.match(indexSource, /css\/tiktok\.css\?v=20260721-mobile-input-layout-v1/);
 });
 
 test('TikTok home feed advances one adjacent video per wheel or vertical swipe', () => {

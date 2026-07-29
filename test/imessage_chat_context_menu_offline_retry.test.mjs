@@ -97,11 +97,17 @@ test('offline reasoning keeps native fields separate and history prompts prose-o
 
 test('offline reasoning is always requested internally and provider errors remain explicit', async () => {
     const sheetSource = await readWorkspaceFile('js/imessage/4_chat_sheet.js');
+    const cotValidationSource = sheetSource.slice(
+        sheetSource.indexOf('const requestOfflineAssistantReplyWithCotValidation'),
+        sheetSource.indexOf('const formatOfflineMeetingTranscript')
+    );
 
     assert.match(sheetSource, /const OFFLINE_COT_PROMPT_IDS = new Set\(\[[\s\S]*'cot_before'[\s\S]*'cot_output_audit'[\s\S]*'cot_after'/);
     assert.match(sheetSource, /const requestReasoning = true;[\s\S]*buildCotInstructionBlock\(enabledCotPrompts\)[\s\S]*if \(OFFLINE_COT_PROMPT_IDS\.has\(p\.id\)\)[\s\S]*apiMessages\.push\(\{ role: 'system', content: cotCompilation\.content \}\)/);
-    assert.match(sheetSource, /requestOfflineAssistantReplyWithCotValidation[\s\S]*validateCotResponse\(firstRawContent, expectedTitles\)[\s\S]*streamingBubble\?\.reset\?\.\(\)[\s\S]*validateCotResponse\(secondRawContent, expectedTitles\)/);
-    assert.match(sheetSource, /模型未完全按 COT 预设输出/);
+    assert.match(cotValidationSource, /validateCotResponse\(firstRawContent, expectedTitles\)/);
+    assert.match(cotValidationSource, /模型未完全按 COT 预设输出，已保留首轮回复/);
+    assert.match(cotValidationSource, /return firstResult/);
+    assert.doesNotMatch(cotValidationSource, /streamingBubble\?\.reset|correctionPrompt|secondResult|secondRawContent/);
     assert.match(sheetSource, /const options = \{ includeBuiltin: false \};[\s\S]*getter\('system_depth', worldBookFriend, contextText, options\)/);
     assert.match(sheetSource, /p\.id === OFFLINE_CHAT_HISTORY_PROMPT_ID[\s\S]*mountHistory\(\);[\s\S]*apiMessages\.push\(\{ role: 'system', content: promptContent \}\)/);
     assert.match(sheetSource, /const mountHistory = \(\) => \{[\s\S]*apiMessages\.push\(\.\.\.historyMessages\.map/);
@@ -150,7 +156,7 @@ test('offline empty or failed generations persist a blank rerollable floor', asy
     assert.match(sheetSource, /persistOfflineMessages\(activeFriend, latestMessages\.concat\(failedMessage\)\)/);
     assert.match(sheetSource, /\$\{!isUser \? '<button[^']+data-offline-action="reroll"/);
     assert.match(sheetSource, /generationState: undefined,[\s\S]{0,100}generationError: undefined/);
-    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260718-single-chat-prompt-v2/);
+    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=[^"']*single-chat-cot-v1/);
     assert.match(indexSource, /js\/imessage\/offline_reasoning\.js\?v=20260718-offline-cot-v1/);
     assert.match(indexSource, /js\/imessage\/4_chat_sheet\.js\?v=20260718-offline-cot-v1/);
     assert.match(indexSource, /js\/imessage\/4_chat_(?:interface|main)\.js\?v=20260715-chat-context-menu-offline-retry-v1/g);

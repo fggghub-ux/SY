@@ -817,7 +817,7 @@
     display: inline-flex;
     align-items: center;
     margin-left: 7px;
-    color: #007aff;
+    color: #8e8e93;
     font-size: 12px;
     font-weight: 600;
     line-height: 1.4;
@@ -827,7 +827,7 @@
 
 .friend-phone-translate-toggle:focus-visible,
 .friend-phone-bubble-translatable:focus-visible {
-    outline: 2px solid #007aff;
+    outline: 2px solid #8e8e93;
     outline-offset: 2px;
 }
 
@@ -847,7 +847,11 @@
 }
 
 .friend-phone-translation[hidden] { display: none !important; }
-.friend-phone-bubble-translatable { cursor: pointer; }
+.friend-phone-bubble-translatable {
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
 .friend-phone-bubble-translation { border-top: 1px solid rgba(127,127,127,.24); background: transparent; color: inherit; padding: 8px 0 0; }
 
 .friend-phone-generated-time {
@@ -891,7 +895,7 @@
 }
 
 #friend-safari-private-mode .friend-phone-translate-toggle,
-#friend-game-view .friend-phone-translate-toggle { color: #75aaff; }
+#friend-game-view .friend-phone-translate-toggle { color: #aeaeb2; }
 
 #friend-safari-private-mode .friend-phone-translation,
 #friend-game-view .friend-phone-translation {

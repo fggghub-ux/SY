@@ -107,7 +107,7 @@ test('single-chat status UI swipes the whole card and removes the old settings m
 
     assert.doesNotMatch(html, /id="stickers-btn"/);
     assert.doesNotMatch(html, /id="bind-stickers-sheet"/);
-    assert.match(html, /css\/imessage\.css\?v=20260716-status-prompt-v3/);
+    assert.match(html, /css\/imessage\.css\?v=[^"']*status-prompt-v3/);
     assert.match(statusSource, /class="chat-profile-status-page"/);
     assert.match(statusSource, /statusCard\.addEventListener\('pointermove'/);
     assert.match(statusSource, /statusCard\.style\.transform = `translateX/);

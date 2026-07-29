@@ -16,7 +16,7 @@ test('b.stage waits for durable state before initializing subscriber growth', ()
     assert.doesNotMatch(bstageSource, /setTimeout\(initAllAutoActivities, 1000\)/);
     assert.match(bstageSource, /window\.addEventListener\('pagehide', flushBstageDataNow\)/);
     assert.match(bstageSource, /if \(document\.visibilityState === 'hidden'\) flushBstageDataNow\(\)/);
-    assert.match(indexSource, /js\/bstage\.js\?v=20260713-android-enter-v1/);
+    assert.match(indexSource, /js\/bstage\.js\?v=20260725-android-keyboard-actions-v2/);
     assert.match(indexSource, /js\/storage\/app_storage\.js\?v=20260715-library-content-store-v1/);
 });
 
@@ -30,7 +30,8 @@ test('b.stage char chat persists a generated batch before replaying message bubb
     assert.match(bstageSource, /const playbackItems = \[\];/);
     assert.match(bstageSource, /const persisted = await saveBstageData\(\{ flush: true \}\);\s*if \(!persisted\) throw new Error\('storage_write_failed'\);/);
     assert.match(bstageSource, /for \(const item of playbackItems\) \{\s*const waitMs = Math\.max\(0, item\.delay - previousDelay\);/);
-    assert.match(bstageSource, /inputArea\.disabled = true;[\s\S]*inputArea\.disabled = false;/);
+    assert.match(bstageSource, /inputArea\.readOnly = true;[\s\S]*inputArea\.readOnly = wasReadOnly;/);
+    assert.doesNotMatch(bstageSource, /inputArea\.disabled = true;/);
 });
 
 test('b.stage resolves the canonical member before generating and before saving generated replies', () => {

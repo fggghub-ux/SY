@@ -119,7 +119,7 @@ test('offline theme editor exposes source, presets, immediate apply, and full re
     assert.match(cssSource, /\.offline-theme-button-row button\.primary\s*\{[\s\S]*?grid-column:\s*1 \/ -1/);
     assert.match(sheetSource, /replaceAll\('offline-tavern', 'offline-chat'\)/);
     assert.match(sheetSource, /replaceAll\('offline-chat', 'offline-tavern'\)/);
-    assert.match(indexSource, /css\/imessage\.css\?v=20260716-status-prompt-v3/);
-    assert.match(indexSource, /js\/imessage\/2_core\.js\?v=20260716-offline-token-v1/);
+    assert.match(indexSource, /css\/imessage\.css\?v=[^"']*status-prompt-v3/);
+    assert.match(indexSource, /js\/imessage\/2_core\.js\?v=20260725-single-chat-cot-v1/);
     assert.match(indexSource, /js\/imessage\/4_chat_sheet\.js\?v=20260718-offline-cot-v1/);
 });

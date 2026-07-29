@@ -601,6 +601,27 @@ input, textarea, [contenteditable] {
     max-width: 100%;
 }
 
+/* Android WebViews may pan the layout before the software keyboard changes
+   visualViewport. Scoped input roots stay anchored while that transition runs. */
+.u2-android-focus-locked {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+    overscroll-behavior: none;
+}
+
+.u2-android-focus-locked.u2-android-keyboard-open {
+    bottom: auto !important;
+}
+
+.u2-android-focus-locked :is(input, textarea, select, [contenteditable="true"]) {
+    min-width: 0;
+    max-width: 100%;
+}
+
 .detail-sheet-overlay {
     z-index: 250;
 }

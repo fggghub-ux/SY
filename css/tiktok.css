@@ -1850,7 +1850,41 @@
 
 #tk-dm-chat-view .tk-dm-input-area {
     border-top: 1px solid #f1f1f2 !important;
-    
+    min-width: 0;
+    max-width: 100%;
+}
+
+#tk-dm-chat-view .tk-dm-camera-btn {
+    flex: 0 0 32px;
+}
+
+#tk-dm-chat-view .tk-dm-input-shell {
+    flex: 1 1 0;
+    width: 0;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+#tk-dm-chat-view .tk-dm-message-input {
+    flex: 1 1 0;
+    width: 0;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+#tk-dm-chat-view .tk-dm-emoji-btn,
+#tk-dm-actions-right,
+#tk-dm-mic-btn,
+#tk-dm-plus-btn,
+#tk-dm-chat-send {
+    flex-shrink: 0;
+}
+
+#tk-dm-actions-right {
+    flex: 0 0 auto;
+    min-width: 0;
 }
 
 /* Remove shadows from videos in user/char profile */

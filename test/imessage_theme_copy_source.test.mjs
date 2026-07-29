@@ -63,7 +63,33 @@ test('single-chat Theme source includes every current single-chat message-card f
     assert.doesNotMatch(template, /来源[：:]/);
 });
 
+test('Bubble and Chat Theme sources expose single-chat avatar, timestamp, and COT selectors', async () => {
+    const settingsSource = await read('../js/settings.js');
+    const bubbleTemplate = extractTemplate(settingsSource, 'bubbleTemplate');
+    const chatTemplate = extractTemplate(settingsSource, 'chatTemplate');
+    const requiredClasses = [
+        'chat-message-header', 'user-header', 'ai-header',
+        'chat-header-avatar', 'chat-header-info', 'chat-header-name', 'chat-header-date',
+        'chat-timestamp', 'bubble-meta', 'bubble-time', 'bubble-read-icon',
+        'chat-cot-row', 'chat-cot-row-inline', 'chat-cot-card', 'is-expanded',
+        'chat-cot-toggle', 'chat-cot-title', 'chat-cot-chevron', 'chat-cot-content',
+        'im-cot-loading-row', 'im-cot-loading-dots'
+    ];
+
+    for (const template of [bubbleTemplate, chatTemplate]) {
+        for (const className of requiredClasses) {
+            assert.match(template, new RegExp(`\\.${className}\\b`), `missing .${className}`);
+        }
+        assert.match(template, /:scope\.show-timestamps\s+\.bubble-meta/);
+        assert.match(template, /:scope\.timestamp-outside\s+\.user-row\s+\.bubble-meta/);
+        assert.match(template, /:scope\.timestamp-outside\s+\.ai-row\s+\.bubble-meta/);
+        assert.match(template, /\.chat-message-header\s+\.chat-header-avatar/);
+        assert.match(template, /\.chat-cot-card\.is-expanded/);
+    }
+});
+
 test('loads the cache-busted Theme copy-source script', async () => {
     const html = await read('../index.html');
     assert.match(html, /js\/settings\.js\?v=20260718-ios-pwa-export-v1/);
+    assert.match(html, /theme-source=20260728-single-meta-cot-v1/);
 });

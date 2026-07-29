@@ -47,6 +47,29 @@ test('summary batch respects an existing message boundary and ignores assistant-
     assert.equal(batch.endIndex, messages.length);
 });
 
+test('memory event time comes from the summarized messages instead of summary creation time', () => {
+    const localTimestamp = (year, month, day, hour, minute) => (
+        new Date(year, month - 1, day, hour, minute).getTime()
+    );
+
+    assert.equal(utils.formatMemoryEventTime([
+        { timestamp: localTimestamp(2026, 7, 22, 14, 30) }
+    ]), '2026年07月22日 14:30');
+
+    assert.equal(utils.formatMemoryEventTime([
+        { timestamp: localTimestamp(2026, 7, 22, 15, 5) },
+        { timestamp: localTimestamp(2026, 7, 22, 14, 30) }
+    ]), '2026年07月22日 14:30至15:05');
+
+    assert.equal(utils.formatMemoryEventTime([
+        { timestamp: localTimestamp(2026, 7, 23, 0, 20) },
+        { timestamp: localTimestamp(2026, 7, 22, 23, 55) }
+    ]), '2026年07月22日 23:55至2026年07月23日 00:20');
+
+    const fallback = localTimestamp(2026, 7, 24, 9, 8);
+    assert.equal(utils.formatMemoryEventTime([{ timestamp: 'invalid' }], fallback), '2026年07月24日 09:08');
+});
+
 test('group chat memory keeps the latest 30 public messages and excludes private notices', () => {
     const messages = Array.from({ length: 35 }, (_, index) => ({
         role: index % 2 === 0 ? 'user' : 'assistant',
@@ -162,6 +185,36 @@ test('builds a local short-term memory when offline artifact memory is missing',
     assert.equal(utils.parseOfflineMeetingArtifacts('{"meetingSummary":{"title":"空","summary":""}}'), null);
 });
 
+test('keeps an offline meeting as the handoff anchor until the character replies online', () => {
+    const meeting = {
+        id: 'meeting-1',
+        role: 'system',
+        type: 'offline_meeting_record',
+        timestamp: 1000
+    };
+
+    assert.equal(utils.resolvePendingOfflineHandoff([
+        { role: 'assistant', timestamp: 500 },
+        meeting,
+        { role: 'user', content: 'back online', timestamp: 2000 }
+    ]), meeting);
+
+    assert.equal(utils.resolvePendingOfflineHandoff([
+        meeting,
+        { role: 'user', content: 'first message', timestamp: 2000 },
+        { role: 'user', content: 'follow-up message', timestamp: 3000 }
+    ]), meeting);
+
+    assert.equal(utils.resolvePendingOfflineHandoff([
+        meeting,
+        { role: 'user', timestamp: 2000 },
+        { role: 'assistant', timestamp: 3000 },
+        { role: 'user', timestamp: 4000 }
+    ]), null);
+
+    assert.equal(utils.resolvePendingOfflineHandoff([meeting]), null);
+});
+
 test('deleting short-term summaries keeps the covered conversation out of the unsummarized queue', () => {
     const messages = [];
     for (let round = 1; round <= 10; round += 1) {
@@ -224,13 +277,24 @@ test('normalizes AI, Loves and manual schedule event shapes without dropping com
     assert.equal(schedule.events[1].endTime, '21:00');
 });
 
-test('parses TXT or DOCX extracted manifest text as name plus URL per line', () => {
-    const parsed = utils.parseStickerManifestText(`开心 https://example.com/happy.png\n晚安猫 https://example.com/cat.webp\ninvalid-line`);
+test('parses sticker manifests with flexible separators while requiring a name and trailing URL', () => {
+    const parsed = utils.parseStickerManifestText([
+        '开心 https://example.com/happy.png',
+        '晚安猫：https://example.com/cat.webp',
+        '挥手 - | ： https://example.com/wave.gif',
+        '无分隔https://example.com/direct.png',
+        'invalid-line',
+        ': https://example.com/missing-name.png',
+        '错误协议 ftp://example.com/nope.png',
+        '多余内容 https://example.com/extra.png trailing'
+    ].join('\n'));
     assert.deepEqual(parsed.items, [
         { name: '开心', url: 'https://example.com/happy.png' },
-        { name: '晚安猫', url: 'https://example.com/cat.webp' }
+        { name: '晚安猫', url: 'https://example.com/cat.webp' },
+        { name: '挥手', url: 'https://example.com/wave.gif' },
+        { name: '无分隔', url: 'https://example.com/direct.png' }
     ]);
-    assert.deepEqual(parsed.invalidLines, [3]);
+    assert.deepEqual(parsed.invalidLines, [5, 6, 7, 8]);
 });
 
 test('ships the full-screen sticker manager, manifest upload, and protected moment content layout', async () => {
@@ -308,7 +372,7 @@ test('offline single chat follows the bound account identity and refreshes visib
     assert.match(settingsSource, /updateChatBindIdLabel\(window\.imData\.currentSettingsFriend\);[\s\S]*?refreshChatPageForFriend\(window\.imData\.currentSettingsFriend\);/);
     assert.match(html, /offline_reasoning\.js\?v=20260718-offline-cot-v1/);
     assert.match(html, /4_chat_sheet\.js\?v=20260718-offline-cot-v1/);
-    assert.match(html, /5_settings\.js\?v=20260716-status-prompt-v3/);
+    assert.match(html, /5_settings\.js\?v=20260725-single-chat-cot-v1/);
 });
 
 test('Char moment images use external grayscale photos and reveal descriptions only in detail', async () => {

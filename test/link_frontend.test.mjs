@@ -27,51 +27,56 @@ test('rejects empty, unsafe, and unsupported fake-link inputs', () => {
     assert.equal(window.imChat.normalizeFakeLinkDomain('https://example.com/' + 'a'.repeat(220)), '');
 });
 
-test('builds a strict AI fake-webpage prompt with controlled interactions', () => {
+test('builds a compact AI webpage prompt with optional recent chat context and real JavaScript', () => {
     const prompt = window.imChat.buildFakeLinkPrompt({
         domain: 'xiaohongshu.com/explore/demo',
         prompt: '生成小红书笔记页面，带评论',
         worldBookContext: 'WB: coffee shop is important',
         charPersonaContext: 'Char persona: likes quiet cafes',
         userPersonaContext: 'User persona: photographer',
+        recentChatContext: 'User: 今晚去咖啡店吗\nChar: 我刚找到一家店',
         includeCharPersona: true,
-        includeUserPersona: true
+        includeUserPersona: true,
+        includeRecentContext: true
     });
     assert.match(prompt, /webPage/);
-    assert.match(prompt, /interactions/);
-    assert.match(prompt, /toggleClass/);
+    assert.match(prompt, /"js"/);
+    assert.match(prompt, /原生 JS/);
     assert.match(prompt, /picsum\.photos/);
     assert.match(prompt, /世界书上下文/);
     assert.match(prompt, /WB: coffee shop is important/);
     assert.match(prompt, /Char persona: likes quiet cafes/);
     assert.match(prompt, /User persona: photographer/);
-    assert.match(prompt, /小红书/);
-    assert.match(prompt, /禁止输出 <script>/);
-    assert.equal(prompt.includes('window.open'), false);
+    assert.match(prompt, /我刚找到一家店/);
+    assert.match(prompt, /1-3 个有意义的交互/);
+    assert.match(prompt, /禁止 fetch/);
+    assert.doesNotMatch(prompt, /interactions/);
+    assert.doesNotMatch(prompt, /xiaohongshu\|news\|shop\|generic/);
+
+    const withoutRecent = window.imChat.buildFakeLinkPrompt({
+        domain: 'example.com',
+        recentChatContext: 'SHOULD_NOT_BE_INCLUDED',
+        includeRecentContext: false
+    });
+    assert.doesNotMatch(withoutRecent, /SHOULD_NOT_BE_INCLUDED/);
 });
 
-test('normalizes generated webpage packages defensively', () => {
+test('normalizes generated HTML, CSS, and JavaScript packages defensively', () => {
     const page = window.imChat.normalizeFakeLinkWebPage({
-        theme: 'xiaohongshu',
         html: '<section onclick="bad()"><script>alert(1)</script><a href="https://evil.test">open</a><img src="https://evil.test/a.jpg"><p>ok</p><form><input></form></section>',
         css: '@import url("https://evil.test/a.css"); .x{background:url(https://evil.test/a.png);position:fixed;behavior:url(x)}',
-        interactions: [
-            { type: 'evil', selector: '[data-fake-action="like"]' },
-            { type: 'toggleClass', selector: '<bad>' }
-        ]
+        js: 'document.querySelector("button")?.addEventListener("click", () => {});</script><script>bad()'
     }, { domain: 'xiaohongshu.com/demo', prompt: 'coffee' });
 
-    assert.equal(page.theme, 'xiaohongshu');
     assert.equal(page.html.includes('<script'), false);
     assert.equal(page.html.includes('onclick'), false);
-    assert.equal(page.html.includes('href='), false);
-    assert.equal(page.html.includes('<input'), false);
     assert.match(page.html, /https:\/\/picsum\.photos\/seed\//);
     assert.equal(page.css.includes('@import'), false);
     assert.equal(page.css.includes('url('), false);
-    assert.match(page.css, /position:absolute/);
-    assert.equal(page.interactions.length, 1);
-    assert.equal(page.interactions[0].type, 'toggleClass');
+    assert.match(page.js, /addEventListener/);
+    assert.doesNotMatch(page.js, /<\/script/i);
+    assert.equal('theme' in page, false);
+    assert.equal('interactions' in page, false);
 });
 
 test('random image helpers allow only the configured external image host', () => {
@@ -88,20 +93,31 @@ test('random image helpers allow only the configured external image host', () =>
     assert.equal((html.match(/https:\/\/picsum\.photos\/seed\//g) || []).length, 2);
 });
 
-test('manual mode creates an escaped generic webpage package', () => {
-    const page = window.imChat.buildManualFakeLinkWebPage({
-        siteName: 'Example',
-        title: '<script>title</script>',
-        summary: 'Summary',
-        bodyText: 'First paragraph\nSecond <img src=x onerror=bad()> paragraph',
-        displayUrl: 'example.com/post'
-    });
+test('limits mounted recent chat context to the requested messages and text budget', () => {
+    const friend = {
+        messages: Array.from({ length: 15 }, (_, index) => ({
+            role: index % 2 ? 'assistant' : 'user',
+            content: `message-${index}-` + 'x'.repeat(500)
+        }))
+    };
+    const context = window.imChat.resolveFakeLinkRecentChatContext(friend, 10);
+    assert.doesNotMatch(context, /message-4-/);
+    assert.match(context, /message-5-/);
+    assert.match(context, /message-14-/);
+    assert.ok(context.length <= 4000);
+    assert.equal(context.split('\n').length, 10);
+});
 
-    assert.equal(page.theme, 'generic');
-    assert.equal(page.html.includes('<script>'), false);
-    assert.equal(page.html.includes('<img'), false);
-    assert.match(page.html, /u2-fake-generic-page/);
-    assert.ok(page.interactions.some(item => item.type === 'increment'));
+test('builds a no-network script sandbox document', () => {
+    const source = window.imChat.buildFakeLinkSandboxDocument({
+        html: '<main><button>go</button></main>',
+        css: 'button{color:red}',
+        js: 'document.querySelector("button").textContent="done";'
+    });
+    assert.match(source, /Content-Security-Policy/);
+    assert.match(source, /connect-src &#039;none&#039;/);
+    assert.match(source, /form-action &#039;none&#039;/);
+    assert.match(source, /document\.querySelector/);
 });
 
 test('removes the old resolver and real external-opening path', async () => {
@@ -132,19 +148,31 @@ test('uses fake_link in chat rendering, safe webpage rendering, menu sizing, and
         fs.readFile(new URL('../js/imessage/4_chat_sheet.js', import.meta.url), 'utf8')
     ]);
     assert.match(linkSource, /type:\s*'fake_link'/);
-    assert.match(linkSource, /data-tab="ai"/);
-    assert.match(linkSource, /data-tab="manual"/);
     assert.match(linkSource, /aria-label="发送链接"/);
     assert.match(linkSource, /aria-label="调用 API 生成网页"/);
     assert.match(linkSource, /fa-search/);
     assert.doesNotMatch(linkSource, /fa-wand-magic-sparkles/);
+    assert.doesNotMatch(linkSource, /data-tab="(?:ai|manual)"/);
+    assert.doesNotMatch(linkSource, /buildManualFakeLinkWebPage/);
+    assert.doesNotMatch(linkSource, /u2-fake-generic-page/);
+    assert.doesNotMatch(linkSource, /data-panel="manual"/);
     assert.match(sheetSource, /class="attachment-more-link-label">链接<\/div>/);
     assert.doesNotMatch(sheetSource, /class="attachment-more-link-label">假链接<\/div>/);
     assert.match(linkSource, /webPage/);
     assert.match(linkSource, /im-fake-link-char-persona-toggle/);
     assert.match(linkSource, /im-fake-link-user-persona-toggle/);
+    assert.match(linkSource, /im-fake-link-recent-context-toggle/);
+    assert.match(linkSource, /im-fake-link-context-limit-input/);
+    assert.match(linkSource, /DEFAULT_RECENT_CONTEXT_LIMIT = 10/);
+    assert.match(linkSource, /fakeLinkSessions = new Map/);
     assert.match(linkSource, /resolveFakeLinkWorldBookContext/);
     assert.match(linkSource, /picsum\.photos/);
+    assert.match(linkSource, /css:\s*sanitizeFakeLinkCssForStorage/);
+    assert.match(linkSource, /js:\s*sanitizeFakeLinkJsForStorage/);
+    assert.match(linkSource, /frame\.setAttribute\('sandbox', 'allow-scripts'\)/);
+    assert.match(linkSource, /connect-src 'none'/);
+    assert.match(linkSource, /role:\s*'user',\s*type:\s*'fake_link'/);
+    assert.doesNotMatch(linkSource, /handleAiReply/);
     assert.match(coreSource, /normalizedMessage\.type === 'fake_link'/);
     assert.match(coreSource, /formatFakeLinkMessageForApiContext/);
     assert.match(coreSource, /stripFakeLinkHtmlForApiContext/);
@@ -154,6 +182,8 @@ test('uses fake_link in chat rendering, safe webpage rendering, menu sizing, and
     assert.match(bubbleSource, /renderFakeLinkWebPage/);
     assert.match(bubbleSource, /scopeFakeLinkCss/);
     assert.match(bubbleSource, /bindFakeLinkInteractions/);
+    assert.match(bubbleSource, /pagePackage\.js/);
+    assert.match(bubbleSource, /im-fake-link-detail-iframe/);
     assert.match(bubbleSource, /isAllowedFakeLinkImageUrlForRender/);
     assert.match(bubbleSource, /overlay\.style\.display\s*=\s*'flex'/);
     assert.match(interfaceSource, /msg-context-card-clone/);
@@ -265,7 +295,7 @@ test('restores saved iMessage theme CSS after contact data hydration and chat pa
 
     assert.ok((interfaceSource.match(/window\.imApp\.applyFriendCss\(friend\)/g) || []).length >= 2);
     assert.match(indexSource, /js\/imessage\/4_chat_interface\.js\?v=20260715-chat-context-menu-offline-retry-v1/);
-    assert.match(indexSource, /js\/imessage\/5_settings\.js\?v=20260716-status-prompt-v3/);
+    assert.match(indexSource, /js\/imessage\/5_settings\.js\?v=20260725-single-chat-cot-v1/);
 });
 
 test('keeps iOS modal, theme preset, stickers, and private-chat safeguards', async () => {
@@ -333,7 +363,7 @@ test('keeps iOS modal, theme preset, stickers, and private-chat safeguards', asy
 });
 
 test('keeps group time awareness, role recall toggle, Chinese generated thoughts, member removal, and clear-context safeguards', async () => {
-    const [indexSource, groupsSource, aiSource, interfaceSource, statusSource, coreSource, settingsSource, contactsSource, builtinWorldBookSource] = await Promise.all([
+    const [indexSource, groupsSource, aiSource, interfaceSource, statusSource, coreSource, settingsSource, contactsSource, builtinWorldBookSource, cssSource] = await Promise.all([
         fs.readFile(new URL('../index.html', import.meta.url), 'utf8'),
         fs.readFile(new URL('../js/imessage/3_groups.js', import.meta.url), 'utf8'),
         fs.readFile(new URL('../js/imessage/4_chat_ai.js', import.meta.url), 'utf8'),
@@ -342,12 +372,14 @@ test('keeps group time awareness, role recall toggle, Chinese generated thoughts
         fs.readFile(new URL('../js/imessage/2_core.js', import.meta.url), 'utf8'),
         fs.readFile(new URL('../js/imessage/5_settings.js', import.meta.url), 'utf8'),
         fs.readFile(new URL('../js/imessage/3_contacts.js', import.meta.url), 'utf8'),
-        fs.readFile(new URL('../js/builtin_worldbook.js', import.meta.url), 'utf8')
+        fs.readFile(new URL('../js/builtin_worldbook.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../css/imessage.css', import.meta.url), 'utf8')
     ]);
 
     assert.match(indexSource, /id="group-time-aware-toggle"/);
     assert.match(indexSource, />时间感知</);
     assert.match(indexSource, /id="chat-role-recall-toggle"/);
+    assert.match(indexSource, /id="chat-memory-context-limit-input"[\s\S]*?value="50"/);
     assert.match(indexSource, />允许角色撤回</);
     assert.match(groupsSource, /groupTimeAwareToggle/);
     assert.match(groupsSource, /targetGroup\.timeAware\s*=\s*timeAware/);
@@ -356,17 +388,49 @@ test('keeps group time awareness, role recall toggle, Chinese generated thoughts
     assert.match(groupsSource, /delete targetGroup\.memory\.mountSettings/);
     assert.match(groupsSource, /delete targetGroup\.memory\.mountLimits/);
     assert.match(groupsSource, /delete targetGroup\.memberProfiles/);
+    assert.match(coreSource, /context: \{ enabled: true, limit: 50, notes: '' \}/);
+    assert.match(coreSource, /const defaultContextLimit = normalizedFriend\.type === 'group' \? 100 : 50/);
+    assert.match(settingsSource, /chatMemoryContextLimit\.value = friend\.memory\.context\.limit \|\| 50/);
 
     assert.match(aiSource, /buildGroupTimeRequirement/);
     assert.match(aiSource, /【群聊时间感知】/);
     assert.match(aiSource, /const lastOfflineMeeting = historyMessages[\s\S]*?msg\.type === 'offline_meeting_record'/);
     assert.match(aiSource, /线下见面与公开消息同样算作一次群聊互动/);
     assert.match(aiSource, /线下见面与线上消息同样算作一次互动/);
+    assert.match(aiSource, /必须先读取本轮已有的 <offline_meeting_context>/);
+    assert.match(aiSource, /“重置当前场景”只能结束见面当时的即时动作和物理场景/);
+    assert.match(aiSource, /不得清除总结中的事实、情绪、约定、未决事项或关系变化/);
+    assert.match(aiSource, /resolvePendingOfflineHandoff\(friend\.messages\)/);
+    assert.match(aiSource, /【线下转线上衔接｜本轮强制执行】/);
+    assert.match(aiSource, /offline_handoff_context/);
+    assert.match(aiSource, /pendingOfflineHandoff \|\| lastRecordedInteraction/);
+    assert.match(aiSource, /if \(window\.imApp\?\.\ensureFriendMessagesLoaded\) \{\s*await window\.imApp\.ensureFriendMessagesLoaded\(friend\)/);
     assert.match(aiSource, /lastCharOrMeetingBeforeUser/);
     assert.match(aiSource, /thought 字段必须使用自然中文/);
     assert.match(aiSource, /JSON 必须且只能包含字段：thought、affectionChange、events/);
     assert.match(aiSource, /hasCustomStatusPrompt/);
     assert.match(aiSource, /<custom_status_prompt>/);
+    assert.match(aiSource, /thought 必须与本轮单聊回复使用完全相同的角色身份、核心人设、User 人设、关系阶段、单聊真实交流原则、角色记忆和当前聊天上下文/);
+    assert.match(aiSource, /thought 必须遵循本轮已经注入的全部已绑定世界书内容，包括 System Depth Rules、Before Role Rules 和 After Role Rules/);
+    assert.match(aiSource, /thought 必须严格写成四行/);
+    assert.match(aiSource, /const profileThoughtTimestamp = \[/);
+    assert.match(aiSource, /第一行必须原样写成 \[\$\{profileThoughtTimestamp\}\]/);
+    assert.match(aiSource, /第二行和第三行各写一句约 10 个汉字/);
+    assert.match(aiSource, /第四行写一句贴合此刻心境的短歌词或短诗句/);
+    assert.match(aiSource, /第二、三、四行必须全部使用自然简体中文/);
+    assert.match(aiSource, /\[THOUGHT\]: The "thought" field MUST always remain in Simplified Chinese, including when a custom status prompt is enabled/);
+    assert.match(aiSource, /自定义状态栏提示词只作为 thought 的附加内容与表达偏好/);
+    assert.doesNotMatch(aiSource, /不要叠加默认心声的第一人称、中文或字数要求/);
+    assert.doesNotMatch(aiSource, /45-60 字左右/);
+    assert.match(aiSource, /thought 第一行的真实时间戳已经由系统直接注入/);
+    assert.doesNotMatch(aiSource, /thought 只输出心声正文，禁止自行添加日期、具体时刻、时间段或任何时间前缀/);
+    assert.doesNotMatch(aiSource, /function stripModelThoughtTimePrefix/);
+    assert.match(aiSource, /thought:\s*normalizeModelThought\(parsed\.thought\)/);
+    assert.match(aiSource, /createdAt:\s*Date\.now\(\)/);
+    assert.match(statusSource, /snapshot\.createdAt/);
+    assert.match(statusSource, /createdAt\.toLocaleString\(\)/);
+    assert.match(cssSource, /\.chat-profile-panel-thought\s*\{[\s\S]*?justify-content:\s*center[\s\S]*?text-align:\s*center/);
+    assert.doesNotMatch(aiSource, /并在最前面带上当前具体时间/);
     assert.doesNotMatch(aiSource, /thought 必须严格输出空字符串/);
     assert.doesNotMatch(aiSource, /JSON 必须包含字段：thought、location、action、mood、expression/);
     assert.match(aiSource, /memberProfiles\[memberProfileKey\]/);
@@ -440,12 +504,34 @@ test('applies tuned relationship, personality, and time-gap rules to single and 
     assert.match(aiSource, /User在分享开心事吗？我是否在用上帝视角贬低？/);
     assert.match(aiSource, /算你识相\/乖\/算你有良心/);
     assert.match(aiSource, /彻底摒弃赛博爹妈感/);
+    assert.match(aiSource, /言语可以轻浮，内核必须绅士/);
+    assert.match(aiSource, /尽量省略主语，不展开解释，少用“虽然……但是……”或“虽然……不过……”式转折/);
+    assert.match(aiSource, /虽然你这句话很莫名其妙，不过还挺可爱的/);
+    assert.match(aiSource, /改成短促、直接、同频的表达，例如“什么呀，好可爱。”/);
+    assert.match(aiSource, /真的要命\/脑子都要炸了\/命都给你\/你逃不掉\/别想跑\/你欠我的\/这下满意了吧\/这辈子\/死定了\/你惹的火打算怎么灭\/你给我等着\/你完了/);
+    assert.match(aiSource, /油腻威胁、宿命绑定、占有、追责、邀功式话术/);
+    assert.match(aiSource, /禁止换成近义词包装后继续输出/);
     assert.match(aiSource, /禁止讲大道理、给建议、或者说“早跟你说了吧”吗？/);
     assert.match(aiSource, /\$\{isSingleChat \? '- 禁止执着于旧话题，例如当user明确表达不困时/);
     assert.match(aiSource, /草稿中有“快睡”，“赶紧”，“真是的”等字样马上删除！/);
     assert.match(aiSource, /\*\*外向\/敏感\*\* ：回复快，主动开启话题并很爱分享感受/);
     assert.match(aiSource, /\*\*内向\/温柔\*\* ：回复偏慢，用词柔软且有分寸/);
     assert.match(aiSource, /现在的时间段是：\$\{currentTimePeriod\}/);
+    assert.match(aiSource, /function buildTemporalDecisionPrompt\(\{ currentTime, lastInteraction, actorLabel \}\)/);
+    assert.match(aiSource, /const isDelayed = gapMs >= 15 \* 60 \* 1000/);
+    assert.match(aiSource, /else if \(gapMs >= 2 \* 60 \* 60 \* 1000\) timeMode = '长时间间隔'/);
+    assert.match(aiSource, /if \(crossedDate\) timeMode = '跨日期'/);
+    assert.match(aiSource, /else if \(crossedPeriod\) timeMode = '跨时间段'/);
+    assert.match(aiSource, /replyResponsibility = `\$\{safeActorLabel\}延迟回复`/);
+    assert.match(aiSource, /else if \(lastInteraction\.role === 'assistant'\) \{[\s\S]*?replyResponsibility = 'User尚未回复'/);
+    assert.match(aiSource, /User 还没有回复上一条消息/);
+    assert.match(aiSource, /可以自然补充上一句话、继续分享身边的事，或问 User 在干嘛/);
+    assert.match(aiSource, /gapMs >= 2 \* 60 \* 60 \* 1000 \? '当前已经超过2小时/);
+    assert.doesNotMatch(aiSource, /replyResponsibility = 'User延迟回复'/);
+    assert.match(aiSource, /场景连续性：\$\{sceneContinuity\}/);
+    assert.match(aiSource, /话题规则：普通闲聊和即时状态跨时间后可以过期/);
+    assert.match(aiSource, /const charTemporalDecisionPrompt = buildTemporalDecisionPrompt/);
+    assert.match(aiSource, /actorLabel: 'Char'/);
     assert.match(aiSource, /\*\*间隔 < 2小时\*\*/);
     assert.match(aiSource, /\*\*间隔 2-8小时\*\*/);
     assert.match(aiSource, /\*\*隔夜（跨越了凌晨）\*\*/);
@@ -456,15 +542,67 @@ test('applies tuned relationship, personality, and time-gap rules to single and 
     assert.match(aiSource, /isSingleChat: true,[\s\S]*?relationship: userRelationship/);
     assert.match(aiSource, /与 User 的关系: \$\{String\(member\.relationship/);
     assert.match(aiSource, /根据群聊最近一次互动距离现在的间隔调整承接方式/);
+    assert.match(aiSource, /const groupTemporalDecisionPrompt = buildTemporalDecisionPrompt/);
+    assert.match(aiSource, /actorLabel: '群成员'/);
+    assert.equal((aiSource.match(/= buildTemporalDecisionPrompt\(\{/g) || []).length, 2);
+    assert.doesNotMatch(aiSource, /四、 核心演化原则/);
+    assert.doesNotMatch(aiSource, /人设是种子，剧情是土壤/);
+    assert.doesNotMatch(aiSource, /演化触发器:/);
+    assert.doesNotMatch(aiSource, /演化表现:/);
 
     const singleChatPrompt = aiSource.slice(
         aiSource.indexOf('const singleChatRoleRecallPrompt'),
-        aiSource.indexOf('systemPrompt += `\\n\\n<GEMINI_OVERRIDE_CORE>')
+        aiSource.indexOf('const geminiOverridePrompt')
     );
     assert.match(singleChatPrompt, /用“是\[正确词汇\]”的方式修正/);
     assert.match(singleChatPrompt, /角色: 是餐馆/);
     assert.doesNotMatch(singleChatPrompt, /\*是\[正确词汇\]|角色: \*是餐馆/);
+    assert.match(singleChatPrompt, /recall 对象必须使用 \{"type":"recall","text":"被撤回的原文","translation":"该原文的自然中文翻译或空字符串"\}/);
+    assert.match(singleChatPrompt, /recall\.translation 必须与上一条 text 气泡的 translation 完全一致/);
     assert.match(aiSource, /\$\{friend\.type === 'group' \? `6\. 无论其他附加任务是否能完成/);
+
+    assert.match(aiSource, /const onlinePromptSections = \{[\s\S]*?priority: \[\],[\s\S]*?identity: \[\],[\s\S]*?data: \[\],[\s\S]*?behavior: \[\],[\s\S]*?runtime: \[\],[\s\S]*?features: \[\],[\s\S]*?format: \[\]/);
+    assert.match(aiSource, /const messages = \[\];/);
+    assert.doesNotMatch(aiSource, /const messages = \[\{ role: 'system', content: systemPrompt \}\]/);
+    const priorityMount = aiSource.indexOf("appendOnlinePromptSections(messages, 'priority')");
+    const identityMount = aiSource.indexOf("appendOnlinePromptSections(messages, 'identity')");
+    const dataMount = aiSource.indexOf("appendOnlinePromptSections(messages, 'data')");
+    const historyMount = aiSource.indexOf('if (window.imApp.buildApiContextMessages)');
+    const behaviorMount = aiSource.indexOf("appendOnlinePromptSections(messages, 'behavior')");
+    const runtimeMount = aiSource.indexOf("appendOnlinePromptSections(messages, 'runtime')");
+    const featureMount = aiSource.indexOf("appendOnlinePromptSections(messages, 'features')");
+    const formatMount = aiSource.indexOf("appendOnlinePromptSections(messages, 'format')");
+    const finalReminderMount = aiSource.indexOf('const finalChatJsonFormatReminder');
+    const triggerMount = aiSource.indexOf('if (responseTriggerMessage) messages.push(responseTriggerMessage)');
+    assert.ok(priorityMount < identityMount);
+    assert.ok(identityMount < dataMount);
+    assert.ok(dataMount < historyMount);
+    assert.ok(historyMount < behaviorMount);
+    assert.ok(behaviorMount < runtimeMount);
+    assert.ok(runtimeMount < featureMount);
+    assert.ok(featureMount < formatMount);
+    assert.ok(formatMount < finalReminderMount);
+    assert.ok(finalReminderMount < triggerMount);
+});
+
+test('persists and toggles bilingual recalled-message details', async () => {
+    const [aiSource, coreSource, bubblesSource, indexSource, cssSource] = await Promise.all([
+        fs.readFile(new URL('../js/imessage/4_chat_ai.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/2_core.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_bubbles.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../index.html', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../css/imessage.css', import.meta.url), 'utf8')
+    ]);
+
+    assert.equal((aiSource.match(/kind: 'recall',[\s\S]{0,240}?translation:/g) || []).length, 2);
+    assert.match(aiSource, /recalledTranslation: currentItem\.translation \|\| matchedMessage\?\.translation \|\| ''/);
+    assert.match(coreSource, /recalledTranslation: typeof options\.recalledTranslation === 'string'/);
+    assert.match(bubblesSource, /function openRecalledMessageDetail\(content, translation = ''\)/);
+    assert.match(bubblesSource, /openRecalledMessageDetail\(recalledContent, recalledTranslation\)/);
+    assert.match(indexSource, /id="recalled-message-detail-translate"/);
+    assert.match(indexSource, /id="recalled-message-detail-translation"/);
+    assert.match(cssSource, /\.recalled-message-detail-translate/);
+    assert.match(cssSource, /\.recalled-message-detail-translation/);
 });
 
 test('prioritizes complete chat bubbles and places temporal context immediately before the response trigger', async () => {
@@ -496,6 +634,70 @@ test('prioritizes complete chat bubbles and places temporal context immediately 
     assert.ok(lovesMomentIndex > primaryValidationIndex);
 });
 
+test('adds per-chat single-chat COT without weakening chat JSON or leaking into groups', async () => {
+    const [aiSource, coreSource, settingsSource, bubblesSource, paymentSource, storageSource, cssSource, indexSource] = await Promise.all([
+        fs.readFile(new URL('../js/imessage/4_chat_ai.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/2_core.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/5_settings.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_bubbles.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/imessage/4_chat_payment.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../js/storage/app_storage.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../css/imessage.css', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../index.html', import.meta.url), 'utf8')
+    ]);
+
+    assert.match(coreSource, /DEFAULT_SINGLE_CHAT_COT_PROMPT = '我该怎么回？'/);
+    assert.match(coreSource, /const cotDefaultVersion = Number\(normalized\.cotDefaultVersion\) \|\| 0/);
+    assert.match(coreSource, /normalized\.cotEnabled = cotDefaultVersion >= 2 && normalized\.cotEnabled === true/);
+    assert.match(coreSource, /normalized\.cotDefaultVersion = 2/);
+    assert.match(coreSource, /normalized\.cotPrompt = typeof normalized\.cotPrompt === 'string'/);
+    assert.match(settingsSource, /targetFriend\.cotEnabled = nextEnabled/);
+    assert.match(settingsSource, /targetFriend\.cotDefaultVersion = 2/);
+    assert.match(settingsSource, /targetFriend\.cotPrompt = nextPrompt === DEFAULT_SINGLE_CHAT_COT_PROMPT \? '' : nextPrompt/);
+    assert.match(indexSource, /id="chat-cot-settings-btn"/);
+    assert.match(indexSource, /id="chat-cot-enabled-toggle"/);
+    assert.match(indexSource, /id="chat-cot-prompt-input"[\s\S]*?maxlength="4000"/);
+    assert.match(indexSource, /id="reset-chat-cot-prompt-btn"/);
+
+    assert.match(aiSource, /friend\.type === 'group' \|\| friend\.type === 'official' \|\| friend\.cotEnabled !== true/);
+    assert.match(aiSource, /角色此刻自然冒出的简体中文念头/);
+    assert.match(aiSource, /优先省略“我”/);
+    assert.match(aiSource, /不要写原因分析、回复计划或工作汇报/);
+    assert.match(aiSource, /friend\.cotEnabled === true/);
+    assert.match(aiSource, /先输出完整 <chat_json>合法JSON数组<\/chat_json>[\s\S]*?<cot_summary>/);
+    assert.match(aiSource, /extractTaggedBlock\(fullReply, 'cot_summary'\)/);
+    assert.match(aiSource, /removeTaggedBlock\(fullReply, 'cot_summary'\)/);
+    assert.match(aiSource, /let singleChatCotSummary = ''/);
+    assert.match(aiSource, /message\.cotSummary = singleChatCotSummary/);
+    assert.match(aiSource, /im-cot-loading-row/);
+
+    const cotParseIndex = aiSource.indexOf("extractTaggedBlock(fullReply, 'cot_summary')");
+    const chatParseIndex = aiSource.indexOf("extractTaggedBlock(fullReply, 'chat_json')");
+    const primaryValidationIndex = aiSource.indexOf('let queueItems = normalizeStructuredChatItems(structuredItems);');
+    assert.ok(cotParseIndex > -1 && chatParseIndex > cotParseIndex);
+    assert.ok(primaryValidationIndex > chatParseIndex);
+    assert.doesNotMatch(aiSource, /if \(!singleChatCotSummary\)[\s\S]{0,120}throw new Error/);
+
+    assert.match(bubblesSource, /function renderCotSummaryCard/);
+    assert.match(bubblesSource, /content\.textContent = cotSummary/);
+    assert.match(bubblesSource, /aria-expanded/);
+    assert.match(bubblesSource, /renderCotSummaryCard\(msg, friend, container\)/);
+    assert.match(bubblesSource, /messageColumn\.insertBefore\(row, bubbleLine\)/);
+    assert.match(bubblesSource, /<span>COT<\/span>/);
+    assert.doesNotMatch(
+        bubblesSource.slice(bubblesSource.indexOf('function renderCotSummaryCard'), bubblesSource.indexOf('function renderMessageBubble')),
+        /fa-brain/
+    );
+    assert.match(cssSource, /\.chat-cot-card/);
+    assert.match(cssSource, /\.chat-cot-card\.is-expanded[\s\S]*?border-radius: 20px/);
+    assert.match(cssSource, /\.chat-cot-card \{[\s\S]*?border-radius: 999px/);
+    assert.match(cssSource, /\.chat-cot-content\[hidden\]/);
+    assert.match(coreSource, /removedCotByRunId/);
+    assert.match(paymentSource, /receiveMsg\.cotSummary = options\.cotSummary\.trim\(\)/);
+    assert.match(storageSource, /cotSummary: typeof safe\.cotSummary === 'string'/);
+    assert.match(storageSource, /cotSummary: typeof row\.cotSummary === 'string'/);
+});
+
 test('uses visible keyword-triggered memory recall for single and group chats', async () => {
     const [aiSource, coreSource, settingsSource, statusSource, bubblesSource, cssSource, indexSource] = await Promise.all([
         fs.readFile(new URL('../js/imessage/4_chat_ai.js', import.meta.url), 'utf8'),
@@ -513,7 +715,8 @@ test('uses visible keyword-triggered memory recall for single and group chats', 
 
     assert.match(aiSource, /function normalizeMemoryTriggerKeywords/);
     assert.match(aiSource, /function resolveActiveMemoryRecall/);
-    assert.match(aiSource, /const longTermEntries = isGroupChat \? \[\] : pickTriggered/);
+    assert.match(aiSource, /const groupLongTermEntries = Array\.isArray\(memory\.longTermEntries\)/);
+    assert.match(aiSource, /const longTermEntries = pickTriggered\(isGroupChat \? groupLongTermEntries : memory\.longTermEntries\)/);
     assert.match(aiSource, /const cherishedEntries = isGroupChat \? \[\] : pickTriggered/);
     assert.match(aiSource, /hasUserTriggeredRecallSource \? currentUserRecallSource\.text : ''/);
     assert.match(aiSource, /ensureRecallPresentationBeforeCharReply/);
@@ -539,9 +742,9 @@ test('uses visible keyword-triggered memory recall for single and group chats', 
     assert.match(settingsSource, /summaryPayload\.memoryTags/);
     assert.match(statusSource, /triggerKeywords = window\.imChat\?\.normalizeMemoryTriggerKeywords/);
     assert.match(cssSource, /\.memory-recall-narration-pill/);
-    assert.match(indexSource, /4_chat_ai\.js\?v=20260718-single-chat-prompt-v2/);
-    assert.match(indexSource, /4_chat_bubbles\.js\?v=20260713-offline-summary-modal-v3/);
-    assert.match(indexSource, /5_settings\.js\?v=20260716-status-prompt-v3/);
+    assert.match(indexSource, /4_chat_ai\.js\?v=[^"']*single-chat-cot-v1/);
+    assert.match(indexSource, /4_chat_bubbles\.js\?v=20260725-single-chat-cot-v1/);
+    assert.match(indexSource, /5_settings\.js\?v=20260725-single-chat-cot-v1/);
 });
 
 test('uses per-member group languages, content-sized private bubbles, and fresh edited-message context', async () => {
@@ -570,8 +773,8 @@ test('uses per-member group languages, content-sized private bubbles, and fresh 
     assert.match(coreSource, /const getApiContextFingerprint = \(message\) => JSON\.stringify/);
     assert.match(coreSource, /getApiContextFingerprint\(targetMessage\) !== previousContextFingerprint/);
     assert.match(coreSource, /window\.imApp\.clearFriendRuntimeMessageContext\(targetFriend\)/);
-    assert.match(indexSource, /js\/imessage\/2_core\.js\?v=20260716-offline-token-v1/);
-    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=20260718-single-chat-prompt-v2/);
+    assert.match(indexSource, /js\/imessage\/2_core\.js\?v=20260725-single-chat-cot-v1/);
+    assert.match(indexSource, /js\/imessage\/4_chat_ai\.js\?v=[^"']*single-chat-cot-v1/);
     assert.match(indexSource, /js\/imessage\/4_chat_main\.js\?v=20260715-chat-context-menu-offline-retry-v1/);
 });
 
@@ -594,10 +797,15 @@ test('uses stable long-press selection and purges deleted chat context without s
     assert.doesNotMatch(interfaceSource, /batch-forward-btn|batch-star-btn/);
     assert.match(mainSource, /window\.imChat\.enterBatchSelectMode\(activeFriend, row, page\)/);
     assert.match(mainSource, /if \(window\.imData\.batchSelectMode\) return/);
+    assert.match(mainSource, /window\.imApp\.removeFriendMessages\(window\.imData\.currentActiveFriend\.id/);
+    assert.match(interfaceSource, /window\.imApp\.removeFriendMessages[\s\S]*?friend\.id,[\s\S]*?selectedDescriptors/);
 
     assert.match(coreSource, /window\.imChat\.invalidateFriendConversation\(safeFriendId\)/);
+    assert.match(coreSource, /targetFriend\.messages = targetFriend\.messages\.filter/);
     assert.match(coreSource, /removedMessageIds\.has\(replyMessageId\)/);
     assert.match(coreSource, /targetFriend\.memory\.recallPresentation = null/);
+    assert.match(coreSource, /window\.imApp\.clearFriendRuntimeMessageContext\(targetFriend\)/);
+    assert.match(coreSource, /window\.imStorage\.deleteFriendMessages|window\.imStorage\.replaceFriendMessages/);
     assert.match(coreSource, /purgeRegenerateRunSnapshots/);
     assert.match(coreSource, /targetFriend\.messages = previousMessages/);
     assert.match(aiSource, /function purgeRegenerateRunSnapshots/);
@@ -610,5 +818,22 @@ test('uses stable long-press selection and purges deleted chat context without s
     assert.match(narrationRenderer, /row\.className = 'chat-system-row'/);
     assert.doesNotMatch(narrationRenderer, /chat-checkbox-wrapper/);
     assert.match(cssSource, /\.im-chat-cancel-batch-btn\s*\{[\s\S]*?color:\s*#111111/);
-    assert.match(indexSource, /css\/imessage\.css\?v=20260716-status-prompt-v3/);
+    assert.match(indexSource, /css\/imessage\.css\?v=[^"']*single-chat-cot-v1/);
+});
+
+test('uses balanced stronger obfuscation only for the iMessage AI prompt file', async () => {
+    const buildSource = await fs.readFile(new URL('../tools/build-obfuscate.mjs', import.meta.url), 'utf8');
+
+    assert.match(buildSource, /normalizedName === 'js\/imessage\/4_chat_ai\.js'/);
+    assert.match(buildSource, /const balancedChatAiObfuscatorOptions = \{/);
+    assert.match(buildSource, /controlFlowFlattening: true/);
+    assert.match(buildSource, /controlFlowFlatteningThreshold: 0\.55/);
+    assert.match(buildSource, /stringArrayEncoding: \['base64'\]/);
+    assert.match(buildSource, /stringArrayThreshold: 1/);
+    assert.match(buildSource, /splitStrings: true/);
+    assert.match(buildSource, /splitStringsChunkLength: 6/);
+    assert.match(buildSource, /numbersToExpressions: true/);
+    assert.match(buildSource, /transformObjectKeys: true/);
+    assert.match(buildSource, /\.\.\.getObfuscatorOptionsForSource\(sourceName\)/);
+    assert.match(buildSource, /return obfuscatorOptions;/);
 });

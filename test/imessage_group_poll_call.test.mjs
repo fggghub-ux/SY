@@ -40,7 +40,7 @@ test('keeps the group poll card compact and aligned with iMessage styling', () =
     assert.match(cssSource, /\.group-poll-card\s*\{[\s\S]*?width: min\(232px, 64vw\)/);
     assert.match(cssSource, /\.group-poll-card\s*\{[\s\S]*?border: 1px solid #e5e5ea/);
     assert.match(cssSource, /\.group-poll-card-option\.is-user-selected \.group-poll-radio\s*\{[\s\S]*?border: 4px solid #007aff/);
-    assert.match(html, /css\/imessage\.css\?v=20260716-status-prompt-v3-group-poll-v3/);
+    assert.match(html, /css\/imessage\.css\?v=[^"']*group-poll-v3/);
 });
 
 test('filters invalid role votes and exposes poll state to later group context', () => {

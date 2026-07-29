@@ -25,9 +25,9 @@ function loadFavorites() {
     return sandbox;
 }
 
-test('favorite records normalize, deduplicate, sort, and cap reasons at 30 characters', () => {
+test('favorite records normalize, deduplicate, sort, and preserve complete reasons', () => {
     const sandbox = loadFavorites();
-    const longReason = '一'.repeat(35);
+    const longReason = '这是一个超过三十个字符但仍然应该被完整保存、不能在句子中间被硬截断的收藏原因。';
     const result = sandbox.imApp.normalizeFavoriteUserMessages([
         { id: 'old', messageId: 'm1', messageText: '第一句', reason: '旧原因', createdAt: 10 },
         { id: 'new', messageId: 'm2', messageText: '第二句', reason: longReason, createdAt: 20, messageType: 'voice_message' },
@@ -38,7 +38,7 @@ test('favorite records normalize, deduplicate, sort, and cap reasons at 30 chara
     assert.equal(result.length, 2);
     assert.equal(result[0].messageId, 'm2');
     assert.equal(result[0].messageType, 'voice_message');
-    assert.equal(Array.from(result[0].reason).length, 30);
+    assert.equal(result[0].reason, longReason);
     assert.equal(result[1].messageId, 'm1');
 });
 
@@ -103,6 +103,8 @@ test('favorite commit and removal mutate only favorite metadata', async () => {
 
 test('AI prompt, rollback snapshot, and safe favorite UI wiring are present', () => {
     assert.match(aiSource, /<message_favorite>\{\"messageId\"/);
+    assert.match(aiSource, /默认决定必须是“不收藏”/);
+    assert.match(aiSource, /不得为了控制字数截断句子/);
     assert.match(aiSource, /favoriteUserMessages: cloneRegenerateSnapshotValue/);
     assert.match(aiSource, /snapshot\.favoriteUserMessages === undefined/);
     assert.match(aiSource, /commitFavoriteUserMessage\(latestFriend\.id, pendingFavoriteUserMessage\)/);

@@ -164,7 +164,10 @@ test('all JSON export entry points use the shared exporter loaded before consume
 
     assert.match(html, /export_file\.js\?v=20260718-ios-pwa-export-v1[\s\S]*4_chat_sheet\.js\?v=20260718-offline-cot-v1[\s\S]*settings\.js\?v=20260718-ios-pwa-export-v1/);
     assert.equal((settingsSource.match(/window\.u2ExportFile\(/g) || []).length, 2);
-    assert.equal((chatSheetSource.match(/window\.u2ExportFile\(/g) || []).length, 2);
+    assert.match(settingsSource, /fileName:\s*`u2-home-theme-\$\{new Date\(\)\.toISOString\(\)\.slice\(0,\s*10\)\}\.json`/);
+    assert.match(settingsSource, /fileName:\s*`u2phone_backup_\$\{new Date\(\)\.toISOString\(\)\.replace\(\/\[:\.\]\/g,\s*'-'\)\.slice\(0,\s*19\)\}\.json`/);
+    assert.equal((chatSheetSource.match(/window\.u2ExportFile\(/g) || []).length, 1);
+    assert.match(chatSheetSource, /fileName:\s*`\$\{exportName\.replace\(\/\[\\\\\/:\*\?"<>\|\]\/g,\s*'_'\)\s*\|\|\s*'offline-theme'\}\.json`/);
     assert.doesNotMatch(settingsSource, /URL\.createObjectURL/);
     assert.doesNotMatch(chatSheetSource, /URL\.createObjectURL/);
 });

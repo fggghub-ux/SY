@@ -146,7 +146,7 @@ test('startup ignores browser localStorage and preserves it without importing', 
         }
     }));
     assert.equal(localStorage.getItem('u2_mockAuthSession'), JSON.stringify({ loggedIn: true }));
-    assert.equal(await window.appStorage.getAuthSession(), null);
+    assert.equal(window.appStorage.getAuthSession, undefined);
 });
 
 test('v8 startup compaction restores missing main records before deleting inflated copies', async () => {
@@ -438,9 +438,9 @@ test('identical embedded chat images share one lossless content-addressed asset'
     assert.equal(stored.assets.filter((asset) => asset.id === mediaRows[0].contentAssetId).length, 1);
 });
 
-test('v8 backup excludes auth sessions and no longer emits localStorage data', async () => {
+test('v8 backup has no auth-session store and no longer emits localStorage data', async () => {
     const snapshot = await window.appStorage.collectBackupSnapshot();
-    assert.equal(Object.hasOwn(snapshot.stores, window.appStorage.STORES.authSessions), false);
+    assert.equal(window.appStorage.STORES.authSessions, undefined);
     assert.deepEqual(snapshot.localStorage, []);
 });
 
@@ -462,15 +462,10 @@ test('storage breakdown never labels unclassified IndexedDB usage as cache', asy
     assert.equal(breakdown.logicalBytes, breakdown.indexedDbBytes);
 });
 
-test('verified shadow-database optimization preserves auth and user records', async () => {
-    await window.appStorage.setAuthSession({ loggedIn: true });
+test('verified shadow-database optimization preserves user records', async () => {
     const report = await window.appStorage.optimizeStorage();
-    const [auth, messages] = await Promise.all([
-        window.appStorage.getAuthSession(),
-        window.appStorage.loadMessagesByFriendId('atomic-friend')
-    ]);
+    const messages = await window.appStorage.loadMessagesByFriendId('atomic-friend');
     assert.ok(report.verifiedStores >= 1);
-    assert.deepEqual(auth, { loggedIn: true });
     assert.deepEqual(messages.map((message) => message.id), ['atomic-message-1', 'atomic-message-2']);
 });
 

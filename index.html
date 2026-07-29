@@ -28,24 +28,24 @@
             document.head.appendChild(manifestLink);
         }
     </script>
-    <link rel="stylesheet" href="css/global.css?v=20260714-assistive-ball-image-v1">
-    <link rel="stylesheet" href="css/login.css?v=20260712-login-notice-v1">
-    <link rel="stylesheet" href="css/home.css">
+    <link rel="stylesheet" href="css/global.css?v=20260721-mobile-input-layout-v1-android-focus-scope-v1">
+    <link rel="stylesheet" href="css/login.css?v=20260729-account-auth-v1">
+    <link rel="stylesheet" href="css/home.css?v=20260726-short-screen-search-layout">
     <link rel="stylesheet" href="css/worldbook.css">
-    <link rel="stylesheet" href="css/imessage.css?v=20260716-status-prompt-v3-group-poll-v3-chat-history-search-v1-chat-favorites-v2">
+    <link rel="stylesheet" href="css/imessage.css?v=20260721-status-prompt-v3-group-poll-v3&cot=20260725-single-chat-cot-v1&status=20260725-thought-center-v1&cotui=20260725-pill-v1&link=20260726-light-link-theatre-v1">
     <link rel="stylesheet" href="css/pay.css?v=20260714-ios-neutral-v1">
-    <link rel="stylesheet" href="css/bstage.css">
-    <link rel="stylesheet" href="css/tiktok.css?v=20260712-tiktok-feed-cleanup-v1">
+    <link rel="stylesheet" href="css/bstage.css?v=20260721-mobile-input-layout-v1-android-focus-scope-v1">
+    <link rel="stylesheet" href="css/tiktok.css?v=20260721-mobile-input-layout-v1">
     <link rel="stylesheet" href="css/shopping.css">
     <link rel="stylesheet" href="css/x.css?v=20260702-x-dm-reply-batch-v8">
     
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
-    <link rel="stylesheet" href="css/loves.css?v=20260719-friend-phone-message-v6">
+    <link rel="stylesheet" href="css/loves.css?v=20260719-friend-phone-bilingual-v8">
     <link rel="stylesheet" href="css/library.css?v=20260715-reader-streaming-v1">
     <!-- App Styles -->
-    <link rel="stylesheet" href="css/settings.css?v=20260715-font-upload-v1">
+    <link rel="stylesheet" href="css/settings.css?v=20260721-mobile-input-layout-v1-notification-sound-v1">
     <link rel="stylesheet" href="css/youtube.css?v=20260717-char-lottery-consistency-v18">
     <link rel="stylesheet" href="css/netflix.css">
 </head>
@@ -85,7 +85,7 @@
         // 兜底：最长 5 秒后强制移除
         setTimeout(window.removeSplashScreen, 5000);
     </script>
-    <div id="u2-login-screen" class="u2-login-screen is-hidden" aria-hidden="true">
+    <div id="u2-login-screen" class="u2-login-screen" aria-hidden="false">
         <div class="u2-login-shell">
             <main class="u2-login-panel" aria-labelledby="u2-login-title">
                 <section class="u2-login-brand">
@@ -96,47 +96,49 @@
                             <span class="u2-login-rabbit-head"></span>
                         </span>
                     </div>
-                    <h1 class="u2-login-title" id="u2-login-title">Sign in to u2phone</h1>
-                    <p class="u2-login-subtitle">登录你的 u2 ID，继续进入专属设备。</p>
+                    <h1 class="u2-login-title" id="u2-login-title">欢迎回来</h1>
                 </section>
+
+                <div class="u2-login-mode-switch" role="tablist" aria-label="登录方式">
+                    <button type="button" id="u2-login-mode-signin" class="is-active" role="tab" aria-selected="true">登录</button>
+                    <button type="button" id="u2-login-mode-register" role="tab" aria-selected="false">注册</button>
+                </div>
 
                 <form class="u2-login-form" id="u2-login-form" novalidate>
                     <div class="u2-login-fields">
                         <label class="u2-login-field" id="u2-login-account-field" for="u2-login-account">
-                            <span class="u2-login-label">Account / 账号</span>
                             <span class="u2-login-input-row">
-                                <input class="u2-login-input" id="u2-login-account" name="account" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="name@example.com">
+                                <input class="u2-login-input" id="u2-login-account" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="24" aria-label="账号" placeholder="账号">
                             </span>
                         </label>
                         <label class="u2-login-field" id="u2-login-password-field" for="u2-login-password">
-                            <span class="u2-login-label">Password / 密码</span>
                             <span class="u2-login-input-row">
-                                <input class="u2-login-input" id="u2-login-password" name="password" type="password" autocomplete="current-password" placeholder="Required">
-                                <button class="u2-login-password-toggle" id="u2-login-password-toggle" type="button" aria-label="Show password" aria-pressed="false">
-                                    <i class="fas fa-eye" aria-hidden="true"></i>
-                                </button>
+                                <input class="u2-login-input" id="u2-login-password" name="password" type="password" autocomplete="current-password" maxlength="72" aria-label="密码" placeholder="密码">
+                                <button class="u2-login-password-toggle" id="u2-login-password-toggle" type="button" aria-label="显示密码"><i class="fas fa-eye" aria-hidden="true"></i></button>
+                            </span>
+                        </label>
+                        <label class="u2-login-field u2-login-register-only" id="u2-login-confirm-field" for="u2-login-confirm">
+                            <span class="u2-login-input-row">
+                                <input class="u2-login-input" id="u2-login-confirm" name="confirmPassword" type="password" autocomplete="new-password" maxlength="72" aria-label="确认密码" placeholder="确认密码">
+                            </span>
+                        </label>
+                        <label class="u2-login-field u2-login-register-only" id="u2-login-code-field" for="u2-login-code">
+                            <span class="u2-login-input-row">
+                                <input class="u2-login-input u2-login-code-input" id="u2-login-code" name="activationCode" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="22" aria-label="激活码" placeholder="输入激活码">
                             </span>
                         </label>
                     </div>
-                    <div class="u2-login-notice" id="u2-login-notice-row">
+                    <div class="u2-login-notice u2-login-register-only" id="u2-login-notice-row">
                         <input id="u2-login-notice-accepted" name="noticeAccepted" type="checkbox" aria-describedby="u2-login-error">
                         <label for="u2-login-notice-accepted">我已知晓《</label><button type="button" id="u2-login-notice-link">u2phone食用须知</button><span>》</span>
                     </div>
                     <div class="u2-login-error" id="u2-login-error" role="status" aria-live="polite"></div>
                     <button class="u2-login-submit" id="u2-login-submit" type="submit">
-                        <span>Continue / 继续</span>
+                        <span id="u2-login-submit-label">登录</span>
                         <i class="fas fa-arrow-right" aria-hidden="true"></i>
                     </button>
                 </form>
             </main>
-
-            <aside class="u2-login-meta" aria-label="Private access">
-                <i class="fas fa-shield-alt" aria-hidden="true"></i>
-                <span>
-                    <strong>Private Access</strong>
-                    One device, one code / 一机一码
-                </span>
-            </aside>
         </div>
     </div>
     <div id="app">
@@ -2213,6 +2215,51 @@
                 </div>
             </div>
 
+            <div class="bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay" id="memory-entry-editor-modal" style="z-index: 1400; background: rgba(0, 0, 0, 0.4);">
+                <div class="wb-centered-modal-card memory-entry-editor-card">
+                    <div class="wb-centered-modal-header" style="position: relative;">
+                        <div class="wb-centered-modal-title" id="memory-entry-editor-title">新增记忆</div>
+                        <button type="button" class="wb-centered-modal-close memory-entry-editor-close" id="memory-entry-editor-close" aria-label="关闭">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="wb-centered-modal-body memory-entry-editor-body">
+                        <input type="hidden" id="memory-entry-editor-kind" value="short">
+                        <input type="hidden" id="memory-entry-editor-id" value="">
+                        <input type="hidden" id="memory-entry-editor-collection" value="shortTermEntries">
+                        <label class="memory-entry-editor-field">
+                            <span>标题</span>
+                            <input type="text" id="memory-entry-editor-title-input" maxlength="80" placeholder="输入记忆标题">
+                        </label>
+                        <label class="memory-entry-editor-field">
+                            <span>时间</span>
+                            <input type="text" id="memory-entry-editor-time-input" maxlength="80" placeholder="例如：2026年07月22日 18:30">
+                        </label>
+                        <label class="memory-entry-editor-field">
+                            <span id="memory-entry-editor-content-label">事件内容</span>
+                            <textarea id="memory-entry-editor-content-input" rows="5" placeholder="输入需要记住的内容"></textarea>
+                        </label>
+                        <label class="memory-entry-editor-field">
+                            <span>召回标签</span>
+                            <input type="text" id="memory-entry-editor-tags-input" placeholder="多个标签用逗号或换行分隔">
+                        </label>
+                        <label class="memory-entry-editor-field" id="memory-entry-editor-degree-row">
+                            <span>记忆程度</span>
+                            <select id="memory-entry-editor-degree-select">
+                                <option value="高">高</option>
+                                <option value="中">中</option>
+                                <option value="低">低</option>
+                                <option value="遗忘">遗忘</option>
+                            </select>
+                        </label>
+                        <div class="memory-entry-editor-actions">
+                            <button type="button" id="memory-entry-editor-cancel">取消</button>
+                            <button type="button" id="memory-entry-editor-save">保存</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay" id="chat-memory-schedule-modal" style="z-index: 1300; background: rgba(0, 0, 0, 0.4);">
                 <div class="wb-centered-modal-card memory-entry-detail-card" style="display: flex; flex-direction: column; max-height: 80vh; overflow: hidden;">
                     <div class="wb-centered-modal-header" style="position: relative; flex-shrink: 0;">
@@ -2610,18 +2657,18 @@
                             </span>
                         </button>
                         <input type="file" id="import-data-file" accept=".json" style="display:none;">
-                        <button type="button" class="data-management-action u2-auth-sign-out-action" id="u2-auth-sign-out-btn" hidden aria-hidden="true">
-                            <span class="data-management-action-icon warning"><i class="fas fa-arrow-right-from-bracket"></i></span>
-                            <span class="data-management-action-copy">
-                                <strong>Sign Out / 退出登录</strong>
-                                <small>只退出启动登录，不删除本地账号和数据</small>
-                            </span>
-                        </button>
                         <button type="button" class="data-management-action danger" id="clear-data-btn">
                             <span class="data-management-action-icon danger"><i class="fas fa-trash-alt"></i></span>
                             <span class="data-management-action-copy">
                                 <strong>清空用户数据</strong>
                                 <small>保留登录授权，重启后恢复默认状态</small>
+                            </span>
+                        </button>
+                        <button type="button" class="data-management-action" id="u2-auth-sign-out-btn">
+                            <span class="data-management-action-icon"><i class="fas fa-arrow-right-from-bracket"></i></span>
+                            <span class="data-management-action-copy">
+                                <strong>退出登录</strong>
+                                <small>保留本机数据，下次使用账号密码登录</small>
                             </span>
                         </button>
                     </div>
@@ -2787,7 +2834,7 @@
                     </div>
 
                     <!-- Background Activity & Notification Group -->
-                    <div class="form-group fully-rounded" style="margin-bottom: 20px;">
+                    <div class="form-group fully-rounded notification-settings-group" id="notification-settings-group" style="margin-bottom: 20px;">
                         <div class="form-item" style="justify-content: space-between;">
                             <label style="width: auto; white-space: nowrap; flex: 1; margin-right: 10px; color: #000; font-size: 16px;">后台保活</label>
                             <label class="toggle-switch">
@@ -2795,12 +2842,32 @@
                                 <span class="slider"></span>
                             </label>
                         </div>
-                        <div class="form-item" style="justify-content: space-between; border-bottom: none;">
+                        <div class="form-item notification-toggle-row" style="justify-content: space-between;">
                             <label style="width: auto; white-space: nowrap; flex: 1; margin-right: 10px; color: #000; font-size: 16px;">消息通知</label>
                             <label class="toggle-switch">
                                 <input type="checkbox" id="system-notification-toggle">
                                 <span class="slider"></span>
                             </label>
+                        </div>
+                        <div class="notification-sound-settings" id="notification-sound-settings" aria-hidden="true">
+                            <div class="notification-sound-settings-inner">
+                                <div class="form-item notification-sound-upload-row">
+                                    <div class="notification-sound-copy">
+                                        <span>消息提示音</span>
+                                        <small id="notification-sound-file-name" aria-live="polite">默认使用系统提示音</small>
+                                    </div>
+                                    <button type="button" class="notification-sound-upload-btn" id="notification-sound-upload-btn">
+                                        <i class="fas fa-upload" aria-hidden="true"></i>
+                                        <span id="notification-sound-upload-label">上传音频</span>
+                                    </button>
+                                    <input type="file" id="notification-sound-file-input" accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.flac" hidden>
+                                </div>
+                                <div class="notification-sound-actions" id="notification-sound-actions" aria-hidden="true">
+                                    <button type="button" id="notification-sound-preview-btn"><i class="fas fa-play" aria-hidden="true"></i>试听</button>
+                                    <button type="button" id="notification-sound-remove-btn"><i class="fas fa-trash-alt" aria-hidden="true"></i>移除</button>
+                                </div>
+                                <div class="notification-sound-help">支持 MP3、M4A、WAV 等音频，最大 5 MB</div>
+                            </div>
                         </div>
                     </div>
                     
@@ -3222,16 +3289,16 @@
                             <div class="sticker-manifest-upload-row">
                                 <div>
                                     <strong>导入贴图清单</strong>
-                                    <span>支持 TXT / DOCX，每行“名称 URL”</span>
+                                    <span>支持 TXT / DOCX，每行包含名称和 URL，分隔符不限</span>
                                 </div>
                                 <button type="button" id="sticker-manifest-upload-btn"><i class="fas fa-file-arrow-up"></i> 上传</button>
                                 <input type="file" id="sticker-manifest-upload-input" accept=".txt,.text,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
                             </div>
                             <textarea id="sticker-url-input" class="global-textarea" placeholder="批量添加网络图片
-格式: 贴图名字 链接 (一行一个)
+格式: 贴图名字 + 链接（空格、冒号等分隔均可）
 例如:
 大笑 https://example.com/1.png
-微笑 https://example.com/2.png"></textarea>
+微笑：https://example.com/2.png"></textarea>
                         </div>
                         
                         <div class="sheet-action confirm-action" id="confirm-add-sticker-btn" style="background-color: #1c1c1e; color: #fff;">确认添加</div>
@@ -3486,6 +3553,30 @@
                         <label class="status-prompt-input-label" for="status-prompt-input">提示词内容</label>
                         <textarea id="status-prompt-input" class="global-textarea"></textarea>
                         <button type="button" class="sheet-action confirm-action" id="save-status-prompt-btn">保存</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bottom-sheet-overlay detail-sheet-overlay" id="chat-cot-settings-sheet" style="z-index: 715;">
+                <div class="bottom-sheet cot-settings-sheet-card">
+                    <div class="sheet-handle"></div>
+                    <div class="sheet-title">COT 思考</div>
+                    <div class="cot-settings-sheet-content">
+                        <div class="settings-group fully-rounded cot-settings-toggle-group">
+                            <div class="settings-item cot-settings-toggle-row">
+                                <div class="cot-settings-toggle-copy">
+                                    <span class="cot-settings-toggle-icon">COT</span>
+                                    <span><span class="settings-text">显示 COT</span><span class="status-builder-hint">每轮回复前显示一张可折叠思考卡</span></span>
+                                </div>
+                                <label class="toggle-switch"><input type="checkbox" id="chat-cot-enabled-toggle"><span class="slider"></span></label>
+                            </div>
+                        </div>
+                        <label class="cot-settings-input-label" for="chat-cot-prompt-input">COT 提示词</label>
+                        <textarea id="chat-cot-prompt-input" class="global-textarea" maxlength="4000"></textarea>
+                        <div class="cot-settings-actions">
+                            <button type="button" class="sheet-action" id="reset-chat-cot-prompt-btn">恢复默认</button>
+                            <button type="button" class="sheet-action confirm-action" id="save-chat-cot-settings-btn">保存</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -3920,6 +4011,20 @@
                                     <span class="slider"></span>
                                 </label>
                             </div>
+                            <div class="form-item" style="justify-content: space-between; border-bottom: 1px solid var(--separator-color); cursor: pointer;" id="group-memory-shortterm-btn">
+                                <label style="width: auto; font-size: 17px; color: #000; padding-left: 0;">短期记忆</label>
+                                <div style="display: flex; align-items: center; gap: 8px; color: #8e8e93;">
+                                    <span id="group-memory-shortterm-count" style="font-size: 14px;"></span>
+                                    <i class="fas fa-chevron-right" style="font-size: 14px;"></i>
+                                </div>
+                            </div>
+                            <div class="form-item" style="justify-content: space-between; border-bottom: 1px solid var(--separator-color); cursor: pointer;" id="group-memory-longterm-btn">
+                                <label style="width: auto; font-size: 17px; color: #000; padding-left: 0;">长期记忆</label>
+                                <div style="display: flex; align-items: center; gap: 8px; color: #8e8e93;">
+                                    <span id="group-memory-longterm-count" style="font-size: 14px;"></span>
+                                    <i class="fas fa-chevron-right" style="font-size: 14px;"></i>
+                                </div>
+                            </div>
                             <div class="form-item" style="justify-content: space-between; border-bottom: none; cursor: pointer;" id="group-manual-summary-btn">
                                 <label style="width: auto; font-size: 17px; color: #000; padding-left: 0;">总结对话</label>
                                 <div style="display: flex; align-items: center; color: #8e8e93;">
@@ -3968,11 +4073,15 @@
                 <div class="wb-centered-modal-card recalled-message-detail-card">
                     <div class="group-private-chat-detail-header">
                         <div class="group-private-chat-detail-title">撤回的消息</div>
-                        <button type="button" class="group-private-chat-detail-close" id="recalled-message-detail-close" aria-label="关闭撤回消息详情">
-                            <i class="fas fa-times"></i>
-                        </button>
+                        <div class="recalled-message-detail-actions">
+                            <button type="button" class="recalled-message-detail-translate" id="recalled-message-detail-translate" aria-expanded="false" hidden>翻译</button>
+                            <button type="button" class="group-private-chat-detail-close" id="recalled-message-detail-close" aria-label="关闭撤回消息详情">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
                     </div>
                     <div class="recalled-message-detail-content" id="recalled-message-detail-content"></div>
+                    <div class="recalled-message-detail-translation" id="recalled-message-detail-translation" hidden></div>
                 </div>
             </div>
 
@@ -4289,6 +4398,12 @@
                                         <span class="slider"></span>
                                     </label>
                                 </div>
+                                <div class="settings-item" id="chat-cot-settings-btn">
+                                    <div class="settings-icon cot-settings-menu-icon" style="background-color: #5856d6;">COT</div>
+                                    <div class="settings-text">COT 思考</div>
+                                    <span id="chat-cot-settings-label" style="font-size: 13px; color: #8e8e93; margin-right: 4px; pointer-events: none;">关闭</span>
+                                    <i class="fas fa-chevron-right arrow" style="pointer-events: none;"></i>
+                                </div>
                             </div>
 
                             <div class="settings-group fully-rounded" style="margin: 10px 16px;">
@@ -4407,7 +4522,7 @@
                                         <div class="settings-text">上下文</div>
                                     </div>
                                     <div style="display: flex; align-items: center; gap: 10px; padding-right: 10px;">
-                                        <input type="number" id="chat-memory-context-limit-input" style="width: 50px; text-align: center; border: 1px solid #e5e5ea; border-radius: 8px; padding: 4px; font-size: 15px;" value="80">
+                                        <input type="number" id="chat-memory-context-limit-input" style="width: 50px; text-align: center; border: 1px solid #e5e5ea; border-radius: 8px; padding: 4px; font-size: 15px;" value="50">
                                         <label class="toggle-switch">
                                             <input type="checkbox" id="chat-memory-context-enabled-toggle" checked="">
                                             <span class="slider"></span>
@@ -4632,6 +4747,17 @@
                                     <span>轮</span>
                                 </div>
                             </div>
+                            <label class="memory-summary-stack-row" for="chat-memory-summary-api-select">
+                                <span>总结 API</span>
+                                <select id="chat-memory-summary-api-select" aria-label="选择总结 API 预设">
+                                    <option value="">跟随当前 API</option>
+                                </select>
+                            </label>
+                            <label class="memory-summary-stack-row" for="chat-memory-summary-prompt-input">
+                                <span>自定义总结要求</span>
+                                <textarea id="chat-memory-summary-prompt-input" rows="5" placeholder="追加你希望总结特别关注的内容；留空则只使用内置规则"></textarea>
+                            </label>
+                            <button type="button" id="chat-memory-summary-prompt-clear" class="memory-summary-clear-prompt">清空自定义要求</button>
                             <div class="memory-summary-hint" id="chat-memory-summary-hint">开启后每 30 轮自动总结一次</div>
                         </div>
                         <input type="hidden" id="chat-memory-summary-count-input" value="0">
@@ -5786,10 +5912,10 @@
 
                 <!-- Input Area (TikTok Style) -->
                 <div class="tk-dm-input-area" style="padding: 10px 15px 15px; background: #fff; border-top: 1px solid #f0f0f0; display: flex; align-items: center; gap: 10px; position: absolute; bottom: 0; left: 0; width: 100%; box-sizing: border-box; z-index: 100;">
-                    <div style="width: 32px; height: 32px; border-radius: 50%; display: flex; justify-content: center; align-items: center; color: #111; font-size: 20px; cursor: pointer;"><i class="fas fa-camera"></i></div>
-                    <div style="flex: 1; display: flex; align-items: center; background: #f1f1f2; border-radius: 20px; padding: 5px 15px; position: relative;">
-                        <input type="text" id="tk-dm-chat-input" placeholder="发送消息..." style="flex: 1; background: transparent; border: none; padding: 8px 0; font-size: 15px; outline: none; color: #111;">
-                        <i class="far fa-smile" style="color: #111; font-size: 20px; cursor: pointer; margin-left: 10px;"></i>
+                    <div class="tk-dm-camera-btn" style="width: 32px; height: 32px; border-radius: 50%; display: flex; justify-content: center; align-items: center; color: #111; font-size: 20px; cursor: pointer;"><i class="fas fa-camera"></i></div>
+                    <div class="tk-dm-input-shell" style="flex: 1; display: flex; align-items: center; background: #f1f1f2; border-radius: 20px; padding: 5px 15px; position: relative;">
+                        <input type="text" class="tk-dm-message-input" id="tk-dm-chat-input" placeholder="发送消息..." style="flex: 1; background: transparent; border: none; padding: 8px 0; font-size: 15px; outline: none; color: #111;">
+                        <i class="far fa-smile tk-dm-emoji-btn" style="color: #111; font-size: 20px; cursor: pointer; margin-left: 10px;"></i>
                     </div>
                     
                     <!-- Right Actions Container (Mic / Send / Plus) -->
@@ -7663,55 +7789,55 @@
     </section>
 </div>
 
-<script src="js/storage/app_storage.js?v=20260715-library-content-store-v1-group-poll-v3"></script>
+<script src="js/storage/app_storage.js?v=20260715-library-content-store-v1&cot=20260725-single-chat-cot-v1"></script>
     <script src="js/storage/imessage_storage.js?v=20260710-storage-v8-idb1"></script>
     <script src="storage.js?v=20260710-storage-v7-cache1"></script>
     <script src="js/app_state_bridge.js?v=20260710-bstage-chat-recovery-v1"></script>
-    <script src="js/bootstrap_globals.js"></script>
+    <script src="js/bootstrap_globals.js?v=20260721-fetch-abort-v1"></script>
     <script src="js/export_file.js?v=20260718-ios-pwa-export-v1"></script>
     <script src="js/about_info_modal.js?v=20260712-login-notice-v1"></script>
-    <script src="js/login.js?v=20260713-auth-disabled-v1"></script>
-    <script src="js/mobile_input_compat.js?v=20260713-bstage-enter-v1"></script>
+    <script src="js/login.js?v=20260729-account-auth-v1"></script>
+    <script src="js/mobile_input_compat.js?v=20260713-bstage-enter-v1-android-focus-scope-v1"></script>
     <script src="js/background_activity.js"></script>
-    <script src="js/system_notifications.js"></script>
+    <script src="js/system_notifications.js?v=20260721-storage-hydration-v1-custom-sound-v1"></script>
     
     <!-- 引入 iMessage 模块分段代码 -->
-    <script src="js/imessage/data_utils.js?v=20260713-offline-memory-v1"></script>
-    <script src="js/imessage/2_core.js?v=20260716-offline-token-v1-group-poll-v1-chat-favorites-v1"></script>
+    <script src="js/imessage/data_utils.js?v=20260713-offline-memory-v1-sticker-manifest-v2-memory-event-time-v1-offline-handoff-v1"></script>
+    <script src="js/imessage/2_core.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&cotcopy=20260727-v2"></script>
     <script src="js/imessage/3_contacts.js?v=20260718-friend-profile-import-v1"></script>
-    <script src="js/imessage/3_groups.js?v=20260718-group-poll-v4"></script>
+    <script src="js/imessage/3_groups.js?v=20260718-group-poll-v4-group-memory-editor-v1"></script>
     <script src="js/imessage/4_chat_common.js"></script>
     <script src="js/imessage/4_chat_status.js?v=20260716-status-prompt-v2"></script>
-    <script src="js/imessage/4_chat_payment.js?v=20260705-offline-identity-v2"></script>
-    <script src="js/imessage/4_chat_bubbles.js?v=20260713-offline-summary-modal-v3-group-poll-v3"></script>
+    <script src="js/imessage/4_chat_payment.js?v=20260725-single-chat-cot-v1"></script>
+    <script src="js/imessage/4_chat_bubbles.js?v=20260725-single-chat-cot-v1-avatar-pill-v1-link-theatre-js-v1"></script>
     <script src="js/imessage/chat_search.js?v=20260718-chat-history-search-v2"></script>
-    <script src="js/imessage/chat_favorites.js?v=20260718-chat-favorites-v2"></script>
+    <script src="js/imessage/chat_favorites.js?v=20260723-chat-favorites-v3"></script>
     <script src="js/imessage/minimax_tts.js"></script>
-    <script src="js/imessage/4_chat_ai.js?v=20260718-single-chat-prompt-v2-group-poll-v2-chat-favorites-v2"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260724-single-chat-prompt-v8&cot=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&online=20260727-prompt-sections-v2"></script>
     <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
     <script src="js/imessage/offline_reasoning.js?v=20260718-offline-cot-v1"></script>
-    <script src="js/imessage/4_chat_sheet.js?v=20260718-offline-cot-v1"></script>
-    <script src="js/imessage/4_chat_link.js?v=20260706-bugfix-v1"></script>
+    <script src="js/imessage/4_chat_sheet.js?v=20260718-offline-cot-v1-chat-image-send-v1&cotui=20260725-pill-v1"></script>
+    <script src="js/imessage/4_chat_link.js?v=20260726-light-link-theatre-v1"></script>
     <script src="js/imessage/4_chat_list.js"></script>
     <script src="js/imessage/4_chat_interface.js?v=20260715-chat-context-menu-offline-retry-v1"></script>
-    <script src="js/imessage/4_chat_voice_call.js?v=20260718-single-enter-focus-v1-android-single-resize-v3-group-call-flow-v1"></script>
+    <script src="js/imessage/4_chat_voice_call.js?v=20260725-call-keyboard-minimize-v2-minimized-context-v1"></script>
     <script src="js/imessage/4_chat_main.js?v=20260715-chat-context-menu-offline-retry-v1"></script>
-    <script src="js/imessage/5_settings.js?v=20260716-status-prompt-v3-chat-favorites-v1"></script>
+    <script src="js/imessage/5_settings.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v3"></script>
     <script src="js/imessage/6_moments.js?v=20260718-moments-target-reply-v1"></script>
 
     <!-- 引入其他应用模块 -->
     <script src="js/pay.js?v=20260710-storage-ready-v1"></script>
-    <script src="js/bstage.js?v=20260713-android-enter-v1"></script>
+    <script src="js/bstage.js?v=20260725-android-keyboard-actions-v2"></script>
     <!-- 引入世界书核心模块脚本 -->
     <script src="js/builtin_worldbook.js?v=20260713-disable-override-limit-v2"></script>
     <script src="https://unpkg.com/mammoth@1.8.0/mammoth.browser.min.js"></script>
     <script src="js/worldbook.js"></script>
     <!-- 引入核心 UI 管理与设置模块脚本 -->
     <script src="js/ui.js"></script>
-    <script src="js/settings.js?v=20260718-ios-pwa-export-v1"></script>
+    <script src="js/settings.js?v=20260718-ios-pwa-export-v1-notification-sync-v1-custom-notification-sound-v1-api-presets-accessor-v1&theme-source=20260728-single-meta-cot-v1"></script>
     <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="js/library.js?v=20260715-reader-streaming-v1"></script>
-    <script src="js/loves.js?v=20260719-friend-phone-message-v7"></script>
+    <script src="js/loves.js?v=20260719-friend-phone-bilingual-v13-android-focus-scope-v1"></script>
     <script src="js/tiktok/2_core.js?v=20260712-tiktok-feed-cleanup-v1"></script>
     <script src="js/tiktok/3_home.js?v=20260712-tiktok-feed-cleanup-v1"></script>
     <script src="js/tiktok/4_chat.js?v=20260712-tiktok-polish-v1"></script>
@@ -7729,6 +7855,6 @@
     <script src="js/home_desktop.js?v=20260710-storage-ready-v1"></script>
     <script src="js/home_widget_panel_enhance.js"></script>
     <!-- 引入主逻辑脚本 -->
-    <script src="script.js?v=20260705-modal-tone-v1"></script>
+    <script src="script.js?v=20260725-modal-owner-v1"></script>
 </body>
 </html>

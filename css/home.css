@@ -1425,3 +1425,45 @@
 .home-search-hidden .page-indicators {
     bottom: 112px;
 }
+
+/*
+ * Keep the last home-screen row clear of Search on shorter phones.
+ * The wider pre-scaled grid preserves the existing left/right alignment after
+ * scaling, while the contents become proportionally more compact.
+ */
+@media (max-height: 760px) {
+    .main-grid {
+        width: 117.65%;
+        margin-top: 20px;
+        transform: scale(0.85);
+        transform-origin: top center;
+    }
+
+    .home-statusbar-visible .main-grid {
+        margin-top: 32px;
+    }
+}
+
+@media (max-height: 700px) {
+    .main-grid {
+        width: 131.58%;
+        margin-top: 18px;
+        transform: scale(0.76);
+    }
+
+    .home-statusbar-visible .main-grid {
+        margin-top: 30px;
+    }
+}
+
+@media (max-height: 620px) {
+    .main-grid {
+        width: 147.06%;
+        margin-top: 14px;
+        transform: scale(0.68);
+    }
+
+    .home-statusbar-visible .main-grid {
+        margin-top: 28px;
+    }
+}
