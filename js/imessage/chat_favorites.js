@@ -7,7 +7,7 @@
     const imChat = global.imChat = global.imChat || {};
 
     function normalizeReason(value) {
-        return Array.from(String(value || '').trim()).slice(0, 30).join('');
+        return String(value || '').trim();
     }
 
     function getFavoriteMessageText(message = {}) {

@@ -10,8 +10,6 @@
     const DB_VERSION = 7;
     const STORAGE_SCHEMA_VERSION = 8;
     const BACKUP_APP_NAME = 'u2phone';
-    const AUTH_SESSION_ID = 'current';
-    const LEGACY_AUTH_SESSION_KEY = 'u2_mockAuthSession';
 
     const STORES = {
         meta: 'meta',
@@ -21,7 +19,6 @@
         theme: 'theme',
         worldbooks: 'worldbooks',
         assets: 'assets',
-        authSessions: 'auth_sessions',
         imFriends: 'im_friends',
         imChatSummaries: 'im_chat_summaries',
         imMessages: 'im_messages',
@@ -39,7 +36,7 @@
         xDms: 'x_dms',
         storageCheckpoints: 'storage_checkpoints'
     };
-    const BACKUP_STORES = Object.values(STORES).filter((storeName) => storeName !== STORES.authSessions);
+    const BACKUP_STORES = Object.values(STORES);
 
     const META_KEYS = {
         schemaVersion: 'schema_version',
@@ -197,7 +194,7 @@
 
     async function importLegacyBackupStorageRows(snapshot = []) {
         const rows = Array.isArray(snapshot) ? snapshot.filter((row) => row?.key) : [];
-        if (rows.length === 0) return { migratedKeys: [], authMigrated: false };
+        if (rows.length === 0) return { migratedKeys: [] };
 
         const settingsMap = {
             u2_userState: 'userState',
@@ -212,12 +209,7 @@
             u2_worldBooks: 'worldBooks',
             u2_wbGroups: 'wbGroups'
         };
-        const authRow = rows.find((row) => row.key === LEGACY_AUTH_SESSION_KEY);
-        const authValue = authRow ? parseLegacyRawValue(authRow.value) : undefined;
-        const existingAuth = await getRecord(STORES.authSessions, AUTH_SESSION_ID);
-        let authMigrated = false;
-
-        await withStore([STORES.appDomains, STORES.authSessions, STORES.meta], 'readwrite', async (stores) => {
+        await withStore([STORES.appDomains, STORES.meta], 'readwrite', async (stores) => {
             const domainStore = stores[STORES.appDomains];
             const settingsRecord = await requestToPromise(domainStore.get('settings'));
             const legacyRecord = await requestToPromise(domainStore.get('legacy'));
@@ -231,7 +223,7 @@
             let legacyChanged = false;
 
             for (const row of rows) {
-                if (row.key === LEGACY_AUTH_SESSION_KEY || row.key === 'u2_appState') continue;
+                if (row.key === 'u2_mockAuthSession' || row.key === 'u2_appState') continue;
                 const value = parseLegacyRawValue(row.value);
                 const settingKey = settingsMap[row.key];
                 if (settingKey) {
@@ -281,19 +273,10 @@
                     value: sanitizePersistentValue(legacy)
                 });
             }
-            if (!existingAuth && authValue && typeof authValue === 'object') {
-                stores[STORES.authSessions].put({ id: AUTH_SESSION_ID, session: authValue, updatedAt: now });
-                authMigrated = true;
-            }
             stores[STORES.meta].put({ key: 'legacy_backup_imported_at', value: { importedAt: now, keys: rows.map((row) => row.key) } });
         });
 
-        if (authMigrated) {
-            const verified = await getRecord(STORES.authSessions, AUTH_SESSION_ID);
-            if (!verified?.session) throw new Error('Auth session migration verification failed.');
-        }
-
-        return { importedKeys: rows.map((row) => row.key), authMigrated };
+        return { importedKeys: rows.map((row) => row.key) };
     }
 
     function estimateJsonBytes(value) {
@@ -577,10 +560,6 @@
 
                 if (!db.objectStoreNames.contains(STORES.assets)) {
                     db.createObjectStore(STORES.assets, { keyPath: 'id' });
-                }
-
-                if (!db.objectStoreNames.contains(STORES.authSessions)) {
-                    db.createObjectStore(STORES.authSessions, { keyPath: 'id' });
                 }
 
                 if (!db.objectStoreNames.contains(STORES.imFriends)) {
@@ -1313,45 +1292,6 @@
         return putRecord(STORES.settings, { key, value: sanitizePersistentValue(cloneDeep(value)) });
     }
 
-    async function waitForAuthStorage() {
-        return withAuthStorageRetry(async () => {
-            const db = await openDb();
-            if (!db.objectStoreNames.contains(STORES.authSessions)) {
-                throw new DOMException('Authentication storage is unavailable.', 'InvalidStateError');
-            }
-            return true;
-        });
-    }
-
-    async function getAuthSession() {
-        await waitForAuthStorage();
-        const record = await withAuthStorageRetry(() => getRecord(STORES.authSessions, AUTH_SESSION_ID));
-        return record?.session && typeof record.session === 'object'
-            ? cloneDeep(record.session)
-            : null;
-    }
-
-    async function setAuthSession(session) {
-        if (!session || typeof session !== 'object') {
-            await clearAuthSession();
-            return null;
-        }
-        const safeSession = sanitizePersistentValue(cloneDeep(session));
-        await waitForAuthStorage();
-        await withAuthStorageRetry(() => putRecord(STORES.authSessions, {
-            id: AUTH_SESSION_ID,
-            session: safeSession,
-            updatedAt: Date.now()
-        }));
-        return cloneDeep(safeSession);
-    }
-
-    async function clearAuthSession() {
-        await waitForAuthStorage();
-        await withAuthStorageRetry(() => deleteRecord(STORES.authSessions, AUTH_SESSION_ID));
-        return true;
-    }
-
     async function assertLargeAssetCapacity(dataUrl) {
         if (typeof dataUrl !== 'string' || dataUrl.length < 350000 || !navigator.storage?.estimate) return;
         const estimate = await navigator.storage.estimate();
@@ -1520,6 +1460,7 @@
             statusText: safe.statusText,
             senderId: safe.senderId,
             apiRunId: safe.apiRunId,
+            cotSummary: typeof safe.cotSummary === 'string' ? safe.cotSummary.slice(0, 4000) : '',
             rollbackSourceMessage: safe.rollbackSourceMessage || null,
             paymentAction: safe.paymentAction,
             payDirection: safe.payDirection,
@@ -1647,6 +1588,7 @@
             statusText: row.statusText,
             senderId: row.senderId,
             apiRunId: row.apiRunId,
+            cotSummary: typeof row.cotSummary === 'string' ? row.cotSummary : '',
             rollbackSourceMessage: row.rollbackSourceMessage || null,
             paymentAction: row.paymentAction,
             payDirection: row.payDirection,
@@ -3307,13 +3249,8 @@
         try {
             clearRuntimeAssetCache();
         } catch (e) {}
-        const authSession = await getAuthSession();
         const databaseDeleted = await clearAllData();
-        if (authSession) await setAuthSession(authSession);
-        return {
-            databaseDeleted,
-            authSessionPreserved: !!authSession
-        };
+        return { databaseDeleted };
     }
 
     async function restoreBackupSnapshot(snapshot = {}, progressCallback) {
@@ -3341,7 +3278,7 @@
         }
 
         const legacyRows = (Array.isArray(snapshot.localStorage) ? snapshot.localStorage : [])
-            .filter((row) => row?.key && row.key !== LEGACY_AUTH_SESSION_KEY);
+            .filter((row) => row?.key);
         if (legacyRows.length > 0) {
             reportProgress(progressCallback, '迁移旧版兼容数据...', 90);
             await importLegacyBackupStorageRows(legacyRows);
@@ -3521,7 +3458,6 @@
         theme: '应用状态',
         worldbooks: '应用状态',
         meta: '应用状态',
-        authSessions: '认证会话',
         imFriends: 'iMessage',
         imChatSummaries: 'iMessage',
         imMessages: 'iMessage',
@@ -4251,7 +4187,6 @@
     }
 
     async function clearAllPersistentData() {
-        const authSession = await getAuthSession();
         try {
             clearRuntimeAssetCache();
         } catch (e) {}
@@ -4275,14 +4210,11 @@
             clearBrowserCaches(),
             unregisterServiceWorkers()
         ]);
-        if (authSession) await setAuthSession(authSession);
-
         return {
             runtimeCacheCleared: true,
             localStorageCleared: false,
             localStorageRemovedKeys: [],
             sessionStorageCleared,
-            authSessionPreserved: !!authSession,
             databases: [currentDbResult, legacyDbResult],
             caches: cacheResults,
             serviceWorkers: swResults
@@ -4310,10 +4242,6 @@
         setMeta,
         getSetting,
         setSetting,
-        getAuthSession,
-        setAuthSession,
-        clearAuthSession,
-        waitForAuthStorage,
         saveGlobalData,
         loadGlobalData,
         collectBackupSnapshot,
@@ -4387,14 +4315,6 @@
         configurable: false,
         get() {
             return storageReadyPromise;
-        }
-    });
-
-    Object.defineProperty(window.appStorage, 'authReady', {
-        enumerable: true,
-        configurable: false,
-        get() {
-            return waitForAuthStorage();
         }
     });
 

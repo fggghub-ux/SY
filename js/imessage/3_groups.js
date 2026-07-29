@@ -30,6 +30,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const groupContextLimitInput = document.getElementById('group-context-limit-input');
     const groupTimeAwareToggle = document.getElementById('group-time-aware-toggle');
     const groupManualSummaryBtn = document.getElementById('group-manual-summary-btn');
+    const groupMemoryShortTermBtn = document.getElementById('group-memory-shortterm-btn');
+    const groupMemoryLongTermBtn = document.getElementById('group-memory-longterm-btn');
+    const groupMemoryShortTermCount = document.getElementById('group-memory-shortterm-count');
+    const groupMemoryLongTermCount = document.getElementById('group-memory-longterm-count');
     const groupSummaryMoreStats = document.getElementById('group-summary-more-stats');
     const groupSummaryMoreList = document.getElementById('group-summary-more-list');
     const confirmGroupContextBtn = document.getElementById('confirm-group-context-btn');
@@ -650,7 +654,18 @@ document.addEventListener('DOMContentLoaded', () => {
             groupTimeAwareToggle.checked = currentViewingGroup.timeAware !== false;
         }
 
+        refreshGroupMemoryCounts(currentViewingGroup);
+
         openView(groupContextSettingsSheet);
+    }
+
+    function refreshGroupMemoryCounts(group) {
+        const normalized = group ? window.imApp.normalizeFriendData(group) : null;
+        const memory = normalized?.memory || {};
+        const shortCount = Array.isArray(memory.shortTermEntries) ? memory.shortTermEntries.length : 0;
+        const longCount = Array.isArray(memory.longTermEntries) ? memory.longTermEntries.length : 0;
+        if (groupMemoryShortTermCount) groupMemoryShortTermCount.textContent = shortCount > 0 ? `${shortCount}项` : '';
+        if (groupMemoryLongTermCount) groupMemoryLongTermCount.textContent = longCount > 0 ? `${longCount}项` : '';
     }
 
     function openGroupAddMemberSheet() {
@@ -1177,6 +1192,22 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    groupMemoryShortTermBtn?.addEventListener('click', () => {
+        const group = resolveLatestGroup(currentViewingGroup);
+        if (group) window.imApp.openMemoryLocationForFriend?.(group, 'iphone');
+    });
+
+    groupMemoryLongTermBtn?.addEventListener('click', () => {
+        const group = resolveLatestGroup(currentViewingGroup);
+        if (group) window.imApp.openMemoryLocationForFriend?.(group, 'downloads');
+    });
+
+    window.addEventListener('u2:memory-entries-updated', event => {
+        if (!currentViewingGroup || String(event.detail?.friendId || '') !== String(currentViewingGroup.id)) return;
+        currentViewingGroup = resolveLatestGroup(currentViewingGroup) || currentViewingGroup;
+        refreshGroupMemoryCounts(currentViewingGroup);
+    });
 
     if (groupDetailsMoreBtn) {
         groupDetailsMoreBtn.addEventListener('click', () => {

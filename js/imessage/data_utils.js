@@ -139,6 +139,38 @@
         };
     }
 
+    function parseMessageTimestamp(value) {
+        if (value === null || value === undefined || value === '') return null;
+        const text = typeof value === 'string' ? value.trim() : value;
+        let timestamp = typeof text === 'number'
+            ? text
+            : (/^\d+(?:\.\d+)?$/.test(text) ? Number(text) : NaN);
+        if (Number.isFinite(timestamp) && timestamp > 0 && timestamp < 100000000000) {
+            timestamp *= 1000;
+        }
+        const date = Number.isFinite(timestamp) ? new Date(timestamp) : new Date(text);
+        return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    function formatMemoryEventTime(messages, fallbackTimestamp = Date.now()) {
+        const dates = (Array.isArray(messages) ? messages : [])
+            .map(message => parseMessageTimestamp(message?.timestamp))
+            .filter(Boolean)
+            .sort((left, right) => left.getTime() - right.getTime());
+        const fallbackDate = parseMessageTimestamp(fallbackTimestamp) || new Date();
+        const start = dates[0] || fallbackDate;
+        const end = dates[dates.length - 1] || start;
+        const formatDate = date => `${date.getFullYear()}年${pad2(date.getMonth() + 1)}月${pad2(date.getDate())}日`;
+        const formatTime = date => `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+        const startText = `${formatDate(start)} ${formatTime(start)}`;
+        const endText = `${formatDate(end)} ${formatTime(end)}`;
+        if (startText === endText) return startText;
+        if (formatDate(start) === formatDate(end)) {
+            return `${startText}至${formatTime(end)}`;
+        }
+        return `${startText}至${endText}`;
+    }
+
     function normalizeLocalDateTime(value) {
         const text = String(value || '').trim();
         if (!text) return '';
@@ -268,6 +300,30 @@
         return safeEntries.filter(entry => !entry || String(entry.id) !== String(entryId));
     }
 
+    function resolvePendingOfflineHandoff(messages) {
+        const safeMessages = Array.isArray(messages) ? messages : [];
+        const lastOfflineMeeting = safeMessages.reduce((latest, message) => {
+            if (!message || message.type !== 'offline_meeting_record') return latest;
+            const timestamp = Number(message.timestamp);
+            if (!Number.isFinite(timestamp) || timestamp <= 0) return latest;
+            return !latest || timestamp > Number(latest.timestamp) ? message : latest;
+        }, null);
+        if (!lastOfflineMeeting) return null;
+
+        const meetingTimestamp = Number(lastOfflineMeeting.timestamp);
+        const onlineMessagesAfterMeeting = safeMessages.filter(message => (
+            message
+            && (message.role === 'user' || message.role === 'assistant')
+            && Number(message.timestamp) > meetingTimestamp
+        ));
+        const hasUserReturnedOnline = onlineMessagesAfterMeeting.some(message => message.role === 'user');
+        const hasCharacterRepliedOnline = onlineMessagesAfterMeeting.some(message => message.role === 'assistant');
+
+        return hasUserReturnedOnline && !hasCharacterRepliedOnline
+            ? lastOfflineMeeting
+            : null;
+    }
+
     function normalizeOfflineMemoryTags(value, fallbackCandidates = []) {
         const tags = [];
         const pushTag = (candidate) => {
@@ -372,15 +428,21 @@
         String(text || '').split(/\r?\n/).forEach((line, index) => {
             const trimmed = line.trim();
             if (!trimmed) return;
-            const match = trimmed.match(/^(.+?)\s+(https?:\/\/\S+)$/i);
-            if (!match) {
+            const urlMatch = trimmed.match(/https?:\/\/\S+$/i);
+            if (!urlMatch) {
+                invalidLines.push(index + 1);
+                return;
+            }
+            const rawName = trimmed.slice(0, urlMatch.index).trim();
+            const name = rawName.replace(/[\s\p{P}|｜=＝+＋~～]+$/u, '').trim();
+            if (!name) {
                 invalidLines.push(index + 1);
                 return;
             }
             try {
-                const parsed = new URL(match[2]);
+                const parsed = new URL(urlMatch[0]);
                 if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('unsupported protocol');
-                items.push({ name: match[1].trim(), url: parsed.href });
+                items.push({ name, url: parsed.href });
             } catch (_) {
                 invalidLines.push(index + 1);
             }
@@ -400,10 +462,12 @@
         normalizeGroupChatContexts,
         getRecentPublicGroupMessages,
         getRecentUserRounds,
+        formatMemoryEventTime,
         normalizeScheduleEvent,
         normalizeSchedule,
         getSummaryBatch,
         removeShortTermSummaryEntry,
+        resolvePendingOfflineHandoff,
         normalizeOfflineMemoryTags,
         parseOfflineMeetingArtifacts,
         parseStickerManifestText

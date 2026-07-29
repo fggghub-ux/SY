@@ -1065,6 +1065,9 @@ async function claimIncomingTransfer(friend, msg, options = {}) {
                 apiRunId: options.apiRunId || null,
                 rollbackSourceMessage: sourceMessageSnapshot
             };
+            if (typeof options.cotSummary === 'string' && options.cotSummary.trim()) {
+                receiveMsg.cotSummary = options.cotSummary.trim();
+            }
         }
 
         let saved = false;
@@ -1161,7 +1164,11 @@ async function claimIncomingTransfer(friend, msg, options = {}) {
                     window.imChat.renderTimestamp(receiveTimestamp, appendHost);
                 }
 
-                window.imChat.renderPayTransferBubble(receiveMsg, friend, appendHost, receiveTimestamp);
+                if (window.imChat.renderMessageBubble) {
+                    window.imChat.renderMessageBubble(receiveMsg, friend, appendHost, receiveTimestamp);
+                } else {
+                    window.imChat.renderPayTransferBubble(receiveMsg, friend, appendHost, receiveTimestamp);
+                }
 
                 while (appendHost.firstChild) {
                     activeContainer.appendChild(appendHost.firstChild);
@@ -1174,6 +1181,7 @@ async function claimIncomingTransfer(friend, msg, options = {}) {
                 window.imChat.scrollToBottom(activeContainer);
             }
         }
+        return true;
     }
 
     window.imChat.getGroupMemberFriends = getGroupMemberFriends;
@@ -1274,6 +1282,9 @@ async function claimIncomingTransfer(friend, msg, options = {}) {
                 apiRunId: options.apiRunId || null,
                 rollbackSourceMessage: sourceMessageSnapshot
             };
+            if (typeof options.cotSummary === 'string' && options.cotSummary.trim()) {
+                rejectMsg.cotSummary = options.cotSummary.trim();
+            }
         }
 
         let saved = false;
@@ -1370,7 +1381,11 @@ async function claimIncomingTransfer(friend, msg, options = {}) {
                     window.imChat.renderTimestamp(rejectTimestamp, appendHost);
                 }
 
-                window.imChat.renderPayTransferBubble(rejectMsg, friend, appendHost, rejectTimestamp);
+                if (window.imChat.renderMessageBubble) {
+                    window.imChat.renderMessageBubble(rejectMsg, friend, appendHost, rejectTimestamp);
+                } else {
+                    window.imChat.renderPayTransferBubble(rejectMsg, friend, appendHost, rejectTimestamp);
+                }
 
                 while (appendHost.firstChild) {
                     activeContainer.appendChild(appendHost.firstChild);
@@ -1383,6 +1398,7 @@ async function claimIncomingTransfer(friend, msg, options = {}) {
                 window.imChat.scrollToBottom(activeContainer);
             }
         }
+        return true;
     }
 
     window.imChat.ensureTransferDetailOverlayForExistingPage = ensureTransferDetailOverlayForExistingPage;

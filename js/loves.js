@@ -14,6 +14,7 @@ window.lovesApp = {
     _realTimeJobsStarted: false,
     _realTimeTimer: null,
     _momentReplyQueues: new Map(),
+    _androidFocusScopeCleanup: null,
 
     persistFriendState: async function(friend = this.currentFriend, options = {}) {
         if (!friend) return false;
@@ -136,6 +137,17 @@ window.lovesApp = {
         return String(record[`${field}TranslationZh`] ?? record[`${field}Translation`] ?? (field === 'text' ? (record.translationZh ?? record.translation) : '') ?? '').trim();
     },
 
+    getFriendPhoneChineseContactName: function(record, field = 'name', fallback = '未知联系人') {
+        if (!record || typeof record !== 'object') return String(fallback || '未知联系人');
+        const fallbackName = String(fallback || '未知联系人');
+        const translation = this.getFriendPhoneTranslation(record, field);
+        const original = String(record[field] ?? '').trim();
+        const hasChinese = value => /[\u3400-\u9fff]/.test(String(value || ''));
+        if (hasChinese(translation)) return translation;
+        if (hasChinese(original)) return original;
+        return fallbackName;
+    },
+
     renderFriendPhoneLocalized: function(record, field, options = {}) {
         const original = this.escapeHTML(record?.[field] ?? options.fallback ?? '').replace(/\n/g, '<br>');
         const translation = this.escapeHTML(this.getFriendPhoneTranslation(record, field)).replace(/\n/g, '<br>');
@@ -191,20 +203,34 @@ window.lovesApp = {
     },
 
     validateFriendPhoneLocalizedTree: function(value, language, path = 'root') {
-        if (this.normalizeFriendPhoneLanguage(language) === 'zh') return;
+        if (this.normalizeFriendPhoneLanguage(language) === 'zh') return [];
         const machineFields = new Set(['id', 'batchId', 'kind', 'sender', 'type', 'icon', 'color', 'cardNumber', 'loops', 'steps', 'sleepHours', 'sleepMinutes', 'heartRate', 'weight', 'height', 'totalAssets', 'amount', 'isIncome', 'reposts', 'likes', 'url', 'avatarUrl', 'result', 'kda', 'winRate']);
+        const missingPaths = [];
+        const isChineseOnlyContactField = (key, currentPath) => {
+            if (key === 'contactName' || key === 'userRemark') return true;
+            return key === 'name' && /^phone\.call\.(?:recentCalls|contacts)\[\d+\]$/.test(currentPath);
+        };
+        const isUnrestrictedLanguageField = (key, currentPath) => {
+            if (key === 'name' && /^phone\.music\.(?:recent|favorites|top)\[\d+\]$/.test(currentPath)) return true;
+            if (currentPath.startsWith('phone.weibo')) return key !== 'text';
+            if (currentPath.startsWith('phone.files')) return key !== 'content';
+            if (!currentPath.startsWith('phone.game')) return false;
+            return !['desc', 'innerThoughts', 'postGameReflection', 'thoughts'].includes(key);
+        };
         const visit = (node, currentPath) => {
             if (Array.isArray(node)) return node.forEach((item, index) => visit(item, `${currentPath}[${index}]`));
             if (!node || typeof node !== 'object') return;
             Object.entries(node).forEach(([key, item]) => {
                 if (key.endsWith('TranslationZh') || key.endsWith('Translation') || key === 'translationZh' || key === 'translation') return;
-                if (typeof item === 'string' && item.trim() && !machineFields.has(key)) {
+                if (typeof item === 'string' && item.trim() && !machineFields.has(key) && !isChineseOnlyContactField(key, currentPath) && !isUnrestrictedLanguageField(key, currentPath)) {
                     const translation = String(node[`${key}TranslationZh`] ?? (key === 'text' ? (node.translationZh ?? node.translation) : '') ?? '').trim();
-                    if (!translation) throw new Error(`${currentPath}.${key} 缺少中文翻译`);
+                    if (!translation) missingPaths.push(`${currentPath}.${key}`);
                 } else if (item && typeof item === 'object') visit(item, `${currentPath}.${key}`);
             });
         };
         visit(value, path);
+        if (missingPaths.length) console.warn('[Loves] 好友手机内容缺少中文翻译，已按原文降级展示：', missingPaths);
+        return missingPaths;
     },
 
     clearFriendPhoneChineseTranslations: function(value) {
@@ -239,6 +265,26 @@ window.lovesApp = {
         return [...fixedNames.map(name => merged.find(chat => fixedNameOf(chat) === name)).filter(Boolean), ...merged.filter(chat => !fixedNames.includes(fixedNameOf(chat)))];
     },
 
+    normalizeFriendPhoneChatMessages: function(messages, max = 5) {
+        if (!Array.isArray(messages)) return [];
+        const safeMax = this.clampFriendGenCount(max, 5, 1, 20);
+        return messages.filter(message => message && typeof message === 'object' && !Array.isArray(message)).slice(0, safeMax);
+    },
+
+    normalizeFriendPhoneWeiboPostComments: function(posts, max = 5) {
+        if (!Array.isArray(posts)) return [];
+        const safeMax = this.clampFriendGenCount(max, 5, 1, 20);
+        return posts.map(post => {
+            if (!post || typeof post !== 'object' || Array.isArray(post)) return post;
+            return {
+                ...post,
+                comments: Array.isArray(post.comments)
+                    ? post.comments.filter(comment => comment && (typeof comment === 'object' || typeof comment === 'string')).slice(0, safeMax)
+                    : []
+            };
+        });
+    },
+
     mergeFriendPhoneGeneratedData: function(friend, parsed, options = {}) {
         const generatedAt = Number(options.generatedAt) || Date.now();
         const batchId = options.batchId || `phone-${generatedAt}-${Math.random().toString(36).slice(2, 8)}`;
@@ -247,62 +293,78 @@ window.lovesApp = {
         if (language === 'zh') this.clearFriendPhoneChineseTranslations(clean);
         if (options.skipValidation !== true) this.validateFriendPhoneLocalizedTree(clean, language, 'phone');
         const next = {};
-        const prepend = (fresh, old) => [...(Array.isArray(fresh) ? fresh : []), ...(Array.isArray(old) ? old : [])];
 
-        if (clean.music) next.musicData = {
-            ...(friend.musicData || {}), ...clean.music,
-            recent: prepend(clean.music.recent, friend.musicData?.recent),
-            favorites: prepend(clean.music.favorites, friend.musicData?.favorites),
-            top: prepend(clean.music.top, friend.musicData?.top)
-        };
+        if (clean.music) {
+            const normalizeSong = song => {
+                const normalized = { ...(song || {}) };
+                delete normalized.nameTranslationZh;
+                delete normalized.nameTranslation;
+                return normalized;
+            };
+            next.musicData = {
+                ...clean.music,
+                recent: Array.isArray(clean.music.recent) ? clean.music.recent.map(normalizeSong) : [],
+                favorites: Array.isArray(clean.music.favorites) ? clean.music.favorites.map(normalizeSong) : [],
+                top: Array.isArray(clean.music.top) ? clean.music.top.map(normalizeSong) : []
+            };
+        }
         if (clean.health) {
             const snapshot = { ...clean.health, generatedAt, batchId };
-            const history = [snapshot, ...(friend.healthData?.history || (friend.healthData ? [{ ...friend.healthData }] : []))];
-            next.healthData = { ...snapshot, history };
+            next.healthData = { ...snapshot, history: [snapshot] };
         }
         if (clean.pay) {
             const snapshot = { ...clean.pay, generatedAt, batchId };
-            const oldSnapshots = friend.payData?.snapshots || (friend.payData ? [{ ...friend.payData }] : []);
             next.payData = {
-                ...(friend.payData || {}), ...snapshot,
-                recentTransactions: prepend(clean.pay.recentTransactions, friend.payData?.recentTransactions),
-                snapshots: [snapshot, ...oldSnapshots]
+                ...snapshot,
+                recentTransactions: Array.isArray(clean.pay.recentTransactions) ? clean.pay.recentTransactions : [],
+                snapshots: [snapshot]
             };
         }
         if (clean.safari) next.safariData = {
-            recentSearches: prepend(clean.safari.recentSearches, friend.safariData?.recentSearches),
-            privateSearches: prepend(clean.safari.privateSearches, friend.safariData?.privateSearches)
+            recentSearches: Array.isArray(clean.safari.recentSearches) ? clean.safari.recentSearches : [],
+            privateSearches: Array.isArray(clean.safari.privateSearches) ? clean.safari.privateSearches : []
         };
         if (clean.call) next.callData = {
-            ...(friend.callData || {}), ...clean.call,
-            recentCalls: prepend(clean.call.recentCalls, friend.callData?.recentCalls),
-            contacts: this.mergeFriendPhoneNamedRecords(clean.call.contacts, friend.callData?.contacts, 'name', (fresh, old) => ({ ...old, ...fresh }))
+            ...clean.call,
+            recentCalls: Array.isArray(clean.call.recentCalls) ? clean.call.recentCalls : [],
+            contacts: Array.isArray(clean.call.contacts) ? clean.call.contacts : []
         };
-        if (clean.files) {
-            const mergeTag = (fresh, old) => ({ ...old, ...fresh, items: prepend(fresh.items, old.items) });
-            next.filesData = {
-                ...(friend.filesData || {}), ...clean.files,
-                tags: this.mergeFriendPhoneNamedRecords(clean.files.tags, friend.filesData?.tags, 'name', mergeTag),
-                recent: prepend(clean.files.recent, friend.filesData?.recent)
-            };
-        }
+        if (clean.files) next.filesData = {
+            ...clean.files,
+            tags: Array.isArray(clean.files.tags) ? clean.files.tags : [],
+            recent: Array.isArray(clean.files.recent) ? clean.files.recent : []
+        };
         if (clean.game) {
-            const mergeGame = (fresh, old) => ({ ...old, ...fresh, matches: prepend(fresh.matches, old.matches) });
+            const stripTranslations = (record, fields) => {
+                const normalized = { ...(record || {}) };
+                fields.forEach(field => {
+                    delete normalized[`${field}TranslationZh`];
+                    delete normalized[`${field}Translation`];
+                });
+                return normalized;
+            };
+            const gameRoot = stripTranslations(clean.game, ['playerName', 'totalHours']);
             next.gameData = {
-                ...(friend.gameData || {}), ...clean.game,
-                recentGames: this.mergeFriendPhoneNamedRecords(clean.game.recentGames, friend.gameData?.recentGames, 'name', mergeGame)
+                ...gameRoot,
+                recentGames: Array.isArray(clean.game.recentGames) ? clean.game.recentGames.map(game => {
+                    const normalizedGame = stripTranslations(game, ['name', 'hours', 'rank', 'winRate']);
+                    return {
+                        ...normalizedGame,
+                        matches: Array.isArray(game?.matches) ? game.matches.map(match => stripTranslations(match, ['result', 'kda', 'hero'])) : game?.matches
+                    };
+                }) : []
             };
         }
         if (clean.weibo) {
-            const mergeAccount = (fresh, old) => ({
-                ...(old || {}), ...(fresh || {}),
-                posts: prepend(fresh?.posts, old?.posts),
-                album: prepend(fresh?.album, old?.album),
-                liked: prepend(fresh?.liked, old?.liked)
+            const replaceAccount = fresh => ({
+                ...(fresh || {}),
+                posts: Array.isArray(fresh?.posts) ? fresh.posts : [],
+                album: Array.isArray(fresh?.album) ? fresh.album : [],
+                liked: Array.isArray(fresh?.liked) ? fresh.liked : []
             });
             next.weiboData = {
-                mainAccount: mergeAccount(clean.weibo.mainAccount || clean.weibo.main || clean.weibo, friend.weiboData?.mainAccount),
-                altAccount: mergeAccount(clean.weibo.altAccount || clean.weibo.alt || {}, friend.weiboData?.altAccount)
+                mainAccount: replaceAccount(clean.weibo.mainAccount || clean.weibo.main || clean.weibo),
+                altAccount: replaceAccount(clean.weibo.altAccount || clean.weibo.alt || {})
             };
         }
         if (clean.imessage) {
@@ -310,12 +372,12 @@ window.lovesApp = {
             const freshAlt = clean.imessage.altAccount || {};
             next.imessageData = {
                 mainAccount: {
-                    ...(friend.imessageData?.mainAccount || {}), ...freshMain,
-                    chats: this.mergeFriendPhoneChats(freshMain.chats, friend.imessageData?.mainAccount?.chats || (Array.isArray(friend.imessageData) ? friend.imessageData : []), false)
+                    ...freshMain,
+                    chats: this.mergeFriendPhoneChats(freshMain.chats, [], false)
                 },
                 altAccount: {
-                    ...(friend.imessageData?.altAccount || {}), ...freshAlt,
-                    chats: this.mergeFriendPhoneChats(freshAlt.chats, friend.imessageData?.altAccount?.chats, true)
+                    ...freshAlt,
+                    chats: this.mergeFriendPhoneChats(freshAlt.chats, [], true)
                 }
             };
         }
@@ -492,11 +554,19 @@ window.lovesApp = {
         
         if (!this.view) return;
         
+        this.bindAndroidInputFocusScope();
         this.bindEvents();
         this.bindLauncherButton();
         this.initialized = true;
         this.startRealTimeJobs();
         console.log('Loves app initialized');
+    },
+
+    bindAndroidInputFocusScope: function() {
+        if (this._androidFocusScopeCleanup || !window.mobileInputCompat?.registerFocusScope) return;
+        this._androidFocusScopeCleanup = window.mobileInputCompat.registerFocusScope({
+            selector: '#loves-view, #lovers-space-view, #lovers-savings-view, #lovers-friend-phone-view, #lovers-friend-computer-view, .bottom-sheet-overlay[id^="lovers-"], .bottom-sheet-overlay[id^="friend-"]'
+        });
     },
     
     bindEvents: function() {
@@ -2808,10 +2878,10 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
     },
 
     renderWeiboPostCard: function(post, accountData, options = {}) {
-        const safeName = this.renderFriendPhoneLocalized(post.author ? post : accountData, post.author ? 'author' : 'name', { fallback: options.authorName || accountData.name, id: `weibo-author-${options.index || 0}` });
-        const safeText = this.renderFriendPhoneLocalized(post, 'text', { id: `weibo-text-${options.index || 0}` });
+        const safeName = this.escapeHTML(post.author || options.authorName || accountData.name || '微博用户');
+        const safeText = this.escapeHTML(post.text || '').replace(/\n/g, '<br>');
         const safeTime = this.escapeHTML(this.formatFriendPhoneGeneratedAt(post.generatedAt) || post.time || '');
-        const safeSource = this.renderFriendPhoneLocalized(post, 'source', { fallback: '来自 iPhone', id: `weibo-source-${options.index || 0}` });
+        const safeSource = this.escapeHTML(post.source || '来自 iPhone');
         const commentCount = Array.isArray(post.comments) ? post.comments.length : 0;
         const imagePreview = options.images && options.images.length ? `
             <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 10px;">
@@ -2846,12 +2916,12 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
     },
 
     showWeiboPostDetail: function(post, accountData, options = {}) {
-        const safeName = this.renderFriendPhoneLocalized(post.author ? post : accountData, post.author ? 'author' : 'name', { fallback: options.authorName || accountData.name, id: 'weibo-detail-author' });
+        const safeName = this.escapeHTML(post.author || options.authorName || accountData.name || '微博用户');
         const safeText = this.renderFriendPhoneLocalized(post, 'text', { id: 'weibo-detail-text' });
         const comments = Array.isArray(post.comments) ? post.comments : [];
         const commentsHtml = comments.length ? comments.map(comment => `
             <div style="padding: 10px 0; border-top: 1px solid #f2f2f2;">
-                <span style="font-size: 13px; font-weight: 700; color: #333;">${this.renderFriendPhoneLocalized(comment, 'author', { fallback: '评论用户', id: 'comment-author' })}</span>
+                <span style="font-size: 13px; font-weight: 700; color: #333;">${this.escapeHTML(comment.author || '评论用户')}</span>
                 <span style="font-size: 13px; color: #333; line-height: 1.5;">：${this.renderFriendPhoneLocalized(comment, 'text', { id: 'comment-text' })}</span>
             </div>
         `).join('') : '<div style="padding: 12px 0; color: #999; font-size: 13px;">暂无评论</div>';
@@ -2865,7 +2935,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                 ${this.renderWeiboAvatarHtml(accountData.avatarUrl, 44)}
                 <div style="min-width: 0;">
                     <div style="font-size: 16px; font-weight: 800; color: #111;">${safeName}</div>
-                    <div style="font-size: 12px; color: #999;">${this.escapeHTML(this.formatFriendPhoneGeneratedAt(post.generatedAt) || post.time || '')} ${this.renderFriendPhoneLocalized(post, 'source', { fallback: '来自 iPhone', id: 'weibo-detail-source' })}</div>
+                    <div style="font-size: 12px; color: #999;">${this.escapeHTML(this.formatFriendPhoneGeneratedAt(post.generatedAt) || post.time || '')} ${this.escapeHTML(post.source || '来自 iPhone')}</div>
                 </div>
             </div>
             <div style="font-size: 16px; color: #222; line-height: 1.65; word-break: break-word;">${safeText}</div>
@@ -2892,7 +2962,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
 
     showWeiboImageDetail: function(item) {
         const safeUrl = this.escapeHTML(item.url || '');
-        const safeDesc = this.renderFriendPhoneLocalized(item, 'description', { id: 'weibo-album-description' });
+        const safeDesc = this.escapeHTML(item.description || '').replace(/\n/g, '<br>');
         const content = `
             <div style="width: 100%; aspect-ratio: 1; border-radius: 14px; overflow: hidden; background: #f2f2f2; margin-bottom: 14px;">
                 ${safeUrl ? `<img src="${safeUrl}" style="width: 100%; height: 100%; object-fit: cover;">` : `<div style="height: 100%; display: flex; align-items: center; justify-content: center; color: #999;"><i class="far fa-image" style="font-size: 40px;"></i></div>`}
@@ -2917,8 +2987,8 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
         const postCountEl = document.getElementById('friend-weibo-post-count');
         const switchBtn = document.getElementById('friend-weibo-switch-account-btn');
         const coverEl = document.getElementById('friend-weibo-cover');
-        if (profileName) profileName.innerHTML = this.renderFriendPhoneLocalized(accountData, 'name', { id: 'weibo-profile-name' });
-        if (signatureEl) signatureEl.innerHTML = this.renderFriendPhoneLocalized(accountData, 'signature', { id: 'weibo-profile-signature' });
+        if (profileName) profileName.textContent = accountData.name || '微博用户';
+        if (signatureEl) signatureEl.textContent = accountData.signature || '';
         if (postCountEl) postCountEl.textContent = String((accountData.posts || []).length);
         if (switchBtn) switchBtn.textContent = this.currentWeiboAccount === 'alt' ? '切换大号' : '切换账号';
         if (coverEl) {
@@ -3375,6 +3445,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
         
         phoneView.style.backgroundImage = friend.phoneBg ? `url(${friend.phoneBg})` : 'url("assets/bizhi.jpg")';
         this.bindFriendPhoneTranslationDelegation(phoneView);
+        this.bindFriendPhoneTranslationDelegation(document.getElementById('friend-reverse-chat-view'));
         
         if (window.openView) window.openView(phoneView);
         
@@ -3530,80 +3601,31 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                     }
                 }
                 
-                let oldContext = '';
-                let imessageContinuationContext = '';
-                if (selectedApps.includes('safari') && friend.safariData) {
-                    const rs = (friend.safariData.recentSearches || []).slice(0, 3).map(s => typeof s === 'string' ? s : s.keyword).join(', ');
-                    if (rs) oldContext += `\n【已有普通搜索】: ${rs}`;
-                    const ps = (friend.safariData.privateSearches || []).slice(0, 3).map(s => typeof s === 'string' ? s : s.keyword).join(', ');
-                    if (ps) oldContext += `\n【已有无痕搜索】: ${ps}`;
-                }
-                if (selectedApps.includes('imessage') && friend.imessageData) {
-                    const mainChats = friend.imessageData.mainAccount?.chats || (Array.isArray(friend.imessageData) ? friend.imessageData : []);
-                    const altChats = friend.imessageData.altAccount?.chats || [];
-                    if (mainChats.length > 0) oldContext += `\n【已有主号短信联系人】: ` + mainChats.slice(0,3).map(c => c.contactName).join(', ');
-                    if (altChats.length > 0) oldContext += `\n【已有小号短信联系人】: ` + altChats.slice(0,3).map(c => c.contactName).join(', ');
-                    imessageContinuationContext = this.buildFriendPhoneImessageContinuationContext(friend, 20);
-                }
-                if (selectedApps.includes('game') && friend.gameData && friend.gameData.recentGames) {
-                    const gameInfos = friend.gameData.recentGames.slice(0,3).map(g => {
-                        let info = g.name;
-                        if (g.matches && g.matches.length > 0) {
-                            const times = g.matches.slice(0, 3).map(m => m.time).join('、');
-                            info += `(已有对局时间: ${times})`;
-                        }
-                        return info;
-                    });
-                    oldContext += `\n【已有游戏及对局】: ` + gameInfos.join('; ') + '。请生成内容不同的新对局，或生成全新的游戏。';
-                }
-                if (selectedApps.includes('files') && friend.filesData && friend.filesData.tags) {
-                    const tagNames = friend.filesData.tags.map(t => t.name).join(', ');
-                    let fileTitles = [];
-                    friend.filesData.tags.forEach(t => {
-                        if (t.items) fileTitles = fileTitles.concat(t.items.map(i => i.title));
-                    });
-                    if (tagNames) oldContext += `\n【已有文件标签】: ${tagNames}`;
-                    if (fileTitles.length > 0) oldContext += `\n【已有文件名称(请勿重复生成同名文件)】: ${fileTitles.slice(0, 5).join(', ')}`;
-                }
-                if (selectedApps.includes('call') && friend.callData && friend.callData.recentCalls) {
-                    const calls = friend.callData.recentCalls.slice(0, 3).map(c => c.name).join(', ');
-                    if (calls) oldContext += `\n【已有通话联系人】: ${calls}`;
-                }
-                if (selectedApps.includes('weibo') && friend.weiboData) {
-                    const mainPosts = friend.weiboData.mainAccount?.posts || [];
-                    const altPosts = friend.weiboData.altAccount?.posts || [];
-                    if (mainPosts.length > 0) oldContext += `\n【已有微博大号帖子】: ${mainPosts.slice(0, 3).map(p => p.text || p.content || '').join(' / ')}`;
-                    if (altPosts.length > 0) oldContext += `\n【已有微博小号帖子】: ${altPosts.slice(0, 3).map(p => p.text || p.content || '').join(' / ')}`;
-                }
-                const existingContentContext = this.buildFriendPhoneExistingContentContext(friend, selectedApps, 160);
-                
                 const phoneLanguage = this.normalizeFriendPhoneLanguage(friend.language || 'zh');
                 const phoneLanguageName = this.getFriendPhoneLanguageName(phoneLanguage);
                 let prompt = `你现在要模拟生成一部手机里不同应用的数据。请严格遵循给定的世界观设定、角色人设和聊天上下文，生成符合角色性格的JSON格式数据。\n`;
-                prompt += `\n【最高优先级语言与翻译协议】\n- 所有 AI 创作的可读字符串原文必须只使用 Char 的默认语言：${phoneLanguageName} (${phoneLanguage})。\n- 对每个可读字符串字段 field，都必须同时返回 fieldTranslationZh。原文非中文时，fieldTranslationZh 必须是自然准确的简体中文翻译；原文为中文时必须为空字符串。\n- text 字段也必须使用 textTranslationZh。姓名、昵称、标题、正文、评论、描述、心声、搜索词、歌名、艺人和文件名全部适用。\n- sender、type、icon、数值、布尔值、URL、ID、银行卡号等机器字段不翻译。\n`;
+                prompt += `\n【最高优先级语言与翻译协议】\n- 所有 AI 创作的可读字符串原文必须只使用 Char 的默认语言：${phoneLanguageName} (${phoneLanguage})。\n- 联系人例外：iMessage 的 contactName、userRemark，以及通话记录和通讯录的 name 必须直接使用自然的简体中文姓名，不得使用外文姓名，不需要额外翻译字段。\n- 音乐例外：music 内每首歌的 name 必须使用歌曲真实、正常的官方歌名，保留歌名本来的语言，不受 Char 默认语言限制，不返回 nameTranslationZh。\n- 游戏例外：game 中除 highlights[].desc、innerThoughts、postGameReflection（兼容 thoughts）外，其余字段均不受 Char 默认语言限制，也不需要任何 TranslationZh 字段；仅这四类叙事字段遵循 Char 默认语言并返回中文翻译。\n- 微博例外：weibo 只有帖子正文 text 和评论正文 comments[].text 遵循 Char 默认语言并返回 textTranslationZh；账号名、昵称、签名、作者名、来源、相册描述等其他字段不限制语言，也不返回翻译字段。\n- 文件例外：files 只有文件详情正文 items[].content 遵循 Char 默认语言并返回 contentTranslationZh；标签名与文件标题不限制语言，也不返回翻译字段。\n- 除以上例外，对每个可读字符串字段 field，都必须同时返回 fieldTranslationZh。原文非中文时，fieldTranslationZh 必须是自然准确的简体中文翻译；原文为中文时必须为空字符串。\n- sender、type、icon、数值、布尔值、URL、ID、银行卡号等机器字段不翻译。\n`;
                 prompt += `\n【最高优先级时间协议】不要返回 time、date、createdAt、timestamp、addedTime、recentCallTime 等记录时间字段，也不要为应用记录编造时间戳；真实生成时间始终由前端写入。\n`;
                 if (includeRealTime) prompt += `\n【当前真实时间】${this.getCurrentRealTimeContext()}\n- 仅将它用于理解当前季节、昼夜、作息、近期事件与内容语境，让生成内容具有自然的时间感知；不要把它复制成 JSON 时间字段。\n`;
-                if (oldContext) prompt += `\n【旧数据参考，本次生成会追加在旧内容前面；请参考这些信息避免机械重复】：${oldContext}\n`;
-                if (existingContentContext) prompt += `\n【二次生成语义去重清单】\n${existingContentContext}\n【强制去重规则】\n- 清单和上下文中已经表达过的消息、事实、情节、搜索意图、帖子主题、描述、心声或措辞，本次不得原句重复、同义改写、换语言复述或先总结再重复。\n- 联系人、账号、游戏、歌曲等稳定专名可以为保持连续性再次出现，但围绕它们生成的正文、对话和事件必须提供全新的信息或后续进展。\n- 续写会话必须从最后一条旧消息之后直接推进，只输出新增气泡，不复述前情；若原话题已结束，应自然开启一个具体的新话题。\n- 生成完成前逐项与清单比对，发现语义重复就改写为不同事件，而不是只替换形容词。\n`;
+                prompt += `\n【覆盖规则】本次勾选应用的生成结果会完整覆盖该应用旧数据。请生成一套独立、完整的新内容，不要续写或依赖旧手机数据。\n`;
                 
                 if (globalRule) prompt += `\n【世界书设定】：\n${globalRule}\n`;
                 prompt += `\n【角色 (Char) 人设】：\n${charPersona}\n`;
                 prompt += `\n【用户 (User) 人设】：\n${userPersona}\n`;
                 if (chatContext) prompt += `\n【固定挂载的最近 20 条单聊上下文】：\n${chatContext}\n`;
-                if (imessageContinuationContext) prompt += `\n【已有 iMessage 会话正文，供二次生成续写】：\n${imessageContinuationContext}\n- 优先沿用已有联系人并从现有话题之后自然继续，不得复述、改写或重新开始旧内容；需要新增联系人时再创建新会话。\n`;
                 
                 prompt += `\n根据选择的应用返回对应的数据。\n`;
 
                 const requirementParts = {
-                    imessage: `[imessage]: 主账号必须生成一个对于 user 的专属私密备注 userRemark（如宝宝、主人、亲爱的或任何符合人设的专属称呼）。主账号严格生成 ${genCounts.imessageMain} 个与其他人的日常会话，绝对不要生成与 user 的聊天记录；每个会话代表本次新增的一轮消息，一轮允许连续生成 2-5 条自然气泡，sender 只能是 them 或 char，按真实聊天节奏交替或连续发送，不要机械固定成一问一答。小号严格生成 ${genCounts.imessageAlt} 个会话，其中前两个固定且不可缺少：①【备忘录】，生成 2-5 条 sender 为 char 的情绪记录、私人想法或关于 user 的事情；②【文件传输助手】，生成 2-5 条 sender 为 char 的私密文件、图片或收藏记录。若小号会话数大于 2，其余会话才生成符合隐藏身份与交际圈的真实联系人，每个会话同样生成 2-5 条气泡。若提示词提供了已有 iMessage 会话正文，必须优先使用相同 contactName 延续最新话题，新增气泡承接旧内容且不得重复旧消息。`,
+                    imessage: `[imessage]: 主账号必须生成一个简体中文的 userRemark（如宝宝、主人、亲爱的或任何符合人设的专属称呼）。主号和小号所有 contactName 都必须直接使用自然的简体中文姓名，不要返回外文联系人名。主账号严格生成 ${genCounts.imessageMain} 个与其他人的完整日常会话，绝对不要生成与 user 的聊天记录；每个会话生成 2-5 条自然气泡，sender 只能是 them 或 char，按真实聊天节奏交替或连续发送，不要机械固定成一问一答。小号严格生成 ${genCounts.imessageAlt} 个完整会话，其中前两个固定且不可缺少：①【备忘录】，生成 2-5 条 sender 为 char 的情绪记录、私人想法或关于 user 的事情；②【文件传输助手】，生成 2-5 条 sender 为 char 的私密文件、图片或收藏记录。若小号会话数大于 2，其余会话才生成符合隐藏身份与交际圈的真实联系人，每个会话同样生成 2-5 条气泡。`,
                     safari: `[safari]: 严格生成 ${safariSplit.primary} 条公开模式的日常搜索，以及 ${safariSplit.secondary} 条无痕模式下符合其隐私、疑问或不愿公开心境的搜索内容，共 ${genCounts.safariTotal} 条。搜索主题、关键词长度、网页来源和详情表达需要自然多样，不要把无痕内容机械等同于阴暗或猎奇。`,
-                    files: `[files]: 生成符合角色人设的文件列表，其中 tags 内必须包含能够体现其性格、癖好、或对 User 的看法的隐私内容（如小说草稿、私密日记、账单等），需生成 2-3 个标签，每个标签 1-3 个新文件，确保文件名不要与历史已有的重复。`,
-                    call: `[call]: 严格生成 ${genCounts.callTotal} 条通话记录，并生成与记录中联系人对应的详细联系人信息，内容必须符合其人设交际圈。请避免使用不符合 JSON 标准的单引号。`,
-                    music: `[music]: 听歌排行 top 严格生成 ${genCounts.musicTop} 首，风格应极大程度体现其人设与心境；每首歌必须包含循环次数（纯数字）和不少于 20 字的细腻心声。recent 和 favorites 保持自然数量，不受排行榜数量限制。`,
+                    files: `[files]: 生成符合角色人设的文件列表，其中 tags 内必须包含能够体现其性格、癖好、或对 User 的看法的隐私内容（如小说草稿、私密日记、账单等），需生成 2-3 个标签，每个标签 1-3 个新文件，确保文件名不要与历史已有的重复。标签名和文件标题不限制语言且不需要翻译；只有文件详情 content 按 Char 默认语言生成并提供中文翻译。`,
+                    call: `[call]: 严格生成 ${genCounts.callTotal} 条通话记录，并生成与记录中联系人对应的详细联系人信息。recentCalls 和 contacts 的 name 必须直接使用自然的简体中文姓名，不要返回外文联系人名；其余内容必须符合角色人设与交际圈。请避免使用不符合 JSON 标准的单引号。`,
+                    music: `[music]: 听歌排行 top 严格生成 ${genCounts.musicTop} 首，风格应极大程度体现其人设与心境；歌曲 name 必须使用真实、正常的官方歌名，保留原本语言，不要翻译歌名，也不要返回 nameTranslationZh。每首歌必须包含循环次数（纯数字）和不少于 20 字的细腻心声。recent 和 favorites 保持自然数量，不受排行榜数量限制。`,
                     health: `[health]: 严格符合其人设（如是否运动、熬夜、体型等）生成近期睡眠、步数、身高和体重；dream 写约 30 字的昨夜梦境；stepsThoughts 写约 30 字的跑步或运动时心理活动；heartRate 必须是符合当前状态的纯数字 BPM，heartRateStatus 是与该心率匹配的简短状态。`,
                     pay: `[pay]: 生成符合人设的银行卡总金额和近期不少于 5 条收支记录。`,
-                    game: `[game]: 严格生成 ${genCounts.gameTotal} 个符合人设的游戏。每局必须包含结果(胜利/失败)、KDA(如8/2/5)、使用英雄、高光时刻(数组)、内心戏(30字)、复盘(30字)，不得包含时间。格式必须完全符合提供的JSON模板，不要使用特殊字符。`,
-                    weibo: `[weibo]: 生成完整微博资料。大号严格生成 ${weiboPostSplit.primary} 条主页帖子和 ${weiboPhotoSplit.primary} 张相册照片；小号严格生成 ${weiboPostSplit.secondary} 条主页帖子和 ${weiboPhotoSplit.secondary} 张相册照片。每条主页帖子必须生成 2-5 条自然评论；大号和小号的赞过列表各保持 3 条。大号像可被熟人看到的公开主页，小号则贴近隐藏身份，可以写关于 User 的情绪、珍视的记忆、关系思考或只有小号才敢保存的瞬间，但不要让所有内容围绕 User，也不要让小号只有负面情绪。所有帖子必须在主题、篇幅、语气、叙事视角和互动氛围上有真实差异，禁止套用固定开头、固定剧情、编号化文案、同义改写和重复句式；照片描述也要覆盖不同主体、场景、构图、光线和拍摄质感。小号头像 avatarUrl 可以留空，由系统随机补图。`
+                    game: `[game]: 严格生成 ${genCounts.gameTotal} 个符合人设的游戏。只有高光时刻 highlights[].desc、局内心声 innerThoughts、局后复盘 postGameReflection 受 Char 默认语言限制并需要中文翻译；游戏名、玩家名、段位、英雄、结果、时长等其余字段可使用其正常语言，不要返回翻译字段。每局必须包含结果、KDA(如8/2/5)、使用英雄、高光时刻(数组)、内心戏(30字)、复盘(30字)，不得包含时间。格式必须完全符合提供的JSON模板，不要使用特殊字符。`,
+                    weibo: `[weibo]: 生成完整微博资料。只有帖子正文 text 和评论正文 comments[].text 按 Char 默认语言生成并提供中文翻译；账号名、昵称、签名、评论作者名、来源、相册描述等其他字段不限制语言且不需要翻译。大号严格生成 ${weiboPostSplit.primary} 条主页帖子和 ${weiboPhotoSplit.primary} 张相册照片；小号严格生成 ${weiboPostSplit.secondary} 条主页帖子和 ${weiboPhotoSplit.secondary} 张相册照片。每条主页帖子尽量生成 2-5 条自然评论；大号和小号的赞过列表各保持 3 条。大号像可被熟人看到的公开主页，小号则贴近隐藏身份，可以写关于 User 的情绪、珍视的记忆、关系思考或只有小号才敢保存的瞬间，但不要让所有内容围绕 User，也不要让小号只有负面情绪。所有帖子必须在主题、篇幅、语气、叙事视角和互动氛围上有真实差异，禁止套用固定开头、固定剧情、编号化文案、同义改写和重复句式；照片描述也要覆盖不同主体、场景、构图、光线和拍摄质感。小号头像 avatarUrl 可以留空，由系统随机补图。`
                 };
 
                 const promptParts = {
@@ -3611,26 +3633,27 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
   "mainAccount": {
     "userRemark": "对于 user 的专属备注",
     "chats": [
-      {"contactName": "联系人", "contactNameTranslationZh": "中文翻译或空字符串", "messages": [{"sender": "them", "text": "承接当前话题的气泡1", "textTranslationZh": "中文翻译或空字符串"}, {"sender": "them", "text": "同一人连续发送的气泡2", "textTranslationZh": "中文翻译或空字符串"}, {"sender": "char", "text": "Char 的自然回复", "textTranslationZh": "中文翻译或空字符串"}]}
+      {"contactName": "简体中文联系人名", "messages": [{"sender": "them", "text": "承接当前话题的气泡1", "textTranslationZh": "中文翻译或空字符串"}, {"sender": "them", "text": "同一人连续发送的气泡2", "textTranslationZh": "中文翻译或空字符串"}, {"sender": "char", "text": "Char 的自然回复", "textTranslationZh": "中文翻译或空字符串"}]}
     ]
   },
   "altAccount": {
     "name": "符合隐藏身份的小号名",
+    "nameTranslationZh": "中文翻译或空字符串",
     "chats": [
       {"kind": "memo", "contactName": "备忘录", "messages": [{"sender": "char", "text": "私人记录气泡1", "textTranslationZh": "中文翻译或空字符串"}, {"sender": "char", "text": "私人记录气泡2", "textTranslationZh": "中文翻译或空字符串"}]},
       {"kind": "file_transfer", "contactName": "文件传输助手", "messages": [{"sender": "char", "text": "[图片] 私密收藏气泡1", "textTranslationZh": "中文翻译或空字符串"}, {"sender": "char", "text": "相关说明气泡2", "textTranslationZh": "中文翻译或空字符串"}]},
-      {"contactName": "符合小号身份的联系人", "contactNameTranslationZh": "中文翻译或空字符串", "messages": [{"sender": "them", "text": "承接话题的气泡", "textTranslationZh": "中文翻译或空字符串"}, {"sender": "char", "text": "自然回复", "textTranslationZh": "中文翻译或空字符串"}]}
+      {"contactName": "符合小号身份的简体中文联系人名", "messages": [{"sender": "them", "text": "承接话题的气泡", "textTranslationZh": "中文翻译或空字符串"}, {"sender": "char", "text": "自然回复", "textTranslationZh": "中文翻译或空字符串"}]}
     ]
   }
 }`,
-                    safari: `"safari": {\n  "recentSearches": [\n    {"keyword": "搜索关键词1", "title": "网页标题1", "content": "网页内容(如知乎,百度百科等真实浏览器内容50-100字)"}\n  ],\n  "privateSearches": [\n    {"keyword": "无痕搜索词1", "title": "无痕网页标题1", "content": "不可告人或极具隐私属性的搜索详情内容(50-100字)"}\n  ]\n}`,
-                    files: `"files": {\n  "tags": [\n    {"name": "新标签名称", "color": "#ff3b30", "items": [{"title": "新文件名.txt", "content": "一段极度符合人设的私密内容(50-100字)"}]}\n  ]\n}`,
-                    call: `"call": {\n  "recentCalls": [\n    {"name": "联系人原文", "nameTranslationZh": "中文翻译或空字符串", "type": "incoming/outgoing/missed", "dialogue": "通话内容原文", "dialogueTranslationZh": "中文翻译或空字符串"}\n  ],\n  "contacts": [\n    {"name": "联系人原文", "nameTranslationZh": "中文翻译或空字符串", "callReason": "通话原因原文", "callReasonTranslationZh": "中文翻译或空字符串"}\n  ]\n}`,
-                    music: `"music": {\n  "recent": [{"name": "歌曲名1", "artist": "歌手1"}],\n  "favorites": [{"name": "最爱歌曲名1", "artist": "最爱歌手1"}],\n  "top": [{"name": "排行歌曲1", "artist": "歌手1", "loops": 156, "thoughts": "听这首歌时的内心情感与心声，要非常符合人设且细腻，不少于30字"}]\n}`,
-                    health: `"health": {\n  "steps": "步数纯数字",\n  "stepsThoughts": "跑步或运动时的心理活动，约30字",\n  "sleepHours": "睡眠小时数纯数字",\n  "sleepMinutes": "睡眠分钟数纯数字",\n  "dream": "昨夜梦境内容，约30字",\n  "heartRate": "当前心率纯数字BPM",\n  "heartRateStatus": "符合心率与角色状态的简短描述",\n  "weight": "体重",\n  "height": "身高"\n}`,
+                    safari: `"safari": {\n  "recentSearches": [\n    {"keyword": "搜索关键词1", "keywordTranslationZh": "中文翻译或空字符串", "title": "网页标题1", "titleTranslationZh": "中文翻译或空字符串", "content": "网页内容(如知乎,百度百科等真实浏览器内容50-100字)", "contentTranslationZh": "中文翻译或空字符串"}\n  ],\n  "privateSearches": [\n    {"keyword": "无痕搜索词1", "keywordTranslationZh": "中文翻译或空字符串", "title": "无痕网页标题1", "titleTranslationZh": "中文翻译或空字符串", "content": "隐私搜索详情内容(50-100字)", "contentTranslationZh": "中文翻译或空字符串"}\n  ]\n}`,
+                    files: `"files": {\n  "tags": [\n    {"name": "新标签名称，不限制语言", "color": "#ff3b30", "items": [{"title": "新文件名，不限制语言", "content": "一段极度符合人设的私密内容(50-100字)", "contentTranslationZh": "中文翻译或空字符串"}]}\n  ]\n}`,
+                    call: `"call": {\n  "recentCalls": [\n    {"name": "简体中文联系人名", "type": "incoming/outgoing/missed", "dialogue": "通话内容原文", "dialogueTranslationZh": "中文翻译或空字符串"}\n  ],\n  "contacts": [\n    {"name": "简体中文联系人名", "callReason": "通话原因原文", "callReasonTranslationZh": "中文翻译或空字符串"}\n  ]\n}`,
+                    music: `"music": {\n  "recent": [{"name": "歌曲真实官方歌名（保留原本语言）", "artist": "歌手1", "artistTranslationZh": "中文翻译或空字符串"}],\n  "favorites": [{"name": "歌曲真实官方歌名（保留原本语言）", "artist": "最爱歌手1", "artistTranslationZh": "中文翻译或空字符串"}],\n  "top": [{"name": "歌曲真实官方歌名（保留原本语言）", "artist": "歌手1", "artistTranslationZh": "中文翻译或空字符串", "loops": 156, "thoughts": "听这首歌时的内心情感与心声，要非常符合人设且细腻，不少于30字", "thoughtsTranslationZh": "中文翻译或空字符串"}]\n}`,
+                    health: `"health": {\n  "steps": "步数纯数字",\n  "stepsThoughts": "跑步或运动时的心理活动，约30字",\n  "stepsThoughtsTranslationZh": "中文翻译或空字符串",\n  "sleepHours": "睡眠小时数纯数字",\n  "sleepMinutes": "睡眠分钟数纯数字",\n  "dream": "昨夜梦境内容，约30字",\n  "dreamTranslationZh": "中文翻译或空字符串",\n  "heartRate": "当前心率纯数字BPM",\n  "heartRateStatus": "符合心率与角色状态的简短描述",\n  "heartRateStatusTranslationZh": "中文翻译或空字符串",\n  "weight": "体重",\n  "height": "身高"\n}`,
                     pay: `"pay": {\n  "totalAssets": "24560.88",\n  "recentTransactions": [\n    {"title": "交易标题原文", "titleTranslationZh": "中文翻译或空字符串", "amount": "-128.00", "isIncome": false}\n  ]\n}`,
-                    game: `"game": {\n  "playerName": "游戏内id",\n  "totalHours": "200小时",\n  "recentGames": [\n    {"name": "游戏名原文", "nameTranslationZh": "中文翻译或空字符串", "hours": "50小时", "rank": "段位原文", "rankTranslationZh": "中文翻译或空字符串", "winRate": "65%", "icon": "fas fa-gamepad", "matches": [\n      {"result": "胜利", "kda": "8/2/5", "hero": "英雄原名", "heroTranslationZh": "中文翻译或空字符串", "highlights": [{"desc": "高光描述原文", "descTranslationZh": "中文翻译或空字符串"}], "innerThoughts": "局内心声原文", "innerThoughtsTranslationZh": "中文翻译或空字符串", "postGameReflection": "复盘原文", "postGameReflectionTranslationZh": "中文翻译或空字符串"}\n    ]}\n  ]\n}`,
-                    weibo: `"weibo": {\n  "mainAccount": {\n    "signature": "符合 Char 公开形象的签名",\n    "posts": [\n      {"text": "自然且各不相同的大号帖子正文", "time": "合理且多样的时间", "source": "真实来源", "comments": [{"author": "评论用户名", "text": "贴合该帖语境的评论"}], "reposts": 6, "likes": 128}\n    ],\n    "album": [\n      {"description": "具体且不重复的图片主体、场景、构图和质感描述20-50字"}\n    ],\n    "liked": [\n      {"author": "被赞博主名", "text": "符合大号公开兴趣的赞过帖子", "time": "合理时间", "source": "来自 微博", "comments": [], "reposts": 12, "likes": 241}\n    ]\n  },\n  "altAccount": {\n    "name": "符合隐藏身份的小号名",\n    "signature": "符合小号隐秘状态的签名",\n    "avatarUrl": "",\n    "posts": [\n      {"text": "符合隐藏身份且主题自然多样的小号帖子正文", "time": "合理且多样的时间", "source": "真实来源", "comments": [{"author": "评论用户名", "text": "贴合该帖语境的评论"}], "reposts": 1, "likes": 19}\n    ],\n    "album": [\n      {"description": "符合小号状态且与其他照片不同的具体画面描述20-50字"}\n    ],\n    "liked": [\n      {"author": "被赞博主名", "text": "符合小号隐秘兴趣的赞过帖子", "time": "合理时间", "source": "来自 微博", "comments": [], "reposts": 2, "likes": 33}\n    ]\n  }\n}`
+                    game: `"game": {\n  "playerName": "正常游戏内 ID，不限制语言",\n  "totalHours": "200小时",\n  "recentGames": [\n    {"name": "正常游戏名，不限制语言", "hours": "50小时", "rank": "正常段位，不限制语言", "winRate": "65%", "icon": "fas fa-gamepad", "matches": [\n      {"result": "正常对局结果，不限制语言", "kda": "8/2/5", "hero": "正常英雄名，不限制语言", "highlights": [{"desc": "高光描述原文", "descTranslationZh": "中文翻译或空字符串"}], "innerThoughts": "局内心声原文", "innerThoughtsTranslationZh": "中文翻译或空字符串", "postGameReflection": "复盘原文", "postGameReflectionTranslationZh": "中文翻译或空字符串"}\n    ]}\n  ]\n}`,
+                    weibo: `"weibo": {\n  "mainAccount": {\n    "name": "大号昵称，不限制语言",\n    "signature": "符合 Char 公开形象的签名，不限制语言",\n    "posts": [\n      {"text": "自然且各不相同的大号帖子正文", "textTranslationZh": "中文翻译或空字符串", "source": "真实来源，不限制语言", "comments": [{"author": "评论用户名，不限制语言", "text": "贴合该帖语境的评论", "textTranslationZh": "中文翻译或空字符串"}], "reposts": 6, "likes": 128}\n    ],\n    "album": [\n      {"description": "具体且不重复的图片主体、场景、构图和质感描述20-50字，不限制语言"}\n    ],\n    "liked": [\n      {"author": "被赞博主名，不限制语言", "text": "符合大号公开兴趣的赞过帖子", "textTranslationZh": "中文翻译或空字符串", "source": "真实来源，不限制语言", "comments": [], "reposts": 12, "likes": 241}\n    ]\n  },\n  "altAccount": {\n    "name": "符合隐藏身份的小号名，不限制语言",\n    "signature": "符合小号隐秘状态的签名，不限制语言",\n    "avatarUrl": "",\n    "posts": [\n      {"text": "符合隐藏身份且主题自然多样的小号帖子正文", "textTranslationZh": "中文翻译或空字符串", "source": "真实来源，不限制语言", "comments": [{"author": "评论用户名，不限制语言", "text": "贴合该帖语境的评论", "textTranslationZh": "中文翻译或空字符串"}], "reposts": 1, "likes": 19}\n    ],\n    "album": [\n      {"description": "符合小号状态且与其他照片不同的具体画面描述20-50字，不限制语言"}\n    ],\n    "liked": [\n      {"author": "被赞博主名，不限制语言", "text": "符合小号隐秘兴趣的赞过帖子", "textTranslationZh": "中文翻译或空字符串", "source": "真实来源，不限制语言", "comments": [], "reposts": 2, "likes": 33}\n    ]\n  }\n}`
                 };
 
                 prompt += `\n【各应用生成要求】：\n`;
@@ -3730,10 +3753,13 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                         if (parsed.imessage) {
                             requireCount(parsed.imessage.mainAccount?.chats, genCounts.imessageMain, 'iMessage 主号会话');
                             requireCount(parsed.imessage.altAccount?.chats, genCounts.imessageAlt, 'iMessage 小号会话');
-                            parsed.imessage.mainAccount.chats.forEach((chat, index) => requireRange(chat?.messages, 2, 5, `iMessage 主号会话 ${index + 1} 消息`));
+                            [...parsed.imessage.mainAccount.chats, ...parsed.imessage.altAccount.chats].forEach(chat => {
+                                if (chat && typeof chat === 'object') chat.messages = this.normalizeFriendPhoneChatMessages(chat.messages, 5);
+                            });
+                            parsed.imessage.mainAccount.chats.forEach((chat, index) => requireRange(chat?.messages, 1, 5, `iMessage 主号会话 ${index + 1} 消息`));
                             parsed.imessage.altAccount.chats.forEach((chat, index) => {
                                 const fixedName = String(chat?.contactNameTranslationZh || chat?.contactName || '').trim();
-                                requireRange(chat?.messages, 2, 5, `iMessage ${fixedName || `小号会话 ${index + 1}`} 消息`);
+                                requireRange(chat?.messages, 1, 5, `iMessage ${fixedName || `小号会话 ${index + 1}`} 消息`);
                             });
                         }
                         if (parsed.weibo) {
@@ -3743,7 +3769,8 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                             requireCount(parsed.weibo.altAccount?.album, weiboPhotoSplit.secondary, '微博小号相册');
                             requireCount(parsed.weibo.mainAccount?.liked, 3, '微博大号赞过');
                             requireCount(parsed.weibo.altAccount?.liked, 3, '微博小号赞过');
-                            [...parsed.weibo.mainAccount.posts, ...parsed.weibo.altAccount.posts].forEach((post, index) => requireRange(post?.comments, 2, 5, `微博帖子 ${index + 1} 评论`));
+                            parsed.weibo.mainAccount.posts = this.normalizeFriendPhoneWeiboPostComments(parsed.weibo.mainAccount.posts, 5);
+                            parsed.weibo.altAccount.posts = this.normalizeFriendPhoneWeiboPostComments(parsed.weibo.altAccount.posts, 5);
                         }
                         if (parsed.files) {
                             requireRange(parsed.files.tags, 2, 3, '文件标签');
@@ -3833,7 +3860,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                                 return orderedChats.slice(0, limit)
                                 .map(chat => ({
                                     ...chat,
-                                    messages: (Array.isArray(chat?.messages) ? chat.messages : []).slice(0, 5)
+                                    messages: this.normalizeFriendPhoneChatMessages(chat?.messages, 5)
                                 }));
                             };
                             generationDraft.imessageData = {
@@ -4034,7 +4061,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                                 return `
                                     <div class="file-item-clickable" data-item="${itemStr}" style="display: flex; align-items: center; padding: 12px 15px; border-top: 1px solid #f0f0f0; cursor: pointer; background: #fff;">
                                         <i class="far fa-file-alt" style="color: #8e8e93; font-size: 18px; margin-right: 12px;"></i>
-                                        <span style="font-size: 16px; color: #111; flex: 1;">${this.renderFriendPhoneLocalized(item, 'title', { id: `file-${tagIdx}-${itemIdx}` })}${this.renderFriendPhoneGeneratedTime(item)}</span>
+                                        <span style="font-size: 16px; color: #111; flex: 1;">${this.escapeHTML(item.title || '未命名文件')}${this.renderFriendPhoneGeneratedTime(item)}</span>
                                         <i class="fas fa-chevron-right" style="color: #c7c7cc; font-size: 14px;"></i>
                                     </div>
                                 `;
@@ -4044,7 +4071,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                                 <div style="border-radius: 12px; overflow: hidden;  margin-bottom: 10px;">
                                     <div style="display: flex; align-items: center; padding: 12px 15px; background: #fff;">
                                         <div style="width: 12px; height: 12px; border-radius: 50%; background: ${tag.color || '#ff9500'}; margin-right: 12px;"></div>
-                                        <span style="font-size: 17px; font-weight: 600; color: #111; flex: 1;">${this.renderFriendPhoneLocalized(tag, 'name', { id: `tag-${tagIdx}` })}</span>
+                                        <span style="font-size: 17px; font-weight: 600; color: #111; flex: 1;">${this.escapeHTML(tag.name || '未命名标签')}</span>
                                     </div>
                                     ${itemsHtml}
                                 </div>
@@ -4161,7 +4188,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                             return `
                         <div class="safari-history-item-new" data-idx="${idx}" style="display: flex; align-items: center; gap: 15px; padding: 16px 0; border-bottom: 1px solid rgba(0,0,0,0.04); cursor: pointer;">
                             <i class="fas fa-search" style="color: #c7c7cc; font-size: 14px; pointer-events: none;"></i>
-                            <span style="font-size: 16px; color: #111; font-weight: 500; flex:1;">${typeof s === 'object' ? this.renderFriendPhoneLocalized(s, 'keyword', { id: `safari-${idx}` }) : this.escapeHTML(text)}${typeof s === 'object' ? this.renderFriendPhoneGeneratedTime(s) : ''}</span>
+                            <span style="font-size: 16px; color: #111; font-weight: 500; flex:1;">${this.escapeHTML(text)}${typeof s === 'object' ? this.renderFriendPhoneGeneratedTime(s) : ''}</span>
                         </div>
                         `}).join('');
 
@@ -4207,7 +4234,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                             return `
                         <div class="safari-private-item-new" data-idx="${idx}" style="display: flex; align-items: center; gap: 15px; padding: 16px 0; border-bottom: 1px solid rgba(255,255,255,0.1); cursor: pointer;">
                             <i class="fas fa-search" style="color: #666; font-size: 14px; pointer-events: none;"></i>
-                            <span style="font-size: 16px; color: #fff; font-weight: 500; flex:1;">${typeof s === 'object' ? this.renderFriendPhoneLocalized(s, 'keyword', { id: `safari-private-${idx}` }) : this.escapeHTML(text)}${typeof s === 'object' ? this.renderFriendPhoneGeneratedTime(s, 'is-dark') : ''}</span>
+                            <span style="font-size: 16px; color: #fff; font-weight: 500; flex:1;">${this.escapeHTML(text)}${typeof s === 'object' ? this.renderFriendPhoneGeneratedTime(s, 'is-dark') : ''}</span>
                         </div>
                         `}).join('');
 
@@ -4329,7 +4356,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                                     <i class="fas fa-music"></i>
                                 </div>
                                 <div style="flex: 1; display: flex; flex-direction: column; pointer-events: none;">
-                                    <div style="font-size: 16px; font-weight: 600; color: #111;">${this.renderFriendPhoneLocalized(song, 'name', { id: `song-name-${index}` })}</div>
+                                    <div style="font-size: 16px; font-weight: 600; color: #111;">${this.escapeHTML(song.name || '未知歌曲')}</div>
                                     <div style="font-size: 13px; color: #8e8e93;">${this.renderFriendPhoneLocalized(song, 'artist', { id: `song-artist-${index}` })}${this.renderFriendPhoneGeneratedTime(song)}</div>
                                 </div>
                                 <i class="fas fa-ellipsis-v" style="color: #c7c7cc; pointer-events: none;"></i>
@@ -4383,7 +4410,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                                             <div style="width: 80px; height: 80px; border-radius: 50%; background: #111; display: flex; justify-content: center; align-items: center; color: #fff; font-size: 30px; margin-bottom: 15px; ">
                                                 <i class="fas fa-compact-disc"></i>
                                             </div>
-                                            <div style="font-size: 22px; font-weight: 800; color: #111; margin-bottom: 4px;">${window.lovesApp.renderFriendPhoneLocalized(song, 'name', { id: 'song-detail-name' })}</div>
+                                            <div style="font-size: 22px; font-weight: 800; color: #111; margin-bottom: 4px;">${window.lovesApp.escapeHTML(song.name || '未知歌曲')}</div>
                                             <div style="font-size: 15px; color: #8e8e93;">${window.lovesApp.renderFriendPhoneLocalized(song, 'artist', { id: 'song-detail-artist' })}${window.lovesApp.renderFriendPhoneGeneratedTime(song)}</div>
                                         </div>
                                         
@@ -4481,7 +4508,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                         return `
                         <div class="call-history-item-new" data-idx="${idx}" style="display: flex; align-items: center; padding: 15px 0; cursor: pointer;">
                             <div style="flex: 1; display: flex; flex-direction: column; pointer-events: none;">
-                                <div style="font-size: 18px; font-weight: 600; color: ${c.type === 'missed' ? '#ff3b30' : '#111'};">${this.renderFriendPhoneLocalized(c, 'name', { id: `call-name-${idx}` })}</div>
+                                <div style="font-size: 18px; font-weight: 600; color: ${c.type === 'missed' ? '#ff3b30' : '#111'};">${this.escapeHTML(this.getFriendPhoneChineseContactName(c))}</div>
                                 <div style="font-size: 14px; color: #8e8e93; display: flex; align-items: center; gap: 6px; margin-top: 4px;">
                                     ${typeIcon}
                                     <span>${c.type === 'missed' ? '未接来电' : '语音通话'}</span>
@@ -4496,12 +4523,22 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                     
                     // Render contacts list
                     if (listContacts) {
-                        const contacts = friend.callData.contacts || [...new Set(friend.callData.recentCalls.map(c => c.name))].map(name => ({
-                            name: name,
-                            addedTime: '未知时间',
-                            recentCallTime: '近期',
-                            callReason: '日常联系'
-                        }));
+                        const fallbackContactNames = new Set();
+                        const fallbackContacts = friend.callData.recentCalls.reduce((items, call) => {
+                            const chineseName = this.getFriendPhoneChineseContactName(call);
+                            if (!chineseName || fallbackContactNames.has(chineseName)) return items;
+                            fallbackContactNames.add(chineseName);
+                            items.push({
+                                name: chineseName,
+                                addedTime: '未知时间',
+                                recentCallTime: '近期',
+                                callReason: '日常联系'
+                            });
+                            return items;
+                        }, []);
+                        const contacts = Array.isArray(friend.callData.contacts) && friend.callData.contacts.length
+                            ? friend.callData.contacts
+                            : fallbackContacts;
                         friend.callData._parsedContacts = contacts;
 
                         listContacts.innerHTML = contacts.map((contact, idx) => `
@@ -4509,7 +4546,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                                 <div style="width: 40px; height: 40px; border-radius: 50%; background: #f2f2f7; display: flex; justify-content: center; align-items: center; color: #8e8e93; margin-right: 15px; font-size: 16px; pointer-events: none;">
                                     <i class="fas fa-user"></i>
                                 </div>
-                                <div style="flex: 1; font-size: 16px; font-weight: 600; color: #111;">${this.renderFriendPhoneLocalized(contact, 'name', { id: `contact-name-${idx}` })}</div>
+                                <div style="flex: 1; font-size: 16px; font-weight: 600; color: #111;">${this.escapeHTML(this.getFriendPhoneChineseContactName(contact))}</div>
                                 <i class="fas fa-info-circle" style="color: #007aff; font-size: 20px; pointer-events: none;"></i>
                             </div>
                         `).join('');
@@ -4897,10 +4934,10 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                                 <i class="${g.icon || 'fas fa-gamepad'}"></i>
                             </div>
                             <div style="flex: 1; pointer-events: none;">
-                                <div style="font-size: 17px; font-weight: 600; color: #fff; letter-spacing: 0.5px;">${this.renderFriendPhoneLocalized(g, 'name', { id: `game-name-${idx}` })}</div>
+                                <div style="font-size: 17px; font-weight: 600; color: #fff; letter-spacing: 0.5px;">${this.escapeHTML(g.name || '未知游戏')}</div>
                                 <div style="font-size: 13px; color: #8e8e93; margin-top: 4px;">时长: ${g.hours}</div>
                                 <div style="display: flex; align-items: center; gap: 10px; margin-top: 10px;">
-                                    <div style="background: #3a3a3c; color: #fff; font-size: 11px; padding: 3px 10px; border-radius: 6px; font-weight: 600;">${this.renderFriendPhoneLocalized(g, 'rank', { id: `game-rank-${idx}` })}</div>
+                                    <div style="background: #3a3a3c; color: #fff; font-size: 11px; padding: 3px 10px; border-radius: 6px; font-weight: 600;">${this.escapeHTML(g.rank || '未定级')}</div>
                                     <div style="font-size: 12px; color: #8e8e93;">胜率: <span style="color: #fff; font-weight: 500;">${g.winRate}</span>${this.renderFriendPhoneGeneratedTime(g, 'is-dark')}</div>
                                 </div>
                             </div>
@@ -4913,7 +4950,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                                 <i class="fas fa-user"></i>
                             </div>
                             <div>
-                                <div style="font-size: 20px; font-weight: 700; color: #fff; letter-spacing: 0.5px;">${this.renderFriendPhoneLocalized(friend.gameData, 'playerName', { fallback: 'Player One', id: 'game-player-name' })}</div>
+                                <div style="font-size: 20px; font-weight: 700; color: #fff; letter-spacing: 0.5px;">${this.escapeHTML(friend.gameData.playerName || 'Player One')}</div>
                                 <div style="font-size: 13px; color: #8e8e93; margin-top: 6px;">游戏总时长: <span style="color: #fff; font-weight: 500;">${friend.gameData.totalHours || '0 小时'}</span></div>
                             </div>
                         </div>
@@ -4964,7 +5001,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                                                     <div style="width: 40px; height: 40px; border-radius: 50%; background: rgba(142,142,147,0.1); display: flex; justify-content: center; align-items: center; color: ${iconColor}; font-size: 16px;">
                                                         <i class="fas fa-user"></i>
                                                     </div>
-                                                    <div style="font-size: 11px; font-weight: 500; color: ${textColor}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; text-align: center;">${window.lovesApp.renderFriendPhoneLocalized(m, 'hero', { fallback: '我方', id: `match-hero-${mIdx}` })}</div>
+                                                    <div style="font-size: 11px; font-weight: 500; color: ${textColor}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; text-align: center;">${window.lovesApp.escapeHTML(m.hero || '我方')}</div>
                                                 </div>
                                                 
                                                 <div style="display: flex; flex-direction: column; align-items: center; flex: 1; pointer-events: none;">
@@ -5026,7 +5063,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                                                                     <div style="font-weight: 700; color: #111; background: #e5e5ea; padding: 4px 10px; border-radius: 8px;">KDA: ${m.kda || '-/-/-'}</div>
                                                                 </div>
                                                                 <div style="display: flex; align-items: center; gap: 8px; color: #8e8e93; font-size: 13px;">
-                                                                    <i class="fas fa-clock"></i> ${window.lovesApp.escapeHTML(window.lovesApp.formatFriendPhoneGeneratedAt(m.generatedAt) || m.time || '')} | 英雄: ${window.lovesApp.renderFriendPhoneLocalized(m, 'hero', { fallback: '未知', id: 'match-detail-hero' })}
+                                                                    <i class="fas fa-clock"></i> ${window.lovesApp.escapeHTML(window.lovesApp.formatFriendPhoneGeneratedAt(m.generatedAt) || m.time || '')} | 英雄: ${window.lovesApp.escapeHTML(m.hero || '未知')}
                                                                 </div>
                                                             </div>
                                                         `;
@@ -5172,7 +5209,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                     <div style="width: 80px; height: 80px; border-radius: 50%; background: #e5e5ea; display: flex; justify-content: center; align-items: center; color: #8e8e93; font-size: 34px; margin-bottom: 10px; ">
                         <i class="fas fa-user"></i>
                     </div>
-                    <div style="font-size: 24px; font-weight: 600; color: #111;">${this.renderFriendPhoneLocalized(contactData, 'name', { id: 'contact-detail-name' })}</div>
+                    <div style="font-size: 24px; font-weight: 600; color: #111;">${this.escapeHTML(this.getFriendPhoneChineseContactName(contactData))}</div>
                 </div>
             `;
 
@@ -5315,7 +5352,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                     <div style="width: 80px; height: 80px; border-radius: 50%; background: #e5e5ea; display: flex; justify-content: center; align-items: center; color: #8e8e93; font-size: 34px; margin-bottom: 10px; ">
                         <i class="fas fa-user"></i>
                     </div>
-                    <div style="font-size: 24px; font-weight: 600; color: #111;">${this.renderFriendPhoneLocalized(callData, 'name', { id: 'call-detail-name' })}</div>
+                    <div style="font-size: 24px; font-weight: 600; color: #111;">${this.escapeHTML(this.getFriendPhoneChineseContactName(callData))}</div>
                 </div>
             `;
 
@@ -5810,7 +5847,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
             const lastMsgText = lastMsgObj ? lastMsgObj.text : '...';
             
             let avatarHtml = '<i class="fas fa-user" style="color: #8e8e93; font-size: 24px;"></i>';
-            const fixedChatName = chat.contactNameTranslationZh || chat.contactName;
+            const fixedChatName = this.getFriendPhoneChineseContactName(chat, 'contactName');
             if (fixedChatName === '文件传输助手') avatarHtml = '<i class="fas fa-folder" style="color: #111; font-size: 20px;"></i>';
             else if (fixedChatName === '备忘录') avatarHtml = '<i class="fas fa-sticky-note" style="color: #111; font-size: 20px;"></i>';
 
@@ -5821,10 +5858,10 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                 </div>
                 <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 4px;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <div style="font-size: 17px; font-weight: 600; color: #111; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${this.renderFriendPhoneLocalized(chat, 'contactName', { fallback: '未知联系人', id: `imsg-contact-${idx}` })}</div>
+                        <div style="font-size: 17px; font-weight: 600; color: #111; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${this.escapeHTML(fixedChatName)}</div>
                         <div style="font-size: 13px; color: #8e8e93;">${this.escapeHTML(this.formatFriendPhoneGeneratedAt(lastMsgObj?.generatedAt || chat.generatedAt) || '')}</div>
                     </div>
-                    <div style="font-size: 15px; color: #8e8e93; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${lastMsgObj ? this.renderFriendPhoneLocalized(lastMsgObj, 'text', { fallback: lastMsgText, id: `imsg-preview-${idx}` }) : '...'}</div>
+                    <div style="font-size: 15px; color: #8e8e93; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${lastMsgObj ? this.escapeHTML(lastMsgText) : '...'}</div>
                 </div>
             </div>`;
         }).join('');
@@ -5863,7 +5900,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
             const revChatView = document.getElementById('friend-reverse-chat-view');
             if (revChatView) {
                 if (window.openView) window.openView(revChatView);
-                document.getElementById('reverse-chat-user-name').textContent = chat.contactName || '联系人';
+                document.getElementById('reverse-chat-user-name').textContent = this.getFriendPhoneChineseContactName(chat, 'contactName', '联系人');
                 
                 const revAvatarImg = document.getElementById('reverse-chat-user-avatar');
                 const revAvatarIcon = document.getElementById('reverse-chat-user-icon');

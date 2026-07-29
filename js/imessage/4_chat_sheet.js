@@ -2446,7 +2446,7 @@ function createAttachmentSheet(page) {
             return `
                 <section class="offline-tavern-thinking${expanded ? ' is-expanded' : ''}" data-offline-thinking>
                     <button type="button" class="offline-tavern-thinking-toggle" aria-expanded="${expanded ? 'true' : 'false'}">
-                        <span class="offline-tavern-thinking-label"><i class="fas fa-brain" aria-hidden="true"></i><span>思考过程</span></span>
+                        <span class="offline-tavern-thinking-label"><span>COT</span></span>
                         <i class="fas fa-chevron-down offline-tavern-thinking-icon" aria-hidden="true"></i>
                     </button>
                     <div class="offline-tavern-thinking-content" data-raw-thinking="${escapeSheetHtml(rawReasoning)}"${expanded ? '' : ' hidden'}>${escapeSheetHtml(rawReasoning)}</div>
@@ -3521,28 +3521,8 @@ function createAttachmentSheet(page) {
             const firstRawContent = streamingBubble?.getFullText?.() || '';
             const firstValidation = offlineReasoning.validateCotResponse(firstRawContent, expectedTitles);
             if (firstValidation.valid) return firstResult;
-
-            streamingBubble?.reset?.();
-            const correctionDetails = [
-                !firstValidation.hasCompleteTag ? '缺少完整的思考开始或结束标签' : '',
-                firstValidation.missingTitles.length ? `缺少标题：${firstValidation.missingTitles.join('、')}` : ''
-            ].filter(Boolean).join('；');
-            const correctionPrompt = `<offline_cot_correction>
-上一版响应未通过 COT 结构校验（${correctionDetails || '结构不完整'}）。
-请重新生成完整响应。必须先输出一对完整的 <thinking>...</thinking>，并按顺序逐字使用这些标题：${expectedTitles.join('、')}。
-每个标题下写对应的简洁思考摘要，然后在 </thinking> 后输出完整正文。不要解释本次纠正。
-</offline_cot_correction>`;
-            const secondResult = await requestOfflineAssistantReply(
-                apiMessages.concat({ role: 'system', content: correctionPrompt }),
-                streamingBubble,
-                options
-            );
-            if (secondResult.aborted) return secondResult;
-
-            const secondRawContent = streamingBubble?.getFullText?.() || '';
-            const secondValidation = offlineReasoning.validateCotResponse(secondRawContent, expectedTitles);
-            if (!secondValidation.valid && window.showToast) window.showToast('模型未完全按 COT 预设输出');
-            return secondResult;
+            if (window.showToast) window.showToast('模型未完全按 COT 预设输出，已保留首轮回复');
+            return firstResult;
         };
 
         const formatOfflineMeetingTranscript = (activeFriend, messages) => {
@@ -4781,19 +4761,24 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
   color: var(--offline-tavern-dialogue-color);
 }
 .offline-tavern-thinking {
-  width: 100%;
+  width: fit-content;
+  max-width: 100%;
   margin-bottom: 8px;
   overflow: hidden;
-  border: 1px solid #e5e5ea;
-  border-radius: 14px;
-  background: #f8f8f8;
+  border: 0;
+  border-radius: 999px;
+  background: #f2f2f7;
   text-align: left;
   box-sizing: border-box;
 }
+.offline-tavern-thinking.is-expanded {
+  width: 100%;
+  border-radius: 20px;
+}
 .offline-tavern-thinking-toggle {
   width: 100%;
-  min-height: 42px;
-  padding: 10px 13px;
+  min-height: 36px;
+  padding: 7px 12px;
   border: 0;
   background: transparent;
   color: #636366;
@@ -4807,12 +4792,9 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
 .offline-tavern-thinking-label {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  font-size: 13px;
-  font-weight: 700;
-}
-.offline-tavern-thinking-label > i {
-  color: #8e8e93;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 .offline-tavern-thinking-icon {
   flex: 0 0 auto;
@@ -4824,7 +4806,7 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
   transform: rotate(180deg);
 }
 .offline-tavern-thinking-content {
-  padding: 0 13px 12px;
+  padding: 0 12px 12px;
   color: #636366;
   font-size: 13px;
   line-height: 1.55;
@@ -5177,6 +5159,7 @@ ${historyText}
                 sections.push(`<short_term_memories source="vectorized_char_memory">
 ${shortTermEntries.map(entry => `<short_term_memory>
 <title>${entry.title || 'Memory'}</title>
+<time>${entry.time || entry.createdAt || ''}</time>
 <content>${entry.event || entry.content || ''}</content>
 <memory_points>${entry.memoryPoints || ''}</memory_points>
 <degree>${entry.degree || ''}</degree>
@@ -5207,7 +5190,7 @@ ${shortTermEntries.map(entry => `<short_term_memory>
 <content>${entry.content || ''}</content>
 <detail>${entry.detail || ''}</detail>
 <reason>${entry.reason || ''}</reason>
-<time>${entry.createdAt || ''}</time>
+<time>${entry.createdAt || entry.time || ''}</time>
 </memory>`);
             });
             if (cherishedBlocks.length > 0) {
@@ -5523,26 +5506,10 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             promptPresetSelect = document.createElement('select');
             promptPresetSelect.className = 'offline-theme-preset-select';
             promptPresetSelect.setAttribute('aria-label', '选择全局线下提示词预设');
-            const importPromptPresetBtn = document.createElement('button');
-            importPromptPresetBtn.type = 'button';
-            importPromptPresetBtn.className = 'offline-theme-preset-icon';
-            importPromptPresetBtn.innerHTML = '<i class="fas fa-file-import"></i>';
-            importPromptPresetBtn.setAttribute('aria-label', '导入提示词预设');
-            importPromptPresetBtn.title = '导入提示词预设';
-            const exportPromptPresetBtn = document.createElement('button');
-            exportPromptPresetBtn.type = 'button';
-            exportPromptPresetBtn.className = 'offline-theme-preset-icon';
-            exportPromptPresetBtn.innerHTML = '<i class="fas fa-file-export"></i>';
-            exportPromptPresetBtn.setAttribute('aria-label', '导出当前提示词');
-            exportPromptPresetBtn.title = '导出当前提示词';
             deletePromptPresetBtn = document.createElement('button');
             deletePromptPresetBtn.type = 'button';
             deletePromptPresetBtn.className = 'offline-theme-preset-delete';
             deletePromptPresetBtn.textContent = '删除';
-            const importPromptPresetInput = document.createElement('input');
-            importPromptPresetInput.type = 'file';
-            importPromptPresetInput.accept = '.json,application/json';
-            importPromptPresetInput.hidden = true;
 
             promptPresetSelect.addEventListener('change', async () => {
                 const preset = presets.find(item => item.id === promptPresetSelect.value);
@@ -5580,57 +5547,8 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     removeSelectedPromptPreset();
                 }
             });
-            exportPromptPresetBtn.addEventListener('click', async () => {
-                const selected = presets.find(preset => preset.id === window.imData.offlinePromptActivePresetId);
-                const exportName = selected?.name || '自定义线下提示词';
-                const payload = {
-                    type: 'u2-offline-prompts',
-                    version: 1,
-                    name: exportName,
-                    prompts: normalizeOfflinePrompts(prompts).map(cloneOfflinePrompt)
-                };
-                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-                const result = await window.u2ExportFile({
-                    blob,
-                    fileName: `${exportName.replace(/[\\/:*?"<>|]/g, '_') || 'offline-prompts'}.json`,
-                    title: 'U2 线下提示词'
-                });
-                if ((result === 'shared' || result === 'downloaded') && window.showToast) window.showToast('线下提示词已导出');
-                else if (result === 'failed' && window.showToast) window.showToast('线下提示词导出失败');
-            });
-            importPromptPresetBtn.addEventListener('click', () => importPromptPresetInput.click());
-            importPromptPresetInput.addEventListener('change', async () => {
-                const file = importPromptPresetInput.files?.[0];
-                importPromptPresetInput.value = '';
-                if (!file) return;
-                try {
-                    const payload = JSON.parse(await file.text());
-                    const sourcePrompts = Array.isArray(payload) ? payload : payload?.prompts;
-                    const hasValidPrompt = Array.isArray(sourcePrompts) && sourcePrompts.some(prompt => (
-                        prompt && typeof prompt === 'object'
-                        && [prompt.content, prompt.name, prompt.id].some(value => typeof value === 'string' && value.trim())
-                    ));
-                    if (!hasValidPrompt) throw new Error('Invalid offline prompts file');
-                    const importedPrompts = normalizeOfflinePrompts(sourcePrompts);
-                    const fallbackName = file.name.replace(/\.json$/i, '').trim() || '导入提示词';
-                    const name = String((Array.isArray(payload) ? '' : payload?.name) || fallbackName).trim().slice(0, 40) || '导入提示词';
-                    const existing = presets.find(preset => preset.name.toLocaleLowerCase() === name.toLocaleLowerCase());
-                    const id = existing?.id || createOfflinePromptPresetId();
-                    const nextPreset = { id, name, prompts: importedPrompts };
-                    presets = normalizeOfflinePromptPresets(existing
-                        ? presets.map(preset => preset.id === id ? nextPreset : preset)
-                        : presets.concat(nextPreset));
-                    prompts = importedPrompts;
-                    await persistGlobalOfflinePromptState({ prompts, presets, activePresetId: id });
-                    renderOfflineTavernSettingsEditor(listEl, activeFriend);
-                    if (window.showToast) window.showToast(`已导入并应用提示词预设：${name}`);
-                } catch (error) {
-                    console.error('Import offline prompts failed', error);
-                    if (window.showToast) window.showToast('提示词文件无效，导入失败');
-                }
-            });
-            promptPresetControls.append(promptPresetSelect, importPromptPresetBtn, exportPromptPresetBtn, deletePromptPresetBtn);
-            promptPresetCard.append(promptPresetControls, importPromptPresetInput);
+            promptPresetControls.append(promptPresetSelect, deletePromptPresetBtn);
+            promptPresetCard.appendChild(promptPresetControls);
 
             const promptPresetSaveRow = document.createElement('div');
             promptPresetSaveRow.className = 'offline-theme-save-row';
@@ -7040,24 +6958,49 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             });
         }
 
+        const getAttachmentTargetFriend = () => {
+            const friendId = attachmentSheet.dataset.friendId;
+            if (friendId != null && friendId !== '') {
+                const storedFriend = window.imApp?.getFriendById?.(friendId)
+                    || (window.imData.friends || []).find(
+                        item => String(item.id) === String(friendId)
+                    );
+                if (storedFriend) return storedFriend;
+            }
+            return window.imData.currentActiveFriend || null;
+        };
+
         // Upload Virtual Photo
         const virtualUpload = attachmentSheet.querySelector('.virtual-upload');
         virtualUpload.addEventListener('click', () => {
+            const targetFriend = getAttachmentTargetFriend();
             closeSheet();
-            if (window.showCustomModal) {
-                window.showCustomModal({
+            if (!targetFriend) {
+                if (window.showToast) window.showToast('当前聊天状态已失效，请重新进入聊天');
+                return;
+            }
+
+            const showModal = window.imApp?.showCustomModal || window.showCustomModal;
+            if (showModal) {
+                showModal({
                     type: 'prompt',
                     title: '发送虚拟图片',
                     placeholder: '描述这张图片的内容（供 AI 理解）',
                     confirmText: '发送',
                     onConfirm: (desc) => {
-                        if (desc && desc.trim()) {
-                            window.imChat.sendImageMessage(
-                                getChatImagePlaceholderUrl(),
-                                desc.trim(),
-                                { imageSource: 'virtual' }
-                            );
+                        const description = String(desc || '').trim();
+                        if (!description) {
+                            if (window.showToast) window.showToast('请输入图片描述');
+                            return;
                         }
+                        window.imChat.sendImageMessage(
+                            getChatImagePlaceholderUrl(),
+                            description,
+                            {
+                                imageSource: 'virtual',
+                                friendId: targetFriend.id
+                            }
+                        );
                     }
                 });
             }
@@ -7068,7 +7011,13 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
         realFileInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (file) {
+                const targetFriend = getAttachmentTargetFriend();
                 closeSheet();
+                if (!targetFriend) {
+                    if (window.showToast) window.showToast('当前聊天状态已失效，请重新进入聊天');
+                    e.target.value = '';
+                    return;
+                }
                 try {
                     const imageUrl = window.imApp.compressImageFile
                         ? await window.imApp.compressImageFile(file, {
@@ -7091,7 +7040,8 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
 
                     window.imChat.sendImageMessage(imageUrl, description, {
                         imageSource: 'real',
-                        fileName: file.name
+                        fileName: file.name,
+                        friendId: targetFriend.id
                     });
                 } catch (error) {
                     console.error('Failed to process uploaded chat image', error);
@@ -7108,11 +7058,25 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
     }
 
 async function sendImageMessage(imgUrl, description, options = {}) {
-        if (!window.imData.currentActiveFriend) return;
-        const friend = window.imData.currentActiveFriend;
+        const friendId = options.friendId ?? window.imData.currentActiveFriend?.id;
+        const friend = friendId != null
+            ? (
+                window.imApp?.getFriendById?.(friendId)
+                || (window.imData.friends || []).find(
+                    item => String(item.id) === String(friendId)
+                )
+            )
+            : null;
+        if (!friend) {
+            if (window.showToast) window.showToast('未找到当前聊天对象，图片发送失败');
+            return false;
+        }
         const pageId = `chat-interface-${friend.id}`;
         const page = document.getElementById(pageId);
-        if (!page) return;
+        if (!page) {
+            if (window.showToast) window.showToast('聊天页面已关闭，图片发送失败');
+            return false;
+        }
         const container = page.querySelector('.ins-chat-messages');
 
         const now = Date.now();
@@ -7137,7 +7101,7 @@ async function sendImageMessage(imgUrl, description, options = {}) {
 
         if (!saved) {
             if (window.showToast) window.showToast('图片消息保存失败');
-            return;
+            return false;
         }
 
         if (container) {
@@ -7148,6 +7112,7 @@ async function sendImageMessage(imgUrl, description, options = {}) {
                 window.imChat.rerenderChatContainer(friend, container, { scroll: true });
             }
         }
+        return true;
     }
 
 async function sendStickerMessage(sticker) {
@@ -7247,13 +7212,15 @@ async function sendVoiceMessage(transcript) {
     }
 
 function openAttachmentSheet() {
-        if (!window.imData.currentActiveFriend) return;
-        const pageId = `chat-interface-${window.imData.currentActiveFriend.id}`;
+        const activeFriend = window.imData.currentActiveFriend;
+        if (!activeFriend) return;
+        const pageId = `chat-interface-${activeFriend.id}`;
         const page = document.getElementById(pageId);
         if (!page) return;
 
         // Reset the sheet instance entirely just in case DOM was manipulated or destroyed
         const sheet = window.imChat.createAttachmentSheet(page);
+        sheet.dataset.friendId = String(activeFriend.id);
         const inputContainer = page.querySelector('.ins-chat-input-container');
         sheet.style.display = 'flex';
         // force reflow

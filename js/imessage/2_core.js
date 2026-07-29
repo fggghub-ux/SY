@@ -46,6 +46,7 @@ window.imData = {
 };
 
 window.imApp = window.imApp || {};
+window.imApp.DEFAULT_SINGLE_CHAT_COT_PROMPT = '我该怎么回？';
 
 window.imApp.scopeUserCss = function(css, scope) {
     if (!css || !scope) return '';
@@ -331,8 +332,8 @@ window.imApp.createDefaultMemory = function() {
     return {
         overview: '',
         anniversaries: '',
-        context: { enabled: true, limit: 80, notes: '' },
-        summary: { enabled: false, limit: 80, roundLimit: 30, prompt: '' },
+        context: { enabled: true, limit: 50, notes: '' },
+        summary: { enabled: false, limit: 80, roundLimit: 30, prompt: '', apiPresetId: '' },
         autonomous: window.imApp.createDefaultAutonomousActivity(),
         longTerm: '',
         shortTermEntries: [],
@@ -592,7 +593,7 @@ window.imApp.normalizeFavoriteUserMessages = function(items) {
             if (!item || typeof item !== 'object') return null;
             const messageId = String(item.messageId || '').trim();
             const messageText = String(item.messageText || '').trim();
-            const reason = Array.from(String(item.reason || '').trim()).slice(0, 30).join('');
+            const reason = String(item.reason || '').trim();
             if (!messageId || !messageText || !reason || seenMessageIds.has(messageId)) return null;
             seenMessageIds.add(messageId);
             const createdAt = Math.max(0, Number(item.createdAt) || 0);
@@ -639,6 +640,10 @@ window.imApp.normalizeFriendData = function(friend) {
     normalized.showTimestamp = !!normalized.showTimestamp;
     normalized.timeAware = normalized.timeAware !== false;
     normalized.allowRoleRecall = normalized.allowRoleRecall !== false;
+    const cotDefaultVersion = Number(normalized.cotDefaultVersion) || 0;
+    normalized.cotEnabled = cotDefaultVersion >= 2 && normalized.cotEnabled === true;
+    normalized.cotDefaultVersion = 2;
+    normalized.cotPrompt = typeof normalized.cotPrompt === 'string' ? normalized.cotPrompt : '';
     normalized.statusPromptEnabled = normalized.statusPromptEnabled === true;
     normalized.statusPrompt = typeof normalized.statusPrompt === 'string' ? normalized.statusPrompt : '';
     normalized.offlineStreamEnabled = normalized.offlineStreamEnabled !== false;
@@ -737,7 +742,8 @@ window.imApp.normalizeFriendData = function(friend) {
             roundLimit: window.imDataUtils?.normalizeRoundLimit
                 ? window.imDataUtils.normalizeRoundLimit(memory.summary?.roundLimit, defaultMemory.summary.roundLimit)
                 : (Number(memory.summary?.roundLimit) > 0 ? Math.round(Number(memory.summary.roundLimit)) : defaultMemory.summary.roundLimit),
-            prompt: memory.summary?.prompt || defaultMemory.summary.prompt
+            prompt: memory.summary?.prompt || defaultMemory.summary.prompt,
+            apiPresetId: String(memory.summary?.apiPresetId || defaultMemory.summary.apiPresetId || '')
         },
         autonomous: window.imApp.normalizeAutonomousActivity(memory.autonomous),
         longTerm: memory.longTerm || defaultMemory.longTerm,
@@ -775,7 +781,10 @@ window.imApp.normalizeFriendData = function(friend) {
                 id: entry?.id != null ? entry.id : `longterm-${index}`,
                 title: entry?.title || '长期记忆',
                 content: entry?.content || '',
-                createdAt: entry?.createdAt || '',
+                createdAt: entry?.createdAt || entry?.time || '',
+                time: entry?.time || entry?.createdAt || '',
+                sourceType: String(entry?.sourceType || '').trim(),
+                sourceId: String(entry?.sourceId || '').trim(),
                 triggerKeywords: Array.isArray(entry?.triggerKeywords)
                     ? entry.triggerKeywords.map(keyword => String(keyword || '').trim()).filter(Boolean)
                     : (entry?.keyword ? [String(entry.keyword).trim()] : [])
@@ -917,7 +926,7 @@ window.imApp.createGroupMemberSnapshot = function(group) {
 
 window.imApp.getContextLimit = function(friend) {
     const normalizedFriend = window.imApp.normalizeFriendData(friend || {});
-    const defaultContextLimit = normalizedFriend.type === 'group' ? 100 : 100;
+    const defaultContextLimit = normalizedFriend.type === 'group' ? 100 : 50;
 
     if (normalizedFriend.memory?.context?.enabled === false) {
         return 0;
@@ -1035,7 +1044,10 @@ window.imApp.createRecalledNoticeMessage = function(originalMessage, options = {
 
     if (actorRole !== 'user' && typeof options.recalledContent === 'string' && options.recalledContent.trim()) {
         notice.payload = {
-            recalledContent: options.recalledContent.trim()
+            recalledContent: options.recalledContent.trim(),
+            recalledTranslation: typeof options.recalledTranslation === 'string'
+                ? options.recalledTranslation.trim()
+                : ''
         };
     }
     if (options.apiRunId) notice.apiRunId = options.apiRunId;
@@ -1686,7 +1698,8 @@ window.imApp.createClearedConversationMemory = function(memory = {}) {
         enabled: normalizedMemory.summary.enabled,
         limit: normalizedMemory.summary.limit,
         roundLimit: normalizedMemory.summary.roundLimit || 30,
-        prompt: normalizedMemory.summary.prompt || ''
+        prompt: normalizedMemory.summary.prompt || '',
+        apiPresetId: normalizedMemory.summary.apiPresetId || ''
     };
     cleared.autonomous = window.imApp.cloneDataSnapshot(normalizedMemory.autonomous);
     cleared.schedule = {
@@ -2117,7 +2130,7 @@ window.imApp.removeFriendMessages = async function(friendId, descriptors, option
         if (primaryText && translationText) removedReplyTexts.add(`${primaryText} ${translationText}`);
     });
     let clearedReplyReference = false;
-    const canDeleteWithoutReindex = sortedRemovalIndexes.every((index, removalOrder) => {
+    let canDeleteWithoutReindex = sortedRemovalIndexes.every((index, removalOrder) => {
         return index === (previousMessages.length - sortedRemovalIndexes.length + removalOrder);
     });
 
@@ -2125,6 +2138,24 @@ window.imApp.removeFriendMessages = async function(friendId, descriptors, option
         window.imChat.invalidateFriendConversation(safeFriendId);
     }
     targetFriend.messages = targetFriend.messages.filter((_, index) => !removalIndexes.has(index));
+    const removedCotByRunId = new Map();
+    removedMessages.forEach((message) => {
+        const runId = String(message?.apiRunId || '').trim();
+        const cotSummary = typeof message?.cotSummary === 'string' ? message.cotSummary.trim() : '';
+        if (runId && cotSummary && !removedCotByRunId.has(runId)) {
+            removedCotByRunId.set(runId, cotSummary);
+        }
+    });
+    removedCotByRunId.forEach((cotSummary, runId) => {
+        const runMessages = targetFriend.messages.filter(message => (
+            message
+            && message.role !== 'user'
+            && String(message.apiRunId || '').trim() === runId
+        ));
+        if (runMessages.length === 0 || runMessages.some(message => String(message.cotSummary || '').trim())) return;
+        runMessages[0].cotSummary = cotSummary;
+        canDeleteWithoutReindex = false;
+    });
     targetFriend.messages.forEach(message => {
         if (!message) return;
         const replyMessageId = String(message.replyToMessageId || '').trim();
@@ -4345,7 +4376,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ? window.imDataUtils.parseStickerManifestText(text)
                     : { items: [], invalidLines: [] };
                 if (parsed.items.length === 0) {
-                    if (showToast) showToast('文件中没有有效的“名称 URL”记录');
+                    if (showToast) showToast('文件中没有有效的名称和 URL 记录');
                     return;
                 }
                 const normalizedText = parsed.items.map(item => `${item.name} ${item.url}`).join('\n');
@@ -5060,6 +5091,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const memoryEntryDetailTitle = document.getElementById('memory-entry-detail-title');
     const memoryEntryDetailBody = document.getElementById('memory-entry-detail-body');
     const memoryEntryDetailClose = document.getElementById('memory-entry-detail-close');
+    const memoryEntryEditorModal = document.getElementById('memory-entry-editor-modal');
+    const memoryEntryEditorTitle = document.getElementById('memory-entry-editor-title');
+    const memoryEntryEditorKind = document.getElementById('memory-entry-editor-kind');
+    const memoryEntryEditorId = document.getElementById('memory-entry-editor-id');
+    const memoryEntryEditorCollection = document.getElementById('memory-entry-editor-collection');
+    const memoryEntryEditorTitleInput = document.getElementById('memory-entry-editor-title-input');
+    const memoryEntryEditorTimeInput = document.getElementById('memory-entry-editor-time-input');
+    const memoryEntryEditorContentInput = document.getElementById('memory-entry-editor-content-input');
+    const memoryEntryEditorContentLabel = document.getElementById('memory-entry-editor-content-label');
+    const memoryEntryEditorTagsInput = document.getElementById('memory-entry-editor-tags-input');
+    const memoryEntryEditorDegreeRow = document.getElementById('memory-entry-editor-degree-row');
+    const memoryEntryEditorDegreeSelect = document.getElementById('memory-entry-editor-degree-select');
+    const memoryEntryEditorClose = document.getElementById('memory-entry-editor-close');
+    const memoryEntryEditorCancel = document.getElementById('memory-entry-editor-cancel');
+    const memoryEntryEditorSave = document.getElementById('memory-entry-editor-save');
     const momentsContent = document.getElementById('moments-content');
     let currentMemoryFriendId = null;
     let currentMemoryLocation = 'iphone';
@@ -5312,8 +5358,176 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getCurrentMemoryFriend() {
-        const friends = getMemoryFriends();
-        return friends.find(f => String(f.id) === String(currentMemoryFriendId)) || friends[0] || null;
+        const allFriends = Array.isArray(window.imData?.friends) ? window.imData.friends : [];
+        const selected = allFriends.find(f => String(f.id) === String(currentMemoryFriendId));
+        if (selected) return selected;
+        return getMemoryFriends()[0] || null;
+    }
+
+    function formatManualMemoryTime(date = new Date()) {
+        const pad = value => String(value).padStart(2, '0');
+        return `${date.getFullYear()}年${pad(date.getMonth() + 1)}月${pad(date.getDate())}日 ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    function normalizeManualMemoryTags(value) {
+        if (window.imChat?.normalizeMemoryTriggerKeywords) {
+            return window.imChat.normalizeMemoryTriggerKeywords(value);
+        }
+        return String(value || '')
+            .split(/[,，、；;\n|/]+/)
+            .map(tag => tag.trim())
+            .filter(Boolean)
+            .slice(0, 12);
+    }
+
+    function getMemoryEntryCollection(friend, collection) {
+        const memory = friend?.memory || {};
+        return Array.isArray(memory[collection]) ? memory[collection] : [];
+    }
+
+    function findMemoryEntry(friend, collection, entryId) {
+        return getMemoryEntryCollection(friend, collection)
+            .find(entry => String(entry?.id) === String(entryId)) || null;
+    }
+
+    function closeMemoryEntryEditor() {
+        if (memoryEntryEditorModal && window.closeView) window.closeView(memoryEntryEditorModal);
+    }
+
+    function openMemoryEntryEditor(kind, entry = null, collection = '') {
+        if (!memoryEntryEditorModal) return;
+        const isShort = kind === 'short';
+        const targetCollection = collection || (isShort ? 'shortTermEntries' : 'longTermEntries');
+        const time = entry?.time || entry?.createdAt || formatManualMemoryTime();
+        const tags = isShort
+            ? (window.imChat?.getShortTermMemoryTags ? window.imChat.getShortTermMemoryTags(entry || {}) : (entry?.memoryTags || entry?.triggerKeywords || []))
+            : (entry?.triggerKeywords || []);
+
+        if (memoryEntryEditorTitle) memoryEntryEditorTitle.textContent = entry ? `编辑${isShort ? '短期' : '长期'}记忆` : `新增${isShort ? '短期' : '长期'}记忆`;
+        if (memoryEntryEditorKind) memoryEntryEditorKind.value = kind;
+        if (memoryEntryEditorId) memoryEntryEditorId.value = entry?.id == null ? '' : String(entry.id);
+        if (memoryEntryEditorCollection) memoryEntryEditorCollection.value = targetCollection;
+        if (memoryEntryEditorTitleInput) memoryEntryEditorTitleInput.value = entry?.title || '';
+        if (memoryEntryEditorTimeInput) memoryEntryEditorTimeInput.value = time;
+        if (memoryEntryEditorContentInput) memoryEntryEditorContentInput.value = isShort ? (entry?.event || entry?.content || '') : (entry?.content || '');
+        if (memoryEntryEditorContentLabel) memoryEntryEditorContentLabel.textContent = isShort ? '事件内容' : '记忆内容';
+        if (memoryEntryEditorTagsInput) memoryEntryEditorTagsInput.value = Array.isArray(tags) ? tags.join('，') : '';
+        if (memoryEntryEditorDegreeRow) memoryEntryEditorDegreeRow.style.display = isShort ? 'flex' : 'none';
+        if (memoryEntryEditorDegreeSelect) memoryEntryEditorDegreeSelect.value = entry?.degree || '高';
+        if (window.openView) window.openView(memoryEntryEditorModal);
+    }
+
+    async function saveMemoryEntryEditor() {
+        const friend = getCurrentMemoryFriend();
+        if (!friend) return false;
+        const kind = memoryEntryEditorKind?.value === 'long' ? 'long' : 'short';
+        const isShort = kind === 'short';
+        const collection = memoryEntryEditorCollection?.value || (isShort ? 'shortTermEntries' : 'longTermEntries');
+        const existingId = String(memoryEntryEditorId?.value || '');
+        const title = String(memoryEntryEditorTitleInput?.value || '').trim() || (isShort ? '手动记忆' : '长期记忆');
+        const time = String(memoryEntryEditorTimeInput?.value || '').trim() || formatManualMemoryTime();
+        const content = String(memoryEntryEditorContentInput?.value || '').trim();
+        const tags = normalizeManualMemoryTags(memoryEntryEditorTagsInput?.value || '');
+        if (!content) {
+            if (window.showToast) window.showToast('请输入记忆内容');
+            memoryEntryEditorContentInput?.focus();
+            return false;
+        }
+
+        const id = existingId || `${isShort ? 'manual-stm' : 'manual-ltm'}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        const saved = await window.imApp.commitScopedFriendChange(friend, targetFriend => {
+            targetFriend.memory = window.imApp.normalizeFriendData(targetFriend).memory;
+            if (!Array.isArray(targetFriend.memory[collection])) targetFriend.memory[collection] = [];
+            const entries = targetFriend.memory[collection];
+            const index = entries.findIndex(entry => String(entry?.id) === id);
+            const previous = index >= 0 ? entries[index] : null;
+            let nextEntry;
+            if (isShort) {
+                nextEntry = {
+                    ...(previous || {}),
+                    id,
+                    title,
+                    time,
+                    event: content,
+                    memoryTags: tags,
+                    triggerKeywords: tags,
+                    degree: memoryEntryEditorDegreeSelect?.value || previous?.degree || '高',
+                    lastActivatedAt: previous?.lastActivatedAt || time,
+                    sourceType: previous?.sourceType || 'manual',
+                    sourceId: previous?.sourceId || id
+                };
+            } else {
+                nextEntry = {
+                    ...(previous || {}),
+                    id,
+                    title,
+                    content,
+                    time,
+                    createdAt: time,
+                    triggerKeywords: tags,
+                    sourceType: previous?.sourceType || 'manual',
+                    sourceId: previous?.sourceId || id
+                };
+            }
+            if (index >= 0) entries[index] = nextEntry;
+            else entries.push(nextEntry);
+            targetFriend.memory.recallPresentation = null;
+            window.imApp.clearFriendRuntimeMessageContext?.(targetFriend);
+        }, { silent: true, syncActive: true, syncSettings: true });
+
+        if (!saved) {
+            if (window.showToast) window.showToast('记忆保存失败');
+            return false;
+        }
+        closeMemoryEntryEditor();
+        renderMemoryLocationSheet(currentMemoryLocation);
+        renderMemoryView();
+        window.dispatchEvent(new CustomEvent('u2:memory-entries-updated', { detail: { friendId: String(friend.id) } }));
+        if (window.showToast) window.showToast(existingId ? '记忆已更新' : '记忆已添加');
+        return true;
+    }
+
+    async function deleteMemoryEntry(entry, collection, options = {}) {
+        if (!entry) return false;
+        const friend = getCurrentMemoryFriend();
+        if (!friend) return false;
+        const saved = await window.imApp.commitScopedFriendChange(friend, targetFriend => {
+            targetFriend.memory = window.imApp.normalizeFriendData(targetFriend).memory;
+            const entries = Array.isArray(targetFriend.memory[collection]) ? targetFriend.memory[collection] : [];
+            targetFriend.memory[collection] = entries.filter(item => String(item?.id) !== String(entry.id));
+            if (collection === 'shortTermEntries') {
+                targetFriend.memory.lastSummaryMessageCount = targetFriend.memory.shortTermEntries.reduce((max, item) => (
+                    Math.max(max, Math.max(0, Number(item?.sourceEndMessageCount) || 0))
+                ), 0);
+            }
+            targetFriend.memory.recallPresentation = null;
+            window.imApp.clearFriendRuntimeMessageContext?.(targetFriend);
+        }, { silent: true, syncActive: true, syncSettings: true });
+        if (!saved) return false;
+        if (options.closeDetail && memoryEntryDetailModal && window.closeView) window.closeView(memoryEntryDetailModal);
+        renderMemoryLocationSheet(currentMemoryLocation);
+        renderMemoryView();
+        window.dispatchEvent(new CustomEvent('u2:memory-entries-updated', { detail: { friendId: String(friend.id) } }));
+        return true;
+    }
+
+    function confirmDeleteMemoryEntry(entry, collection, options = {}) {
+        const runDelete = async () => {
+            const saved = await deleteMemoryEntry(entry, collection, options);
+            if (window.showToast) window.showToast(saved ? '记忆已删除' : '删除失败');
+        };
+        const label = collection === 'shortTermEntries' ? '短期记忆' : '长期记忆';
+        if (window.showCustomModal) {
+            window.showCustomModal({
+                title: `删除${label}`,
+                message: '确定彻底删除这条记忆吗？删除后无法恢复。',
+                confirmText: '删除',
+                isDestructive: true,
+                onConfirm: runDelete
+            });
+        } else if (window.confirm('确定彻底删除这条记忆吗？')) {
+            runDelete();
+        }
     }
 
     async function deleteShortTermMemoryEntry(entry, options = {}) {
@@ -5369,20 +5583,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function showMemoryEntryDetail(entry) {
+    function showMemoryEntryDetail(entry, kind = 'short', collection = 'shortTermEntries') {
         if (!entry || !memoryEntryDetailModal || !memoryEntryDetailBody) return;
         if (memoryEntryDetailTitle) memoryEntryDetailTitle.textContent = entry.title || '记忆详情';
-        const memoryTags = window.imChat?.getShortTermMemoryTags
-            ? window.imChat.getShortTermMemoryTags(entry)
-            : (Array.isArray(entry.memoryTags) ? entry.memoryTags : []);
+        const isShort = kind === 'short';
+        const memoryTags = isShort
+            ? (window.imChat?.getShortTermMemoryTags
+                ? window.imChat.getShortTermMemoryTags(entry)
+                : (Array.isArray(entry.memoryTags) ? entry.memoryTags : []))
+            : (Array.isArray(entry.triggerKeywords) ? entry.triggerKeywords : []);
         memoryEntryDetailBody.innerHTML = `
             <div class="memory-entry-field">
                 <div class="memory-entry-field-label">时间</div>
-                <div class="memory-entry-field-value">${escapeMemoryHtml(entry.time || '')}</div>
+                <div class="memory-entry-field-value">${escapeMemoryHtml(entry.time || entry.createdAt || '')}</div>
             </div>
             <div class="memory-entry-field">
-                <div class="memory-entry-field-label">事件</div>
-                <div class="memory-entry-field-value">${escapeMemoryHtml(entry.event || '')}</div>
+                <div class="memory-entry-field-label">${isShort ? '事件' : '内容'}</div>
+                <div class="memory-entry-field-value">${escapeMemoryHtml(isShort ? (entry.event || entry.content || '') : (entry.content || ''))}</div>
             </div>
             <div class="memory-entry-field">
                 <div class="memory-entry-field-label">记忆标签</div>
@@ -5390,21 +5607,31 @@ document.addEventListener('DOMContentLoaded', () => {
                     ? memoryTags.map(tag => `<span style="padding:3px 8px; border-radius:999px; background:#e8f2ff; color:#007aff; font-size:12px; font-weight:600;">${escapeMemoryHtml(tag)}</span>`).join('')
                     : '暂无标签'}</div>
             </div>
-            <div class="memory-entry-field">
+            ${isShort ? `<div class="memory-entry-field">
                 <div class="memory-entry-field-label">记忆程度</div>
                 <div class="memory-entry-field-value">${escapeMemoryHtml(entry.degree || '高')}</div>
-            </div>
-            <div style="margin-top: 20px;">
+            </div>` : ''}
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:20px;">
+                <button type="button" id="memory-entry-detail-edit-btn" style="width:100%; padding:12px; border-radius:12px; background:#e8f2ff; color:#007aff; border:none; font-size:15px; font-weight:600; cursor:pointer;">
+                    <i class="fas fa-pen"></i> 编辑
+                </button>
                 <button type="button" id="memory-entry-detail-delete-btn" style="width: 100%; padding: 12px; border-radius: 12px; background: #ffe5e5; color: #ff3b30; border: none; font-size: 15px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
                     <i class="fas fa-trash-alt"></i> 删除这条记忆
                 </button>
             </div>
         `;
         
+        const editBtn = document.getElementById('memory-entry-detail-edit-btn');
+        if (editBtn) {
+            editBtn.addEventListener('click', () => {
+                if (window.closeView) window.closeView(memoryEntryDetailModal);
+                openMemoryEntryEditor(kind, entry, collection);
+            });
+        }
         const deleteBtn = document.getElementById('memory-entry-detail-delete-btn');
         if (deleteBtn) {
             deleteBtn.addEventListener('click', () => {
-                confirmDeleteShortTermMemoryEntry(entry, { closeDetail: true });
+                confirmDeleteMemoryEntry(entry, collection, { closeDetail: true });
             });
         }
         
@@ -5459,39 +5686,50 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (location === 'downloads') {
-            const cherishedEntries = Array.isArray(normalizedFriend?.memory?.cherishedEntries)
-                ? normalizedFriend.memory.cherishedEntries
+            const longTermEntries = Array.isArray(normalizedFriend?.memory?.longTermEntries)
+                ? normalizedFriend.memory.longTermEntries.map(entry => ({ entry, collection: 'longTermEntries' }))
                 : [];
-            
-            if (cherishedEntries.length === 0) {
-                memoryLocationSheetContent.innerHTML = `
-                    <div class="memory-sheet-title">长期记忆</div>
-                    <div class="memory-short-list">
-                        <div class="memory-short-empty">暂无长期记忆</div>
-                    </div>
-                `;
-                return;
-            }
+            const cherishedEntries = Array.isArray(normalizedFriend?.memory?.cherishedEntries)
+                ? normalizedFriend.memory.cherishedEntries.map(entry => ({ entry, collection: 'cherishedEntries' }))
+                : [];
+            const entries = [...longTermEntries, ...cherishedEntries];
 
             memoryLocationSheetContent.innerHTML = `
-                <div class="memory-sheet-title">长期记忆</div>
-                <div class="chat-memory-modal-cherished-list" style="padding: 0 16px;">
-                    ${cherishedEntries.slice().reverse().map(entry => `
-                        <button type="button" class="chat-memory-modal-cherished-card" data-entry-id="${entry.id}">
-                            <div class="chat-memory-modal-cherished-card-title">${escapeMemoryHtml(entry.title || '长期记忆')}</div>
-                            <div class="chat-memory-modal-cherished-card-time">${escapeMemoryHtml(entry.createdAt || '点击查看详情')}</div>
-                        </button>
+                <div class="memory-sheet-title-row">
+                    <div class="memory-sheet-title">长期记忆</div>
+                    <button type="button" class="memory-sheet-add-btn" data-memory-add-kind="long" aria-label="新增长期记忆"><i class="fas fa-plus"></i></button>
+                </div>
+                <div class="memory-short-list">
+                    ${entries.length === 0 ? '<div class="memory-short-empty">暂无长期记忆</div>' : entries.slice().reverse().map(({ entry, collection }) => `
+                        <div class="memory-short-item memory-long-summary-item" role="button" tabindex="0" data-memory-entry-id="${escapeMemoryHtml(entry.id)}" data-memory-collection="${collection}">
+                            <span class="memory-short-summary-title">${escapeMemoryHtml(entry.title || '长期记忆')}</span>
+                            <div class="memory-short-actions">
+                                <span style="font-size:11px; color:#8e8e93;">${collection === 'cherishedEntries' ? '珍视' : '长期'}</span>
+                                <button type="button" class="memory-short-delete-btn" aria-label="删除长期记忆"><i class="fas fa-trash-alt"></i></button>
+                                <i class="fas fa-chevron-right"></i>
+                            </div>
+                        </div>
                     `).join('')}
                 </div>
             `;
 
-            memoryLocationSheetContent.querySelectorAll('.chat-memory-modal-cherished-card').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const entryId = btn.getAttribute('data-entry-id');
-                    const target = cherishedEntries.find(entry => String(entry.id) === String(entryId));
-                    if (target && window.imApp.showCherishedMemoryDetail) {
-                        window.imApp.showCherishedMemoryDetail(target);
-                    }
+            memoryLocationSheetContent.querySelector('[data-memory-add-kind="long"]')?.addEventListener('click', () => openMemoryEntryEditor('long'));
+            memoryLocationSheetContent.querySelectorAll('.memory-long-summary-item').forEach(btn => {
+                const resolveEntry = () => {
+                    const entryId = btn.getAttribute('data-memory-entry-id');
+                    const collection = btn.getAttribute('data-memory-collection') || 'longTermEntries';
+                    return { collection, entry: findMemoryEntry(getCurrentMemoryFriend(), collection, entryId) };
+                };
+                btn.addEventListener('click', event => {
+                    if (event.target instanceof Element && event.target.closest('.memory-short-delete-btn')) return;
+                    const resolved = resolveEntry();
+                    if (resolved.entry) showMemoryEntryDetail(resolved.entry, 'long', resolved.collection);
+                });
+                btn.querySelector('.memory-short-delete-btn')?.addEventListener('click', event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const resolved = resolveEntry();
+                    if (resolved.entry) confirmDeleteMemoryEntry(resolved.entry, resolved.collection);
                 });
             });
             return;
@@ -5507,20 +5745,13 @@ document.addEventListener('DOMContentLoaded', () => {
             ? normalizedFriend.memory.shortTermEntries
             : [];
 
-        if (entries.length === 0) {
-            memoryLocationSheetContent.innerHTML = `
-                <div class="memory-sheet-title">短期记忆</div>
-                <div class="memory-short-list">
-                    <div class="memory-short-empty">暂无短期记忆</div>
-                </div>
-            `;
-            return;
-        }
-
         memoryLocationSheetContent.innerHTML = `
-            <div class="memory-sheet-title">短期记忆</div>
+            <div class="memory-sheet-title-row">
+                <div class="memory-sheet-title">短期记忆</div>
+                <button type="button" class="memory-sheet-add-btn" data-memory-add-kind="short" aria-label="新增短期记忆"><i class="fas fa-plus"></i></button>
+            </div>
             <div class="memory-short-list">
-                ${entries.slice().reverse().map(entry => `
+                ${entries.length === 0 ? '<div class="memory-short-empty">暂无短期记忆</div>' : entries.slice().reverse().map(entry => `
                     <div class="memory-short-item memory-short-summary-item" role="button" tabindex="0" data-memory-entry-id="${entry.id}">
                         <span class="memory-short-summary-title">${escapeMemoryHtml(entry.title || '对话总结')}</span>
                         <div class="memory-short-actions">
@@ -5531,6 +5762,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 `).join('')}
             </div>
         `;
+
+        memoryLocationSheetContent.querySelector('[data-memory-add-kind="short"]')?.addEventListener('click', () => openMemoryEntryEditor('short'));
 
         memoryLocationSheetContent.querySelectorAll('.memory-short-summary-item').forEach(btn => {
             const openEntry = () => {
@@ -5558,7 +5791,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     event.stopPropagation();
                     const entryId = btn.getAttribute('data-memory-entry-id');
                     const target = entries.find(entry => String(entry.id) === String(entryId));
-                    if (target) confirmDeleteShortTermMemoryEntry(target);
+                    if (target) confirmDeleteMemoryEntry(target, 'shortTermEntries');
                 });
             }
         });
@@ -5603,6 +5836,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (window.closeView) window.closeView(memoryEntryDetailModal);
         });
     }
+
+    [memoryEntryEditorClose, memoryEntryEditorCancel].forEach(button => {
+        button?.addEventListener('click', closeMemoryEntryEditor);
+    });
+    memoryEntryEditorSave?.addEventListener('click', () => void saveMemoryEntryEditor());
+    memoryEntryEditorModal?.addEventListener('click', event => {
+        if (event.target === memoryEntryEditorModal) closeMemoryEntryEditor();
+    });
 
     if (scheduleClose && scheduleModal) {
         scheduleClose.addEventListener('click', () => {

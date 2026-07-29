@@ -1,10 +1,13 @@
 (function() {
     const isAndroid = /Android/i.test(navigator.userAgent || '');
     const registrations = new Map();
+    const focusScopeRegistrations = new Map();
     const bottomSheetExcludedInputTypes = new Set(['file', 'hidden', 'checkbox', 'radio', 'range', 'color']);
     let activeEntry = null;
+    let activeFocusScope = null;
     let viewportListenersBound = false;
     let bottomSheetViewportGuardBound = false;
+    let focusScopeViewportGuardBound = false;
     const bottomSheetFocusGuard = {
         active: false,
         overlay: null,
@@ -40,10 +43,230 @@
         const tagName = target.tagName;
         if (tagName === 'TEXTAREA') return !target.readOnly;
         if (tagName === 'SELECT') return true;
+        if (target.isContentEditable || target.getAttribute?.('contenteditable') === 'true') return true;
         if (tagName !== 'INPUT') return false;
 
         const type = String(target.getAttribute('type') || target.type || 'text').toLowerCase();
         return !target.readOnly && !bottomSheetExcludedInputTypes.has(type);
+    }
+
+    function resolveFocusScope(target) {
+        if (!isAndroid || !isBottomSheetEditableTarget(target)) return null;
+
+        for (const registration of focusScopeRegistrations.values()) {
+            let root = null;
+            try {
+                root = target.closest(registration.selector);
+            } catch (error) {
+                console.warn('[mobileInputCompat] Invalid focus scope selector:', registration.selector, error);
+            }
+            if (root) return { registration, root, target };
+        }
+        return null;
+    }
+
+    function restoreFocusScopeWindowPosition(scope = activeFocusScope) {
+        if (!isAndroid || !scope) return;
+
+        try {
+            window.scrollTo(scope.scrollLeft, scope.scrollTop);
+        } catch (error) {
+            // Some embedded Android WebViews can reject scrollTo while the keyboard is animating.
+        }
+        document.documentElement.scrollLeft = scope.scrollLeft;
+        document.documentElement.scrollTop = scope.scrollTop;
+        document.body.scrollLeft = scope.scrollLeft;
+        document.body.scrollTop = scope.scrollTop;
+    }
+
+    function clearFocusScopeRestoreTimers(scope = activeFocusScope) {
+        if (!scope) return;
+        scope.restoreTimers.forEach(timer => clearTimeout(timer));
+        scope.restoreTimers = [];
+    }
+
+    function scheduleFocusScopeWindowRestore(scope = activeFocusScope) {
+        if (!isAndroid || !scope || scope !== activeFocusScope) return;
+        clearFocusScopeRestoreTimers(scope);
+        requestAnimationFrame(() => restoreFocusScopeWindowPosition(scope));
+        [0, 60, 180, 360].forEach(delay => {
+            scope.restoreTimers.push(setTimeout(() => restoreFocusScopeWindowPosition(scope), delay));
+        });
+    }
+
+    function getFocusScopeScrollContainer(scope) {
+        if (!scope || typeof scope.registration.resolveScrollContainer !== 'function') return null;
+        try {
+            return resolveElement(scope.registration.resolveScrollContainer(scope.target, scope.root));
+        } catch (error) {
+            console.warn('[mobileInputCompat] Failed to resolve focus-scope scroll container:', error);
+            return null;
+        }
+    }
+
+    function scrollFocusScopeToLatest(scope) {
+        const scrollContainer = getFocusScopeScrollContainer(scope);
+        if (!scrollContainer) return;
+        requestAnimationFrame(() => {
+            scrollContainer.scrollTop = scrollContainer.scrollHeight;
+        });
+    }
+
+    function restoreFocusScopeLayout(scope = activeFocusScope, options = {}) {
+        if (!scope) return;
+
+        const { root, originalRoot } = scope;
+        if (root?.style) {
+            root.style.height = originalRoot.height;
+            root.style.top = originalRoot.top;
+            root.style.bottom = originalRoot.bottom;
+            root.classList.remove('u2-android-keyboard-open');
+        }
+        scope.keyboardWasOpen = false;
+        restoreFocusScopeWindowPosition(scope);
+        if (options.scrollToLatest) scrollFocusScopeToLatest(scope);
+    }
+
+    function releaseFocusScope(scope = activeFocusScope) {
+        if (!scope) return;
+
+        clearFocusScopeRestoreTimers(scope);
+        restoreFocusScopeLayout(scope, { scrollToLatest: scope.keyboardWasOpen });
+        scope.root?.classList?.remove('u2-android-focus-locked');
+        if (activeFocusScope === scope) activeFocusScope = null;
+    }
+
+    function captureFocusScope(target) {
+        if (!isAndroid) return false;
+        const resolved = resolveFocusScope(target);
+        if (!resolved) return false;
+
+        if (activeFocusScope && activeFocusScope.root === resolved.root) {
+            activeFocusScope.target = target;
+            if (!activeFocusScope.keyboardWasOpen) {
+                const metrics = getViewportMetrics();
+                const layoutHeight = Math.round(window.innerHeight || metrics.height || 0);
+                activeFocusScope.restingHeight = Math.max(activeFocusScope.restingHeight, layoutHeight, metrics.height);
+                activeFocusScope.restingLayoutHeight = Math.max(activeFocusScope.restingLayoutHeight, layoutHeight);
+            }
+            activeFocusScope.root.classList.add('u2-android-focus-locked');
+            scheduleFocusScopeWindowRestore(activeFocusScope);
+            return true;
+        }
+
+        if (activeFocusScope) releaseFocusScope(activeFocusScope);
+
+        const metrics = getViewportMetrics();
+        const layoutHeight = Math.round(window.innerHeight || metrics.height || 0);
+        const root = resolved.root;
+        activeFocusScope = {
+            ...resolved,
+            scrollLeft: Math.round(window.scrollX || document.documentElement.scrollLeft || document.body.scrollLeft || 0),
+            scrollTop: Math.round(window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0),
+            restingHeight: Math.max(layoutHeight, metrics.height),
+            restingLayoutHeight: layoutHeight,
+            keyboardWasOpen: false,
+            restoreTimers: [],
+            releaseTimer: null,
+            originalRoot: {
+                height: root.style.height,
+                top: root.style.top,
+                bottom: root.style.bottom
+            }
+        };
+        root.classList.add('u2-android-focus-locked');
+        bindFocusScopeViewportGuard();
+        scheduleFocusScopeWindowRestore(activeFocusScope);
+        return true;
+    }
+
+    function isActiveFocusScopeStillFocused(scope = activeFocusScope) {
+        if (!scope) return false;
+        const resolved = resolveFocusScope(document.activeElement);
+        return !!resolved && resolved.root === scope.root;
+    }
+
+    function applyFocusScopeViewport() {
+        const scope = activeFocusScope;
+        if (!isAndroid || !scope || !scope.root?.isConnected) return;
+
+        const metrics = getViewportMetrics();
+        const layoutHeight = Math.round(window.innerHeight || metrics.height || 0);
+        const layoutAlreadyResized = scope.restingLayoutHeight - layoutHeight > 100;
+        const viewportHeight = layoutAlreadyResized ? layoutHeight : metrics.height;
+        const viewportTop = layoutAlreadyResized ? 0 : Math.round(window.visualViewport?.offsetTop || 0);
+        if (viewportHeight <= 0) return;
+
+        const focused = isActiveFocusScopeStillFocused(scope);
+        const keyboardOpen = focused && scope.restingHeight - viewportHeight > 100;
+        scheduleFocusScopeWindowRestore(scope);
+
+        if (!keyboardOpen) {
+            if (scope.keyboardWasOpen) restoreFocusScopeLayout(scope, { scrollToLatest: true });
+            if (!focused || viewportHeight >= scope.restingHeight - 72) {
+                scope.restingHeight = Math.max(scope.restingHeight, layoutHeight, metrics.height);
+                scope.restingLayoutHeight = Math.max(scope.restingLayoutHeight, layoutHeight);
+            }
+            return;
+        }
+
+        scope.keyboardWasOpen = true;
+        scope.root.style.height = `${viewportHeight}px`;
+        scope.root.style.top = `${viewportTop}px`;
+        scope.root.style.bottom = 'auto';
+        scope.root.classList.add('u2-android-keyboard-open');
+        scrollFocusScopeToLatest(scope);
+    }
+
+    function handleFocusScopeViewportChange() {
+        if (!isAndroid || !activeFocusScope) return;
+        applyFocusScopeViewport();
+    }
+
+    function bindFocusScopeViewportGuard() {
+        if (!isAndroid || !window.visualViewport || focusScopeViewportGuardBound) return;
+        focusScopeViewportGuardBound = true;
+        window.visualViewport.addEventListener('resize', handleFocusScopeViewportChange, { passive: true });
+        window.visualViewport.addEventListener('scroll', handleFocusScopeViewportChange, { passive: true });
+    }
+
+    function releaseFocusScopeIfIdle(scope) {
+        if (!scope || scope !== activeFocusScope) return;
+        if (isActiveFocusScopeStillFocused(scope)) {
+            scheduleFocusScopeWindowRestore(scope);
+            return;
+        }
+        releaseFocusScope(scope);
+    }
+
+    function scheduleFocusScopeRelease() {
+        const scope = activeFocusScope;
+        if (!isAndroid || !scope) return;
+        if (scope.releaseTimer) clearTimeout(scope.releaseTimer);
+        scope.releaseTimer = setTimeout(() => releaseFocusScopeIfIdle(scope), 120);
+    }
+
+    function registerFocusScope(options = {}) {
+        const selector = String(options.selector || '').trim();
+        if (!selector) return function() {};
+
+        const previous = focusScopeRegistrations.get(selector);
+        if (previous) previous.cleanup();
+
+        const registration = {
+            selector,
+            resolveScrollContainer: typeof options.resolveScrollContainer === 'function'
+                ? options.resolveScrollContainer
+                : null,
+            cleanup: null
+        };
+        registration.cleanup = () => {
+            if (activeFocusScope?.registration === registration) releaseFocusScope(activeFocusScope);
+            if (focusScopeRegistrations.get(selector) === registration) focusScopeRegistrations.delete(selector);
+        };
+        focusScopeRegistrations.set(selector, registration);
+        bindFocusScopeViewportGuard();
+        return registration.cleanup;
     }
 
     function getActiveBottomSheetOverlay(target) {
@@ -350,6 +573,7 @@
 
     document.addEventListener('focusin', (event) => {
         lockBottomSheetFocusScroll(event.target);
+        captureFocusScope(event.target);
 
         const entry = registrations.get(event.target);
         if (entry) {
@@ -362,15 +586,18 @@
 
     document.addEventListener('pointerdown', (event) => {
         lockBottomSheetFocusScroll(event.target);
+        captureFocusScope(event.target);
     }, { capture: true, passive: true });
 
     document.addEventListener('touchstart', (event) => {
         lockBottomSheetFocusScroll(event.target);
+        captureFocusScope(event.target);
     }, { capture: true, passive: true });
 
     document.addEventListener('focusout', () => {
-        if (!isAndroid || !bottomSheetFocusGuard.active) return;
-        setTimeout(releaseBottomSheetFocusScrollIfIdle, 120);
+        if (!isAndroid) return;
+        if (bottomSheetFocusGuard.active) setTimeout(releaseBottomSheetFocusScrollIfIdle, 120);
+        scheduleFocusScopeRelease();
     }, true);
 
     document.addEventListener('selectionchange', () => {
@@ -386,6 +613,7 @@
         isAndroid,
         isSendEnter,
         register,
+        registerFocusScope,
         unregister(input) {
             const element = resolveElement(input);
             registrations.get(element)?.cleanup();

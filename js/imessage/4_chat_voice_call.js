@@ -12,6 +12,95 @@
     let lastCallAiTurn = null;
     let singleCallInputCleanup = null;
     let groupCallInputCleanup = null;
+    let activeSingleCallContext = null;
+    const isAndroidCallInput = !!window.mobileInputCompat?.isAndroid || /Android/i.test(navigator.userAgent || '');
+
+    window.imChat.getActiveSingleCallContext = function(friendOrId) {
+        if (!activeSingleCallContext?.connected) return null;
+
+        const friendId = friendOrId && typeof friendOrId === 'object'
+            ? friendOrId.id
+            : friendOrId;
+        if (String(friendId ?? '') !== activeSingleCallContext.friendId) return null;
+
+        return {
+            active: true,
+            connected: true,
+            minimized: !!activeSingleCallContext.minimized,
+            friendId: activeSingleCallContext.friendId,
+            durationSeconds: callSeconds
+        };
+    };
+
+    function bindCallFocusPreservingAction(element, handler) {
+        if (!element || typeof handler !== 'function') return function() {};
+
+        let lastPointerActivationAt = 0;
+        const invoke = (event) => {
+            try {
+                const result = handler(event);
+                if (result && typeof result.catch === 'function') {
+                    result.catch(error => console.error('[iMessage call] action failed', error));
+                }
+            } catch (error) {
+                console.error('[iMessage call] action failed', error);
+            }
+        };
+        const handlePointerDown = (event) => {
+            if (!isAndroidCallInput || (event.button !== undefined && event.button !== 0)) return;
+            event.preventDefault();
+            lastPointerActivationAt = Date.now();
+            invoke(event);
+        };
+        const handleClick = (event) => {
+            if (isAndroidCallInput && Date.now() - lastPointerActivationAt < 700) {
+                event.preventDefault();
+                return;
+            }
+            invoke(event);
+        };
+
+        element.addEventListener('pointerdown', handlePointerDown, { passive: false });
+        element.addEventListener('click', handleClick);
+        return () => {
+            element.removeEventListener('pointerdown', handlePointerDown);
+            element.removeEventListener('click', handleClick);
+        };
+    }
+
+    function waitForCallKeyboardToClose(input, timeout = 460) {
+        if (!isAndroidCallInput || !input || document.activeElement !== input) return Promise.resolve();
+
+        input.blur();
+        const viewport = window.visualViewport;
+        if (!viewport) return new Promise(resolve => setTimeout(resolve, 280));
+
+        const startingHeight = Math.round(viewport.height || 0);
+        let lastHeight = startingHeight;
+        let stableFrames = 0;
+        return new Promise(resolve => {
+            let finished = false;
+            const finish = () => {
+                if (finished) return;
+                finished = true;
+                resolve();
+            };
+            const hardTimeout = setTimeout(finish, timeout);
+            const check = () => {
+                if (finished) return;
+                const height = Math.round(viewport.height || 0);
+                stableFrames = Math.abs(height - lastHeight) <= 1 ? stableFrames + 1 : 0;
+                lastHeight = height;
+                if (height >= startingHeight + 72 && stableFrames >= 2) {
+                    clearTimeout(hardTimeout);
+                    finish();
+                    return;
+                }
+                requestAnimationFrame(check);
+            };
+            requestAnimationFrame(check);
+        });
+    }
 
     function bindCallVisualViewport(input, root, options = {}) {
         if (!window.mobileInputCompat?.isAndroid || !input || !root) return function() {};
@@ -28,6 +117,32 @@
         const originalDisplays = collapseElements.map((element) => element.style.display);
         let restingHeight = Math.max(window.innerHeight || 0, viewport?.height || 0);
         let restingLayoutHeight = Math.round(window.innerHeight || restingHeight);
+        let keyboardWasOpen = false;
+
+        const captureRestingViewport = () => {
+            const layoutHeight = Math.round(window.innerHeight || viewport?.height || 0);
+            const visualHeight = Math.round(viewport?.height || layoutHeight);
+            restingHeight = Math.max(restingHeight, layoutHeight, visualHeight);
+            restingLayoutHeight = Math.max(restingLayoutHeight, layoutHeight);
+        };
+
+        const restoreLayout = (scrollToLatest = false) => {
+            root.style.height = originalRoot.height;
+            root.style.top = originalRoot.top;
+            root.style.bottom = originalRoot.bottom;
+            root.classList.remove('im-call-keyboard-open');
+            if (bottomControls) bottomControls.style.paddingBottom = originalBottomPadding;
+            collapseElements.forEach((element, index) => {
+                element.style.display = originalDisplays[index];
+            });
+            if (scrollToLatest) {
+                requestAnimationFrame(() => {
+                    if (options.scrollContainer) {
+                        options.scrollContainer.scrollTop = options.scrollContainer.scrollHeight;
+                    }
+                });
+            }
+        };
 
         const applyViewport = () => {
             const layoutHeight = Math.round(window.innerHeight || viewport?.height || 0);
@@ -43,23 +158,29 @@
             if (viewportHeight <= 0) return;
 
             const focused = document.activeElement === input;
-            if (!focused && !root.classList.contains('im-call-keyboard-open')) {
-                restingHeight = Math.max(restingHeight, viewportHeight);
-                restingLayoutHeight = Math.max(restingLayoutHeight, layoutHeight);
-            }
-            const keyboardOpen = restingHeight - viewportHeight > 100 &&
-                (focused || root.classList.contains('im-call-keyboard-open'));
+            const keyboardOpen = focused && restingHeight - viewportHeight > 100;
 
+            if (!keyboardOpen) {
+                const keyboardStillRetreating = keyboardWasOpen && !focused && restingHeight - viewportHeight > 72;
+                if (keyboardStillRetreating) return;
+                const shouldScroll = keyboardWasOpen;
+                keyboardWasOpen = false;
+                restoreLayout(shouldScroll);
+                if (!focused || viewportHeight >= restingHeight - 72) captureRestingViewport();
+                return;
+            }
+
+            keyboardWasOpen = true;
             root.style.height = `${viewportHeight}px`;
             root.style.top = `${viewportTop}px`;
             root.style.bottom = 'auto';
-            root.classList.toggle('im-call-keyboard-open', keyboardOpen);
+            root.classList.add('im-call-keyboard-open');
 
             if (bottomControls) {
-                bottomControls.style.paddingBottom = keyboardOpen ? '10px' : originalBottomPadding;
+                bottomControls.style.paddingBottom = '10px';
             }
             collapseElements.forEach((element, index) => {
-                element.style.display = keyboardOpen ? 'none' : originalDisplays[index];
+                element.style.display = 'none';
             });
             requestAnimationFrame(() => {
                 if (options.scrollContainer) {
@@ -72,23 +193,32 @@
             viewport.addEventListener('resize', applyViewport, { passive: true });
             viewport.addEventListener('scroll', applyViewport, { passive: true });
         }
-        input.addEventListener('focus', applyViewport);
-        input.addEventListener('blur', applyViewport);
-        applyViewport();
+        const handleFocus = () => {
+            captureRestingViewport();
+            applyViewport();
+        };
+        const handleBlur = () => {
+            const visibleHeight = Math.round(viewport?.height || window.innerHeight || 0);
+            if (keyboardWasOpen && restingHeight - visibleHeight > 72) return;
+            const shouldScroll = keyboardWasOpen;
+            keyboardWasOpen = false;
+            restoreLayout(shouldScroll);
+        };
+        input.addEventListener('pointerdown', captureRestingViewport, { passive: true });
+        input.addEventListener('touchstart', captureRestingViewport, { passive: true });
+        input.addEventListener('focus', handleFocus);
+        input.addEventListener('blur', handleBlur);
+        restoreLayout();
 
         return () => {
             viewport?.removeEventListener('resize', applyViewport);
             viewport?.removeEventListener('scroll', applyViewport);
-            input.removeEventListener('focus', applyViewport);
-            input.removeEventListener('blur', applyViewport);
-            root.style.height = originalRoot.height;
-            root.style.top = originalRoot.top;
-            root.style.bottom = originalRoot.bottom;
-            root.classList.remove('im-call-keyboard-open');
-            if (bottomControls) bottomControls.style.paddingBottom = originalBottomPadding;
-            collapseElements.forEach((element, index) => {
-                element.style.display = originalDisplays[index];
-            });
+            input.removeEventListener('pointerdown', captureRestingViewport);
+            input.removeEventListener('touchstart', captureRestingViewport);
+            input.removeEventListener('focus', handleFocus);
+            input.removeEventListener('blur', handleBlur);
+            keyboardWasOpen = false;
+            restoreLayout();
         };
     }
 
@@ -451,7 +581,10 @@
             mainContent.style.display = 'flex';
             mainContent.style.opacity = '1';
             mainContent.style.pointerEvents = 'auto';
-            if(bgEl) bgEl.style.opacity = '1';
+            if(bgEl) {
+                bgEl.style.opacity = '1';
+                bgEl.style.pointerEvents = 'auto';
+            }
         }
         
         if (infoArea) {
@@ -463,6 +596,13 @@
         // State control
         let isConnected = false;
         let dialTimeout = null;
+        const callSessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        activeSingleCallContext = {
+            sessionId: callSessionId,
+            friendId: String(friend.id ?? ''),
+            connected: false,
+            minimized: false
+        };
 
         if (isIncoming) {
             newStatusEl.innerText = '正在邀请你进行语音通话...';
@@ -481,6 +621,9 @@
 
         function connectCall() {
             isConnected = true;
+            if (activeSingleCallContext?.sessionId === callSessionId) {
+                activeSingleCallContext.connected = true;
+            }
             newInputRow.style.display = 'flex';
             newAcceptBtn.style.display = 'none';
             newStatusEl.innerText = '00:00';
@@ -494,7 +637,11 @@
             newAcceptBtn.addEventListener('click', connectCall);
         }
 
-        function closeCall() {
+        let isClosingCall = false;
+        async function closeCall() {
+            if (isClosingCall) return;
+            isClosingCall = true;
+            await waitForCallKeyboardToClose(newInput);
             if (dialTimeout) clearTimeout(dialTimeout);
             if (singleCallInputCleanup) {
                 singleCallInputCleanup();
@@ -547,6 +694,9 @@
                 }
             }
 
+            if (activeSingleCallContext?.sessionId === callSessionId) {
+                activeSingleCallContext = null;
+            }
             callFriend = null;
         }
 
@@ -555,10 +705,17 @@
         }
 
         if (newMinimizeBtn && minimizedFloat && mainContent) {
-            newMinimizeBtn.addEventListener('click', () => {
+            newMinimizeBtn.addEventListener('click', async () => {
+                await waitForCallKeyboardToClose(newInput);
+                if (activeSingleCallContext?.sessionId === callSessionId) {
+                    activeSingleCallContext.minimized = true;
+                }
                 mainContent.style.opacity = '0';
                 mainContent.style.pointerEvents = 'none';
-                if(bgEl) bgEl.style.opacity = '0';
+                if(bgEl) {
+                    bgEl.style.opacity = '0';
+                    bgEl.style.pointerEvents = 'none';
+                }
                 
                 setTimeout(() => {
                     mainContent.style.display = 'none';
@@ -643,9 +800,15 @@
                     e.preventDefault();
                     return;
                 }
+                if (activeSingleCallContext?.sessionId === callSessionId) {
+                    activeSingleCallContext.minimized = false;
+                }
                 minimizedFloat.style.display = 'none';
                 mainContent.style.display = 'flex';
-                if(bgEl) bgEl.style.opacity = '1';
+                if(bgEl) {
+                    bgEl.style.opacity = '1';
+                    bgEl.style.pointerEvents = 'auto';
+                }
                 setTimeout(() => {
                     mainContent.style.opacity = '1';
                     mainContent.style.pointerEvents = 'auto';
@@ -657,7 +820,7 @@
         }
 
         if (newSendBtn && newInput && newMessagesArea) {
-            newSendBtn.addEventListener('click', async () => {
+            bindCallFocusPreservingAction(newSendBtn, async () => {
                 if (!isConnected) return;
                 const text = newInput.value.trim();
                 if (!text || !callFriend) return;
@@ -878,13 +1041,13 @@ ${recentMessages}`;
         }
 
         if (newAiBtn && newMessagesArea) {
-            newAiBtn.addEventListener('click', async () => {
+            bindCallFocusPreservingAction(newAiBtn, async () => {
                 await runCallAiReply();
             });
         }
 
         if (newRegenerateBtn && newMessagesArea) {
-            newRegenerateBtn.addEventListener('click', async () => {
+            bindCallFocusPreservingAction(newRegenerateBtn, async () => {
                 await runCallAiReply({ regenerate: true });
             });
         }
@@ -1019,6 +1182,7 @@ ${recentMessages}`;
         const inputEl = newView.querySelector('#group-call-input');
         const sendBtn = newView.querySelector('#group-call-send-btn');
         const aiBtn = newView.querySelector('#group-call-ai-btn');
+        const groupBgEl = newView.querySelector('#group-call-bg');
         
         let minBanner = document.getElementById('group-call-minimized-banner');
         let minText = null;
@@ -1037,13 +1201,13 @@ ${recentMessages}`;
                 minBanner.style.display = 'none';
                 newView.style.display = 'flex';
                 const mainContent = newView.querySelector('#group-call-main-content');
-                const bgEl = newView.querySelector('#group-call-bg');
                 if (mainContent) {
                     mainContent.style.opacity = '1';
                     mainContent.style.pointerEvents = 'auto';
                 }
-                if (bgEl) {
-                    bgEl.style.opacity = '1';
+                if (groupBgEl) {
+                    groupBgEl.style.opacity = '1';
+                    groupBgEl.style.pointerEvents = 'auto';
                 }
                 newView.style.opacity = '1';
                 newView.style.pointerEvents = 'auto';
@@ -1061,6 +1225,10 @@ ${recentMessages}`;
         newView.style.opacity = '1';
         newView.style.pointerEvents = 'auto';
         newView.classList.add('active');
+        if (groupBgEl) {
+            groupBgEl.style.opacity = '1';
+            groupBgEl.style.pointerEvents = 'auto';
+        }
         if (window.openView) {
             window.openView(newView);
         }
@@ -1136,7 +1304,11 @@ ${recentMessages}`;
             if (minText) minText.innerText = `${allParticipants.length}人正在群通话中...`;
         }, 1000);
 
-        const closeGroupCall = () => {
+        let isClosingGroupCall = false;
+        const closeGroupCall = async () => {
+            if (isClosingGroupCall) return;
+            isClosingGroupCall = true;
+            await waitForCallKeyboardToClose(inputEl);
             if (groupCallInputCleanup) {
                 groupCallInputCleanup();
                 groupCallInputCleanup = null;
@@ -1214,16 +1386,17 @@ ${recentMessages}`;
         if (hangupBtn) hangupBtn.addEventListener('click', closeGroupCall);
 
         if (minimizeBtn) {
-            minimizeBtn.addEventListener('click', () => {
+            minimizeBtn.addEventListener('click', async () => {
+                await waitForCallKeyboardToClose(inputEl);
                 const mainContent = newView.querySelector('#group-call-main-content');
-                const bgEl = newView.querySelector('#group-call-bg');
                 
                 if (mainContent) {
                     mainContent.style.opacity = '0';
                     mainContent.style.pointerEvents = 'none';
                 }
-                if (bgEl) {
-                    bgEl.style.opacity = '0';
+                if (groupBgEl) {
+                    groupBgEl.style.opacity = '0';
+                    groupBgEl.style.pointerEvents = 'none';
                 }
 
                 setTimeout(() => {
@@ -1238,7 +1411,7 @@ ${recentMessages}`;
         }
 
         if (sendBtn) {
-            sendBtn.addEventListener('click', () => {
+            bindCallFocusPreservingAction(sendBtn, () => {
                 const text = inputEl.value.trim();
                 if (!text) return;
                 addGroupCallBubble(text, '__user__', messagesArea);
@@ -1252,6 +1425,7 @@ ${recentMessages}`;
                 scrollContainer: messagesArea,
                 bottomControls: inputEl.parentElement?.parentElement,
                 collapseElements: [avatarsGrid],
+                dismissAfterSend: false,
                 onSend: () => {
                     if (!inputEl.value.trim()) return false;
                     sendBtn.click();
@@ -1261,7 +1435,7 @@ ${recentMessages}`;
         }
 
         if (aiBtn) {
-            aiBtn.addEventListener('click', async () => {
+            bindCallFocusPreservingAction(aiBtn, async () => {
                 if (!groupCallTarget) return;
                 
                 const { apiConfig } = window;

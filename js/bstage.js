@@ -942,6 +942,111 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeCharacterChatInputCleanup = null;
 
     let autoActivityIntervals = {}; // { memberId: intervalId }
+    const isBstageAndroid = !!window.mobileInputCompat?.isAndroid || /Android/i.test(navigator.userAgent || '');
+    const pendingBstageKeyboardCloses = new WeakSet();
+
+    function isBstageEditableElement(element) {
+        if (!element || !element.matches) return false;
+        return element.matches('input:not([type="file"]):not([type="hidden"]), textarea, select, [contenteditable="true"]');
+    }
+
+    function bindBstageFocusPreservingAction(element, handler) {
+        if (!element || typeof handler !== 'function') return function() {};
+
+        let lastPointerActivationAt = 0;
+        const invoke = (event) => {
+            try {
+                const result = handler(event);
+                if (result && typeof result.catch === 'function') {
+                    result.catch(error => console.error('[b.stage] action failed', error));
+                }
+            } catch (error) {
+                console.error('[b.stage] action failed', error);
+            }
+        };
+        const handlePointerDown = (event) => {
+            if (!isBstageAndroid || (event.button !== undefined && event.button !== 0)) return;
+            event.preventDefault();
+            lastPointerActivationAt = Date.now();
+            invoke(event);
+        };
+        const handleClick = (event) => {
+            if (isBstageAndroid && Date.now() - lastPointerActivationAt < 700) {
+                event.preventDefault();
+                return;
+            }
+            invoke(event);
+        };
+        const handleKeydown = (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            invoke(event);
+        };
+
+        element.addEventListener('pointerdown', handlePointerDown, { passive: false });
+        element.addEventListener('click', handleClick);
+        element.addEventListener('keydown', handleKeydown);
+        return () => {
+            element.removeEventListener('pointerdown', handlePointerDown);
+            element.removeEventListener('click', handleClick);
+            element.removeEventListener('keydown', handleKeydown);
+        };
+    }
+
+    function waitForBstageKeyboardToClose(view, timeout = 460) {
+        const activeElement = document.activeElement;
+        if (!view || !isBstageAndroid || !activeElement || !view.contains(activeElement) || !isBstageEditableElement(activeElement)) {
+            return Promise.resolve();
+        }
+
+        activeElement.blur();
+        const viewport = window.visualViewport;
+        if (!viewport) {
+            return new Promise(resolve => setTimeout(resolve, 280));
+        }
+
+        const startedAt = Date.now();
+        const startingHeight = Math.round(viewport.height || 0);
+        let lastHeight = startingHeight;
+        let stableFrames = 0;
+
+        return new Promise(resolve => {
+            let finished = false;
+            const finish = () => {
+                if (finished) return;
+                finished = true;
+                resolve();
+            };
+            const hardTimeout = setTimeout(finish, timeout);
+            const check = () => {
+                if (finished) return;
+                const height = Math.round(viewport.height || 0);
+                stableFrames = Math.abs(height - lastHeight) <= 1 ? stableFrames + 1 : 0;
+                lastHeight = height;
+                const keyboardHasRetreated = height >= startingHeight + 72;
+                if ((keyboardHasRetreated && stableFrames >= 2) || Date.now() - startedAt >= timeout) {
+                    clearTimeout(hardTimeout);
+                    finish();
+                    return;
+                }
+                requestAnimationFrame(check);
+            };
+            requestAnimationFrame(check);
+        });
+    }
+
+    const bstageFocusScopeCleanup = window.mobileInputCompat?.registerFocusScope?.({
+        selector: '#bstage-view, #bstage-chat-view, #bstage-fan-chat-view, .bstage-center-modal-overlay, .bottom-sheet-overlay[id^="bstage-"]',
+        resolveScrollContainer(target, root) {
+            if (!target || !root) return null;
+            if (root.id === 'bstage-chat-view') return document.getElementById('bstage-chat-content');
+            if (root.id === 'bstage-fan-chat-view') return document.getElementById('bstage-fan-chat-content');
+            if (root.id === 'bstage-video-detail-modal' && target.id === 'bstage-vid-comment-input') {
+                return root.querySelector('.bstage-video-detail-scroll');
+            }
+            return null;
+        }
+    }) || function() {};
 
     function registerBstageSendInput(input, onSend, options = {}) {
         if (!input || typeof onSend !== 'function') return function() {};
@@ -951,7 +1056,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 root: options.root || null,
                 scrollContainer: options.scrollContainer || null,
                 onSend,
-                blurAfterSend: true,
+                blurAfterSend: false,
                 enterKeyHint: 'send',
                 restoreWindowScroll: false,
                 onRestore: options.onRestore || null
@@ -963,7 +1068,6 @@ document.addEventListener('DOMContentLoaded', () => {
             event.preventDefault();
             if (!String(input.value || '').trim()) return;
             onSend({ event, input, text: input.value.trim() });
-            input.blur();
         };
         input.setAttribute('enterkeyhint', 'send');
         input.addEventListener('keydown', handleKeydown);
@@ -1497,14 +1601,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const confirmBtn = document.getElementById('bstage-generate-type-confirm-btn');
         const inputEl = document.getElementById('bstage-generate-type-input');
         if (confirmBtn && confirmBtn.classList.contains('is-loading')) return;
+        const wasReadOnly = !!inputEl?.readOnly;
         if (confirmBtn) {
             confirmBtn.classList.add('is-loading');
             confirmBtn.textContent = '生成中...';
+        }
+        if (inputEl) {
+            inputEl.readOnly = true;
+            inputEl.setAttribute('aria-busy', 'true');
         }
         try {
             await currentGenerateTypeAction(inputEl ? inputEl.value.trim() : '');
             window.closeView(generateTypeSheet);
         } finally {
+            if (inputEl) {
+                inputEl.readOnly = wasReadOnly;
+                inputEl.removeAttribute('aria-busy');
+            }
             if (confirmBtn) {
                 confirmBtn.classList.remove('is-loading');
                 confirmBtn.textContent = '确认生成';
@@ -1732,7 +1845,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const originalCloseView = window.closeView;
     window.closeView = function(view) {
         saveBstageData();
-        if (originalCloseView) originalCloseView(view);
+        if (!originalCloseView) return;
+
+        const activeElement = document.activeElement;
+        const shouldWaitForKeyboard = !!(
+            view
+            && isBstageAndroid
+            && view.id
+            && view.id.startsWith('bstage-')
+            && activeElement
+            && view.contains(activeElement)
+            && isBstageEditableElement(activeElement)
+        );
+        if (!shouldWaitForKeyboard) {
+            originalCloseView(view);
+            return;
+        }
+        if (pendingBstageKeyboardCloses.has(view)) return;
+
+        pendingBstageKeyboardCloses.add(view);
+        waitForBstageKeyboardToClose(view).finally(() => {
+            pendingBstageKeyboardCloses.delete(view);
+            originalCloseView(view);
+        });
     };
 
     // Global Debounced Save
@@ -1826,7 +1961,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const generateTypeConfirmBtn = document.getElementById('bstage-generate-type-confirm-btn');
     const generateTypeInput = document.getElementById('bstage-generate-type-input');
-    if (generateTypeConfirmBtn) generateTypeConfirmBtn.addEventListener('click', confirmGenerateTypeSheet);
+    if (generateTypeConfirmBtn) bindBstageFocusPreservingAction(generateTypeConfirmBtn, confirmGenerateTypeSheet);
     if (generateTypeInput) {
         generateTypeInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) {
@@ -2573,11 +2708,15 @@ document.addEventListener('DOMContentLoaded', () => {
     function setSearchGenerateLoading(isLoading) {
         const confirmBtn = document.getElementById('bstage-search-confirm-btn');
         const loading = document.getElementById('bstage-search-loading');
+        const queryInput = document.getElementById('bstage-search-query-input');
+        const countInput = document.getElementById('bstage-search-member-count');
         if (confirmBtn) {
             confirmBtn.classList.toggle('is-loading', isLoading);
             confirmBtn.textContent = isLoading ? '生成中...' : '生成团队';
         }
         if (loading) loading.style.display = isLoading ? 'flex' : 'none';
+        if (queryInput) queryInput.readOnly = isLoading;
+        if (countInput) countInput.readOnly = isLoading;
     }
 
     function openSearchGenerateModal() {
@@ -2696,7 +2835,7 @@ ${generationIntent}
     }
 
     document.getElementById('bstage-search-generate-btn').addEventListener('click', openSearchGenerateModal);
-    document.getElementById('bstage-search-confirm-btn').addEventListener('click', confirmSearchGenerate);
+    bindBstageFocusPreservingAction(document.getElementById('bstage-search-confirm-btn'), confirmSearchGenerate);
     ['bstage-search-query-input', 'bstage-search-member-count'].forEach(inputId => {
         const input = document.getElementById(inputId);
         if (!input) return;
@@ -3576,29 +3715,20 @@ ${generationIntent}
             content.scrollTop = content.scrollHeight;
         };
 
-        newSendBtn.addEventListener('click', sendMsg);
-        newSendBtn.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                sendMsg();
-            }
-        });
+        bindBstageFocusPreservingAction(newSendBtn, sendMsg);
         
-        newApiBtn.addEventListener('click', async () => {
+        bindBstageFocusPreservingAction(newApiBtn, async () => {
             if (newApiBtn.classList.contains('is-loading')) return;
             setChatActionLoading(newApiBtn, true);
-            inputArea.disabled = true;
+            const wasReadOnly = inputArea.readOnly;
+            inputArea.readOnly = true;
+            inputArea.setAttribute('aria-busy', 'true');
             try {
                 await triggerChatApi(member, content);
             } finally {
-                inputArea.disabled = false;
+                inputArea.readOnly = wasReadOnly;
+                inputArea.removeAttribute('aria-busy');
                 setChatActionLoading(newApiBtn, false);
-            }
-        });
-        newApiBtn.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                newApiBtn.click();
             }
         });
 
@@ -4925,7 +5055,7 @@ ${charInfo}
             }
         };
 
-        vidSendBtn.addEventListener('click', sendVideoComment);
+        bindBstageFocusPreservingAction(vidSendBtn, sendVideoComment);
         registerBstageSendInput(vidInput, sendVideoComment, {
             root: videoDetailModal,
             scrollContainer: videoDetailModal.querySelector('.bstage-video-detail-scroll')
@@ -5675,6 +5805,7 @@ ${charInfo}
 
     async function triggerFanChatApi() {
         const apiBtn = document.getElementById('bstage-fan-chat-api-btn');
+        const input = document.getElementById('bstage-fan-chat-input');
         const content = document.getElementById('bstage-fan-chat-content');
         if (!content || !apiBtn || apiBtn.classList.contains('is-loading')) return;
 
@@ -5740,6 +5871,11 @@ ${history}
 `;
 
         setChatActionLoading(apiBtn, true);
+        const wasReadOnly = !!input?.readOnly;
+        if (input) {
+            input.readOnly = true;
+            input.setAttribute('aria-busy', 'true');
+        }
         try {
             const generated = await callBstageJsonApi(prompt, 'You generate strict JSON arrays for live fan chat messages.', 0.85);
             if (!Array.isArray(generated)) throw new Error('invalid_fan_chat_payload');
@@ -5788,6 +5924,10 @@ ${history}
             console.error('Bstage fan chat API failed:', error);
             window.showToast(error && error.message === 'missing_api_config' ? '请先在系统设置中配置 API' : '生成粉丝消息失败');
         } finally {
+            if (input) {
+                input.readOnly = wasReadOnly;
+                input.removeAttribute('aria-busy');
+            }
             setChatActionLoading(apiBtn, false);
         }
     }
@@ -5802,22 +5942,10 @@ ${history}
         });
     }
     if (fanChatSendBtn) {
-        fanChatSendBtn.addEventListener('click', sendFanChatMessage);
-        fanChatSendBtn.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                sendFanChatMessage();
-            }
-        });
+        bindBstageFocusPreservingAction(fanChatSendBtn, sendFanChatMessage);
     }
     if (fanChatApiBtn) {
-        fanChatApiBtn.addEventListener('click', triggerFanChatApi);
-        fanChatApiBtn.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                triggerFanChatApi();
-            }
-        });
+        bindBstageFocusPreservingAction(fanChatApiBtn, triggerFanChatApi);
     }
 
     const chatRoomBtn = document.getElementById('bstage-my-chatroom-btn');

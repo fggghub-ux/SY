@@ -1,19 +1,45 @@
 // Real browser/system notifications for incoming app messages.
 (function () {
     const STORAGE_KEY = 'u2_systemNotificationSettings';
+    const SOUND_ASSET_ID = 'u2_system_notification_sound';
 
     const defaults = {
         enabled: false,
-        permission: typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'
+        permission: typeof Notification !== 'undefined' ? Notification.permission : 'unsupported',
+        soundAssetId: '',
+        soundFileName: '',
+        soundMimeType: '',
+        soundDataUrl: ''
     };
 
     let settings = normalize(loadSettings());
+    let storageHydrated = false;
+    let activeSound = null;
 
     function normalize(value) {
         const safe = value && typeof value === 'object' ? value : {};
+        const permission = getPermission();
         return {
-            enabled: !!safe.enabled,
-            permission: getPermission()
+            enabled: !!safe.enabled && permission === 'granted',
+            permission,
+            soundAssetId: typeof safe.soundAssetId === 'string' ? safe.soundAssetId : '',
+            soundFileName: typeof safe.soundFileName === 'string' ? safe.soundFileName.slice(0, 180) : '',
+            soundMimeType: typeof safe.soundMimeType === 'string' ? safe.soundMimeType.slice(0, 100) : '',
+            soundDataUrl: typeof safe.soundDataUrl === 'string' && /^data:(?:audio\/|application\/octet-stream)/i.test(safe.soundDataUrl)
+                ? safe.soundDataUrl
+                : ''
+        };
+    }
+
+    function getSettingsSnapshot(extra = {}) {
+        return {
+            enabled: !!settings.enabled,
+            permission: settings.permission,
+            soundAssetId: settings.soundAssetId,
+            soundFileName: settings.soundFileName,
+            soundMimeType: settings.soundMimeType,
+            hasCustomSound: !!(settings.soundAssetId || settings.soundDataUrl),
+            ...extra
         };
     }
 
@@ -35,34 +61,64 @@
         }
     }
 
-    function saveSettings() {
+    async function saveSettings() {
         try {
-            if (window.StorageManager && typeof window.StorageManager.save === 'function') {
-                window.StorageManager.save(STORAGE_KEY, settings);
-                return;
+            if (window.appStorage && typeof window.appStorage.saveLegacyKey === 'function') {
+                await window.appStorage.saveLegacyKey(STORAGE_KEY, settings);
+                return true;
             }
 
+            if (window.StorageManager && typeof window.StorageManager.save === 'function') {
+                return window.StorageManager.save(STORAGE_KEY, settings) !== false;
+            }
         } catch (error) {
             console.warn('[system_notifications] Failed to save settings:', error);
         }
+        return false;
+    }
+
+    function notifySettingsChanged(reason) {
+        window.dispatchEvent(new CustomEvent('u2:system-notification-settings-changed', {
+            detail: getSettingsSnapshot({ reason })
+        }));
+    }
+
+    async function hydrateSettingsFromStorage() {
+        if (storageHydrated) return { ...settings };
+        storageHydrated = true;
+
+        const loaded = loadSettings();
+        const normalized = normalize(loaded);
+        const needsReconcile = !!loaded?.enabled !== normalized.enabled
+            || loaded?.permission !== normalized.permission;
+        settings = normalized;
+        if (needsReconcile) await saveSettings();
+        notifySettingsChanged('storage-ready');
+        return getSettingsSnapshot();
     }
 
     function getSettings() {
-        settings.permission = getPermission();
-        if (settings.permission === 'denied' || settings.permission === 'unsupported') {
-            settings.enabled = false;
-            saveSettings();
+        const permission = getPermission();
+        const shouldDisable = settings.enabled && permission !== 'granted';
+        const permissionChanged = settings.permission !== permission;
+        settings.permission = permission;
+        if (shouldDisable) settings.enabled = false;
+        if (shouldDisable || permissionChanged) {
+            void saveSettings();
+            notifySettingsChanged('permission');
         }
-        return { ...settings };
+        return getSettingsSnapshot();
     }
 
     async function updateSettings(nextSettings = {}) {
         const wantsEnabled = !!nextSettings.enabled;
 
         if (getPermission() === 'unsupported') {
-            settings = { enabled: false, permission: 'unsupported' };
-            saveSettings();
-            return { ...settings, unsupported: true };
+            settings.enabled = false;
+            settings.permission = 'unsupported';
+            await saveSettings();
+            notifySettingsChanged('settings');
+            return getSettingsSnapshot({ unsupported: true });
         }
 
         let permission = getPermission();
@@ -75,12 +131,101 @@
             }
         }
 
-        settings = {
-            enabled: wantsEnabled && permission === 'granted',
-            permission
-        };
-        saveSettings();
-        return { ...settings };
+        settings.enabled = wantsEnabled && permission === 'granted';
+        settings.permission = permission;
+        if (!settings.enabled) stopNotificationSound();
+        await saveSettings();
+        notifySettingsChanged('settings');
+        return getSettingsSnapshot();
+    }
+
+    async function setCustomSound(sound = {}) {
+        const dataUrl = typeof sound.dataUrl === 'string' ? sound.dataUrl : '';
+        if (!/^data:(?:audio\/|application\/octet-stream)/i.test(dataUrl)) {
+            throw new TypeError('Invalid audio data URL');
+        }
+
+        const fileName = String(sound.fileName || '自定义提示音').slice(0, 180);
+        const mimeType = String(sound.mimeType || dataUrl.slice(5, dataUrl.indexOf(';')) || 'audio/*').slice(0, 100);
+        let soundAssetId = '';
+        let soundDataUrl = dataUrl;
+
+        if (window.appStorage && typeof window.appStorage.saveAssetFromDataUrl === 'function') {
+            soundAssetId = await window.appStorage.saveAssetFromDataUrl(SOUND_ASSET_ID, dataUrl, {
+                ownerType: 'system_notification',
+                ownerId: 'global',
+                field: 'sound',
+                mimeType
+            });
+            soundDataUrl = '';
+        }
+
+        stopNotificationSound();
+        settings.soundAssetId = soundAssetId || '';
+        settings.soundFileName = fileName;
+        settings.soundMimeType = mimeType;
+        settings.soundDataUrl = soundDataUrl;
+        await saveSettings();
+        notifySettingsChanged('sound');
+        return getSettingsSnapshot();
+    }
+
+    async function clearCustomSound() {
+        const assetId = settings.soundAssetId;
+        stopNotificationSound();
+        settings.soundAssetId = '';
+        settings.soundFileName = '';
+        settings.soundMimeType = '';
+        settings.soundDataUrl = '';
+        await saveSettings();
+
+        if (assetId && window.appStorage && typeof window.appStorage.deleteAsset === 'function') {
+            try {
+                await window.appStorage.deleteAsset(assetId);
+            } catch (error) {
+                console.warn('[system_notifications] Failed to delete custom sound asset:', error);
+            }
+        }
+
+        notifySettingsChanged('sound');
+        return getSettingsSnapshot();
+    }
+
+    async function resolveCustomSoundUrl() {
+        if (settings.soundAssetId && window.appStorage && typeof window.appStorage.getAssetUrl === 'function') {
+            return window.appStorage.getAssetUrl(settings.soundAssetId);
+        }
+        return settings.soundDataUrl || '';
+    }
+
+    function stopNotificationSound() {
+        if (!activeSound) return;
+        try {
+            activeSound.pause();
+            activeSound.currentTime = 0;
+        } catch (error) {}
+        activeSound = null;
+    }
+
+    async function playNotificationSound() {
+        if (!(settings.soundAssetId || settings.soundDataUrl) || typeof window.Audio !== 'function') return false;
+
+        try {
+            const soundUrl = await resolveCustomSoundUrl();
+            if (!soundUrl) return false;
+            stopNotificationSound();
+            activeSound = new window.Audio(soundUrl);
+            activeSound.preload = 'auto';
+            activeSound.playsInline = true;
+            activeSound.addEventListener?.('ended', () => {
+                activeSound = null;
+            }, { once: true });
+            await activeSound.play();
+            return true;
+        } catch (error) {
+            console.warn('[system_notifications] Failed to play custom sound:', error);
+            return false;
+        }
     }
 
     function resolveTitle(payload = {}) {
@@ -109,6 +254,7 @@
             body,
             tag,
             renotify: true,
+            silent: !!current.hasCustomSound,
             icon: friend.avatarUrl || 'assets/moren.jpg',
             badge: 'assets/moren.jpg',
             data: {
@@ -119,6 +265,7 @@
         };
 
         try {
+            if (current.hasCustomSound) void playNotificationSound();
             const notification = new Notification(title, options);
             notification.onclick = () => {
                 window.focus();
@@ -134,6 +281,21 @@
     window.u2SystemNotifications = {
         getSettings,
         updateSettings,
+        setCustomSound,
+        clearCustomSound,
+        playNotificationSound,
+        stopNotificationSound,
         notifyIncomingMessage
     };
+
+    window.addEventListener('u2-storage-ready', hydrateSettingsFromStorage, { once: true });
+
+    if (window.appStorage?.ready && typeof window.appStorage.ready.then === 'function') {
+        window.appStorage.ready.then(() => {
+            if (!storageHydrated) return hydrateSettingsFromStorage();
+            return undefined;
+        }).catch((error) => {
+            console.warn('[system_notifications] Storage hydration failed:', error);
+        });
+    }
 })();

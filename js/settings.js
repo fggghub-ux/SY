@@ -103,6 +103,15 @@
     };
     let apiPresets = [];
     let fetchedModels = [];
+    window.getApiPresets = function getApiPresets() {
+        return clonePlainData(Array.isArray(apiPresets) ? apiPresets : []);
+    };
+
+    function notifyApiPresetsUpdated() {
+        window.dispatchEvent(new CustomEvent('u2:api-presets-updated', {
+            detail: { presets: window.getApiPresets() }
+        }));
+    }
     let assistiveBallSettings = {
         enabled: false,
         x: null,
@@ -283,6 +292,15 @@
             apiTemp: document.getElementById('api-temp-input'),
             bgActivityToggle: document.getElementById('bg-activity-toggle'),
             systemNotificationToggle: document.getElementById('system-notification-toggle'),
+            notificationSettingsGroup: document.getElementById('notification-settings-group'),
+            notificationSoundSettings: document.getElementById('notification-sound-settings'),
+            notificationSoundFileName: document.getElementById('notification-sound-file-name'),
+            notificationSoundUploadBtn: document.getElementById('notification-sound-upload-btn'),
+            notificationSoundUploadLabel: document.getElementById('notification-sound-upload-label'),
+            notificationSoundFileInput: document.getElementById('notification-sound-file-input'),
+            notificationSoundActions: document.getElementById('notification-sound-actions'),
+            notificationSoundPreviewBtn: document.getElementById('notification-sound-preview-btn'),
+            notificationSoundRemoveBtn: document.getElementById('notification-sound-remove-btn'),
             minimaxRegion: document.getElementById('minimax-region-select'),
             minimaxCustomEndpoint: document.getElementById('minimax-custom-endpoint-toggle'),
             minimaxEndpoint: document.getElementById('minimax-endpoint-input'),
@@ -368,6 +386,7 @@
         const dataManagementBtn = document.getElementById('data-management-btn');
         const dataManagementSheet = document.getElementById('data-management-sheet');
         const dataManagementCloseBtn = document.getElementById('data-management-close-btn');
+        const authSignOutBtn = document.getElementById('u2-auth-sign-out-btn');
         
         if (dataManagementBtn && dataManagementSheet) {
             dataManagementBtn.addEventListener('click', () => {
@@ -377,6 +396,17 @@
         if (dataManagementCloseBtn && dataManagementSheet) {
             dataManagementCloseBtn.addEventListener('click', () => closeView(dataManagementSheet));
         }
+        authSignOutBtn?.addEventListener('click', async () => {
+            authSignOutBtn.disabled = true;
+            try {
+                if (dataManagementSheet) closeView(dataManagementSheet);
+                await window.u2Auth?.logout();
+            } catch (error) {
+                console.error('[auth] Failed to sign out:', error);
+            } finally {
+                authSignOutBtn.disabled = false;
+            }
+        });
 
         // Apple ID / Profile View
         const appleIdTrigger = document.getElementById('apple-id-trigger');
@@ -517,27 +547,6 @@
             });
         }
 
-        const authSignOutBtn = document.getElementById('u2-auth-sign-out-btn');
-        if (authSignOutBtn) {
-            authSignOutBtn.addEventListener('click', async () => {
-                if (window.u2Auth && typeof window.u2Auth.logout === 'function') {
-                    authSignOutBtn.disabled = true;
-                    try {
-                        await window.u2Auth.logout();
-                        closeView(dataManagementSheet);
-                        closeView(UI.views.edit);
-                        closeView(UI.views.settings);
-                        if (typeof window.showToast === 'function') window.showToast('Signed out');
-                    } catch (error) {
-                        console.error('Failed to sign out:', error);
-                        if (typeof window.showToast === 'function') window.showToast('退出登录失败');
-                    } finally {
-                        authSignOutBtn.disabled = false;
-                    }
-                }
-            });
-        }
-        
         // Account List Rendering
         function renderAccountList() {
             if(!UI.lists.accounts) return;
@@ -1215,7 +1224,68 @@
   border-bottom-left-radius: 4px;
 }
 
-/* 头像：群聊/多人消息会用到；单聊 AI 气泡一般不显示头像 */
+/* 单聊消息头像与消息头
+   这些节点由“显示头像”开关生成；运行时带内联初始值，因此这里使用 !important 方便主题覆盖 */
+.chat-message-header {
+  width: 100% !important;
+  display: flex !important;
+  align-items: flex-start !important;
+  margin-bottom: 4px !important;
+}
+
+.chat-message-header.user-header {
+  justify-content: flex-end !important;
+}
+
+.chat-message-header.ai-header {
+  justify-content: flex-start !important;
+}
+
+.chat-message-header .chat-header-avatar {
+  width: 44px !important;
+  height: 44px !important;
+  border: 1px solid #eee !important;
+  border-radius: 50% !important;
+  overflow: hidden !important;
+  background: #fff !important;
+  flex-shrink: 0 !important;
+}
+
+.chat-message-header .chat-header-avatar img {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+  object-fit: cover !important;
+}
+
+.chat-message-header .chat-header-info {
+  min-height: 44px;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+}
+
+.chat-message-header.user-header .chat-header-info {
+  align-items: flex-end !important;
+}
+
+.chat-message-header.ai-header .chat-header-info {
+  align-items: flex-start !important;
+}
+
+.chat-message-header .chat-header-name {
+  margin-bottom: 2px !important;
+  color: #333 !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+}
+
+.chat-message-header .chat-header-date {
+  color: #888 !important;
+  font-size: 12px !important;
+}
+
+/* 群聊/多人消息的小头像 */
 .chat-avatar-small {
   width: 28px;
   height: 28px;
@@ -1236,13 +1306,32 @@
   object-fit: cover;
 }
 
-/* 时间/已读 */
+/* 单聊居中时间分隔 */
+.chat-timestamp {
+  display: flex;
+  justify-content: center;
+  margin: 16px 0 6px;
+}
+
+.chat-timestamp span {
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: rgba(0,0,0,0.2);
+  color: #fff;
+  font-size: 11px;
+}
+
+/* 单聊气泡内时间/已读 */
 .bubble-meta {
   display: none;
   margin-left: 6px;
   font-size: 10px;
   opacity: 0.7;
   vertical-align: bottom;
+}
+
+.bubble-time {
+  white-space: nowrap;
 }
 
 :scope.show-timestamps .bubble-meta {
@@ -1278,6 +1367,119 @@
   margin-right: -6px;
   margin-top: 0;
   color: #8e8e93;
+}
+
+/* 单聊可见 COT 卡片 */
+.chat-cot-row {
+  width: 100%;
+  margin: 6px 0;
+  display: flex;
+  justify-content: flex-start;
+  box-sizing: border-box;
+}
+
+.chat-cot-row.chat-cot-row-inline {
+  margin: 2px 0 6px;
+}
+
+.chat-cot-card {
+  width: fit-content;
+  max-width: min(78%, 330px);
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(242,242,247,0.94);
+  color: #636366;
+  box-sizing: border-box;
+}
+
+.chat-cot-card.is-expanded {
+  width: min(78%, 330px);
+  border-radius: 20px;
+}
+
+.chat-cot-toggle {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.chat-cot-title {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.chat-cot-chevron {
+  flex: 0 0 auto;
+  color: #8e8e93;
+  font-size: 11px;
+  transition: transform 0.2s ease;
+}
+
+.chat-cot-card.is-expanded .chat-cot-chevron {
+  transform: rotate(180deg);
+}
+
+.chat-cot-content {
+  padding: 0 12px 12px;
+  color: #666;
+  font-size: 13px;
+  line-height: 1.58;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.chat-cot-content[hidden] {
+  display: none;
+}
+
+.typing-row.im-cot-loading-row {
+  margin-top: 10px;
+}
+
+.im-cot-loading-row .chat-cot-card {
+  width: fit-content;
+}
+
+.im-cot-loading-row .chat-cot-toggle {
+  cursor: default;
+}
+
+.im-cot-loading-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 3px;
+}
+
+.im-cot-loading-dots > span {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #8e8e93;
+  animation: typingBounce 1.2s infinite ease-in-out;
+}
+
+.im-cot-loading-dots > span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.im-cot-loading-dots > span:nth-child(3) {
+  animation-delay: 0.3s;
 }
 
 /* 引用与翻译：实际由 JS 内联生成，这里给玩家可覆盖的真实 class */
@@ -1511,6 +1713,240 @@
   display: flex;
   flex-direction: column;
   gap: 15px;
+}
+
+/* 单聊消息头像与消息头
+   由“显示头像”开关生成；运行时带内联初始值，因此使用 !important 方便主题覆盖 */
+.chat-message-header {
+  width: 100% !important;
+  display: flex !important;
+  align-items: flex-start !important;
+  margin-bottom: 4px !important;
+}
+
+.chat-message-header.user-header {
+  justify-content: flex-end !important;
+}
+
+.chat-message-header.ai-header {
+  justify-content: flex-start !important;
+}
+
+.chat-message-header .chat-header-avatar {
+  width: 44px !important;
+  height: 44px !important;
+  border: 1px solid #eee !important;
+  border-radius: 50% !important;
+  overflow: hidden !important;
+  background: #fff !important;
+  flex-shrink: 0 !important;
+}
+
+.chat-message-header .chat-header-avatar img {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+  object-fit: cover !important;
+}
+
+.chat-message-header .chat-header-info {
+  min-height: 44px;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+}
+
+.chat-message-header.user-header .chat-header-info {
+  align-items: flex-end !important;
+}
+
+.chat-message-header.ai-header .chat-header-info {
+  align-items: flex-start !important;
+}
+
+.chat-message-header .chat-header-name {
+  margin-bottom: 2px !important;
+  color: #333 !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+}
+
+.chat-message-header .chat-header-date {
+  color: #888 !important;
+  font-size: 12px !important;
+}
+
+/* 单聊时间戳：居中分隔时间、气泡内时间和外置时间 */
+.chat-timestamp {
+  display: flex;
+  justify-content: center;
+  margin: 16px 0 6px;
+}
+
+.chat-timestamp span {
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: rgba(0,0,0,0.2);
+  color: #fff;
+  font-size: 11px;
+}
+
+.bubble-meta {
+  display: none;
+  margin-left: 6px;
+  font-size: 10px;
+  opacity: 0.7;
+  vertical-align: bottom;
+}
+
+.bubble-time {
+  white-space: nowrap;
+}
+
+:scope.show-timestamps .bubble-meta {
+  display: inline-flex;
+  align-items: center;
+}
+
+.bubble-read-icon {
+  margin-left: 3px;
+  font-size: 10px;
+  letter-spacing: 0;
+}
+
+:scope.timestamp-outside .chat-bubble {
+  overflow: visible;
+}
+
+:scope.timestamp-outside .user-row .bubble-meta {
+  position: absolute;
+  left: 0;
+  bottom: 4px;
+  transform: translateX(-100%);
+  margin-left: -6px;
+  color: #8e8e93;
+}
+
+:scope.timestamp-outside .ai-row .bubble-meta {
+  position: absolute;
+  right: 0;
+  bottom: 4px;
+  transform: translateX(100%);
+  margin-right: -6px;
+  color: #8e8e93;
+}
+
+/* 单聊可见 COT 卡片 */
+.chat-cot-row {
+  width: 100%;
+  margin: 6px 0;
+  display: flex;
+  justify-content: flex-start;
+  box-sizing: border-box;
+}
+
+.chat-cot-row.chat-cot-row-inline {
+  margin: 2px 0 6px;
+}
+
+.chat-cot-card {
+  width: fit-content;
+  max-width: min(78%, 330px);
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(242,242,247,0.94);
+  color: #636366;
+  box-sizing: border-box;
+}
+
+.chat-cot-card.is-expanded {
+  width: min(78%, 330px);
+  border-radius: 20px;
+}
+
+.chat-cot-toggle {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.chat-cot-title {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.chat-cot-chevron {
+  flex: 0 0 auto;
+  color: #8e8e93;
+  font-size: 11px;
+  transition: transform 0.2s ease;
+}
+
+.chat-cot-card.is-expanded .chat-cot-chevron {
+  transform: rotate(180deg);
+}
+
+.chat-cot-content {
+  padding: 0 12px 12px;
+  color: #666;
+  font-size: 13px;
+  line-height: 1.58;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.chat-cot-content[hidden] {
+  display: none;
+}
+
+.typing-row.im-cot-loading-row {
+  margin-top: 10px;
+}
+
+.im-cot-loading-row .chat-cot-card {
+  width: fit-content;
+}
+
+.im-cot-loading-row .chat-cot-toggle {
+  cursor: default;
+}
+
+.im-cot-loading-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 3px;
+}
+
+.im-cot-loading-dots > span {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #8e8e93;
+  animation: typingBounce 1.2s infinite ease-in-out;
+}
+
+.im-cot-loading-dots > span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.im-cot-loading-dots > span:nth-child(3) {
+  animation-delay: 0.3s;
 }
 
 .ins-chat-input-container {
@@ -3320,14 +3756,32 @@
             window.addEventListener('u2:background-activity-settings-changed', syncBackgroundActivityControls);
         }
 
+        const MAX_NOTIFICATION_SOUND_BYTES = 5 * 1024 * 1024;
+
         function syncSystemNotificationControls() {
             if (!UI.inputs.systemNotificationToggle) return;
 
             const settings = window.u2SystemNotifications?.getSettings
                 ? window.u2SystemNotifications.getSettings()
-                : { enabled: false };
+                : { enabled: false, hasCustomSound: false };
+            const enabled = !!settings.enabled;
+            const hasCustomSound = !!settings.hasCustomSound;
 
-            UI.inputs.systemNotificationToggle.checked = !!settings.enabled;
+            UI.inputs.systemNotificationToggle.checked = enabled;
+            UI.inputs.notificationSettingsGroup?.classList.toggle('is-sound-expanded', enabled);
+            UI.inputs.notificationSoundSettings?.classList.toggle('is-visible', enabled);
+            UI.inputs.notificationSoundSettings?.setAttribute('aria-hidden', String(!enabled));
+            UI.inputs.notificationSoundActions?.classList.toggle('is-visible', hasCustomSound);
+            UI.inputs.notificationSoundActions?.setAttribute('aria-hidden', String(!hasCustomSound));
+
+            if (UI.inputs.notificationSoundFileName) {
+                UI.inputs.notificationSoundFileName.textContent = hasCustomSound
+                    ? (settings.soundFileName || '自定义提示音')
+                    : '默认使用系统提示音';
+            }
+            if (UI.inputs.notificationSoundUploadLabel) {
+                UI.inputs.notificationSoundUploadLabel.textContent = hasCustomSound ? '更换' : '上传音频';
+            }
         }
 
         async function applySystemNotificationControls(showFeedback = false) {
@@ -3358,8 +3812,90 @@
         }
 
         if (UI.inputs.systemNotificationToggle) {
-            UI.inputs.systemNotificationToggle.addEventListener('change', () => {
-                applySystemNotificationControls(true);
+            UI.inputs.systemNotificationToggle.addEventListener('change', async () => {
+                UI.inputs.systemNotificationToggle.disabled = true;
+                try {
+                    await applySystemNotificationControls(true);
+                } finally {
+                    UI.inputs.systemNotificationToggle.disabled = false;
+                    syncSystemNotificationControls();
+                }
+            });
+            window.addEventListener('u2:system-notification-settings-changed', syncSystemNotificationControls);
+        }
+
+        function readNotificationSoundFile(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result || ''));
+                reader.onerror = () => reject(reader.error || new Error('音频读取失败'));
+                reader.readAsDataURL(file);
+            });
+        }
+
+        if (UI.inputs.notificationSoundUploadBtn && UI.inputs.notificationSoundFileInput) {
+            UI.inputs.notificationSoundUploadBtn.addEventListener('click', () => {
+                UI.inputs.notificationSoundFileInput.click();
+            });
+
+            UI.inputs.notificationSoundFileInput.addEventListener('change', async (event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+
+                try {
+                    if (file.type && !file.type.startsWith('audio/')) {
+                        showToast('请选择音频文件');
+                        return;
+                    }
+                    if (file.size > MAX_NOTIFICATION_SOUND_BYTES) {
+                        showToast('提示音不能超过 5 MB');
+                        return;
+                    }
+                    if (!window.u2SystemNotifications?.setCustomSound) {
+                        showToast('消息通知模块未加载');
+                        return;
+                    }
+
+                    UI.inputs.notificationSoundUploadBtn.disabled = true;
+                    const dataUrl = await readNotificationSoundFile(file);
+                    await window.u2SystemNotifications.setCustomSound({
+                        dataUrl,
+                        fileName: file.name,
+                        mimeType: file.type || 'application/octet-stream'
+                    });
+                    syncSystemNotificationControls();
+                    showToast('消息提示音已更新');
+                } catch (error) {
+                    console.error('[settings] Failed to save notification sound:', error);
+                    showToast(error?.name === 'QuotaExceededError' ? '存储空间不足，无法保存提示音' : '提示音保存失败');
+                } finally {
+                    UI.inputs.notificationSoundUploadBtn.disabled = false;
+                    event.target.value = '';
+                }
+            });
+        }
+
+        if (UI.inputs.notificationSoundPreviewBtn) {
+            UI.inputs.notificationSoundPreviewBtn.addEventListener('click', async () => {
+                const played = await window.u2SystemNotifications?.playNotificationSound?.();
+                if (!played) showToast('提示音暂时无法播放');
+            });
+        }
+
+        if (UI.inputs.notificationSoundRemoveBtn) {
+            UI.inputs.notificationSoundRemoveBtn.addEventListener('click', async () => {
+                if (!window.u2SystemNotifications?.clearCustomSound) return;
+                UI.inputs.notificationSoundRemoveBtn.disabled = true;
+                try {
+                    await window.u2SystemNotifications.clearCustomSound();
+                    syncSystemNotificationControls();
+                    showToast('已恢复系统提示音');
+                } catch (error) {
+                    console.error('[settings] Failed to remove notification sound:', error);
+                    showToast('提示音移除失败');
+                } finally {
+                    UI.inputs.notificationSoundRemoveBtn.disabled = false;
+                }
             });
         }
 
@@ -3957,6 +4493,7 @@
                 
                 window.apiConfig = apiConfig;
                 saveGlobalData();
+                notifyApiPresetsUpdated();
                 syncAssistiveBallPanel();
                 
                 closeApiConfigSheet();
@@ -4050,6 +4587,7 @@
                 });
 
                 saveGlobalData();
+                notifyApiPresetsUpdated();
                 syncAssistiveBallPanel();
                 closeView(UI.overlays.savePreset);
                 showToast('预设已保存');
@@ -4120,6 +4658,7 @@
                         if (confirm(`删除预设“${preset.name || '未命名预设'}”？`)) {
                             apiPresets = apiPresets.filter(p => p.id !== preset.id);
                             saveGlobalData();
+                            notifyApiPresetsUpdated();
                             renderPresetList();
                             syncAssistiveBallPanel();
                             showToast('预设已删除');

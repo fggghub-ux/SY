@@ -1,371 +1,442 @@
 (function() {
-    // Temporary product switch: the current login is only a local mock gate.
-    // Keep the implementation and public API intact so the gate can be restored later.
-    const AUTH_GATE_ENABLED = false;
-    const AUTH_SESSION_STORAGE_KEY = 'u2_authSession';
-    let cachedDom = null;
-    let cachedSession = null;
-    let authStateStatus = 'initializing';
-    let authReadySettled = false;
-    let loginDomBound = false;
-    let authReadyResolve;
-    let authReadyReject;
-    const authReady = new Promise((resolve, reject) => {
-        authReadyResolve = resolve;
-        authReadyReject = reject;
-    });
+    const SUPABASE_URL = 'https://xesofmxgvsnpldrjtxur.supabase.co';
+    const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_CbaMneYIuVFIvUNiTtTgHQ_ouUMzmI5';
+    const AUTH_SESSION_KEY = 'u2_auth_session_v1';
+    const DEVICE_ID_KEY = 'u2_auth_device_id_v1';
+    const OLD_ACTIVATION_KEY = 'u2_activation_granted_v1';
+    const USERNAME_PATTERN = /^[a-z0-9_]{3,24}$/;
+    const ACTIVATION_CODE_PATTERN = /^U2(?:-[A-Z2-9]{4}){4}$/;
 
-    function clonePlainData(value) {
-        if (!value || typeof value !== 'object') return value;
-        if (typeof structuredClone === 'function') return structuredClone(value);
-        return JSON.parse(JSON.stringify(value));
+    let dom = null;
+    let mode = 'signin';
+    let currentSession = null;
+
+    function collectDom() {
+        return {
+            screen: document.getElementById('u2-login-screen'),
+            title: document.getElementById('u2-login-title'),
+            form: document.getElementById('u2-login-form'),
+            signinMode: document.getElementById('u2-login-mode-signin'),
+            registerMode: document.getElementById('u2-login-mode-register'),
+            accountField: document.getElementById('u2-login-account-field'),
+            accountInput: document.getElementById('u2-login-account'),
+            passwordField: document.getElementById('u2-login-password-field'),
+            passwordInput: document.getElementById('u2-login-password'),
+            passwordToggle: document.getElementById('u2-login-password-toggle'),
+            confirmField: document.getElementById('u2-login-confirm-field'),
+            confirmInput: document.getElementById('u2-login-confirm'),
+            codeField: document.getElementById('u2-login-code-field'),
+            codeInput: document.getElementById('u2-login-code'),
+            noticeRow: document.getElementById('u2-login-notice-row'),
+            noticeAccepted: document.getElementById('u2-login-notice-accepted'),
+            noticeLink: document.getElementById('u2-login-notice-link'),
+            error: document.getElementById('u2-login-error'),
+            submit: document.getElementById('u2-login-submit'),
+            submitLabel: document.getElementById('u2-login-submit-label')
+        };
     }
 
-    function isValidSession(session) {
-        return !!session
-            && typeof session === 'object'
-            && typeof session.account === 'string'
-            && !!session.account.trim()
-            && typeof session.displayName === 'string'
-            && Number.isFinite(session.loginAt)
-            && session.loginAt > 0;
+    function normalizeUsername(value) {
+        return String(value || '').trim().toLowerCase();
     }
 
-    function safeLoadSession() {
-        try {
-            const rawSession = window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY);
-            if (!rawSession) return null;
-            const session = JSON.parse(rawSession);
-            if (isValidSession(session)) return session;
-            window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
-            return null;
-        } catch (error) {
-            console.warn('[u2Auth] Failed to load session:', error);
-            try {
-                window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
-            } catch (removeError) {}
-            return null;
+    function normalizeActivationCode(value) {
+        const raw = String(value || '').trim().toUpperCase();
+        const compact = raw.replace(/[^A-Z0-9]/g, '');
+        if (!compact.startsWith('U2')) return raw;
+        const groups = compact.slice(2, 18).match(/.{1,4}/g) || [];
+        return ['U2', ...groups].join('-');
+    }
+
+    async function sha256Hex(value) {
+        if (!window.crypto?.subtle || typeof TextEncoder !== 'function') {
+            throw new Error('SHA-256 is unavailable in this browser.');
         }
+        const encoded = new TextEncoder().encode(value);
+        const digest = await window.crypto.subtle.digest('SHA-256', encoded);
+        return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
     }
 
-    function safeSaveSession(session) {
-        cachedSession = clonePlainData(session);
-        try {
-            window.localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(session));
-        } catch (error) {
-            console.warn('[u2Auth] Session will only last for this page:', error);
+    function createUuid() {
+        if (typeof window.crypto?.randomUUID === 'function') return window.crypto.randomUUID();
+        const bytes = new Uint8Array(16);
+        window.crypto.getRandomValues(bytes);
+        bytes[6] = (bytes[6] & 0x0f) | 0x40;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+        const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+        return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    }
+
+    function getDeviceId() {
+        let deviceId = window.localStorage.getItem(DEVICE_ID_KEY);
+        if (!deviceId) {
+            deviceId = createUuid();
+            window.localStorage.setItem(DEVICE_ID_KEY, deviceId);
         }
-        return cachedSession;
-    }
-
-    function safeRemoveSession() {
-        cachedSession = null;
-        try {
-            window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
-        } catch (error) {
-            console.warn('[u2Auth] Failed to remove session:', error);
-        }
-    }
-
-    function resolveDisplayName(account) {
-        const safeAccount = String(account || '').trim();
-        if (!safeAccount) return '';
-        const emailName = safeAccount.split('@')[0];
-        return emailName || safeAccount;
-    }
-
-    function emitAuthChanged(session) {
-        window.dispatchEvent(new CustomEvent('u2:auth-changed', {
-            detail: {
-                session: session ? clonePlainData(session) : null,
-                isLoggedIn: !!session
-            }
-        }));
+        return deviceId;
     }
 
     function setLoginLocked(locked) {
-        if (document.body) {
-            document.body.classList.toggle('u2-login-locked', !!locked);
-            document.body.classList.toggle('u2-login-authenticated', !locked);
-        }
+        document.body?.classList.toggle('u2-login-locked', !!locked);
     }
 
     function showLoginScreen(options = {}) {
-        const dom = cachedDom || collectDom();
-        if (!dom.screen) return;
-        if (!AUTH_GATE_ENABLED) {
-            dom.screen.classList.add('is-hidden');
-            dom.screen.setAttribute('aria-hidden', 'true');
-            setLoginLocked(false);
-            return;
-        }
-        if (dom.noticeAccepted) dom.noticeAccepted.checked = false;
-        dom.noticeRow?.classList.remove('is-invalid');
+        if (!dom?.screen) return;
         dom.screen.classList.remove('is-hidden');
         dom.screen.setAttribute('aria-hidden', 'false');
         setLoginLocked(true);
-        if (options.focus && dom.accountInput) {
-            setTimeout(() => dom.accountInput.focus(), 80);
-        }
+        if (options.focus !== false) setTimeout(() => dom.accountInput?.focus(), 80);
     }
 
     function hideLoginScreen() {
-        const dom = cachedDom || collectDom();
-        if (!dom.screen) return;
+        if (!dom?.screen) return;
         dom.screen.classList.add('is-hidden');
         dom.screen.setAttribute('aria-hidden', 'true');
         setLoginLocked(false);
     }
 
-    function getSession() {
-        return cachedSession ? clonePlainData(cachedSession) : null;
-    }
-
-    function isLoggedIn() {
-        return !!getSession();
-    }
-
-    async function login(credentials = {}) {
-        const account = String(credentials.account || '').trim();
-        const password = String(credentials.password || '');
-        if (!account || !password) {
-            return {
-                ok: false,
-                error: 'Account and password are required.'
-            };
+    function readSession() {
+        try {
+            const raw = window.localStorage.getItem(AUTH_SESSION_KEY);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            if (!parsed?.access_token || !parsed?.refresh_token) return null;
+            return parsed;
+        } catch {
+            return null;
         }
+    }
 
-        const session = {
-            account,
-            displayName: resolveDisplayName(account),
-            loginAt: Date.now()
+    function saveSession(session, username = '') {
+        currentSession = {
+            access_token: session.access_token,
+            refresh_token: session.refresh_token,
+            expires_at: Number(session.expires_at || Math.floor(Date.now() / 1000) + Number(session.expires_in || 3600)),
+            token_type: session.token_type || 'bearer',
+            username: normalizeUsername(username || currentSession?.username)
         };
-        safeSaveSession(session);
-        hideLoginScreen();
-        emitAuthChanged(session);
-        return {
-            ok: true,
-            session: clonePlainData(session)
+        window.localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(currentSession));
+        window.localStorage.removeItem(OLD_ACTIVATION_KEY);
+        return currentSession;
+    }
+
+    function clearSession() {
+        currentSession = null;
+        window.localStorage.removeItem(AUTH_SESSION_KEY);
+        window.localStorage.removeItem(OLD_ACTIVATION_KEY);
+    }
+
+    async function request(path, options = {}) {
+        const headers = {
+            apikey: SUPABASE_PUBLISHABLE_KEY,
+            'Content-Type': 'application/json',
+            ...(options.headers || {})
         };
-    }
-
-    async function logout() {
-        safeRemoveSession();
-        authStateStatus = 'ready';
-        setCredentialInputsDisabled(false);
-        setSubmitState('idle');
-        if (AUTH_GATE_ENABLED) {
-            showLoginScreen({ focus: true });
-        } else {
-            hideLoginScreen();
+        const response = await fetch(`${SUPABASE_URL}${path}`, {
+            method: options.method || 'POST',
+            headers,
+            body: options.body === undefined ? undefined : JSON.stringify(options.body)
+        });
+        let payload = {};
+        try {
+            payload = await response.json();
+        } catch {
+            payload = {};
         }
-        emitAuthChanged(null);
-        return true;
-    }
-
-    function collectDom() {
-        cachedDom = {
-            screen: document.getElementById('u2-login-screen'),
-            form: document.getElementById('u2-login-form'),
-            accountField: document.getElementById('u2-login-account-field'),
-            passwordField: document.getElementById('u2-login-password-field'),
-            accountInput: document.getElementById('u2-login-account'),
-            passwordInput: document.getElementById('u2-login-password'),
-            passwordToggle: document.getElementById('u2-login-password-toggle'),
-            noticeRow: document.getElementById('u2-login-notice-row'),
-            noticeAccepted: document.getElementById('u2-login-notice-accepted'),
-            noticeLink: document.getElementById('u2-login-notice-link'),
-            submitButton: document.getElementById('u2-login-submit'),
-            error: document.getElementById('u2-login-error')
-        };
-        return cachedDom;
-    }
-
-    function setError(message) {
-        const dom = cachedDom || collectDom();
-        if (dom.error) dom.error.textContent = message || '';
-    }
-
-    function setSubmitState(state) {
-        const dom = cachedDom || collectDom();
-        if (!dom.submitButton) return;
-        const label = dom.submitButton.querySelector('span');
-        const icon = dom.submitButton.querySelector('i');
-        const busy = state === 'loading' || state === 'submitting';
-        dom.submitButton.disabled = busy;
-        dom.submitButton.setAttribute('aria-busy', busy ? 'true' : 'false');
-        if (label) {
-            label.textContent = state === 'loading'
-                ? 'Restoring session / 正在恢复'
-                : state === 'retry'
-                    ? 'Retry session / 重试'
-                    : state === 'submitting'
-                        ? 'Signing in / 正在登录'
-                        : 'Continue / 继续';
+        if (!response.ok) {
+            const error = new Error(payload?.msg || payload?.message || payload?.error_description || payload?.error || `HTTP ${response.status}`);
+            error.status = response.status;
+            error.payload = payload;
+            throw error;
         }
-        if (icon) {
-            icon.className = busy ? 'fas fa-spinner fa-spin' : (state === 'retry' ? 'fas fa-rotate-right' : 'fas fa-arrow-right');
-        }
+        return payload;
     }
 
-    function setCredentialInputsDisabled(disabled) {
-        const dom = cachedDom || collectDom();
-        [dom.accountInput, dom.passwordInput, dom.noticeAccepted].forEach((input) => {
-            if (input) input.disabled = !!disabled;
+    function internalEmail(username) {
+        return `${normalizeUsername(username)}@accounts.u2phone.invalid`;
+    }
+
+    async function signIn(username, password) {
+        const data = await request('/auth/v1/token?grant_type=password', {
+            body: { email: internalEmail(username), password }
+        });
+        return saveSession(data, username);
+    }
+
+    async function refreshSession(session) {
+        const data = await request('/auth/v1/token?grant_type=refresh_token', {
+            body: { refresh_token: session.refresh_token }
+        });
+        return saveSession(data, session.username);
+    }
+
+    async function ensureFreshSession(session) {
+        const expiresAt = Number(session?.expires_at || 0);
+        if (expiresAt > Math.floor(Date.now() / 1000) + 60) return session;
+        return refreshSession(session);
+    }
+
+    async function checkDevice(session) {
+        const deviceHash = await sha256Hex(getDeviceId());
+        return request('/rest/v1/rpc/u2_check_device', {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+            body: { p_device_hash: deviceHash }
         });
     }
 
-    function settleAuthReady() {
-        if (authReadySettled) return;
-        authReadySettled = true;
-        authReadyResolve(true);
+    async function authorizeSession(session) {
+        const freshSession = await ensureFreshSession(session);
+        const state = await checkDevice(freshSession);
+        if (!state?.allowed) {
+            const error = new Error(state?.reason || 'AUTHORIZATION_FAILED');
+            error.code = state?.reason || 'AUTHORIZATION_FAILED';
+            throw error;
+        }
+        if (state.username && state.username !== freshSession.username) saveSession(freshSession, state.username);
+        return state;
     }
 
-    async function restoreInitialAuthState() {
-        const dom = cachedDom || collectDom();
-        authStateStatus = 'initializing';
-        showLoginScreen();
-        setError('');
-        setCredentialInputsDisabled(true);
-        setSubmitState('loading');
+    function setBusy(busy) {
+        [
+            dom?.submit,
+            dom?.signinMode,
+            dom?.registerMode,
+            dom?.accountInput,
+            dom?.passwordInput,
+            dom?.confirmInput,
+            dom?.codeInput,
+            dom?.noticeAccepted
+        ].forEach((element) => {
+            if (element) element.disabled = !!busy;
+        });
+    }
 
-        cachedSession = safeLoadSession();
+    function setMessage(message = '', success = false) {
+        if (!dom?.error) return;
+        dom.error.textContent = message;
+        dom.error.classList.toggle('is-success', !!success);
+    }
 
-        authStateStatus = 'ready';
-        settleAuthReady();
-        if (cachedSession) {
-            hideLoginScreen();
-            emitAuthChanged(cachedSession);
-            return true;
+    function clearValidation() {
+        [dom?.accountField, dom?.passwordField, dom?.confirmField, dom?.codeField, dom?.noticeRow]
+            .forEach((element) => element?.classList.remove('is-invalid'));
+        setMessage('');
+    }
+
+    function setMode(nextMode) {
+        mode = nextMode === 'register' ? 'register' : 'signin';
+        const registering = mode === 'register';
+        dom?.screen?.classList.toggle('is-register-mode', registering);
+        dom?.signinMode?.classList.toggle('is-active', !registering);
+        dom?.registerMode?.classList.toggle('is-active', registering);
+        dom?.signinMode?.setAttribute('aria-selected', String(!registering));
+        dom?.registerMode?.setAttribute('aria-selected', String(registering));
+        if (dom?.title) dom.title.textContent = registering ? '创建账号' : '欢迎回来';
+        if (dom?.submitLabel) dom.submitLabel.textContent = registering ? '注册并进入' : '登录';
+        if (dom?.passwordInput) dom.passwordInput.autocomplete = registering ? 'new-password' : 'current-password';
+        clearValidation();
+        setTimeout(() => dom?.accountInput?.focus(), 30);
+    }
+
+    function messageForError(error) {
+        const code = error?.code || error?.payload?.code || '';
+        const messages = {
+            USERNAME_INVALID: '账号需为 3–24 位小写字母、数字或下划线。',
+            USERNAME_TAKEN: '这个账号已经被注册。',
+            PASSWORD_INVALID: '密码长度需为 6–72 位。',
+            CODE_INVALID: '激活码无效，请检查后重试。',
+            CODE_DISABLED: '这个激活码已被停用。',
+            CODE_USED: '这个激活码已经被使用。',
+            CODE_EXPIRED: '这个激活码已经过期。',
+            DEVICE_INVALID: '无法识别当前设备，请检查浏览器存储权限。',
+            DEVICE_MISMATCH: '账号已绑定其他设备，请联系管理员换机。',
+            ACCOUNT_DISABLED: '账号已被停用，请联系管理员。',
+            ACCOUNT_EXPIRED: '账号已到期，请联系管理员。',
+            PROFILE_MISSING: '账号尚未完成激活，请联系管理员。',
+            NOT_AUTHENTICATED: '登录状态已失效，请重新登录。'
+        };
+        if (messages[code]) return messages[code];
+        if (error?.status === 400 && /credentials|login/i.test(error.message || '')) return '账号或密码错误。';
+        if (/Invalid login credentials/i.test(error?.message || '')) return '账号或密码错误。';
+        if (error instanceof TypeError || /fetch|network|failed/i.test(error?.message || '')) return '无法连接授权服务，请检查网络后重试。';
+        return '操作失败，请稍后重试。';
+    }
+
+    function validateInputs() {
+        const username = normalizeUsername(dom?.accountInput?.value);
+        const password = String(dom?.passwordInput?.value || '');
+        if (dom?.accountInput) dom.accountInput.value = username;
+
+        if (!USERNAME_PATTERN.test(username)) {
+            dom?.accountField?.classList.add('is-invalid');
+            dom?.accountInput?.focus();
+            throw Object.assign(new Error('USERNAME_INVALID'), { code: 'USERNAME_INVALID' });
+        }
+        if (password.length < 6 || password.length > 72) {
+            dom?.passwordField?.classList.add('is-invalid');
+            dom?.passwordInput?.focus();
+            throw Object.assign(new Error('PASSWORD_INVALID'), { code: 'PASSWORD_INVALID' });
         }
 
-        setCredentialInputsDisabled(false);
-        setSubmitState('idle');
-        showLoginScreen();
-        emitAuthChanged(null);
-        dom.accountInput?.focus();
-        return true;
-    }
+        if (mode !== 'register') return { username, password };
 
-    function clearInvalidState() {
-        const dom = cachedDom || collectDom();
-        dom.accountField?.classList.remove('is-invalid');
-        dom.passwordField?.classList.remove('is-invalid');
-        dom.noticeRow?.classList.remove('is-invalid');
-        setError('');
-    }
+        const confirmPassword = String(dom?.confirmInput?.value || '');
+        const activationCode = normalizeActivationCode(dom?.codeInput?.value);
+        if (dom?.codeInput) dom.codeInput.value = activationCode;
 
-    function markInvalid(accountMissing, passwordMissing, noticeMissing = false) {
-        const dom = cachedDom || collectDom();
-        dom.accountField?.classList.toggle('is-invalid', !!accountMissing);
-        dom.passwordField?.classList.toggle('is-invalid', !!passwordMissing);
-        dom.noticeRow?.classList.toggle('is-invalid', !!noticeMissing);
+        if (password !== confirmPassword) {
+            dom?.confirmField?.classList.add('is-invalid');
+            dom?.confirmInput?.focus();
+            throw Object.assign(new Error('PASSWORD_MISMATCH'), { code: 'PASSWORD_MISMATCH' });
+        }
+        if (!ACTIVATION_CODE_PATTERN.test(activationCode)) {
+            dom?.codeField?.classList.add('is-invalid');
+            dom?.codeInput?.focus();
+            throw Object.assign(new Error('CODE_INVALID'), { code: 'CODE_INVALID' });
+        }
+        if (!dom?.noticeAccepted?.checked) {
+            dom?.noticeRow?.classList.add('is-invalid');
+            dom?.noticeAccepted?.focus();
+            throw Object.assign(new Error('NOTICE_REQUIRED'), { code: 'NOTICE_REQUIRED' });
+        }
+        return { username, password, activationCode };
     }
 
     async function handleSubmit(event) {
         event.preventDefault();
-        if (authStateStatus === 'initializing') return;
-        const dom = cachedDom || collectDom();
-        const account = dom.accountInput ? dom.accountInput.value.trim() : '';
-        const password = dom.passwordInput ? dom.passwordInput.value : '';
-        const accountMissing = !account;
-        const passwordMissing = !password;
-        const noticeMissing = !dom.noticeAccepted?.checked;
+        clearValidation();
 
-        if (accountMissing || passwordMissing) {
-            markInvalid(accountMissing, passwordMissing, noticeMissing);
-            setError('Enter account and password / 请输入账号和密码');
-            if (accountMissing && dom.accountInput) dom.accountInput.focus();
-            else if (passwordMissing && dom.passwordInput) dom.passwordInput.focus();
+        let values;
+        try {
+            values = validateInputs();
+        } catch (error) {
+            if (error?.code === 'PASSWORD_MISMATCH') setMessage('两次输入的密码不一致。');
+            else if (error?.code === 'NOTICE_REQUIRED') setMessage('请先阅读并勾选《u2phone食用须知》。');
+            else setMessage(messageForError(error));
             return;
         }
 
-        if (noticeMissing) {
-            markInvalid(false, false, true);
-            setError('请先阅读并勾选《u2phone食用须知》');
-            dom.noticeAccepted?.focus();
-            return;
-        }
+        setBusy(true);
+        try {
+            if (mode === 'register') {
+                const result = await request('/functions/v1/register-account', {
+                    body: { ...values, deviceId: getDeviceId() }
+                });
+                if (!result?.ok) throw Object.assign(new Error(result?.code || 'REGISTRATION_FAILED'), { code: result?.code });
+                if (result.session) {
+                    saveSession(result.session, values.username);
+                } else {
+                    await signIn(values.username, values.password);
+                }
+            } else {
+                await signIn(values.username, values.password);
+            }
 
-        clearInvalidState();
-        setSubmitState('submitting');
-        const result = await login({ account, password });
-        if (!result.ok) {
-            setError(result.error || 'Unable to sign in.');
-            setSubmitState('idle');
-            return;
-        }
-
-        setSubmitState('idle');
-        if (dom.passwordInput) dom.passwordInput.value = '';
-        if (dom.noticeAccepted) dom.noticeAccepted.checked = false;
-        if (typeof window.showToast === 'function') {
-            window.showToast('Signed in');
+            await authorizeSession(currentSession);
+            if (dom?.passwordInput) dom.passwordInput.value = '';
+            if (dom?.confirmInput) dom.confirmInput.value = '';
+            if (dom?.codeInput) dom.codeInput.value = '';
+            if (dom?.noticeAccepted) dom.noticeAccepted.checked = false;
+            hideLoginScreen();
+        } catch (error) {
+            console.error('[auth] Authentication failed:', error);
+            clearSession();
+            setMessage(messageForError(error));
+        } finally {
+            setBusy(false);
         }
     }
 
-    function bindPasswordToggle() {
-        const dom = cachedDom || collectDom();
-        if (!dom.passwordToggle || !dom.passwordInput) return;
-        dom.passwordToggle.addEventListener('click', () => {
-            const shouldShow = dom.passwordInput.type === 'password';
-            dom.passwordInput.type = shouldShow ? 'text' : 'password';
-            dom.passwordToggle.setAttribute('aria-pressed', shouldShow ? 'true' : 'false');
-            dom.passwordToggle.setAttribute('aria-label', shouldShow ? 'Hide password' : 'Show password');
-            const icon = dom.passwordToggle.querySelector('i');
-            if (icon) {
-                icon.classList.toggle('fa-eye', !shouldShow);
-                icon.classList.toggle('fa-eye-slash', shouldShow);
+    async function logout() {
+        const session = currentSession || readSession();
+        clearSession();
+        showLoginScreen();
+        setMode('signin');
+        if (!session?.access_token) return;
+        try {
+            await request('/auth/v1/logout', {
+                headers: { Authorization: `Bearer ${session.access_token}` },
+                body: {}
+            });
+        } catch (error) {
+            console.warn('[auth] Remote sign out failed:', error);
+        }
+    }
+
+    function bindEvents() {
+        dom?.form?.addEventListener('submit', handleSubmit);
+        dom?.signinMode?.addEventListener('click', () => setMode('signin'));
+        dom?.registerMode?.addEventListener('click', () => setMode('register'));
+        dom?.passwordToggle?.addEventListener('click', () => {
+            const reveal = dom.passwordInput?.type === 'password';
+            if (dom.passwordInput) dom.passwordInput.type = reveal ? 'text' : 'password';
+            const icon = dom.passwordToggle.querySelector?.('i');
+            icon?.classList.toggle('fa-eye', !reveal);
+            icon?.classList.toggle('fa-eye-slash', reveal);
+            dom.passwordToggle.setAttribute('aria-label', reveal ? '隐藏密码' : '显示密码');
+        });
+        dom?.accountInput?.addEventListener('input', () => {
+            dom.accountField?.classList.remove('is-invalid');
+            setMessage('');
+        });
+        dom?.codeInput?.addEventListener('input', () => {
+            const normalized = normalizeActivationCode(dom.codeInput.value);
+            if (normalized !== dom.codeInput.value) dom.codeInput.value = normalized;
+            dom.codeField?.classList.remove('is-invalid');
+            setMessage('');
+        });
+        [dom?.passwordInput, dom?.confirmInput].forEach((input) => input?.addEventListener('input', () => setMessage('')));
+        dom?.noticeAccepted?.addEventListener('change', () => {
+            dom.noticeRow?.classList.remove('is-invalid');
+            setMessage('');
+        });
+        dom?.noticeLink?.addEventListener('click', () => window.u2AboutInfoModal?.open('disclaimer'));
+        window.addEventListener('storage', (event) => {
+            if (event.key === AUTH_SESSION_KEY && !event.newValue) {
+                clearSession();
+                showLoginScreen();
+                setMode('signin');
             }
         });
     }
 
-    function bindInputReset() {
-        const dom = cachedDom || collectDom();
-        [dom.accountInput, dom.passwordInput].forEach((input) => {
-            if (!input) return;
-            input.addEventListener('input', () => {
-                clearInvalidState();
-            });
-        });
-        dom.noticeAccepted?.addEventListener('change', clearInvalidState);
-        dom.noticeLink?.addEventListener('click', () => {
-            window.u2AboutInfoModal?.open('disclaimer');
-        });
-    }
+    async function initializeAuthGate() {
+        dom = collectDom();
+        if (!dom.screen || !dom.form || !dom.accountInput || !dom.passwordInput) return;
 
-    async function initLoginScreen() {
-        const dom = collectDom();
-        if (!dom.screen || !dom.form) return;
+        setLoginLocked(true);
+        bindEvents();
+        setMode('signin');
 
-        if (!loginDomBound) {
-            loginDomBound = true;
-            dom.form.addEventListener('submit', handleSubmit);
-            bindPasswordToggle();
-            bindInputReset();
+        try {
+            getDeviceId();
+            const savedSession = readSession();
+            if (!savedSession) {
+                showLoginScreen();
+                return;
+            }
+            currentSession = savedSession;
+            await authorizeSession(savedSession);
+            hideLoginScreen();
+        } catch (error) {
+            console.warn('[auth] Saved session rejected:', error);
+            clearSession();
+            showLoginScreen({ focus: false });
+            setMessage(messageForError(error));
         }
-        await restoreInitialAuthState();
     }
 
     window.u2Auth = {
-        isGateEnabled: AUTH_GATE_ENABLED,
-        ready: authReady,
-        login,
         logout,
-        getSession,
-        isLoggedIn,
+        getSession: () => currentSession || readSession(),
+        isLoggedIn: () => !!(currentSession || readSession()),
         showLoginScreen,
         hideLoginScreen
     };
 
-    if (!AUTH_GATE_ENABLED) {
-        authStateStatus = 'ready';
-        cachedSession = safeLoadSession();
-        hideLoginScreen();
-        settleAuthReady();
-    } else if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => initLoginScreen().catch(authReadyReject), { once: true });
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeAuthGate, { once: true });
     } else {
-        initLoginScreen().catch(authReadyReject);
+        initializeAuthGate();
     }
 })();

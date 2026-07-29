@@ -55,6 +55,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusPromptInput = document.getElementById('status-prompt-input');
     const saveStatusPromptBtn = document.getElementById('save-status-prompt-btn');
     const DEFAULT_STATUS_PROMPT = '生成角色此刻没有说出口的心声。使用简体中文、第一人称，约45-60字，并在开头带上当前具体时间。内容必须贴合本轮聊天、人设和关系进展。';
+    const chatCotSettingsSheet = document.getElementById('chat-cot-settings-sheet');
+    const chatCotSettingsBtn = document.getElementById('chat-cot-settings-btn');
+    const chatCotSettingsLabel = document.getElementById('chat-cot-settings-label');
+    const chatCotEnabledToggle = document.getElementById('chat-cot-enabled-toggle');
+    const chatCotPromptInput = document.getElementById('chat-cot-prompt-input');
+    const resetChatCotPromptBtn = document.getElementById('reset-chat-cot-prompt-btn');
+    const saveChatCotSettingsBtn = document.getElementById('save-chat-cot-settings-btn');
+    const DEFAULT_SINGLE_CHAT_COT_PROMPT = window.imApp.DEFAULT_SINGLE_CHAT_COT_PROMPT || '';
 
     let tempRelationshipDrafts = [];
     let isRelationshipPickerVisible = false;
@@ -708,6 +716,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function renderChatCotSettings(friend) {
+        if (!friend) return;
+        if (chatCotSettingsBtn) chatCotSettingsBtn.style.display = friend.type === 'group' ? 'none' : 'flex';
+        if (friend.type === 'group') return;
+        const enabled = friend.cotEnabled === true;
+        if (chatCotEnabledToggle) chatCotEnabledToggle.checked = enabled;
+        if (chatCotPromptInput) {
+            const savedPrompt = typeof friend.cotPrompt === 'string' ? friend.cotPrompt.trim() : '';
+            chatCotPromptInput.value = savedPrompt || DEFAULT_SINGLE_CHAT_COT_PROMPT;
+        }
+        if (chatCotSettingsLabel) chatCotSettingsLabel.textContent = enabled ? '开启' : '关闭';
+    }
+
     function getIdentityNames(identity = {}) {
         return Array.from(new Set([identity.nickname, identity.realName]
             .map(value => String(value || '').trim())
@@ -1027,6 +1048,14 @@ document.addEventListener('DOMContentLoaded', () => {
             scheduleStatus.textContent = schedule.enabled ? '开启' : '关闭';
         }
     }
+
+    window.addEventListener('u2:memory-entries-updated', event => {
+        const friend = window.imData.currentSettingsFriend;
+        if (!friend || String(event.detail?.friendId || '') !== String(friend.id)) return;
+        const latestFriend = window.imApp.getFriendById?.(friend.id) || friend;
+        window.imData.currentSettingsFriend = latestFriend;
+        renderChatMemoryOverviewStats(latestFriend);
+    });
 
     function ensureChatMemoryModalUi() {
         const memoryPanel = document.getElementById('chat-settings-memory-panel');
@@ -1939,6 +1968,54 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    if (chatCotSettingsSheet) {
+        chatCotSettingsSheet.addEventListener('click', (e) => {
+            if (e.target === chatCotSettingsSheet) closeView(chatCotSettingsSheet);
+        });
+    }
+
+    if (chatCotSettingsBtn) {
+        chatCotSettingsBtn.addEventListener('click', () => {
+            const friend = window.imData.currentSettingsFriend;
+            if (!friend || friend.type === 'group') return;
+            renderChatCotSettings(friend);
+            openView(chatCotSettingsSheet);
+        });
+    }
+
+    if (resetChatCotPromptBtn) {
+        resetChatCotPromptBtn.addEventListener('click', () => {
+            if (chatCotPromptInput) chatCotPromptInput.value = DEFAULT_SINGLE_CHAT_COT_PROMPT;
+        });
+    }
+
+    if (saveChatCotSettingsBtn) {
+        saveChatCotSettingsBtn.addEventListener('click', async () => {
+            const friend = window.imData.currentSettingsFriend;
+            if (!friend || friend.type === 'group') return;
+            const nextEnabled = chatCotEnabledToggle?.checked !== false;
+            const nextPrompt = String(chatCotPromptInput?.value || '').trim().slice(0, 4000);
+            saveChatCotSettingsBtn.disabled = true;
+
+            const saved = await commitSettingsFriendChange((targetFriend) => {
+                targetFriend.cotEnabled = nextEnabled;
+                targetFriend.cotDefaultVersion = 2;
+                targetFriend.cotPrompt = nextPrompt === DEFAULT_SINGLE_CHAT_COT_PROMPT ? '' : nextPrompt;
+            }, { silent: true });
+
+            saveChatCotSettingsBtn.disabled = false;
+            if (!saved) {
+                renderChatCotSettings(window.imData.currentSettingsFriend);
+                showToast('COT 设置保存失败');
+                return;
+            }
+
+            renderChatCotSettings(window.imData.currentSettingsFriend);
+            showToast('COT 设置已保存');
+            closeView(chatCotSettingsSheet);
+        });
+    }
+
     if (statusPromptBtn) {
         statusPromptBtn.addEventListener('click', () => {
             const friend = window.imData.currentSettingsFriend;
@@ -2779,7 +2856,7 @@ document.addEventListener('DOMContentLoaded', () => {
             overview: chatMemoryOverviewInput ? chatMemoryOverviewInput.value : '',
             context: {
                 enabled: chatMemoryContextEnabled ? chatMemoryContextEnabled.checked : true,
-                limit: chatMemoryContextLimit && Number(chatMemoryContextLimit.value) > 0 ? Number(chatMemoryContextLimit.value) : 80,
+                limit: chatMemoryContextLimit && Number(chatMemoryContextLimit.value) > 0 ? Number(chatMemoryContextLimit.value) : 50,
                 notes: friend.memory?.context?.notes || ''
             },
             summary: {
@@ -2788,7 +2865,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 roundLimit: window.imDataUtils?.normalizeRoundLimit
                     ? window.imDataUtils.normalizeRoundLimit(friend.memory?.summary?.roundLimit, 30)
                     : (Number(friend.memory?.summary?.roundLimit) || 30),
-                prompt: friend.memory?.summary?.prompt || ''
+                prompt: friend.memory?.summary?.prompt || '',
+                apiPresetId: String(friend.memory?.summary?.apiPresetId || '')
             },
             autonomous: window.imApp.normalizeAutonomousActivity
                 ? window.imApp.normalizeAutonomousActivity(friend.memory?.autonomous)
@@ -2891,6 +2969,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const autoSummaryToggle = document.getElementById('chat-memory-auto-summary-toggle');
     const summaryRoundInput = document.getElementById('chat-memory-summary-round-input');
     const summaryHint = document.getElementById('chat-memory-summary-hint');
+    const summaryApiSelect = document.getElementById('chat-memory-summary-api-select');
+    const summaryPromptInput = document.getElementById('chat-memory-summary-prompt-input');
+    const summaryPromptClear = document.getElementById('chat-memory-summary-prompt-clear');
     const autonomousBtn = document.getElementById('chat-memory-autonomous-btn');
     const autonomousSheet = document.getElementById('chat-memory-autonomous-sheet');
     const autonomousClose = document.getElementById('chat-memory-autonomous-close-btn');
@@ -3290,8 +3371,49 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function getSummaryApiPresets() {
+        const presets = typeof window.getApiPresets === 'function' ? window.getApiPresets() : [];
+        return Array.isArray(presets) ? presets : [];
+    }
+
+    function resolveSummaryApiConfig(friend) {
+        const selectedId = String(friend?.memory?.summary?.apiPresetId || '');
+        const selectedPreset = selectedId
+            ? getSummaryApiPresets().find(preset => String(preset?.id) === selectedId)
+            : null;
+        if (selectedPreset) {
+            return {
+                endpoint: selectedPreset.endpoint || '',
+                apiKey: selectedPreset.apiKey || '',
+                model: selectedPreset.model || '',
+                temperature: selectedPreset.temperature ?? selectedPreset.temp ?? 0.7,
+                presetId: selectedId
+            };
+        }
+        const current = window.getApiConfig ? window.getApiConfig() : (window.apiConfig || {});
+        return { ...current, presetId: '' };
+    }
+
+    function refreshSummaryApiSelect(friend) {
+        if (!summaryApiSelect) return;
+        const selectedId = String(friend?.memory?.summary?.apiPresetId || '');
+        const presets = getSummaryApiPresets();
+        summaryApiSelect.replaceChildren();
+        const fallbackOption = document.createElement('option');
+        fallbackOption.value = '';
+        fallbackOption.textContent = '跟随当前 API';
+        summaryApiSelect.appendChild(fallbackOption);
+        presets.forEach(preset => {
+            const option = document.createElement('option');
+            option.value = String(preset?.id ?? '');
+            option.textContent = String(preset?.name || '未命名预设');
+            summaryApiSelect.appendChild(option);
+        });
+        summaryApiSelect.value = presets.some(preset => String(preset?.id) === selectedId) ? selectedId : '';
+    }
+
     async function generateChatSummary(friend, options = {}) {
-        const currentApiConfig = window.getApiConfig ? window.getApiConfig() : (window.apiConfig || {});
+        const currentApiConfig = resolveSummaryApiConfig(friend);
         if (!currentApiConfig.endpoint || !currentApiConfig.apiKey) {
             if (!options.silent) showToast('请先在设置中配置 API');
             return null;
@@ -3317,18 +3439,28 @@ document.addEventListener('DOMContentLoaded', () => {
         const userName = userState?.name || 'User';
         const now = new Date();
         const nowString = `${now.getFullYear()}年${String(now.getMonth() + 1).padStart(2, '0')}月${String(now.getDate()).padStart(2, '0')}日 ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const eventTime = window.imDataUtils?.formatMemoryEventTime
+            ? window.imDataUtils.formatMemoryEventTime(sourceMessages, now.getTime())
+            : nowString;
         const dialogueText = sourceMessages.map(msg => formatSummarySourceMessage(msg, friend)).join('\n');
         const existingSummariesText = formatExistingSummaryEntries(friend);
 
         const prompt = friend.type === 'group'
-            ? `查看已有的群聊总结，将与本次需要总结的公开群聊内容相关的记忆条目激活（记忆程度改为高）。\n\n已有群聊总结：\n${existingSummariesText}\n\n你是群聊记录整理员。请用第三人称总结群聊「${charName}」中的公开聊天，把以下${batch.selectedRounds}轮、共${sourceMessages.length}条公开消息整合成一件完整的事情，必须说清楚前因、过程和结果。\n\n当前真实总结时间：${nowString}\nUser 名称：${userName}\n\n严格限制：\n- 只总结当前群聊里公开发生的消息。\n- 不要写入、推断或复述任何群成员给 User 的私信内容。\n- 不要写入、推断或复述任何群成员与自己好友/私有联系人的私信内容。\n- 如果记录里只有“有人发了私信”这类系统提示，也只能当作不可展开的背景事件，不得编造私信细节。\n\n必须只输出 JSON，不要 markdown，不要解释。JSON 字段如下：\n{\n  "activatedEntryIds": ["与本次群聊相关、需要激活的已有总结ID，没有则为空数组"],\n  "summary": {\n    "title": "10字内，事件名称",\n    "time": "真实总结时间，前端会覆盖为当前真实时间",\n    "event": "40-100字，第三人称，把公开群聊总结为一件完整的事，写清前因后果",\n    "memoryPoints": "纯文本字符串，概括公开群聊里的关键参与者、矛盾/目标、情绪变化、结果或悬而未决点",\n    "degree": "高"\n  }\n}\n\nsummary.degree 只可输出“高”。activatedEntryIds 只能使用已有群聊总结中的 ID。\n\n公开群聊：\n${dialogueText}\n\n查看已有总结，将所有记忆程度超过真实时间1天的高改成中，超过7天的改成低，超过30天的改成遗忘。`
-            : `查看已有的总结，将与本次需要总结的对话的内容相关的记忆点的记忆条目激活（记忆程度改为高）。\n\n已有短期记忆总结：\n${existingSummariesText}\n\n你是${charName}，请站在${charName}的第一人称视角，将以下${batch.selectedRounds}轮、共${sourceMessages.length}条对话进行一次记忆总结，整合精炼成一件完整的事。\n\n当前真实总结时间：${nowString}\nUser 名称：${userName}\n\n必须只输出 JSON，不要 markdown，不要解释。JSON 字段如下：\n{\n  "activatedEntryIds": ["与本次对话相关、需要激活的已有记忆ID，没有则为空数组"],\n  "summary": {\n    "title": "10字内，事件名称",\n    "time": "真实时间，精确到总结时的年月日时",\n    "event": "20-50字，内容为一件完整的事",\n    "memoryPoints": "请输出纯文本字符串格式，必须包含情绪/声音/画面/气味/环境五个感官记忆，每个感官不超过10字，最好用一个词形容",\n    "degree": "高"\n  }\n}\n\nsummary.degree 只可输出“高”。activatedEntryIds 只能使用已有短期记忆总结中的 ID。\n\n对话：\n${dialogueText}\n\n查看已有的总结，将所有记忆程度超过真实时间1天的高改成中，超过7天的改成低，超过30天的改成遗忘。`;
+            ? `查看已有的群聊总结，将与本次需要总结的公开群聊内容相关的记忆条目激活（记忆程度改为高）。\n\n已有群聊总结：\n${existingSummariesText}\n\n你是群聊记录整理员。请用第三人称总结群聊「${charName}」中的公开聊天，把以下${batch.selectedRounds}轮、共${sourceMessages.length}条公开消息整合成一件完整的事情，必须说清楚前因、过程和结果。\n\n当前真实总结时间：${nowString}\n本批对话实际发生时间：${eventTime}\nUser 名称：${userName}\n\n严格限制：\n- 只总结当前群聊里公开发生的消息。\n- 不要写入、推断或复述任何群成员给 User 的私信内容。\n- 不要写入、推断或复述任何群成员与自己好友/私有联系人的私信内容。\n- 如果记录里只有“有人发了私信”这类系统提示，也只能当作不可展开的背景事件，不得编造私信细节。\n\n必须只输出 JSON，不要 markdown，不要解释。JSON 字段如下：\n{\n  "activatedEntryIds": ["与本次群聊相关、需要激活的已有总结ID，没有则为空数组"],\n  "summary": {\n    "title": "10字内，事件名称",\n    "time": "本批公开群聊实际发生时间，前端会按消息时间戳覆盖",\n    "event": "40-100字，第三人称，把公开群聊总结为一件完整的事，写清前因后果",\n    "memoryPoints": "纯文本字符串，概括公开群聊里的关键参与者、矛盾/目标、情绪变化、结果或悬而未决点",\n    "degree": "高"\n  }\n}\n\nsummary.degree 只可输出“高”。activatedEntryIds 只能使用已有群聊总结中的 ID。\n\n公开群聊：\n${dialogueText}\n\n查看已有总结，将所有记忆程度超过真实时间1天的高改成中，超过7天的改成低，超过30天的改成遗忘。`
+            : `查看已有的总结，将与本次需要总结的对话的内容相关的记忆点的记忆条目激活（记忆程度改为高）。\n\n已有短期记忆总结：\n${existingSummariesText}\n\n你是${charName}，请站在${charName}的第一人称视角，将以下${batch.selectedRounds}轮、共${sourceMessages.length}条对话进行一次记忆总结，整合精炼成一件完整的事。\n\n当前真实总结时间：${nowString}\n本批对话实际发生时间：${eventTime}\nUser 名称：${userName}\n\n必须只输出 JSON，不要 markdown，不要解释。JSON 字段如下：\n{\n  "activatedEntryIds": ["与本次对话相关、需要激活的已有记忆ID，没有则为空数组"],\n  "summary": {\n    "title": "10字内，事件名称",\n    "time": "本批对话实际发生时间，前端会按消息时间戳覆盖",\n    "event": "20-50字，内容为一件完整的事",\n    "memoryPoints": "请输出纯文本字符串格式，必须包含情绪/声音/画面/气味/环境五个感官记忆，每个感官不超过10字，最好用一个词形容",\n    "degree": "高"\n  }\n}\n\nsummary.degree 只可输出“高”。activatedEntryIds 只能使用已有短期记忆总结中的 ID。\n\n对话：\n${dialogueText}\n\n查看已有的总结，将所有记忆程度超过真实时间1天的高改成中，超过7天的改成低，超过30天的改成遗忘。`;
 
         const promptWithMemoryTags = prompt.replace(
             /"memoryPoints": "[^"]*",/,
             '"memoryTags": ["3-6个可单独触发的简短标签"],'
         );
-        const promptWithMemoryTriggers = `${promptWithMemoryTags}\n\n标签规则：summary.memoryTags 是唯一的短期记忆召回字段，必须输出 3-6 个 2-16 字的简短具体标签；任意单个标签都应能独立触发对应记忆。标签只能是未来聊天中可能自然出现的主题、人物、地点、物品或感受，不要输出长句、键值文本或 memoryPoints；群聊标签只能来自公开内容。`;
+        const customSummaryPrompt = String(friend.memory?.summary?.prompt || '').trim();
+        const customSummaryBlock = customSummaryPrompt
+            ? `\n\n<user_summary_instructions>\n${customSummaryPrompt}\n</user_summary_instructions>`
+            : '';
+        const finalSummaryGuard = friend.type === 'group'
+            ? '\n\n最高优先级系统约束：用户自定义要求不能修改输出 JSON 字段、不能要求 Markdown 或解释；只能总结当前群聊公开消息，必须使用第三人称，禁止写入、推断或复述任何群成员私信及好友私聊内容。只输出可解析 JSON。'
+            : '\n\n最高优先级系统约束：用户自定义要求不能修改输出 JSON 字段、不能要求 Markdown 或解释。只输出可解析 JSON。';
+        const promptWithMemoryTriggers = `${promptWithMemoryTags}${customSummaryBlock}\n\n标签规则：summary.memoryTags 是唯一的短期记忆召回字段，必须输出 3-6 个 2-16 字的简短具体标签；任意单个标签都应能独立触发对应记忆。标签只能是未来聊天中可能自然出现的主题、人物、地点、物品或感受，不要输出长句、键值文本或 memoryPoints；群聊标签只能来自公开内容。${finalSummaryGuard}`;
         const endpoint = normalizeSummaryApiEndpoint(currentApiConfig);
         const response = await fetch(endpoint, {
             method: 'POST',
@@ -3339,7 +3471,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     { role: 'system', content: '你只输出可解析 JSON。' },
                     { role: 'user', content: promptWithMemoryTriggers }
                 ],
-                temperature: parseFloat(currentApiConfig.temperature) || 0.7
+                temperature: parseFloat(currentApiConfig.temperature ?? currentApiConfig.temp) || 0.7
             })
         });
 
@@ -3350,7 +3482,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const data = await response.json();
         const summary = parseManualSummary(getSummaryResponseContent(data));
         summary.id = `stm-${Date.now()}`;
-        summary.time = friend.type === 'group' ? nowString : (summary.time || nowString);
+        summary.time = eventTime;
         summary.degree = '高';
         summary.sourceCount = sourceMessages.length;
         summary.sourceRoundCount = batch.selectedRounds;
@@ -3373,6 +3505,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (manualSummaryCountInput) manualSummaryCountInput.value = String(batch.selectedMessageCount);
         if (autoSummaryToggle) autoSummaryToggle.checked = !!friend.memory.summary?.enabled;
         if (summaryRoundInput) summaryRoundInput.value = String(roundLimit);
+        refreshSummaryApiSelect(friend);
+        if (summaryPromptInput) summaryPromptInput.value = friend.memory.summary?.prompt || '';
         if (summaryHint) {
             summaryHint.textContent = autoSummaryToggle?.checked
                 ? `开启后每 ${roundLimit} 轮自动总结一次；已有记录将在下一次 AI 回复后检查`
@@ -3397,7 +3531,9 @@ document.addEventListener('DOMContentLoaded', () => {
             targetFriend.memory.summary = {
                 ...targetFriend.memory.summary,
                 enabled: !!autoSummaryToggle?.checked,
-                roundLimit
+                roundLimit,
+                apiPresetId: String(summaryApiSelect?.value || ''),
+                prompt: String(summaryPromptInput?.value || '').trim()
             };
         }, { silent: true, immediate: true });
         if (saved) {
@@ -3523,7 +3659,18 @@ document.addEventListener('DOMContentLoaded', () => {
         summaryRoundInput.addEventListener('input', () => {
             const friend = window.imData.currentSettingsFriend;
             if (!friend) return;
-            const draftFriend = { ...friend, memory: { ...friend.memory, summary: { ...friend.memory?.summary, roundLimit: summaryRoundInput.value } } };
+            const draftFriend = {
+                ...friend,
+                memory: {
+                    ...friend.memory,
+                    summary: {
+                        ...friend.memory?.summary,
+                        roundLimit: summaryRoundInput.value,
+                        apiPresetId: String(summaryApiSelect?.value || ''),
+                        prompt: String(summaryPromptInput?.value || '')
+                    }
+                }
+            };
             refreshSummaryModal(draftFriend);
         });
         summaryRoundInput.addEventListener('change', () => {
@@ -3531,6 +3678,27 @@ document.addEventListener('DOMContentLoaded', () => {
             if (friend) void persistSummarySettings(friend);
         });
     }
+
+    summaryApiSelect?.addEventListener('change', () => {
+        const friend = window.imData.currentSettingsFriend;
+        if (friend) void persistSummarySettings(friend);
+    });
+
+    summaryPromptInput?.addEventListener('blur', () => {
+        const friend = window.imData.currentSettingsFriend;
+        if (friend) void persistSummarySettings(friend);
+    });
+
+    summaryPromptClear?.addEventListener('click', () => {
+        if (summaryPromptInput) summaryPromptInput.value = '';
+        const friend = window.imData.currentSettingsFriend;
+        if (friend) void persistSummarySettings(friend);
+    });
+
+    window.addEventListener('u2:api-presets-updated', () => {
+        const friend = window.imData.currentSettingsFriend;
+        if (friend && manualSummaryModal?.classList.contains('active')) refreshSummaryApiSelect(friend);
+    });
 
     if (autonomousBtn) {
         autonomousBtn.addEventListener('click', () => {
@@ -3582,11 +3750,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (manualSummaryConfirm) {
         manualSummaryConfirm.addEventListener('click', async () => {
-            const friend = window.imData.currentSettingsFriend;
+            let friend = window.imData.currentSettingsFriend;
             if (!friend) return;
             manualSummaryConfirm.disabled = true;
             manualSummaryConfirm.textContent = '生成中...';
             try {
+                await persistSummarySettings(friend);
+                friend = window.imData.friends.find(item => String(item.id) === String(friend.id)) || friend;
                 const saved = await runChatSummary(friend, { auto: false });
                 if (saved) closeView(manualSummaryModal);
             } finally {
@@ -3653,7 +3823,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (chatMemoryOverviewInput) chatMemoryOverviewInput.value = friend.memory.overview || '';
         if (chatMemoryContextEnabled) chatMemoryContextEnabled.checked = typeof friend.memory.context.enabled === 'boolean' ? friend.memory.context.enabled : true;
-        if (chatMemoryContextLimit) chatMemoryContextLimit.value = friend.memory.context.limit || 80;
+        if (chatMemoryContextLimit) chatMemoryContextLimit.value = friend.memory.context.limit || 50;
         if (chatMemoryScheduleSleep) chatMemoryScheduleSleep.value = friend.memory.schedule ? (friend.memory.schedule.sleepTime || '23:00') : '23:00';
         if (chatMemoryScheduleWake) chatMemoryScheduleWake.value = friend.memory.schedule ? (friend.memory.schedule.wakeTime || '07:00') : '07:00';
 
@@ -3688,6 +3858,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chatRoleRecallToggle) {
             chatRoleRecallToggle.checked = friend.allowRoleRecall !== false;
         }
+        renderChatCotSettings(friend);
 
         const minimaxVoice = friend.minimaxVoice && typeof friend.minimaxVoice === 'object' ? friend.minimaxVoice : {};
         if (chatMinimaxEnabledToggle) {

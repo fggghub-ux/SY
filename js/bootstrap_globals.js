@@ -193,8 +193,10 @@
             return response; // 依然把 response 返给调用方，让调用方的 catch 也能正常工作
             
         } catch (error) {
-            // --- 网络断开或 CORS 等底层 Fetch 异常 ---
-            if (!silentErrors) {
+            // AbortError 代表调用方主动取消或超时，不应误报成网络/CORS。
+            // 具体的取消原因由发起请求的业务模块负责提示。
+            const isAborted = error?.name === 'AbortError' || requestInit.signal?.aborted === true;
+            if (!silentErrors && !isAborted) {
                 setTimeout(() => {
                     showApiErrorPopup(
                         'Network Error',

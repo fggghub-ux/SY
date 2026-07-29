@@ -315,13 +315,32 @@ function openNarrationNoticeEditor(msg, friend, container) {
         }, 10);
     }
 
-function openRecalledMessageDetail(content) {
+function openRecalledMessageDetail(content, translation = '') {
         const modal = document.getElementById('recalled-message-detail-modal');
         const contentEl = document.getElementById('recalled-message-detail-content');
+        const translationEl = document.getElementById('recalled-message-detail-translation');
+        const translateBtn = document.getElementById('recalled-message-detail-translate');
         const closeBtn = document.getElementById('recalled-message-detail-close');
         if (!modal || !contentEl) return false;
 
         contentEl.textContent = String(content || '');
+        const translatedText = String(translation || '').trim();
+        if (translationEl) {
+            translationEl.textContent = translatedText;
+            translationEl.hidden = true;
+        }
+        if (translateBtn) {
+            translateBtn.hidden = !translatedText;
+            translateBtn.textContent = '翻译';
+            translateBtn.setAttribute('aria-expanded', 'false');
+            translateBtn.onclick = () => {
+                if (!translationEl || !translatedText) return;
+                const willShow = translationEl.hidden;
+                translationEl.hidden = !willShow;
+                translateBtn.textContent = willShow ? '收起翻译' : '翻译';
+                translateBtn.setAttribute('aria-expanded', willShow ? 'true' : 'false');
+            };
+        }
 
         const closeModal = () => {
             if (window.closeView) window.closeView(modal);
@@ -358,6 +377,9 @@ function renderSystemNoticeBubble(msg, friend, container, timestamp = Date.now()
             const recalledContent = !isUserRecall
                 ? String(msg.payload?.recalledContent || '').trim()
                 : '';
+            const recalledTranslation = !isUserRecall
+                ? String(msg.payload?.recalledTranslation || '').trim()
+                : '';
             row.innerHTML = `
                 <div class="message-recalled-notice">
                     <span>${escapeHtml(label)}</span>${recalledContent ? '<span class="message-recalled-view-link">查看</span>' : ''}
@@ -368,7 +390,7 @@ function renderSystemNoticeBubble(msg, friend, container, timestamp = Date.now()
                 viewLink.addEventListener('click', (event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    openRecalledMessageDetail(recalledContent);
+                    openRecalledMessageDetail(recalledContent, recalledTranslation);
                 });
             }
             container.appendChild(row);
@@ -645,11 +667,81 @@ function renderGroupRedPacketBubble(msg, friend, container, timestamp = Date.now
         container.appendChild(row);
     }
 
+    function renderCotSummaryCard(msg, friend, container) {
+        const cotSummary = typeof msg?.cotSummary === 'string' ? msg.cotSummary.trim() : '';
+        if (!cotSummary || !friend || friend.type === 'group' || !container) return null;
+
+        const cotKey = String(msg.apiRunId || msg.id || '').trim();
+        if (cotKey) {
+            const duplicate = Array.from(container.querySelectorAll('.chat-cot-row'))
+                .some(row => row.dataset.cotKey === cotKey);
+            if (duplicate) return null;
+        }
+
+        const row = document.createElement('div');
+        row.className = 'chat-cot-row';
+        if (cotKey) row.dataset.cotKey = cotKey;
+
+        const card = document.createElement('section');
+        card.className = 'chat-cot-card';
+        const contentId = `chat-cot-content-${String(msg.id || Date.now()).replace(/[^a-zA-Z0-9_-]/g, '')}`;
+
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'chat-cot-toggle';
+        toggle.setAttribute('aria-expanded', 'false');
+        toggle.setAttribute('aria-controls', contentId);
+        toggle.innerHTML = '<span class="chat-cot-title"><span>COT</span></span><i class="fas fa-chevron-down chat-cot-chevron" aria-hidden="true"></i>';
+
+        const content = document.createElement('div');
+        content.id = contentId;
+        content.className = 'chat-cot-content';
+        content.hidden = true;
+        content.textContent = cotSummary;
+
+        toggle.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const expanded = toggle.getAttribute('aria-expanded') !== 'true';
+            toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+            card.classList.toggle('is-expanded', expanded);
+            content.hidden = !expanded;
+        });
+
+        card.append(toggle, content);
+        row.appendChild(card);
+
+        const placeBelowAvatar = () => {
+            const messageId = String(msg.id || '');
+            const messageRow = Array.from(container.children)
+                .find(child => String(child.getAttribute?.('data-message-id') || '') === messageId);
+            const messageColumn = messageRow?.classList?.contains('ai-row') ? messageRow.children?.[1] : null;
+            const bubbleLine = messageColumn?.lastElementChild;
+
+            if (messageColumn && bubbleLine) {
+                row.classList.add('chat-cot-row-inline');
+                messageColumn.insertBefore(row, bubbleLine);
+            } else if (messageRow?.parentNode === container) {
+                messageRow.insertAdjacentElement('afterend', row);
+            } else {
+                container.appendChild(row);
+            }
+        };
+
+        if (typeof queueMicrotask === 'function') {
+            queueMicrotask(placeBelowAvatar);
+        } else {
+            Promise.resolve().then(placeBelowAvatar);
+        }
+        return row;
+    }
+
 function renderMessageBubble(msg, friend, container, timestamp = Date.now()) {
         if (!msg || !container) return false;
 
         window.imChat.ensureMessageId(msg, msg.type === 'pay_transfer' ? 'pay' : 'msg');
         const msgTime = timestamp || msg.timestamp || Date.now();
+        renderCotSummaryCard(msg, friend, container);
 
         if (msg.type === 'group_poll') {
             renderGroupPollBubble(msg, friend, container, msgTime);
@@ -1838,6 +1930,12 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
             .slice(0, 40000);
     }
 
+    function sanitizeFakeLinkJsText(value) {
+        return cleanFakeLinkText(value, 12000)
+            .replace(/<\/script/gi, '<\\/script')
+            .slice(0, 12000);
+    }
+
     function normalizeFakeLinkInteractionForRender(source = {}) {
         if (!source || typeof source !== 'object') return null;
         const allowedTypes = new Set(['toggleClass', 'toggleText', 'increment', 'switchPanel']);
@@ -1930,13 +2028,18 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
 
     function normalizeFakeLinkWebPageForRender(source = {}) {
         const safeSource = source && typeof source === 'object' ? source : {};
-        const html = sanitizeFakeLinkHtmlForRender(safeSource.html || safeSource.bodyHtml || '');
+        const rawHtml = safeSource.html || safeSource.bodyHtml || '';
+        const html = safeSource.js && window.imChat?.sanitizeFakeLinkHtmlForStorage
+            ? window.imChat.sanitizeFakeLinkHtmlForStorage(rawHtml)
+            : sanitizeFakeLinkHtmlForRender(rawHtml);
         const css = sanitizeFakeLinkCssText(safeSource.css || safeSource.style || '');
+        const js = sanitizeFakeLinkJsText(safeSource.js || '');
         const rawInteractions = Array.isArray(safeSource.interactions) ? safeSource.interactions : [];
         return {
             theme: cleanFakeLinkText(safeSource.theme || 'generic', 40).toLowerCase() || 'generic',
             html,
             css,
+            js,
             interactions: rawInteractions.map(normalizeFakeLinkInteractionForRender).filter(Boolean).slice(0, 24),
             source: cleanFakeLinkText(safeSource.source || '', 30)
         };
@@ -2020,6 +2123,19 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
         if (!host) return false;
         const pagePackage = sanitizeFakeLinkPagePackage(webPage);
         if (!pagePackage.html) return false;
+        if (pagePackage.js) {
+            const buildSandboxDocument = window.imChat?.buildFakeLinkSandboxDocument;
+            if (typeof buildSandboxDocument !== 'function') return false;
+            host.innerHTML = '';
+            const frame = document.createElement('iframe');
+            frame.className = 'im-fake-link-detail-iframe';
+            frame.setAttribute('sandbox', 'allow-scripts');
+            frame.setAttribute('referrerpolicy', 'no-referrer');
+            frame.setAttribute('title', '链接小剧场');
+            frame.srcdoc = buildSandboxDocument(pagePackage);
+            host.appendChild(frame);
+            return true;
+        }
         const pageId = 'fake-link-page-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
         const scopeSelector = '[data-fake-page-id="' + pageId + '"]';
         host.innerHTML = '';
@@ -2431,6 +2547,8 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
     window.imChat.renderChatHistory = renderChatHistory;
     window.imChat.scrollToBottom = scrollToBottom;
     window.imChat.renderTimestamp = renderTimestamp;
+    window.imChat.renderMessageBubble = renderMessageBubble;
+    window.imChat.renderCotSummaryCard = renderCotSummaryCard;
     window.imChat.renderUserBubble = renderUserBubble;
     window.imChat.renderAiBubble = renderAiBubble;
     window.imChat.renderImageBubble = renderImageBubble;
