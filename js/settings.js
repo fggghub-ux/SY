@@ -116,6 +116,7 @@
         enabled: false,
         x: null,
         y: null,
+        size: 58,
         opacity: 0.72,
         imageUrl: ''
     };
@@ -320,6 +321,8 @@
         UI.inputs.assistiveBallToggle = document.getElementById('assistive-ball-toggle');
         UI.inputs.assistiveBallOpacity = document.getElementById('assistive-ball-opacity-range');
         UI.inputs.assistiveBallOpacityValue = document.getElementById('assistive-ball-opacity-value');
+        UI.inputs.assistiveBallSize = document.getElementById('assistive-ball-size-range');
+        UI.inputs.assistiveBallSizeValue = document.getElementById('assistive-ball-size-value');
         UI.inputs.assistiveBallImageUrl = document.getElementById('assistive-ball-image-url-input');
         UI.inputs.assistiveBallImageUrlApply = document.getElementById('assistive-ball-image-url-apply-btn');
         UI.inputs.assistiveBallImageUpload = document.getElementById('assistive-ball-image-upload-btn');
@@ -2719,7 +2722,8 @@
         }
         // Theme Background
         const HOME_THEME_PACKAGE_FORMAT = 'u2-home-theme';
-        const HOME_THEME_PACKAGE_VERSION = 1;
+        const HOME_THEME_PACKAGE_VERSION = 2;
+        const HOME_THEME_SUPPORTED_VERSIONS = new Set([1, HOME_THEME_PACKAGE_VERSION]);
         const themeExportBtn = document.getElementById('theme-export-btn');
         const themeImportBtn = document.getElementById('theme-import-btn');
         const themeImportFileInput = document.getElementById('theme-import-file-input');
@@ -2728,6 +2732,9 @@
         const themeBgFileInput = document.getElementById('theme-bg-file-input');
 
         function buildHomeThemePackage() {
+            const widgetConfigs = typeof window.getHomeWidgetThemeConfigs === 'function'
+                ? window.getHomeWidgetThemeConfigs()
+                : (window.getAppState?.('desktop')?.widgets || {});
             return {
                 format: HOME_THEME_PACKAGE_FORMAT,
                 version: HOME_THEME_PACKAGE_VERSION,
@@ -2737,7 +2744,8 @@
                     id: String(app.id),
                     name: String(app.name || ''),
                     icon: app.icon ?? null
-                }))
+                })),
+                widgets: widgetConfigs
             };
         }
 
@@ -2755,7 +2763,7 @@
             if (payload.format !== HOME_THEME_PACKAGE_FORMAT) {
                 throw new Error('这不是 U2 主屏主题文件');
             }
-            if (payload.version !== HOME_THEME_PACKAGE_VERSION) {
+            if (!HOME_THEME_SUPPORTED_VERSIONS.has(payload.version)) {
                 throw new Error(`不支持的主题文件版本：${payload.version ?? '未知'}`);
             }
             if (!Object.prototype.hasOwnProperty.call(payload, 'background') ||
@@ -2781,9 +2789,24 @@
                 importedApps.set(id, app.icon);
             });
 
+            let importedWidgets = null;
+            if (payload.version >= 2) {
+                if (!payload.widgets || typeof payload.widgets !== 'object' || Array.isArray(payload.widgets)) {
+                    throw new Error('主题小组件数据无效');
+                }
+                importedWidgets = Object.create(null);
+                Object.entries(payload.widgets).forEach(([id, config]) => {
+                    if (!id || !config || typeof config !== 'object' || Array.isArray(config)) {
+                        throw new Error('主题小组件项目无效');
+                    }
+                    importedWidgets[id] = config;
+                });
+            }
+
             return {
                 background: payload.background,
-                apps: importedApps
+                apps: importedApps,
+                widgets: importedWidgets
             };
         }
 
@@ -2796,6 +2819,9 @@
             });
             applyThemeBackground(themeState);
             applyThemeAppIcons(themeState);
+            if (importedTheme.widgets && typeof window.applyHomeWidgetThemeConfigs === 'function') {
+                window.applyHomeWidgetThemeConfigs(importedTheme.widgets);
+            }
             renderThemeAppList();
             saveGlobalData();
         }
@@ -2913,26 +2939,27 @@
         }
         
         if (themeAppFileInput) {
-            themeAppFileInput.addEventListener('change', (e) => {
-                const file = e.target.files[0];
-                if (file && currentEditingAppIndex >= 0) {
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                        if (window.compressImage) {
-                            window.compressImage(event.target.result, 150, 150, (compressedUrl) => {
-                                const appName = themeState.apps[currentEditingAppIndex]?.name || '应用';
-                                themeState.apps[currentEditingAppIndex].icon = compressedUrl;
-                                commitThemeAppIconChanges(`${appName} 图标已更新`);
-                            });
-                        } else {
-                            const appName = themeState.apps[currentEditingAppIndex]?.name || '应用';
-                            themeState.apps[currentEditingAppIndex].icon = event.target.result;
-                            commitThemeAppIconChanges(`${appName} 图标已更新`);
-                        }
-                    };
-                    reader.readAsDataURL(file);
+            themeAppFileInput.addEventListener('change', async (e) => {
+                const file = e.target.files?.[0];
+                const appIndex = currentEditingAppIndex;
+                try {
+                    if (!file || appIndex < 0 || !themeState.apps[appIndex]) return;
+
+                    // App icons must stay PNG so transparent pixels survive resizing.
+                    const compressedUrl = await readImageAsCompressedDataUrl(file, {
+                        maxWidth: 150,
+                        maxHeight: 150,
+                        outputType: 'image/png'
+                    });
+                    const appName = themeState.apps[appIndex]?.name || '应用';
+                    themeState.apps[appIndex].icon = compressedUrl;
+                    commitThemeAppIconChanges(`${appName} 图标已更新`);
+                } catch (error) {
+                    console.error('Failed to process app icon.', error);
+                    showToast('图标处理失败，请更换图片后重试');
+                } finally {
+                    e.target.value = '';
                 }
-                e.target.value = '';
             });
         }
         
@@ -3133,11 +3160,44 @@
         const THEME_FONT_MAX_FILE_SIZE = 20 * 1024 * 1024;
         const THEME_FONT_WARNING_FILE_SIZE = 5 * 1024 * 1024;
         const THEME_FONT_FORMATS = new Set(['ttf', 'otf', 'woff', 'woff2']);
+        const THEME_FONT_DEFAULT_SIZE = 16;
+        const THEME_FONT_SCALE_EXCLUDE_SELECTOR = [
+            'script',
+            'style',
+            'link',
+            'meta',
+            'svg',
+            'path',
+            'canvas',
+            'video',
+            'audio',
+            '.app-icon',
+            '.icon-placeholder',
+            'i',
+            '.fa',
+            '.fas',
+            '.far',
+            '.fab',
+            '.fal',
+            '.fa-solid',
+            '.fa-regular',
+            '.fa-brands',
+            '#theme-bubble-css-input',
+            '#theme-chat-css-input',
+            '#theme-status-css-input',
+            '#bubble-css-input',
+            '#status-css-input',
+            'textarea[placeholder*="CSS"]',
+            'textarea[placeholder*="css"]'
+        ].join(',');
         const themeFontFaceRegistry = new Map();
+        const themeFontBaseSizes = new Set();
         let themeFontSaveTimer = null;
         let themeFontSelectedFile = null;
         let themeFontSourceMode = 'local';
         let themeFontApplyToken = 0;
+        let themeFontScaleObserver = null;
+        let themeFontScaleRefreshFrame = 0;
 
         function cloneThemeFontSources(sources = {}) {
             return {
@@ -3297,6 +3357,108 @@
             return styleEl;
         }
 
+        function getThemeFontScaleStyleElement() {
+            let styleEl = document.getElementById('theme-font-scale-style');
+            if (!styleEl) {
+                styleEl = document.createElement('style');
+                styleEl.id = 'theme-font-scale-style';
+                document.head.appendChild(styleEl);
+            }
+            return styleEl;
+        }
+
+        function formatThemeFontBaseSize(value) {
+            return Number(value).toFixed(2).replace(/\.?0+$/, '');
+        }
+
+        function rebuildThemeFontScaleCss(fontSize = themeState.fontSize) {
+            const scale = normalizeThemeFontSize(fontSize) / THEME_FONT_DEFAULT_SIZE;
+            const rules = Array.from(themeFontBaseSizes, Number)
+                .filter(Number.isFinite)
+                .sort((a, b) => a - b)
+                .map(baseSize => {
+                    const key = formatThemeFontBaseSize(baseSize);
+                    const scaledSize = Math.max(1, baseSize * scale).toFixed(3).replace(/\.?0+$/, '');
+                    return `[data-theme-font-base-size="${key}"] { font-size: ${scaledSize}px !important; }`;
+                });
+            getThemeFontScaleStyleElement().textContent = rules.join('\n');
+            document.documentElement.style.setProperty('--theme-font-scale', String(scale));
+        }
+
+        function captureThemeFontBaseSize(element, { recapture = false } = {}) {
+            if (!(element instanceof HTMLElement) || element.matches(THEME_FONT_SCALE_EXCLUDE_SELECTOR)) {
+                return false;
+            }
+            if (!recapture && element.hasAttribute('data-theme-font-base-size')) return false;
+
+            if (recapture) element.removeAttribute('data-theme-font-base-size');
+            const computedSize = Number.parseFloat(window.getComputedStyle(element).fontSize);
+            if (!Number.isFinite(computedSize) || computedSize <= 0) return false;
+
+            const baseSize = formatThemeFontBaseSize(computedSize);
+            element.setAttribute('data-theme-font-base-size', baseSize);
+            const previousSizeCount = themeFontBaseSizes.size;
+            themeFontBaseSizes.add(baseSize);
+            return themeFontBaseSizes.size !== previousSizeCount;
+        }
+
+        function captureThemeFontSizesIn(root, options, includeDescendants = true) {
+            if (!(root instanceof Element)) return false;
+            const scaleStyleSheet = document.getElementById('theme-font-scale-style')?.sheet;
+            const wasDisabled = !!scaleStyleSheet?.disabled;
+            if (scaleStyleSheet) scaleStyleSheet.disabled = true;
+            try {
+                let addedSize = captureThemeFontBaseSize(root, options);
+                if (includeDescendants) {
+                    root.querySelectorAll('*').forEach(element => {
+                        if (captureThemeFontBaseSize(element, options)) addedSize = true;
+                    });
+                }
+                return addedSize;
+            } finally {
+                if (scaleStyleSheet) scaleStyleSheet.disabled = wasDisabled;
+            }
+        }
+
+        function scheduleThemeFontScaleCssRefresh() {
+            if (themeFontScaleRefreshFrame) return;
+            themeFontScaleRefreshFrame = window.requestAnimationFrame(() => {
+                themeFontScaleRefreshFrame = 0;
+                rebuildThemeFontScaleCss();
+            });
+        }
+
+        function ensureThemeFontGlobalScaling() {
+            if (!document.body) return;
+            if (captureThemeFontSizesIn(document.body)) rebuildThemeFontScaleCss();
+
+            if (themeFontScaleObserver) return;
+            themeFontScaleObserver = new MutationObserver(mutations => {
+                let addedSize = false;
+                mutations.forEach(mutation => {
+                    if (mutation.type === 'childList') {
+                        mutation.addedNodes.forEach(node => {
+                            if (node instanceof Element && captureThemeFontSizesIn(node)) addedSize = true;
+                        });
+                        return;
+                    }
+                    if (
+                        mutation.type === 'attributes'
+                        && mutation.target instanceof HTMLElement
+                    ) {
+                        if (captureThemeFontSizesIn(mutation.target, { recapture: true }, false)) addedSize = true;
+                    }
+                });
+                if (addedSize) scheduleThemeFontScaleCssRefresh();
+            });
+            themeFontScaleObserver.observe(document.body, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['class']
+            });
+        }
+
         function applyThemeFontCss(resolvedFamily, fontSize) {
             const resolvedSize = `${normalizeThemeFontSize(fontSize)}px`;
             const appliedStyleEl = getThemeFontAppliedStyleElement();
@@ -3305,10 +3467,8 @@
                 --theme-font-family: ${resolvedFamily};
                 --theme-font-size: ${resolvedSize};
             }
-            body,
-            body :where(.app-page, .settings-view, .bottom-sheet, .bottom-sheet-overlay, .settings-group, .settings-item, .settings-text, .form-item, .sheet-title, .sheet-action, .chat-bubble, .chat-row, .ins-chat-input-container, .ins-chat-messages, .global-textarea, input, textarea, button, select) {
+            body {
                 font-family: var(--theme-font-family) !important;
-                font-size: var(--theme-font-size);
             }
             body :where(*:not(i):not(.fa):not(.fas):not(.far):not(.fab):not(.fal):not(.fa-solid):not(.fa-regular):not(.fa-brands)) {
                 font-family: var(--theme-font-family) !important;
@@ -3323,6 +3483,8 @@
             }`.trim();
             document.documentElement.style.setProperty('--theme-font-family', resolvedFamily);
             document.documentElement.style.setProperty('--theme-font-size', resolvedSize);
+            ensureThemeFontGlobalScaling();
+            rebuildThemeFontScaleCss(fontSize);
         }
 
         async function getThemeFontSource(definition) {
@@ -3905,6 +4067,9 @@
         let assistiveBallPanelEl = null;
         let assistivePresetSelectEl = null;
         let assistiveDragState = null;
+        let assistiveDragFrame = null;
+        let assistiveDragSettleFrame = null;
+        let assistivePositionSaveTimer = null;
 
         function getCurrentApiPresetId() {
             if (!Array.isArray(apiPresets)) return '';
@@ -3933,6 +4098,12 @@
             const numeric = parseFloat(value);
             if (!Number.isFinite(numeric)) return 0.72;
             return Math.max(0.2, Math.min(1, numeric > 1 ? numeric / 100 : numeric));
+        }
+
+        function normalizeAssistiveBallSize(value) {
+            const numeric = parseFloat(value);
+            if (!Number.isFinite(numeric)) return 58;
+            return Math.round(Math.max(36, Math.min(96, numeric)) / 2) * 2;
         }
 
         function normalizeAssistiveBallImageUrl(value) {
@@ -4031,6 +4202,19 @@
             }
         }
 
+        function syncAssistiveBallSizeControls() {
+            assistiveBallSettings.size = normalizeAssistiveBallSize(assistiveBallSettings.size);
+            if (UI.inputs.assistiveBallSize) {
+                UI.inputs.assistiveBallSize.value = String(assistiveBallSettings.size);
+            }
+            if (UI.inputs.assistiveBallSizeValue) {
+                UI.inputs.assistiveBallSizeValue.textContent = `${assistiveBallSettings.size}px`;
+            }
+            if (assistiveBallEl) {
+                assistiveBallEl.style.setProperty('--assistive-ball-size', `${assistiveBallSettings.size}px`);
+            }
+        }
+
         function ensureAssistiveBallDom() {
             const appContainer = document.getElementById('app') || document.body;
 
@@ -4053,6 +4237,7 @@
                 });
                 assistiveBallEl.addEventListener('pointerdown', startAssistiveBallDrag);
                 syncAssistiveBallOpacityControls();
+                syncAssistiveBallSizeControls();
                 applyAssistiveBallAppearance();
             }
 
@@ -4104,17 +4289,24 @@
             }
         }
 
-        function clampAssistiveBallPosition(x, y) {
+        function clampAssistiveBallPosition(x, y, measurements = null) {
             if (!assistiveBallEl) return { x: 0, y: 0 };
-            const parent = assistiveBallEl.parentElement || document.body;
-            const parentRect = parent.getBoundingClientRect();
-            const ballRect = assistiveBallEl.getBoundingClientRect();
+            let bounds = measurements;
+            if (!bounds) {
+                const parent = assistiveBallEl.parentElement || document.body;
+                const parentRect = parent.getBoundingClientRect();
+                const ballRect = assistiveBallEl.getBoundingClientRect();
+                bounds = {
+                    parentWidth: parentRect.width,
+                    parentHeight: parentRect.height,
+                    ballWidth: ballRect.width || 58,
+                    ballHeight: ballRect.height || 58
+                };
+            }
             const margin = 8;
-            const width = ballRect.width || 58;
-            const height = ballRect.height || 58;
             return {
-                x: Math.max(margin, Math.min(x, parentRect.width - width - margin)),
-                y: Math.max(margin, Math.min(y, parentRect.height - height - margin))
+                x: Math.max(margin, Math.min(x, bounds.parentWidth - bounds.ballWidth - margin)),
+                y: Math.max(margin, Math.min(y, bounds.parentHeight - bounds.ballHeight - margin))
             };
         }
 
@@ -4127,7 +4319,13 @@
             const fallbackY = parentRect.height * 0.46;
             const next = clampAssistiveBallPosition(
                 Number.isFinite(assistiveBallSettings.x) ? assistiveBallSettings.x : fallbackX,
-                Number.isFinite(assistiveBallSettings.y) ? assistiveBallSettings.y : fallbackY
+                Number.isFinite(assistiveBallSettings.y) ? assistiveBallSettings.y : fallbackY,
+                {
+                    parentWidth: parentRect.width,
+                    parentHeight: parentRect.height,
+                    ballWidth: currentRect.width || 58,
+                    ballHeight: currentRect.height || 58
+                }
             );
             assistiveBallSettings.x = next.x;
             assistiveBallSettings.y = next.y;
@@ -4137,6 +4335,10 @@
 
         function startAssistiveBallDrag(event) {
             if (!assistiveBallEl) return;
+            if (assistiveDragSettleFrame !== null) {
+                cancelAnimationFrame(assistiveDragSettleFrame);
+                assistiveDragSettleFrame = null;
+            }
             const parent = assistiveBallEl.parentElement || document.body;
             const parentRect = parent.getBoundingClientRect();
             const ballRect = assistiveBallEl.getBoundingClientRect();
@@ -4149,10 +4351,21 @@
                 offsetY: event.clientY - ballRect.top,
                 parentLeft: parentRect.left,
                 parentTop: parentRect.top,
+                parentWidth: parentRect.width,
+                parentHeight: parentRect.height,
+                ballWidth: ballRect.width || assistiveBallSettings.size || 58,
+                ballHeight: ballRect.height || assistiveBallSettings.size || 58,
+                originX: ballRect.left - parentRect.left,
+                originY: ballRect.top - parentRect.top,
+                nextX: ballRect.left - parentRect.left,
+                nextY: ballRect.top - parentRect.top,
+                latestClientX: event.clientX,
+                latestClientY: event.clientY,
                 moved: false
             };
 
             assistiveBallEl.classList.add('dragging');
+            assistiveBallEl.style.transform = 'translate3d(0, 0, 0) scale(0.96)';
             assistiveBallEl.setPointerCapture?.(event.pointerId);
             assistiveBallEl.addEventListener('pointermove', moveAssistiveBallDrag);
             assistiveBallEl.addEventListener('pointerup', endAssistiveBallDrag);
@@ -4160,29 +4373,48 @@
         }
 
         function moveAssistiveBallDrag(event) {
-            if (!assistiveDragState || !assistiveBallEl) return;
+            if (!assistiveDragState || !assistiveBallEl || event.pointerId !== assistiveDragState.pointerId) return;
+            event.preventDefault();
+            assistiveDragState.latestClientX = event.clientX;
+            assistiveDragState.latestClientY = event.clientY;
 
             const deltaX = event.clientX - assistiveDragState.startClientX;
             const deltaY = event.clientY - assistiveDragState.startClientY;
-            if (Math.abs(deltaX) + Math.abs(deltaY) > 4) {
+            if (!assistiveDragState.moved && Math.abs(deltaX) + Math.abs(deltaY) > 4) {
                 assistiveDragState.moved = true;
                 closeAssistiveBallPanel();
             }
 
-            const next = clampAssistiveBallPosition(
-                event.clientX - assistiveDragState.parentLeft - assistiveDragState.offsetX,
-                event.clientY - assistiveDragState.parentTop - assistiveDragState.offsetY
-            );
-            assistiveBallSettings.x = next.x;
-            assistiveBallSettings.y = next.y;
-            assistiveBallEl.style.left = `${next.x}px`;
-            assistiveBallEl.style.top = `${next.y}px`;
+            if (assistiveDragFrame === null) {
+                assistiveDragFrame = requestAnimationFrame(renderAssistiveBallDragFrame);
+            }
+        }
+
+        function renderAssistiveBallDragFrame() {
+            assistiveDragFrame = null;
+            if (!assistiveDragState || !assistiveBallEl) return;
+            const margin = 8;
+            const rawX = assistiveDragState.latestClientX - assistiveDragState.parentLeft - assistiveDragState.offsetX;
+            const rawY = assistiveDragState.latestClientY - assistiveDragState.parentTop - assistiveDragState.offsetY;
+            const nextX = Math.max(margin, Math.min(rawX, assistiveDragState.parentWidth - assistiveDragState.ballWidth - margin));
+            const nextY = Math.max(margin, Math.min(rawY, assistiveDragState.parentHeight - assistiveDragState.ballHeight - margin));
+            assistiveDragState.nextX = nextX;
+            assistiveDragState.nextY = nextY;
+            const translateX = nextX - assistiveDragState.originX;
+            const translateY = nextY - assistiveDragState.originY;
+            assistiveBallEl.style.transform = `translate3d(${translateX}px, ${translateY}px, 0) scale(0.96)`;
         }
 
         function endAssistiveBallDrag(event) {
             if (!assistiveBallEl) return;
             const moved = !!assistiveDragState?.moved;
-            assistiveBallEl.classList.remove('dragging');
+            if (assistiveDragFrame !== null) {
+                cancelAnimationFrame(assistiveDragFrame);
+                assistiveDragFrame = null;
+                renderAssistiveBallDragFrame();
+            }
+            const finalX = assistiveDragState?.nextX;
+            const finalY = assistiveDragState?.nextY;
             assistiveBallEl.releasePointerCapture?.(event.pointerId);
             assistiveBallEl.removeEventListener('pointermove', moveAssistiveBallDrag);
             assistiveBallEl.removeEventListener('pointerup', endAssistiveBallDrag);
@@ -4190,11 +4422,34 @@
             assistiveDragState = null;
 
             if (moved) {
+                assistiveBallSettings.x = finalX;
+                assistiveBallSettings.y = finalY;
+                assistiveBallEl.style.left = `${finalX}px`;
+                assistiveBallEl.style.top = `${finalY}px`;
+                // Commit the new layout position while transitions are still disabled.
+                // Two frames let the zero-translation state paint before release easing returns.
+                assistiveBallEl.style.transform = 'translate3d(0, 0, 0) scale(0.96)';
                 assistiveBallEl.dataset.dragged = 'true';
-                saveGlobalData();
+                assistiveDragSettleFrame = requestAnimationFrame(() => {
+                    assistiveDragSettleFrame = requestAnimationFrame(() => {
+                        assistiveDragSettleFrame = null;
+                        if (!assistiveDragState && assistiveBallEl) {
+                            assistiveBallEl.classList.remove('dragging');
+                            assistiveBallEl.style.transform = '';
+                        }
+                    });
+                });
+                if (assistivePositionSaveTimer !== null) clearTimeout(assistivePositionSaveTimer);
+                assistivePositionSaveTimer = window.setTimeout(() => {
+                    assistivePositionSaveTimer = null;
+                    saveGlobalData();
+                }, 50);
                 window.setTimeout(() => {
                     if (assistiveBallEl) assistiveBallEl.dataset.dragged = 'false';
                 }, 0);
+            } else {
+                assistiveBallEl.classList.remove('dragging');
+                assistiveBallEl.style.transform = '';
             }
         }
 
@@ -4233,6 +4488,7 @@
 
             ensureAssistiveBallDom();
             syncAssistiveBallOpacityControls();
+            syncAssistiveBallSizeControls();
             applyAssistiveBallAppearance();
             applyAssistiveBallPosition();
             assistiveBallEl.classList.toggle('visible', assistiveBallSettings.enabled);
@@ -4275,6 +4531,7 @@
             assistiveBallConfigBtn.addEventListener('click', () => {
                 setAssistiveBallEnabled(assistiveBallSettings.enabled);
                 syncAssistiveBallOpacityControls();
+                syncAssistiveBallSizeControls();
                 syncAssistiveBallImageControls();
                 openView(UI.overlays.assistiveBallSettings);
             });
@@ -4296,6 +4553,20 @@
             UI.inputs.assistiveBallOpacity.addEventListener('change', () => {
                 assistiveBallSettings.opacity = normalizeAssistiveBallOpacity(UI.inputs.assistiveBallOpacity.value);
                 syncAssistiveBallOpacityControls();
+                saveGlobalData();
+            });
+        }
+
+        if (UI.inputs.assistiveBallSize) {
+            UI.inputs.assistiveBallSize.addEventListener('input', () => {
+                assistiveBallSettings.size = normalizeAssistiveBallSize(UI.inputs.assistiveBallSize.value);
+                syncAssistiveBallSizeControls();
+                applyAssistiveBallPosition();
+            });
+            UI.inputs.assistiveBallSize.addEventListener('change', () => {
+                assistiveBallSettings.size = normalizeAssistiveBallSize(UI.inputs.assistiveBallSize.value);
+                syncAssistiveBallSizeControls();
+                applyAssistiveBallPosition();
                 saveGlobalData();
             });
         }

@@ -21,6 +21,11 @@
     pointer-events: none;
 }
 
+.u2-login-screen.is-checking .u2-login-panel {
+    opacity: 0;
+    visibility: hidden;
+}
+
 body.u2-login-locked #app {
     pointer-events: none;
 }

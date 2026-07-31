@@ -245,10 +245,11 @@ input, textarea, [contenteditable] {
 .assistive-api-ball {
     position: absolute;
     --assistive-ball-opacity: 0.72;
+    --assistive-ball-size: 58px;
     left: auto;
     top: 46%;
-    width: 58px;
-    height: 58px;
+    width: var(--assistive-ball-size);
+    height: var(--assistive-ball-size);
     border-radius: 50%;
     z-index: var(--z-system, 99999);
     display: none;
@@ -258,12 +259,12 @@ input, textarea, [contenteditable] {
     background: rgba(28, 28, 30, var(--assistive-ball-opacity));
     border: 1px solid rgba(255, 255, 255, 0.18);
     box-shadow: none;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
     color: rgba(255, 255, 255, 0.9);
     touch-action: none;
     user-select: none;
+    contain: layout paint;
     transition: opacity 0.2s ease, transform 0.18s ease, background 0.18s ease;
+    will-change: transform;
 }
 
 .assistive-api-ball.visible {
@@ -279,16 +280,20 @@ input, textarea, [contenteditable] {
     transform: scale(0.96);
 }
 
+.assistive-api-ball.dragging {
+    transition: none;
+}
+
 .assistive-api-ball-inner {
-    width: 34px;
-    height: 34px;
+    width: 59%;
+    height: 59%;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     background: rgba(255, 255, 255, 0.12);
     box-shadow: none;
-    font-size: 19px;
+    font-size: calc(var(--assistive-ball-size) * 0.33);
 }
 
 .assistive-api-ball.has-custom-image {
@@ -434,19 +439,22 @@ input, textarea, [contenteditable] {
     pointer-events: none;
 }
 
-.assistive-ball-opacity-item {
+.assistive-ball-opacity-item,
+.assistive-ball-size-item {
     justify-content: space-between;
     border-bottom: none;
     gap: 10px;
 }
 
-.assistive-ball-opacity-range {
+.assistive-ball-opacity-range,
+.assistive-ball-size-range {
     flex: 0 1 128px;
     min-width: 96px;
     accent-color: var(--blue-color, #007aff);
 }
 
-.assistive-ball-opacity-value {
+.assistive-ball-opacity-value,
+.assistive-ball-size-value {
     width: 42px;
     color: #8e8e93;
     font-size: 14px;

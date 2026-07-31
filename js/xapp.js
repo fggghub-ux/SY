@@ -379,9 +379,36 @@ X is a global app. Non-User authors may write in the language that naturally fit
             }
         }
 
-        function getSelectedWorldBookContext(extraText = '') {
+        function normalizeWorldBookIds(ids = []) {
+            return (Array.isArray(ids) ? ids : [])
+                .map(String)
+                .filter((id, index, allIds) => id && allIds.indexOf(id) === index);
+        }
+
+        function getCharacterBoundWorldBookIds(characters = []) {
+            const list = Array.isArray(characters) ? characters : [characters];
+            const runtimeFriends = Array.isArray(window.imData?.friends) ? window.imData.friends : [];
+            return normalizeWorldBookIds(list.flatMap((character) => {
+                if (!character || typeof character !== 'object') return [];
+                const sourceFriendId = character.sourceFriendId
+                    || (character.origin === 'imessage' ? character.id : null);
+                const sourceFriend = sourceFriendId == null
+                    ? null
+                    : runtimeFriends.find((friend) => String(friend?.id) === String(sourceFriendId));
+                return [
+                    ...(Array.isArray(character.boundBooks) ? character.boundBooks : []),
+                    ...(Array.isArray(character.boundWorldBookIds) ? character.boundWorldBookIds : []),
+                    ...(Array.isArray(sourceFriend?.boundBooks) ? sourceFriend.boundBooks : [])
+                ];
+            }));
+        }
+
+        function getSelectedWorldBookContext(extraText = '', extraBookIds = []) {
             const state = getXState();
-            const selected = new Set((state.boundWorldBookIds || []).map(String));
+            const selected = new Set(normalizeWorldBookIds([
+                ...(state.boundWorldBookIds || []),
+                ...normalizeWorldBookIds(extraBookIds)
+            ]));
             const parts = [];
             if (typeof window.getWorldBooks === 'function') {
                 window.getWorldBooks().forEach((book) => {
@@ -2051,7 +2078,10 @@ ${worldbook || 'None'}`;
             superUpdateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
             
             try {
-                const worldbook = getSelectedWorldBookContext(`${topicName} ${charsInfo}`);
+                const worldbook = getSelectedWorldBookContext(
+                    `${topicName} ${charsInfo}`,
+                    getCharacterBoundWorldBookIds(topic.chars)
+                );
                 const reusableAuthors = getReusableAuthorContext();
                 
                 const prompt = `Return strict JSON only. Generate an update for a celebrity/entertainment community named "${topicName}" inside the international X app.
@@ -3180,6 +3210,14 @@ ${worldbook || 'None'}
             const rootComment = findCommentById(rootThread, rootCommentId);
             if (!rootComment || !userReply) return;
             try {
+                const worldbook = getSelectedWorldBookContext([
+                    post.name,
+                    post.text,
+                    rootComment.name,
+                    rootComment.text,
+                    userReply.text,
+                    currentProfile.persona
+                ].filter(Boolean).join(' '));
                 const prompt = `Return strict JSON only. A user just commented in an X/Twitter-style post detail page. Generate engagement around this user's exact comment.
 Output JSON shape:
 {
@@ -3202,7 +3240,10 @@ Root comment author: ${rootComment.name || ''}
 Root comment text: ${rootComment.text || ''}
 User display name: ${currentProfile.name} ${currentProfile.handle}
 User comment text: ${userReply.text}
-User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-level comment'}`;
+User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-level comment'}
+
+Worldbook:
+${worldbook || 'None'}`;
                 const raw = await requestXChatCompletion([
                     { role: 'system', content: 'You generate strict JSON for social-feed replies and profile visitors.' },
                     { role: 'user', content: prompt }
@@ -3398,6 +3439,7 @@ User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-leve
                 bio: safeText(source.bio || source.signature, '暂无签名'),
                 persona: safeText(source.persona || source.characterPersona || source.systemPrompt),
                 avatar: avatar,
+                boundBooks: getCharacterBoundWorldBookIds(source),
                 messages: normalizeDmMessages(source.messages),
                 isFollowing: typeof source.isFollowing === 'boolean' ? source.isFollowing : origin !== 'generated',
                 coverSeed: safeText(source.coverSeed, `${id}-cover`),
@@ -3870,7 +3912,10 @@ User comment type: ${isNestedReply ? 'reply inside a comment thread' : 'top-leve
 
         async function requestCharProfilePostBatch(item, count, excludedTexts = []) {
             const recentChat = normalizeDmMessages(item.messages).slice(-12).map(serializeDmMessageForAi).join('\n');
-            const worldbook = getSelectedWorldBookContext(`${item.name} ${item.bio} ${item.persona} ${currentProfile.persona}`);
+            const worldbook = getSelectedWorldBookContext(
+                `${item.name} ${item.bio} ${item.persona} ${currentProfile.persona}`,
+                getCharacterBoundWorldBookIds(item)
+            );
             const prompt = `Return strict JSON only: {"posts":[{"authorName":"","handle":"","text":"","translation":"","likes":0,"reposts":0,"commentsCount":10,"mediaType":"image","imagePrompt":"简体中文图片描述","comments":[{"authorName":"","handle":"","text":"","translation":"","replies":[{"authorName":"","handle":"","text":"","translation":""}]}]}]}.
 Generate exactly ${count} new X profile posts written by this Char. Every post MUST contain at least one imagePrompt or images item and at least 10 distinct top-level comment objects in comments. Replies do not count toward the 10-comment minimum. Posts must feel like the Char's own public life and remain consistent with their persona, recent private conversation, User relationship and worldbook.
 Only the named Char may author the posts. All generated commenters and repliers must be non-User accounts; never write a comment or reply as the current User.
@@ -4323,7 +4368,10 @@ ${comments || '暂无评论'}`;
                         ? serializeDmMessageForAi(message)
                         : `${message.source === 'user' ? currentProfile.name : item.name}: ${message.text}`)
                     .join('\n');
-                const worldbook = getSelectedWorldBookContext(`${item.name} ${item.bio} ${currentProfile.persona}`);
+                const worldbook = getSelectedWorldBookContext(
+                    `${item.name} ${item.bio} ${currentProfile.persona}`,
+                    getCharacterBoundWorldBookIds(item)
+                );
                 const content = await requestXChatCompletion([
                     { role: 'system', content: 'Reply only as the named X private-message Char, never as the User. Return strict JSON only: {"messages":[{"text":"","translation":""}]}.' },
                     { role: 'user', content: `Character: ${item.name} ${item.handle || ''}

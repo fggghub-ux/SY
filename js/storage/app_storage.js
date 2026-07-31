@@ -2754,6 +2754,9 @@
                     y: Number.isFinite(parseFloat(safe.assistiveBallSettings.y))
                         ? parseFloat(safe.assistiveBallSettings.y)
                         : null,
+                    size: Number.isFinite(parseFloat(safe.assistiveBallSettings.size))
+                        ? Math.round(Math.max(36, Math.min(96, parseFloat(safe.assistiveBallSettings.size))) / 2) * 2
+                        : 58,
                     opacity: Number.isFinite(parseFloat(safe.assistiveBallSettings.opacity))
                         ? Math.max(0.2, Math.min(1, parseFloat(safe.assistiveBallSettings.opacity) > 1
                             ? parseFloat(safe.assistiveBallSettings.opacity) / 100
@@ -2764,7 +2767,7 @@
                         ? safe.assistiveBallSettings.imageUrl.trim()
                         : ''
                 }
-                : { enabled: false, x: null, y: null, opacity: 0.72, imageUrl: '' },
+                : { enabled: false, x: null, y: null, size: 58, opacity: 0.72, imageUrl: '' },
             themeState: themeState || {
                 bgUrl: null,
                 fontMode: 'preset',
@@ -2890,171 +2893,6 @@
             }),
             storageSchemaVersion: Number(storedSchemaVersion) || 0
         };
-    }
-
-    async function exportAllData(progressCallback) {
-        if (progressCallback) progressCallback({ message: '准备导出数据...', progress: 0 });
-        
-        const chunks = [];
-        chunks.push(`{"version": ${STORAGE_SCHEMA_VERSION}, "exportedAt": ${Date.now()}, "stores": {`);
-
-        const storeNames = BACKUP_STORES;
-        const totalStores = storeNames.length;
-        
-        for (let i = 0; i < totalStores; i++) {
-            const storeName = storeNames[i];
-            
-            const baseProgress = Math.floor((i / totalStores) * 90);
-            if (progressCallback) progressCallback({ message: `正在读取: ${storeName}`, progress: baseProgress });
-            
-            chunks.push(`"${storeName}": [`);
-            
-            const records = await getAllRecords(storeName);
-            const totalRecords = records.length;
-            
-            for (let j = 0; j < totalRecords; j++) {
-                const record = records[j];
-                
-                if (storeName === STORES.assets && record && record.blob) {
-                    try {
-                        const dataUrl = await blobToDataUrl(record.blob);
-                        record.dataUrl = dataUrl;
-                        record.blob = undefined;
-                    } catch (err) {
-                        console.warn(`Failed to convert asset ${record.id} to dataUrl`, err);
-                    }
-                }
-                
-                chunks.push(JSON.stringify(record));
-                if (j < totalRecords - 1) {
-                    chunks.push(',');
-                }
-                
-                if ((storeName === STORES.assets || storeName === STORES.imMessages) && j > 0 && j % 20 === 0 && progressCallback) {
-                    const stepProgress = Math.floor((j / totalRecords) * (90 / totalStores));
-                    progressCallback({ message: `处理表 ${storeName} (${j}/${totalRecords})...`, progress: baseProgress + stepProgress });
-                }
-            }
-            
-            chunks.push(']');
-            if (i < totalStores - 1) {
-                chunks.push(',');
-            }
-        }
-        
-        chunks.push(`}}`);
-        
-        if (progressCallback) progressCallback({ message: '正在生成备份文件...', progress: 95 });
-        
-        return new Blob(chunks, { type: 'application/json' });
-    }
-
-    async function importAllData(payload = {}, progressCallback) {
-        if (progressCallback) progressCallback({ message: '开始清理旧数据...', progress: 0 });
-        
-        await clearAllData();
-        
-        const isNewFormat = !!payload.stores;
-        
-        if (isNewFormat) {
-            const storesData = payload.stores || {};
-            if (progressCallback) progressCallback({ message: '开始恢复数据...', progress: 10 });
-            
-            const storeNames = Object.keys(storesData);
-            const totalStores = storeNames.length;
-            
-            for (let i = 0; i < totalStores; i++) {
-                const storeName = storeNames[i];
-                const records = storesData[storeName];
-                if (!Array.isArray(records) || records.length === 0) continue;
-
-                const baseProgress = 10 + Math.floor((i / totalStores) * 80);
-                if (progressCallback) progressCallback({ message: `正在恢复: ${storeName}...`, progress: baseProgress });
-
-                await withStore([storeName], 'readwrite', (stores) => {
-                    const store = stores[storeName];
-                    records.forEach((record) => {
-                        if (storeName === STORES.assets && record.dataUrl) {
-                            try {
-                                const blob = dataUrlToBlob(record.dataUrl);
-                                record.blob = blob;
-                                record.dataUrl = undefined;
-                            } catch (err) {
-                                console.warn(`Failed to restore asset ${record.id}`, err);
-                            }
-                        }
-                        store.put(record);
-                    });
-                });
-                
-            }
-            if (progressCallback) progressCallback({ message: '校验 IndexedDB 数据...', progress: 95 });
-        } else {
-            const safe = payload && typeof payload === 'object' ? payload : {};
-            const globalData = safe.globalData || {};
-            await saveGlobalData(globalData);
-
-            const imessage = safe.imessage && typeof safe.imessage === 'object' ? safe.imessage : {};
-            const friends = Array.isArray(imessage.friends) ? imessage.friends : [];
-            if (friends.length > 0) {
-                await withStore([STORES.imFriends], 'readwrite', (stores) => {
-                    friends.forEach(f => stores[STORES.imFriends].put(f));
-                });
-            }
-            
-            const messages = Array.isArray(imessage.messages) ? imessage.messages : [];
-            if (messages.length > 0) {
-                await withStore([STORES.imMessages], 'readwrite', (stores) => {
-                    messages.forEach(msg => stores[STORES.imMessages].put(msg));
-                });
-            }
-
-            const moments = Array.isArray(imessage.moments) ? imessage.moments : [];
-            if (moments.length > 0) {
-                await withStore([STORES.imMoments], 'readwrite', (stores) => {
-                    moments.forEach(m => stores[STORES.imMoments].put(m));
-                });
-            }
-
-            const momentMessages = Array.isArray(imessage.momentMessages) ? imessage.momentMessages : [];
-            if (momentMessages.length > 0) {
-                await withStore([STORES.imMomentMessages], 'readwrite', (stores) => {
-                    momentMessages.forEach(m => stores[STORES.imMomentMessages].put(m));
-                });
-            }
-
-            const stickers = Array.isArray(imessage.stickers) ? imessage.stickers : [];
-            if (stickers.length > 0) {
-                await withStore([STORES.imStickers], 'readwrite', (stores) => {
-                    stickers.forEach(s => stores[STORES.imStickers].put(s));
-                });
-            }
-
-            if (imessage.momentsCoverUrlMeta !== undefined) {
-                await setMeta(META_KEYS.imMomentsCoverAssetId, imessage.momentsCoverUrlMeta);
-            } else if (imessage.momentsCoverUrl) {
-                await saveMomentsCover(imessage.momentsCoverUrl);
-            }
-
-            const assetsArray = Array.isArray(safe.assets) ? safe.assets : [];
-            if (assetsArray.length > 0) {
-                await withStore([STORES.assets], 'readwrite', (stores) => {
-                    assetsArray.forEach((record) => {
-                        if (record && record.id && record.dataUrl) {
-                            try {
-                                const blob = dataUrlToBlob(record.dataUrl);
-                                stores[STORES.assets].put({ ...record, blob, dataUrl: undefined });
-                            } catch (err) {
-                                console.warn(`Failed to restore asset ${record.id}`, err);
-                            }
-                        }
-                    });
-                });
-            }
-        }
-        
-        if (progressCallback) progressCallback({ message: '恢复完成', progress: 100 });
-        return true;
     }
 
     async function serializeRecordForBackup(storeName, record) {

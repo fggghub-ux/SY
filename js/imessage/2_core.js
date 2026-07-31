@@ -657,6 +657,9 @@ window.imApp.normalizeFriendData = function(friend) {
     normalized.momentsCoverAssetId = normalized.momentsCoverAssetId || null;
     normalized.members = Array.isArray(normalized.members) ? normalized.members : [];
     normalized.leftGroupAt = isGroupChat ? (Number(normalized.leftGroupAt) || 0) : 0;
+    normalized.groupObserverMode = isGroupChat
+        && normalized.groupObserverMode === true
+        && normalized.leftGroupAt > 0;
     normalized.leftGroupMemberSnapshot = isGroupChat && Array.isArray(normalized.leftGroupMemberSnapshot)
         ? normalized.leftGroupMemberSnapshot
             .filter(item => item && item.id != null)
@@ -4026,6 +4029,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalPromptContent = document.getElementById('modal-prompt-content');
     const modalMessage = document.getElementById('modal-message');
     const modalInput = document.getElementById('modal-input');
+    const modalInputGroup = document.getElementById('modal-input-group');
+    const modalTextareaGroup = document.getElementById('modal-textarea-group');
+    const modalTextarea = document.getElementById('modal-textarea');
     
     // Buttons
     const modalConfirmBtn = document.getElementById('modal-confirm-btn');
@@ -4043,14 +4049,23 @@ document.addEventListener('DOMContentLoaded', () => {
         currentModalCancelCallback = options.onCancel;
 
         if (options.type === 'prompt') {
+            const useTextarea = options.multiline === true;
             modalConfirmBtn.style.display = 'none';
             modalPromptConfirmBtn.style.display = 'block';
             modalConfirmContent.style.display = 'none';
             modalPromptContent.style.display = 'block';
             
             modalMessage.textContent = options.message || '';
-            modalInput.value = options.defaultValue || '';
-            modalInput.placeholder = options.placeholder || '';
+            if (modalInputGroup) modalInputGroup.style.display = useTextarea ? 'none' : '';
+            if (modalTextareaGroup) modalTextareaGroup.style.display = useTextarea ? 'block' : 'none';
+            if (modalInput) {
+                modalInput.value = useTextarea ? '' : (options.defaultValue || '');
+                modalInput.placeholder = options.placeholder || '';
+            }
+            if (modalTextarea) {
+                modalTextarea.value = useTextarea ? (options.defaultValue || '') : '';
+                modalTextarea.placeholder = options.placeholder || '';
+            }
             modalPromptConfirmBtn.textContent = options.confirmText || '确认';
             modalPromptConfirmBtn.style.background = options.confirmTone === 'dark' ? '#111' : '#007aff';
             modalPromptConfirmBtn.style.color = '#fff';
@@ -4078,7 +4093,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if(sheet) sheet.style.transform = 'translateY(0)';
 
         if (options.type === 'prompt') {
-            setTimeout(() => modalInput.focus(), 300);
+            if (options.multiline === true) {
+                setTimeout(() => modalTextarea?.focus(), 300);
+            } else {
+                setTimeout(() => modalInput.focus(), 300);
+            }
         }
     }
 
@@ -4113,7 +4132,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (modalPromptConfirmBtn) {
         modalPromptConfirmBtn.addEventListener('click', () => {
-            if (currentModalCallback) currentModalCallback(modalInput.value);
+            const promptValue = modalTextareaGroup?.style.display === 'block'
+                ? (modalTextarea?.value || '')
+                : (modalInput?.value || '');
+            if (currentModalCallback) currentModalCallback(promptValue);
             closeCustomModal(false);
         });
     }

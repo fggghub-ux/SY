@@ -321,6 +321,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return group && group.type === 'group' && Number(group.leftGroupAt) > 0;
     }
 
+    function getGroupMemberCount(group) {
+        const memberCount = Array.isArray(group?.members) ? group.members.length : 0;
+        return memberCount + (isLeftGroup(group) ? 0 : 1);
+    }
+
     async function rejoinGroupChat(group, page) {
         const liveGroup = getLiveGroup(group);
         if (!liveGroup || liveGroup.type !== 'group') return false;
@@ -329,6 +334,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ? await window.imApp.commitScopedFriendChange(liveGroup.id, (targetGroup) => {
                 if (!targetGroup) return;
                 targetGroup.leftGroupAt = 0;
+                targetGroup.groupObserverMode = false;
                 targetGroup.leftGroupMemberSnapshot = [];
             }, {
                 syncActive: true,
@@ -386,7 +392,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const rejoinBtn = leftBar ? leftBar.querySelector('.im-left-group-rejoin-btn') : null;
         const aiBtn = leftBar ? leftBar.querySelector('.im-left-group-ai-btn') : null;
+        const stateLabel = leftBar ? leftBar.querySelector('.im-left-group-label') : null;
         const msgContainer = page.querySelector('.ins-chat-messages');
+        if (stateLabel) stateLabel.textContent = group.groupObserverMode ? '旁观群聊' : '已退出该群';
+        if (rejoinBtn) rejoinBtn.style.display = group.groupObserverMode ? 'none' : '';
 
         if (rejoinBtn) {
             rejoinBtn.onclick = (e) => {
@@ -403,7 +412,30 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 const latestGroup = getLiveGroup(group) || group;
-                window.imChat.handleAiReply(latestGroup, msgContainer, aiBtn, { source: 'left_group_continue' });
+                if (!window.showCustomModal) {
+                    window.imChat.handleAiReply(latestGroup, msgContainer, aiBtn, { source: 'left_group_continue' });
+                    return;
+                }
+                window.showCustomModal({
+                    type: 'prompt',
+                    multiline: true,
+                    title: '推进剧情',
+                    message: '可以输入你希望群成员接下来聊的方向；留空则由他们自由发展。',
+                    placeholder: '例如：让他们聊聊刚才发生的事（可留空）',
+                    confirmText: '推进',
+                    confirmTone: 'dark',
+                    onConfirm: (value) => {
+                        const direction = String(value || '').trim();
+                        const extraSystemPrompt = direction
+                            ? `【旁观推进提示｜仅影响本轮群聊】\n旁观者希望群成员接下来围绕以下方向自然聊天：${direction}\n这不是 User 在群内发送的消息，不得让任何成员声称看到 User 发言，也不得让 User 出现在群内。`
+                            : '';
+                        window.imChat.handleAiReply(latestGroup, msgContainer, aiBtn, {
+                            source: 'left_group_continue',
+                            continueWithoutUser: true,
+                            extraSystemPrompt
+                        });
+                    }
+                });
             };
         }
 
@@ -481,7 +513,7 @@ async function openChatTab(friend) {
             if (isGroupChat) {
                 titleHtml = `<div class="im-chat-group-title-wrap" style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 0; padding: 4px 16px; background: rgba(242, 242, 247, 0.85);   border-radius: 40px;  pointer-events: auto;">
                         <div class="ins-chat-name" style="font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;">${friend.nickname}</div>
-                        <div class="ins-chat-sign" style="font-size: 11px; font-weight: 500; color: #8e8e93; margin-top: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px;">${formatGroupMemberCount((friend.members ? friend.members.length : 0) + 1)}</div>
+                        <div class="ins-chat-sign" style="font-size: 11px; font-weight: 500; color: #8e8e93; margin-top: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px;">${formatGroupMemberCount(getGroupMemberCount(friend))}</div>
                    </div>`;
             } else if (friend.type === 'official') {
                 titleHtml = `<div class="im-chat-avatar-wrap">
@@ -598,10 +630,10 @@ async function openChatTab(friend) {
                     </div>
                     ${isGroupChat ? `
                     <div class="im-left-group-bar" style="display:none; align-items:center; justify-content:space-between; gap:10px; margin:0 10px; padding:8px 10px; border-radius:22px; background:#f2f2f7; border:1px solid #e5e5ea;">
-                        <div style="font-size:14px; color:#8e8e93; font-weight:600; white-space:nowrap;">已退出该群</div>
+                        <div class="im-left-group-label" style="font-size:14px; color:#8e8e93; font-weight:600; white-space:nowrap;">${friend.groupObserverMode ? '旁观群聊' : '已退出该群'}</div>
                         <div style="display:flex; align-items:center; gap:8px; min-width:0;">
-                            <button type="button" class="im-left-group-rejoin-btn" style="border:0; border-radius:18px; background:#007aff; color:#fff; height:34px; padding:0 12px; font-size:14px; font-weight:700; cursor:pointer; white-space:nowrap;">重新进入</button>
-                            <button type="button" class="im-left-group-ai-btn" style="border:0; border-radius:18px; background:#1c1c1e; color:#fff; height:34px; padding:0 12px; font-size:14px; font-weight:700; cursor:pointer; white-space:nowrap;">AI继续</button>
+                            <button type="button" class="im-left-group-rejoin-btn" style="display:${friend.groupObserverMode ? 'none' : ''}; border:0; border-radius:18px; background:#007aff; color:#fff; height:34px; padding:0 12px; font-size:14px; font-weight:700; cursor:pointer; white-space:nowrap;">重新进入</button>
+                            <button type="button" class="im-left-group-ai-btn" aria-label="推进剧情" title="推进剧情" style="border:0; border-radius:50%; background:#1c1c1e; color:#fff; width:34px; height:34px; padding:0; display:flex; align-items:center; justify-content:center; font-size:14px; cursor:pointer; flex-shrink:0;"><i class="fas fa-arrow-down"></i></button>
                         </div>
                     </div>
                     ` : ''}

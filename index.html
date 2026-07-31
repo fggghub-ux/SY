@@ -28,11 +28,11 @@
             document.head.appendChild(manifestLink);
         }
     </script>
-    <link rel="stylesheet" href="css/global.css?v=20260721-mobile-input-layout-v1-android-focus-scope-v1">
-    <link rel="stylesheet" href="css/login.css?v=20260729-account-auth-v1">
-    <link rel="stylesheet" href="css/home.css?v=20260726-short-screen-search-layout">
+    <link rel="stylesheet" href="css/global.css?v=20260721-mobile-input-layout-v1-android-focus-scope-v1&assistive=20260801-no-blur-v3&home-swipe=20260801-scrollend-v2">
+    <link rel="stylesheet" href="css/login.css?v=20260731-login-gate-focus-v2">
+    <link rel="stylesheet" href="css/home.css?v=20260731-ios-swipe-icon-flicker-v1&layout=20260801-fixed-grid-v1">
     <link rel="stylesheet" href="css/worldbook.css">
-    <link rel="stylesheet" href="css/imessage.css?v=20260721-status-prompt-v3-group-poll-v3&cot=20260725-single-chat-cot-v1&status=20260725-thought-center-v1&cotui=20260725-pill-v1&link=20260726-light-link-theatre-v1">
+    <link rel="stylesheet" href="css/imessage.css?v=20260721-status-prompt-v3-group-poll-v3&cot=20260725-single-chat-cot-v1&status=20260725-thought-center-v1&cotui=20260725-pill-v1&link=20260726-light-link-theatre-v1&relationship=20260801-static-preview-v3">
     <link rel="stylesheet" href="css/pay.css?v=20260714-ios-neutral-v1">
     <link rel="stylesheet" href="css/bstage.css?v=20260721-mobile-input-layout-v1-android-focus-scope-v1">
     <link rel="stylesheet" href="css/tiktok.css?v=20260721-mobile-input-layout-v1">
@@ -85,7 +85,7 @@
         // 兜底：最长 5 秒后强制移除
         setTimeout(window.removeSplashScreen, 5000);
     </script>
-    <div id="u2-login-screen" class="u2-login-screen" aria-hidden="false">
+    <div id="u2-login-screen" class="u2-login-screen is-checking" aria-hidden="true" inert>
         <div class="u2-login-shell">
             <main class="u2-login-panel" aria-labelledby="u2-login-title">
                 <section class="u2-login-brand">
@@ -2447,7 +2447,7 @@
 
         <!-- World Book View (Fullscreen Files App Style) -->
         <div class="app-view world-book-files-view" id="world-book-view" style="z-index: 520;">
-            <input type="file" id="wb-import-file" accept=".txt,.json,.docx,.md,.text,application/json,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display: none;">
+            <input type="file" id="wb-import-file" accept=".txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display: none;">
 
             <div class="wb-files-page wb-files-main-page active" id="wb-files-main-page">
                 <div class="wb-files-nav">
@@ -2555,7 +2555,7 @@
                 <div class="wb-book-sheet-header wb-book-modal-header">
                     <div class="sheet-title wb-centered-modal-title">添加世界书</div>
                     <div id="wb-edit-actions" style="display: none; justify-content: flex-end; gap: 20px; padding: 0;">
-                        <input type="file" id="wb-import-file-legacy" accept=".json" style="display: none;">
+                        <input type="file" id="wb-import-file-legacy" accept=".txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display: none;">
                     </div>
                 </div>
                 
@@ -2969,6 +2969,11 @@
                         <label style="width: auto; white-space: nowrap; flex: 1; margin-right: 12px; color: #000; font-size: 16px;">透明度</label>
                         <input type="range" id="assistive-ball-opacity-range" min="20" max="100" step="1" value="72" class="assistive-ball-opacity-range">
                         <span id="assistive-ball-opacity-value" class="assistive-ball-opacity-value">72%</span>
+                    </div>
+                    <div class="form-item assistive-ball-size-item">
+                        <label style="width: auto; white-space: nowrap; flex: 1; margin-right: 12px; color: #000; font-size: 16px;">大小</label>
+                        <input type="range" id="assistive-ball-size-range" min="36" max="96" step="2" value="58" class="assistive-ball-size-range">
+                        <span id="assistive-ball-size-value" class="assistive-ball-size-value">58px</span>
                     </div>
                 </div>
                 <div class="settings-group fully-rounded assistive-ball-image-settings" style="margin: 0 16px 20px;">
@@ -3511,27 +3516,60 @@
                 </div>
             </div>
 
-<div class="bottom-sheet-overlay detail-sheet-overlay" id="relationship-sheet" style="z-index: 700;">
-                <div class="bottom-sheet" style="height: 85%; display: flex; flex-direction: column; padding: 0;">
-                    <div class="sheet-handle" style="margin-top: 10px;"></div>
-                    <div class="sheet-title" style="flex-shrink: 0; padding-bottom: 10px;">关系网</div>
-                    <div class="detail-sheet-content" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding: 0;">
-                        <!-- 刑侦板预览区 -->
-                        <div id="relationship-preview-area" style="flex-shrink: 0; height: 260px; position: relative; overflow: hidden; margin: 0 16px 16px; border: 1px solid #ececf2; border-radius: 20px; touch-action: none;">
-                            <canvas id="relationship-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></canvas>
-                            <div id="relationship-nodes-container" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></div>
+            <div class="bottom-sheet-overlay detail-sheet-overlay" id="relationship-sheet" style="z-index: 700;">
+                <div class="bottom-sheet relationship-sheet-card">
+                    <div class="sheet-handle"></div>
+                    <div class="relationship-sheet-heading">
+                        <div>
+                            <div class="sheet-title">关系网</div>
+                            <div class="relationship-sheet-subtitle">整理 Char 身边的重要人物与彼此关系</div>
                         </div>
+                        <span class="relationship-total-badge" id="relationship-total-badge">0 人</span>
+                    </div>
+                    <div class="detail-sheet-content relationship-sheet-content">
+                        <section class="relationship-panel relationship-preview-panel">
+                            <div class="relationship-section-heading">
+                                <div>
+                                    <div class="relationship-section-title">关系图谱</div>
+                                    <div class="relationship-section-hint">人物位置自动排列</div>
+                                </div>
+                                <i class="fas fa-diagram-project" aria-hidden="true"></i>
+                            </div>
+                            <div id="relationship-preview-area">
+                                <canvas id="relationship-canvas"></canvas>
+                                <div id="relationship-nodes-container"></div>
+                            </div>
+                        </section>
 
-                        <div id="relationship-empty-state" style="display:none; text-align:center; padding:20px; color:#8e8e93;">暂无关系</div>
-                        <div id="relationship-list" style="display:flex; flex-direction:column; gap:12px; margin:0 16px 16px; flex-shrink: 0;"></div>
-                        <div id="relationship-picker" style="display:none; margin:0 16px 16px; flex-shrink: 0;">
-                            <div style="font-size: 13px; color: #8e8e93; margin-bottom: 10px;">从已有 NPC 中拉取</div>
-                            <div id="relationship-picker-list" style="display:flex; flex-direction:column; gap:10px;"></div>
-                        </div>
-                        <div style="display:flex; gap:10px; margin:0 16px 20px; flex-shrink: 0;">
-                            <div class="sheet-action" id="relationship-add-npc-btn" style="flex: 1; margin: 0; background-color: #34c759; color: #fff;">添加NPC</div>
-                            <div class="sheet-action confirm-action" id="confirm-relationship-btn" style="flex: 1; margin: 0; background-color: #1c1c1e; color: #fff;">保存</div>
-                        </div>
+                        <section class="relationship-list-section">
+                            <div class="relationship-section-heading relationship-list-heading">
+                                <div class="relationship-section-title">已添加人物</div>
+                                <span class="relationship-selected-count" id="relationship-selected-count">0</span>
+                            </div>
+                            <div id="relationship-empty-state" class="relationship-empty-state">暂无关系</div>
+                            <div id="relationship-list"></div>
+                        </section>
+
+                        <section id="relationship-picker" class="relationship-picker-panel">
+                            <div class="relationship-section-heading">
+                                <div>
+                                    <div class="relationship-section-title">添加人物</div>
+                                    <div class="relationship-section-hint">从已有 Char 或 NPC 中选择</div>
+                                </div>
+                            </div>
+                            <div class="relationship-picker-filters" id="relationship-picker-filters">
+                                <button type="button" class="relationship-filter-btn active" data-type="all">全部</button>
+                                <button type="button" class="relationship-filter-btn" data-type="char">Char</button>
+                                <button type="button" class="relationship-filter-btn" data-type="npc">NPC</button>
+                            </div>
+                            <div id="relationship-picker-list"></div>
+                        </section>
+                    </div>
+                    <div class="relationship-sheet-actions">
+                        <button type="button" class="relationship-add-person-btn" id="relationship-add-npc-btn">
+                            <i class="fas fa-plus" aria-hidden="true"></i><span>添加人物</span>
+                        </button>
+                        <button type="button" class="sheet-action confirm-action relationship-save-btn" id="confirm-relationship-btn">保存</button>
                     </div>
                 </div>
             </div>
@@ -3681,6 +3719,14 @@
                                 <input type="text" id="group-name-input" placeholder="Group Name" style="width: 100%; border: none; outline: none; font-size: 17px; background: transparent;">
                             </div>
                         </div>
+
+                        <label for="create-group-include-user" style="background:#fff; margin:12px 16px 0; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; gap:16px; border-radius:12px; cursor:pointer;">
+                            <span style="display:flex; flex-direction:column; gap:3px; min-width:0;">
+                                <span style="font-size:16px; color:#111; font-weight:600;">我在群里</span>
+                                <span style="font-size:12px; line-height:1.4; color:#8e8e93;">关闭后将创建为旁观群聊，你不能发言，但群成员可以继续聊天</span>
+                            </span>
+                            <input type="checkbox" id="create-group-include-user" checked style="width:22px; height:22px; flex-shrink:0; accent-color:#007aff;">
+                        </label>
 
                         <!-- Select Members List -->
                         <div style="margin-top: 20px; padding: 0 16px 20px;">
@@ -7796,16 +7842,16 @@
     <script src="js/bootstrap_globals.js?v=20260721-fetch-abort-v1"></script>
     <script src="js/export_file.js?v=20260718-ios-pwa-export-v1"></script>
     <script src="js/about_info_modal.js?v=20260712-login-notice-v1"></script>
-    <script src="js/login.js?v=20260729-account-auth-v1"></script>
+    <script src="js/login.js?v=20260801-multi-device-v1"></script>
     <script src="js/mobile_input_compat.js?v=20260713-bstage-enter-v1-android-focus-scope-v1"></script>
     <script src="js/background_activity.js"></script>
     <script src="js/system_notifications.js?v=20260721-storage-hydration-v1-custom-sound-v1"></script>
     
     <!-- 引入 iMessage 模块分段代码 -->
     <script src="js/imessage/data_utils.js?v=20260713-offline-memory-v1-sticker-manifest-v2-memory-event-time-v1-offline-handoff-v1"></script>
-    <script src="js/imessage/2_core.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&cotcopy=20260727-v2"></script>
+    <script src="js/imessage/2_core.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&cotcopy=20260727-v2&observer=20260730-v1"></script>
     <script src="js/imessage/3_contacts.js?v=20260718-friend-profile-import-v1"></script>
-    <script src="js/imessage/3_groups.js?v=20260718-group-poll-v4-group-memory-editor-v1"></script>
+    <script src="js/imessage/3_groups.js?v=20260718-group-poll-v4-group-memory-editor-v1&observer=20260730-v1"></script>
     <script src="js/imessage/4_chat_common.js"></script>
     <script src="js/imessage/4_chat_status.js?v=20260716-status-prompt-v2"></script>
     <script src="js/imessage/4_chat_payment.js?v=20260725-single-chat-cot-v1"></script>
@@ -7813,28 +7859,28 @@
     <script src="js/imessage/chat_search.js?v=20260718-chat-history-search-v2"></script>
     <script src="js/imessage/chat_favorites.js?v=20260723-chat-favorites-v3"></script>
     <script src="js/imessage/minimax_tts.js"></script>
-    <script src="js/imessage/4_chat_ai.js?v=20260724-single-chat-prompt-v8&cot=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&online=20260727-prompt-sections-v2"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260724-single-chat-prompt-v8&cot=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&online=20260727-prompt-sections-v2&observer=20260730-v1"></script>
     <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
     <script src="js/imessage/offline_reasoning.js?v=20260718-offline-cot-v1"></script>
     <script src="js/imessage/4_chat_sheet.js?v=20260718-offline-cot-v1-chat-image-send-v1&cotui=20260725-pill-v1"></script>
     <script src="js/imessage/4_chat_link.js?v=20260726-light-link-theatre-v1"></script>
     <script src="js/imessage/4_chat_list.js"></script>
-    <script src="js/imessage/4_chat_interface.js?v=20260715-chat-context-menu-offline-retry-v1"></script>
+    <script src="js/imessage/4_chat_interface.js?v=20260715-chat-context-menu-offline-retry-v1&observer=20260730-v1"></script>
     <script src="js/imessage/4_chat_voice_call.js?v=20260725-call-keyboard-minimize-v2-minimized-context-v1"></script>
     <script src="js/imessage/4_chat_main.js?v=20260715-chat-context-menu-offline-retry-v1"></script>
-    <script src="js/imessage/5_settings.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v3"></script>
+    <script src="js/imessage/5_settings.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v3&chat-bg=20260729-race-reset-v1&relationship=20260801-static-preview-v3"></script>
     <script src="js/imessage/6_moments.js?v=20260718-moments-target-reply-v1"></script>
 
     <!-- 引入其他应用模块 -->
     <script src="js/pay.js?v=20260710-storage-ready-v1"></script>
-    <script src="js/bstage.js?v=20260725-android-keyboard-actions-v2"></script>
+    <script src="js/bstage.js?v=20260725-android-keyboard-actions-v2&subscribers=20260730-cap-compact-v1"></script>
     <!-- 引入世界书核心模块脚本 -->
     <script src="js/builtin_worldbook.js?v=20260713-disable-override-limit-v2"></script>
     <script src="https://unpkg.com/mammoth@1.8.0/mammoth.browser.min.js"></script>
-    <script src="js/worldbook.js"></script>
+    <script src="js/worldbook.js?v=20260801-import-txt-docx-only-v1"></script>
     <!-- 引入核心 UI 管理与设置模块脚本 -->
     <script src="js/ui.js"></script>
-    <script src="js/settings.js?v=20260718-ios-pwa-export-v1-notification-sync-v1-custom-notification-sound-v1-api-presets-accessor-v1&theme-source=20260728-single-meta-cot-v1"></script>
+    <script src="js/settings.js?v=20260718-ios-pwa-export-v1-notification-sync-v1-custom-notification-sound-v1-api-presets-accessor-v1&global-font-scale=20260729-v1&theme-source=20260728-single-meta-cot-v1&assistive=20260801-drag-settle-v3&home-theme=20260731-widgets-v1&app-icon-alpha=20260731-v1"></script>
     <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="js/library.js?v=20260715-reader-streaming-v1"></script>
     <script src="js/loves.js?v=20260719-friend-phone-bilingual-v13-android-focus-scope-v1"></script>
@@ -7842,19 +7888,19 @@
     <script src="js/tiktok/3_home.js?v=20260712-tiktok-feed-cleanup-v1"></script>
     <script src="js/tiktok/4_chat.js?v=20260712-tiktok-polish-v1"></script>
     <script src="js/tiktok/5_profile.js?v=20260712-tiktok-polish-v1"></script>
-    <script src="js/youtube/2_core.js?v=20260717-char-lottery-consistency-v18"></script>
+    <script src="js/youtube/2_core.js?v=20260717-char-lottery-consistency-v18&worldbook=20260729-global-bound-only-v2"></script>
     <script src="js/youtube/3_channel.js?v=20260717-char-lottery-consistency-v18"></script>
     <script src="js/youtube/4_settings.js"></script>
-    <script src="js/youtube/5_player.js?v=20260717-char-lottery-consistency-v18"></script>
-    <script src="js/youtube/6_community.js?v=20260717-char-lottery-consistency-v18"></script>
-    <script src="js/youtube/7_trending.js"></script>
-    <script src="js/youtube/8_user_live.js?v=20260717-char-lottery-consistency-v18"></script>
+    <script src="js/youtube/5_player.js?v=20260717-char-lottery-consistency-v18&worldbook=20260729-global-bound-only-v2"></script>
+    <script src="js/youtube/6_community.js?v=20260717-char-lottery-consistency-v18&worldbook=20260729-global-bound-only-v2"></script>
+    <script src="js/youtube/7_trending.js?worldbook=20260729-global-bound-only-v2"></script>
+    <script src="js/youtube/8_user_live.js?v=20260717-char-lottery-consistency-v18&worldbook=20260729-global-bound-only-v2"></script>
     <script src="js/netflix.js?v=20260710-storage-ready-v2"></script>
     <script src="js/shopping.js?v=20260710-storage-ready-v1"></script>
-    <script src="js/xapp.js?v=20260710-storage-v7-cache1"></script>
-    <script src="js/home_desktop.js?v=20260710-storage-ready-v1"></script>
+    <script src="js/xapp.js?v=20260710-storage-v7-cache1&worldbook=20260729-global-bound-char-v1"></script>
+    <script src="js/home_desktop.js?v=20260710-storage-ready-v1&theme-widgets=20260731-v1"></script>
     <script src="js/home_widget_panel_enhance.js"></script>
     <!-- 引入主逻辑脚本 -->
-    <script src="script.js?v=20260725-modal-owner-v1"></script>
+    <script src="script.js?v=20260725-modal-owner-v1&home-swipe=20260801-scrollend-v2"></script>
 </body>
 </html>

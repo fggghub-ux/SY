@@ -166,18 +166,9 @@
                 return;
             }
 
-            let wbContext = '';
-            if (typeof window.getGlobalWorldBookContext === 'function') {
-                wbContext = window.getGlobalWorldBookContext() || '';
-            } else if (channelState && channelState.boundWorldBookIds && Array.isArray(channelState.boundWorldBookIds) && window.getWorldBooks) {
-                const wbs = window.getWorldBooks();
-                channelState.boundWorldBookIds.forEach(id => {
-                    const boundWb = wbs.find(w => w.id === id);
-                    if (boundWb && boundWb.entries) {
-                        wbContext += `\n【${boundWb.name}】:\n` + boundWb.entries.map(e => `${e.keyword}: ${e.content}`).join('\n');
-                    }
-                });
-            }
+            const wbContext = window.getYtWorldBookContext
+                ? window.getYtWorldBookContext(currentTrendingType)
+                : '';
 
             isTrendingLoading = true;
             trendList.innerHTML = '<div style="text-align:center; padding: 40px; color:#8e8e93;"><i class="fas fa-spinner fa-spin" style="font-size:24px; margin-bottom:10px;"></i><p>正在拉取最新榜单数据...</p></div>';

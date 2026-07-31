@@ -702,6 +702,11 @@ function getFileBaseName(fileName = '') {
     return String(fileName || '导入的世界书').replace(/\.[^/.]+$/, '') || '导入的世界书';
 }
 
+function isSupportedWorldBookImportFile(file) {
+    const lowerName = String(file?.name || '').toLowerCase();
+    return lowerName.endsWith('.txt') || lowerName.endsWith('.docx');
+}
+
 async function readWorldBookImportText(file) {
     const fileName = file?.name || '';
     const lowerName = fileName.toLowerCase();
@@ -727,19 +732,10 @@ async function readWorldBookImportText(file) {
 function parseImportedWorldBooks(text, file) {
     const fileName = file?.name || '';
     const fallbackName = getFileBaseName(fileName);
-    const lowerName = fileName.toLowerCase();
     const trimmed = String(text || '').trim();
 
     if (!trimmed) {
         throw new Error('文件内容为空');
-    }
-
-    if (lowerName.endsWith('.json') || trimmed.startsWith('{') || trimmed.startsWith('[')) {
-        const parsed = JSON.parse(trimmed);
-        const list = Array.isArray(parsed)
-            ? parsed
-            : (Array.isArray(parsed.worldBooks) ? parsed.worldBooks : [parsed]);
-        return list.map((book, idx) => sanitizeImportedWorldBook(book, idx === 0 ? fallbackName : `${fallbackName}-${idx + 1}`));
     }
 
     return [sanitizeImportedWorldBook({
@@ -760,6 +756,10 @@ function parseImportedWorldBooks(text, file) {
 
 async function importWorldBookFile(file) {
     if (!file) return;
+    if (!isSupportedWorldBookImportFile(file)) {
+        showToast('仅支持导入 txt 和 docx 文件');
+        return;
+    }
 
     try {
         const text = await readWorldBookImportText(file);
@@ -783,7 +783,7 @@ async function importWorldBookFile(file) {
         showToast(`已导入 ${importedBooks.length} 本世界书`);
     } catch (error) {
         console.error('Failed to import world book:', error);
-        showToast('导入失败：请检查文件格式');
+        showToast('导入失败：请检查 txt 或 docx 文件内容');
     }
 }
 

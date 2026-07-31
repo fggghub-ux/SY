@@ -1480,8 +1480,8 @@ ${userRequirementSection}
             : (window.getGlobalWorldBookContextByPosition ? window.getGlobalWorldBookContextByPosition('after_role') : '');
         const relationshipText = normalizedFriend.memory?.relationships && normalizedFriend.memory.relationships.length > 0
             ? normalizedFriend.memory.relationships.map(rel => {
-                const npc = (window.imData.friends || []).find(item => String(item.id) === String(rel.npcId));
-                return `${npc ? (npc.nickname || npc.realName || 'Unknown NPC') : 'Unknown NPC'}: ${rel.relation || ''}`;
+                const person = (window.imData.friends || []).find(item => String(item.id) === String(rel.npcId));
+                return `${person ? (person.nickname || person.realName || 'Unknown Person') : 'Unknown Person'}: ${rel.relation || ''}`;
             }).join('\n')
             : 'None';
         const currentChatContext = window.imApp.buildApiContextMessages
@@ -2304,8 +2304,8 @@ ${groupTemporalDecisionPrompt}
 
         const relationshipText = friend.memory.relationships && friend.memory.relationships.length > 0
             ? friend.memory.relationships.map(rel => {
-                const npc = window.imData.friends.find(item => String(item.id) === String(rel.npcId));
-                return `${npc ? npc.nickname : 'Unknown NPC'}: ${rel.relation}`;
+                const person = window.imData.friends.find(item => String(item.id) === String(rel.npcId));
+                return `${person ? person.nickname : 'Unknown Person'}: ${rel.relation}`;
             }).join('\n')
             : 'None';
 
@@ -2746,13 +2746,17 @@ ${isSingleChat ? '- 禁止执着于旧话题，例如当user明确表达不困�
             isGroupAfterUserLeft = Number(friend.leftGroupAt) > 0;
             if (isGroupAfterUserLeft) {
                 const leftAtText = formatDetailedTime(friend.leftGroupAt);
+                const isObserverGroup = friend.groupObserverMode === true;
                 const snapshot = Array.isArray(friend.leftGroupMemberSnapshot) && friend.leftGroupMemberSnapshot.length > 0
                     ? friend.leftGroupMemberSnapshot
                     : (window.imApp?.createGroupMemberSnapshot ? window.imApp.createGroupMemberSnapshot(friend) : []);
                 const memberSnapshotText = snapshot.length > 0
                     ? snapshot.map(item => `${item.nickname || item.realName || item.id}(${item.id})`).join('、')
                     : (allowedSpeakerNames.length > 0 ? allowedSpeakerNames.join('、') : 'None');
-                groupExitPrompt = `\n【当前群状态｜User 已退出】\n- ${currentUserState.name || 'User'} 已在 ${leftAtText || '刚刚'} 退出这个群聊，现在不能发言，也不会看到接下来的群聊内容。\n- 当前群成员快照：${memberSnapshotText}。\n- 接下来的回复必须表现为群成员之间继续聊天，不要对 User 说话、不要等待 User 回复、不要让 User 发送消息。\n- 已挂载的单聊记忆仍然只属于对应成员本人：某个成员可以基于自己和 User 的私聊经历自然表达态度，其他成员默认不知道这些私聊内容，除非该成员主动在群里说出。`;
+                const absenceDescription = isObserverGroup
+                    ? `${currentUserState.name || 'User'} 从创建时起就不在这个群聊中，只在界面外旁观，不能发言，群成员也不知道 User 正在旁观。`
+                    : `${currentUserState.name || 'User'} 已在 ${leftAtText || '刚刚'} 退出这个群聊，现在不能发言，也不会看到接下来的群聊内容。`;
+                groupExitPrompt = `\n【当前群状态｜User 不在群聊】\n- ${absenceDescription}\n- 当前群成员快照：${memberSnapshotText}。\n- 接下来的回复必须表现为群成员之间继续聊天，不要对 User 说话、不要等待 User 回复、不要让 User 发送消息。\n- 已挂载的单聊记忆仍然只属于对应成员本人：某个成员可以基于自己和 User 的私聊经历自然表达态度，其他成员默认不知道这些私聊内容，除非该成员主动在群里说出。`;
             }
             
             // 处理成员的挂载单聊记忆：先确保开启挂载的成员单聊历史已从持久化存储加载
@@ -3187,7 +3191,7 @@ Never truncate OUTPUT(x)
             messages.push({
                 role: 'system',
                 content: options.source === 'left_group_continue'
-                    ? '本次触发来自退出态底部的“AI继续”：请让群成员在 User 已退出且看不到的前提下继续群聊。'
+                    ? '本次触发来自 User 不在群内时的下箭头“推进剧情”：请让群成员在 User 不参与且群成员不知道被旁观的前提下继续群聊。'
                     : '当前 User 已退出群聊：后续回复不要把 User 当作在线参与者。'
             });
         }

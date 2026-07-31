@@ -106,6 +106,8 @@
         window.openHomeWidgetEditor = openHomeWidgetEditor;
         window.openHomeWidgetPanelFromSettings = openHomeWidgetPanelFromSettings;
         window.updateHomeWidgetConfigFromPanel = updateHomeWidgetConfigFromPanel;
+        window.getHomeWidgetThemeConfigs = getHomeWidgetThemeConfigs;
+        window.applyHomeWidgetThemeConfigs = applyHomeWidgetThemeConfigs;
         window.renderHomeDesktop = renderDesktop;
     }
 
@@ -1208,6 +1210,43 @@
 
         saveDesktopState({ silent: true });
         return next;
+    }
+
+    function getHomeWidgetThemeConfigs() {
+        if (!desktopState?.widgets) return {};
+        return JSON.parse(JSON.stringify(desktopState.widgets));
+    }
+
+    function applyHomeWidgetThemeConfigs(importedWidgets) {
+        if (!desktopState?.widgets || !importedWidgets || typeof importedWidgets !== 'object' || Array.isArray(importedWidgets)) {
+            return false;
+        }
+
+        Object.entries(importedWidgets).forEach(([widgetId, importedConfig]) => {
+            const entry = getWidgetCatalogEntry(widgetId);
+            if (!entry || !importedConfig || typeof importedConfig !== 'object' || Array.isArray(importedConfig)) return;
+
+            const current = desktopState.widgets[widgetId] || createDefaultWidgetConfig(entry.type);
+            desktopState.widgets[widgetId] = {
+                ...createDefaultWidgetConfig(entry.type),
+                ...current,
+                ...importedConfig,
+                type: entry.type,
+                text: {
+                    ...DEFAULT_WIDGET_TEXT,
+                    ...(current.text || {}),
+                    ...(importedConfig.text || {})
+                },
+                images: mergeWidgetImagesWithDefaults(entry.type, {
+                    ...(current.images || {}),
+                    ...(importedConfig.images || {})
+                })
+            };
+        });
+
+        renderDesktop();
+        saveDesktopState({ silent: true });
+        return true;
     }
 
     function createDefaultWidgetConfig(type) {

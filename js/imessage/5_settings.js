@@ -47,6 +47,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const relationshipEmptyState = document.getElementById('relationship-empty-state');
     const relationshipPicker = document.getElementById('relationship-picker');
     const relationshipPickerList = document.getElementById('relationship-picker-list');
+    const relationshipPickerFilters = document.getElementById('relationship-picker-filters');
+    const relationshipSelectedCount = document.getElementById('relationship-selected-count');
+    const relationshipTotalBadge = document.getElementById('relationship-total-badge');
     const confirmRelationshipBtn = document.getElementById('confirm-relationship-btn');
     const relationshipAddNpcBtn = document.getElementById('relationship-add-npc-btn');
     const statusPromptSheet = document.getElementById('status-prompt-sheet');
@@ -66,6 +69,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let tempRelationshipDrafts = [];
     let isRelationshipPickerVisible = false;
+    let relationshipPickerType = 'all';
+    let relationshipPreviewFrame = null;
+    let pendingRelationshipPreviewFriend = null;
 
     async function commitSettingsFriendChange(mutator, options = {}) {
         const currentFriend = window.imData.currentSettingsFriend;
@@ -90,34 +96,127 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    const chatBackgroundOperationTokens = new Map();
+
+    function beginChatBackgroundOperation(friend) {
+        if (friend?.id == null) return null;
+        const friendId = String(friend.id);
+        const token = (chatBackgroundOperationTokens.get(friendId) || 0) + 1;
+        chatBackgroundOperationTokens.set(friendId, token);
+        return { friendId, token };
+    }
+
+    function isLatestChatBackgroundOperation(operation) {
+        return !!operation
+            && chatBackgroundOperationTokens.get(operation.friendId) === operation.token;
+    }
+
+    function getLatestChatBackgroundFriend(friend) {
+        return window.imApp.getFriendById
+            ? window.imApp.getFriendById(friend)
+            : friend;
+    }
+
+    async function saveChatBackgroundUpload(file, friend) {
+        if (!file || !friend) return { status: 'ignored' };
+        const operation = beginChatBackgroundOperation(friend);
+        if (!operation) return { status: 'ignored' };
+
+        const bgUrl = window.imApp.compressImageFile
+            ? await window.imApp.compressImageFile(file, {
+                maxWidth: 1440,
+                maxHeight: 1440,
+                mimeType: 'image/jpeg',
+                quality: 0.82
+            })
+            : await window.imApp.readFileAsDataUrl(file);
+
+        if (!isLatestChatBackgroundOperation(operation)) return { status: 'superseded' };
+
+        const saved = await commitNamedFriendChange(friend, (targetFriend) => {
+            targetFriend.chatBg = bgUrl;
+            targetFriend.chatBgAssetId = null;
+        }, { silent: true });
+
+        if (!isLatestChatBackgroundOperation(operation)) return { status: 'superseded' };
+        if (!saved) return { status: 'failed' };
+
+        const latestFriend = getLatestChatBackgroundFriend(friend);
+        applyFriendBg(latestFriend);
+        return { status: 'saved', friend: latestFriend };
+    }
+
+    async function resetChatBackground(friend) {
+        if (!friend) return { status: 'ignored' };
+        const operation = beginChatBackgroundOperation(friend);
+        if (!operation) return { status: 'ignored' };
+
+        const saved = await commitNamedFriendChange(friend, (targetFriend) => {
+            targetFriend.chatBg = null;
+            targetFriend.chatBgAssetId = null;
+        }, { silent: true });
+
+        if (!isLatestChatBackgroundOperation(operation)) return { status: 'superseded' };
+        if (!saved) return { status: 'failed' };
+
+        const latestFriend = getLatestChatBackgroundFriend(friend);
+        applyFriendBg(latestFriend);
+        return { status: 'reset', friend: latestFriend };
+    }
+
     function updateStatusBarBtnCount() {
         return;
     }
     
-    // Zoom & Pan state
-    let relScale = 1;
-    let relTranslateX = 0;
-    let relTranslateY = 0;
-    let isDraggingRel = false;
-    let startDragX = 0;
-    let startDragY = 0;
-    let initialPinchDistance = null;
-    let initialScale = 1;
-    
-    // Node Dragging State
-    let draggingNodeId = null;
+    function getRelationshipTargetId(relation) {
+        return String(relation?.targetId ?? relation?.npcId ?? '');
+    }
 
-    function getDraftRelationValue(npcId, friend) {
-        const draftRelation = tempRelationshipDrafts.find(rel => String(rel.npcId) === String(npcId));
-        const savedRelation = friend.memory.relationships.find(rel => String(rel.npcId) === String(npcId));
+    function getRelationshipTarget(relationOrId) {
+        const targetId = typeof relationOrId === 'object'
+            ? getRelationshipTargetId(relationOrId)
+            : String(relationOrId ?? '');
+        return (window.imData.friends || []).find(item =>
+            (item?.type === 'char' || item?.type === 'npc')
+            && String(item.id) === targetId
+        ) || null;
+    }
+
+    function getRelationshipTypeLabel(target) {
+        return target?.type === 'npc' ? 'NPC' : 'Char';
+    }
+
+    function getRelationshipFallbackIcon(target) {
+        return target?.type === 'npc' ? 'fa-robot' : 'fa-user';
+    }
+
+    function escapeRelationshipHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function getDraftRelationValue(targetId, friend) {
+        const draftRelation = tempRelationshipDrafts.find(rel => getRelationshipTargetId(rel) === String(targetId));
+        const savedRelation = friend.memory.relationships.find(rel => getRelationshipTargetId(rel) === String(targetId));
         if (draftRelation) return draftRelation.relation || '';
         return savedRelation ? (savedRelation.relation || '') : '';
     }
     
-    function resetRelView() {
-        relScale = 1;
-        relTranslateX = 0;
-        relTranslateY = 0;
+    function scheduleRelationshipPreviewRender(friend) {
+        if (!friend) return;
+        pendingRelationshipPreviewFriend = friend;
+        if (relationshipPreviewFrame !== null) return;
+
+        relationshipPreviewFrame = window.requestAnimationFrame(() => {
+            relationshipPreviewFrame = null;
+            const pendingFriend = pendingRelationshipPreviewFriend;
+            pendingRelationshipPreviewFriend = null;
+            if (pendingFriend) renderRelationshipPreview(pendingFriend);
+        });
     }
 
     function renderRelationshipList(friend) {
@@ -133,42 +232,57 @@ document.addEventListener('DOMContentLoaded', () => {
         relationshipList.innerHTML = '';
         relationshipEmptyState.innerHTML = '';
         relationshipEmptyState.style.display = 'none';
+        const visibleRelations = selectedRelations.filter(rel => !!getRelationshipTarget(rel));
+        if (relationshipSelectedCount) relationshipSelectedCount.textContent = String(visibleRelations.length);
+        if (relationshipTotalBadge) relationshipTotalBadge.textContent = `${visibleRelations.length} 人`;
 
-        if (selectedRelations.length === 0) {
+        if (visibleRelations.length === 0) {
             relationshipList.style.display = 'none';
             relationshipEmptyState.style.display = 'block';
-            relationshipEmptyState.innerHTML = '<div style="text-align:center; color:#8e8e93; padding:24px 16px; font-size:14px; line-height:1.6;">当前还没有关联 NPC。<br>点击下方“添加NPC”可从已有 NPC 中拉取。</div>';
+            relationshipEmptyState.innerHTML = `
+                <div class="relationship-empty-icon"><i class="fas fa-user-group"></i></div>
+                <div class="relationship-empty-title">还没有添加人物</div>
+                <div class="relationship-empty-copy">可从已有 Char 或 NPC 中选择，为他们记录与当前 Char 的关系。</div>
+            `;
             return;
         }
 
         relationshipList.style.display = 'flex';
 
-        selectedRelations.forEach(rel => {
-            const npc = window.imData.friends.find(item => item.type === 'npc' && String(item.id) === String(rel.npcId));
-            if (!npc) return;
+        visibleRelations.forEach(rel => {
+            const target = getRelationshipTarget(rel);
+            if (!target) return;
+            const targetId = String(target.id);
 
             const item = document.createElement('div');
             item.className = 'relationship-item';
 
-            const avatarHtml = npc.avatarUrl
-                ? `<img src="${npc.avatarUrl}" alt="">`
-                : '<i class="fas fa-robot"></i>';
+            const avatarHtml = target.avatarUrl
+                ? `<img src="${escapeRelationshipHtml(target.avatarUrl)}" alt="">`
+                : `<i class="fas ${getRelationshipFallbackIcon(target)}"></i>`;
+            const displayName = target.nickname || target.realName || '未命名人物';
+            const secondaryText = target.realName && target.realName !== target.nickname
+                ? target.realName
+                : (target.signature || (target.type === 'npc' ? 'NPC 联系人' : 'Char 联系人'));
 
             item.innerHTML = `
                 <div class="relationship-avatar">${avatarHtml}</div>
                 <div class="relationship-meta">
-                    <div class="relationship-name">${npc.nickname}</div>
-                    <div class="relationship-desc">${npc.realName || npc.signature || 'NPC'}</div>
+                    <div class="relationship-name-row">
+                        <div class="relationship-name">${escapeRelationshipHtml(displayName)}</div>
+                        <span class="relationship-type-badge ${target.type === 'npc' ? 'is-npc' : 'is-char'}">${getRelationshipTypeLabel(target)}</span>
+                    </div>
+                    <div class="relationship-desc">${escapeRelationshipHtml(secondaryText)}</div>
                 </div>
-                <input class="relationship-input" data-npc-id="${npc.id}" type="text" placeholder="输入关系" value="${rel.relation || ''}">
-                <div class="relationship-delete-btn" style="color: #ff3b30; cursor: pointer; padding: 0 10px; font-size: 18px;"><i class="fas fa-minus-circle"></i></div>
+                <input class="relationship-input" data-target-id="${escapeRelationshipHtml(targetId)}" type="text" placeholder="例如：好友、同事" value="${escapeRelationshipHtml(rel.relation || '')}">
+                <button type="button" class="relationship-delete-btn" aria-label="移除 ${escapeRelationshipHtml(displayName)}"><i class="fas fa-xmark"></i></button>
             `;
 
             const deleteBtn = item.querySelector('.relationship-delete-btn');
             if (deleteBtn) {
                 deleteBtn.addEventListener('click', () => {
                     collectRelationshipDrafts();
-                    tempRelationshipDrafts = tempRelationshipDrafts.filter(r => String(r.npcId) !== String(npc.id));
+                    tempRelationshipDrafts = tempRelationshipDrafts.filter(r => getRelationshipTargetId(r) !== targetId);
                     
                     relationshipList.innerHTML = '';
                     renderRelationshipList(friend);
@@ -181,7 +295,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (relInput) {
                 relInput.addEventListener('input', () => {
                     collectRelationshipDrafts();
-                    renderRelationshipPreview(friend);
+                    scheduleRelationshipPreviewRender(friend);
                 });
             }
 
@@ -203,11 +317,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         nodesContainer.innerHTML = '';
         
-        // Apply transformations to nodes container
-        nodesContainer.style.transform = `translate(${relTranslateX}px, ${relTranslateY}px) scale(${relScale})`;
-        nodesContainer.style.transformOrigin = '0 0';
-
-        const selectedRelations = tempRelationshipDrafts;
+        const selectedRelations = tempRelationshipDrafts.filter(rel => !!getRelationshipTarget(rel));
             
         if (selectedRelations.length === 0) {
             // Still render main node even if no relations
@@ -220,10 +330,10 @@ document.addEventListener('DOMContentLoaded', () => {
             mainNode.style.top = `${centerY - 25}px`;
             
             const mainAvatar = friend.avatarUrl 
-                ? `<img src="${friend.avatarUrl}">` 
+                ? `<img src="${escapeRelationshipHtml(friend.avatarUrl)}" alt="">`
                 : `<i class="fas fa-user"></i>`;
 
-            mainNode.innerHTML = `${mainAvatar}<div class="node-label">${friend.nickname || 'Char'}</div>`;
+            mainNode.innerHTML = `${mainAvatar}<div class="node-label">${escapeRelationshipHtml(friend.nickname || 'Char')}</div>`;
             nodesContainer.appendChild(mainNode);
             return;
         }
@@ -237,35 +347,27 @@ document.addEventListener('DOMContentLoaded', () => {
         mainNode.style.top = `${centerY - 25}px`;
         
         const mainAvatar = friend.avatarUrl 
-            ? `<img src="${friend.avatarUrl}">` 
+            ? `<img src="${escapeRelationshipHtml(friend.avatarUrl)}" alt="">`
             : `<i class="fas fa-user"></i>`;
 
-        mainNode.innerHTML = `${mainAvatar}<div class="node-label">${friend.nickname || 'Char'}</div>`;
+        mainNode.innerHTML = `${mainAvatar}<div class="node-label">${escapeRelationshipHtml(friend.nickname || 'Char')}</div>`;
         nodesContainer.appendChild(mainNode);
 
         const radius = Math.max(72, Math.min(canvas.width, canvas.height) * 0.34);
         const angleStep = (Math.PI * 2) / selectedRelations.length;
 
-        // Draw connections on canvas, scaled and translated
-        ctx.save();
-        ctx.translate(relTranslateX, relTranslateY);
-        ctx.scale(relScale, relScale);
-
         ctx.strokeStyle = 'rgba(88, 86, 214, 0.28)';
         ctx.lineWidth = 2;
 
         selectedRelations.forEach((rel, index) => {
-            const npc = window.imData.friends.find(item => String(item.id) === String(rel.npcId));
-            if (!npc) return;
+            const target = getRelationshipTarget(rel);
+            if (!target) return;
 
-            if (rel.offsetX === undefined || rel.offsetY === undefined) {
-                const angle = index * angleStep - Math.PI / 2;
-                rel.offsetX = radius * Math.cos(angle);
-                rel.offsetY = radius * Math.sin(angle);
-            }
-
-            const x = centerX + rel.offsetX;
-            const y = centerY + rel.offsetY;
+            const angle = index * angleStep - Math.PI / 2;
+            const offsetX = radius * Math.cos(angle);
+            const offsetY = radius * Math.sin(angle);
+            const x = centerX + offsetX;
+            const y = centerY + offsetY;
 
             // Draw line
             ctx.beginPath();
@@ -275,8 +377,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Draw text on line
             if (rel.relation) {
-                const textX = centerX + rel.offsetX * 0.5;
-                const textY = centerY + rel.offsetY * 0.5;
+                const textX = centerX + offsetX * 0.5;
+                const textY = centerY + offsetY * 0.5;
                 
                 ctx.font = '11px sans-serif';
                 const metrics = ctx.measureText(rel.relation);
@@ -284,7 +386,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const textHeight = 18;
                 
                 // Rotation for text
-                let textAngle = Math.atan2(rel.offsetY, rel.offsetX);
+                let textAngle = Math.atan2(offsetY, offsetX);
                 if (textAngle > Math.PI / 2 || textAngle < -Math.PI / 2) {
                     textAngle += Math.PI;
                 }
@@ -308,202 +410,41 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.restore();
             }
 
-            // Create NPC node in DOM
-            const npcNode = document.createElement('div');
-            npcNode.className = 'relationship-node';
-            npcNode.style.left = `${x - 20}px`;
-            npcNode.style.top = `${y - 20}px`;
-            npcNode.style.cursor = 'pointer';
+            // Create linked person node in DOM
+            const targetNode = document.createElement('div');
+            targetNode.className = `relationship-node ${target.type === 'npc' ? 'npc-node' : 'char-node'}`;
+            targetNode.style.left = `${x - 20}px`;
+            targetNode.style.top = `${y - 20}px`;
             
-            const npcAvatar = npc.avatarUrl 
-                ? `<img src="${npc.avatarUrl}">` 
-                : `<i class="fas fa-robot"></i>`;
+            const targetAvatar = target.avatarUrl
+                ? `<img src="${escapeRelationshipHtml(target.avatarUrl)}" alt="">`
+                : `<i class="fas ${getRelationshipFallbackIcon(target)}"></i>`;
 
-            npcNode.innerHTML = `${npcAvatar}<div class="node-label">${npc.nickname || 'NPC'}</div>`;
+            targetNode.innerHTML = `${targetAvatar}<div class="node-label">${escapeRelationshipHtml(target.nickname || target.realName || '人物')}</div>`;
             
-            // Add interaction for node dragging
-            const startNodeDrag = (e) => {
-                e.stopPropagation(); // Stop canvas panning
-                draggingNodeId = rel.npcId;
-                isDraggingRel = false;
-                
-                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-                
-                startDragX = clientX;
-                startDragY = clientY;
-            };
-
-            npcNode.addEventListener('mousedown', startNodeDrag);
-            npcNode.addEventListener('touchstart', startNodeDrag, {passive: false});
-
-            nodesContainer.appendChild(npcNode);
+            nodesContainer.appendChild(targetNode);
         });
-        
-        ctx.restore();
     }
     
     // Setup Interaction for Relationship Preview
-    function initRelationshipPreviewInteractions() {
-        const previewArea = document.getElementById('relationship-preview-area');
-        if (!previewArea) return;
-        
-        // Prevent multiple bindings
-        if (previewArea.dataset.bound === 'true') return;
-        previewArea.dataset.bound = 'true';
-
-        // Mouse Events
-        previewArea.addEventListener('wheel', (e) => {
-            e.preventDefault();
-            const zoomAmount = e.deltaY > 0 ? 0.9 : 1.1;
-            const newScale = Math.min(Math.max(0.5, relScale * zoomAmount), 3);
-            
-            // Zoom towards mouse pointer
-            const rect = previewArea.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
-            
-            relTranslateX = mouseX - (mouseX - relTranslateX) * (newScale / relScale);
-            relTranslateY = mouseY - (mouseY - relTranslateY) * (newScale / relScale);
-            relScale = newScale;
-            
-            if(window.imData.currentSettingsFriend) {
-                renderRelationshipPreview(window.imData.currentSettingsFriend);
-            }
-        }, { passive: false });
-
-        previewArea.addEventListener('mousedown', (e) => {
-            if (!draggingNodeId) {
-                isDraggingRel = true;
-                startDragX = e.clientX - relTranslateX;
-                startDragY = e.clientY - relTranslateY;
-                previewArea.style.cursor = 'grabbing';
-            }
-        });
-
-        window.addEventListener('mousemove', (e) => {
-            if (draggingNodeId) {
-                const dx = (e.clientX - startDragX) / relScale;
-                const dy = (e.clientY - startDragY) / relScale;
-                
-                const rel = tempRelationshipDrafts.find(r => r.npcId === draggingNodeId);
-                if (rel) {
-                    rel.offsetX += dx;
-                    rel.offsetY += dy;
-                    if(window.imData.currentSettingsFriend) {
-                        renderRelationshipPreview(window.imData.currentSettingsFriend);
-                    }
-                }
-                
-                startDragX = e.clientX;
-                startDragY = e.clientY;
-                return;
-            }
-
-            if (!isDraggingRel) return;
-            relTranslateX = e.clientX - startDragX;
-            relTranslateY = e.clientY - startDragY;
-            if(window.imData.currentSettingsFriend) {
-                renderRelationshipPreview(window.imData.currentSettingsFriend);
-            }
-        });
-
-        window.addEventListener('mouseup', () => {
-            isDraggingRel = false;
-            draggingNodeId = null;
-            previewArea.style.cursor = 'grab';
-        });
-
-        // Touch Events
-        previewArea.addEventListener('touchstart', (e) => {
-            if (e.touches.length === 1 && !draggingNodeId) {
-                isDraggingRel = true;
-                startDragX = e.touches[0].clientX - relTranslateX;
-                startDragY = e.touches[0].clientY - relTranslateY;
-            } else if (e.touches.length === 2) {
-                isDraggingRel = false;
-                draggingNodeId = null;
-                initialPinchDistance = Math.hypot(
-                    e.touches[0].clientX - e.touches[1].clientX,
-                    e.touches[0].clientY - e.touches[1].clientY
-                );
-                initialScale = relScale;
-            }
-        }, { passive: false });
-
-        previewArea.addEventListener('touchmove', (e) => {
-            if (e.touches.length === 1 && draggingNodeId) {
-                e.preventDefault();
-                const dx = (e.touches[0].clientX - startDragX) / relScale;
-                const dy = (e.touches[0].clientY - startDragY) / relScale;
-                
-                const rel = tempRelationshipDrafts.find(r => r.npcId === draggingNodeId);
-                if (rel) {
-                    rel.offsetX += dx;
-                    rel.offsetY += dy;
-                    if(window.imData.currentSettingsFriend) {
-                        renderRelationshipPreview(window.imData.currentSettingsFriend);
-                    }
-                }
-                
-                startDragX = e.touches[0].clientX;
-                startDragY = e.touches[0].clientY;
-                return;
-            } else if (e.touches.length === 1 && isDraggingRel) {
-                e.preventDefault();
-                relTranslateX = e.touches[0].clientX - startDragX;
-                relTranslateY = e.touches[0].clientY - startDragY;
-                if(window.imData.currentSettingsFriend) {
-                    renderRelationshipPreview(window.imData.currentSettingsFriend);
-                }
-            } else if (e.touches.length === 2 && initialPinchDistance) {
-                e.preventDefault();
-                const currentDistance = Math.hypot(
-                    e.touches[0].clientX - e.touches[1].clientX,
-                    e.touches[0].clientY - e.touches[1].clientY
-                );
-                
-                const newScale = Math.min(Math.max(0.5, initialScale * (currentDistance / initialPinchDistance)), 3);
-                
-                // Try to zoom towards center of pinch
-                const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-                const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-                const rect = previewArea.getBoundingClientRect();
-                const viewX = centerX - rect.left;
-                const viewY = centerY - rect.top;
-
-                relTranslateX = viewX - (viewX - relTranslateX) * (newScale / relScale);
-                relTranslateY = viewY - (viewY - relTranslateY) * (newScale / relScale);
-                relScale = newScale;
-                
-                if(window.imData.currentSettingsFriend) {
-                    renderRelationshipPreview(window.imData.currentSettingsFriend);
-                }
-            }
-        }, { passive: false });
-
-        previewArea.addEventListener('touchend', (e) => {
-            if (e.touches.length === 0) {
-                isDraggingRel = false;
-                draggingNodeId = null;
-            }
-        });
-        
-        previewArea.style.cursor = 'grab';
-    }
-
     function renderRelationshipPicker(friend) {
         if (!relationshipPicker || !relationshipPickerList) return;
 
-        const allNpcs = window.imData.friends.filter(item => item.type === 'npc');
-        const selectedNpcIds = new Set((tempRelationshipDrafts.length > 0
-            ? tempRelationshipDrafts
-            : friend.memory.relationships
-        ).map(rel => String(rel.npcId)));
+        const allPeople = (window.imData.friends || []).filter(item =>
+            (item.type === 'char' || item.type === 'npc')
+            && String(item.id) !== String(friend.id)
+        );
+        // The sheet edits a live draft. An empty draft means the user removed
+        // everything; falling back to saved data here makes deleted people
+        // impossible to re-add until the sheet is reopened.
+        const selectedTargetIds = new Set(tempRelationshipDrafts.map(getRelationshipTargetId));
 
         relationshipPickerList.innerHTML = '';
 
-        const availableNpcs = allNpcs.filter(npc => !selectedNpcIds.has(String(npc.id)));
+        const availablePeople = allPeople.filter(person =>
+            !selectedTargetIds.has(String(person.id))
+            && (relationshipPickerType === 'all' || person.type === relationshipPickerType)
+        );
 
         if (!isRelationshipPickerVisible) {
             relationshipPicker.style.display = 'none';
@@ -512,43 +453,55 @@ document.addEventListener('DOMContentLoaded', () => {
 
         relationshipPicker.style.display = 'block';
 
-        if (availableNpcs.length === 0) {
-            relationshipPickerList.innerHTML = '<div style="text-align:center; color:#8e8e93; padding:12px 0;">暂无可拉取的已有NPC</div>';
+        relationshipPicker.querySelectorAll('.relationship-filter-btn').forEach(button => {
+            button.classList.toggle('active', button.dataset.type === relationshipPickerType);
+        });
+
+        if (availablePeople.length === 0) {
+            const typeText = relationshipPickerType === 'char' ? 'Char' : (relationshipPickerType === 'npc' ? 'NPC' : '人物');
+            relationshipPickerList.innerHTML = `<div class="relationship-picker-empty">暂无可添加的${typeText}</div>`;
             return;
         }
 
-        availableNpcs.forEach(npc => {
+        availablePeople.forEach(target => {
             const item = document.createElement('div');
-            item.className = 'relationship-item';
-            item.style.cursor = 'pointer';
+            item.className = 'relationship-item relationship-picker-item';
 
-            const avatarHtml = npc.avatarUrl
-                ? `<img src="${npc.avatarUrl}" alt="">`
-                : '<i class="fas fa-robot"></i>';
+            const avatarHtml = target.avatarUrl
+                ? `<img src="${escapeRelationshipHtml(target.avatarUrl)}" alt="">`
+                : `<i class="fas ${getRelationshipFallbackIcon(target)}"></i>`;
+            const displayName = target.nickname || target.realName || '未命名人物';
+            const secondaryText = target.realName && target.realName !== target.nickname
+                ? target.realName
+                : (target.signature || (target.type === 'npc' ? 'NPC 联系人' : 'Char 联系人'));
 
             item.innerHTML = `
                 <div class="relationship-avatar">${avatarHtml}</div>
                 <div class="relationship-meta">
-                    <div class="relationship-name">${npc.nickname}</div>
-                    <div class="relationship-desc">${npc.realName || npc.signature || 'NPC'}</div>
+                    <div class="relationship-name-row">
+                        <div class="relationship-name">${escapeRelationshipHtml(displayName)}</div>
+                        <span class="relationship-type-badge ${target.type === 'npc' ? 'is-npc' : 'is-char'}">${getRelationshipTypeLabel(target)}</span>
+                    </div>
+                    <div class="relationship-desc">${escapeRelationshipHtml(secondaryText)}</div>
                 </div>
-                <div style="font-size: 14px; color: #34c759; font-weight: 600;">拉取</div>
+                <span class="relationship-picker-add"><i class="fas fa-plus"></i></span>
             `;
 
             item.addEventListener('click', () => {
                 collectRelationshipDrafts();
 
-                if (!tempRelationshipDrafts.some(rel => String(rel.npcId) === String(npc.id))) {
+                if (!tempRelationshipDrafts.some(rel => getRelationshipTargetId(rel) === String(target.id))) {
                     tempRelationshipDrafts.push({
-                        npcId: String(npc.id),
-                        relation: getDraftRelationValue(npc.id, friend)
+                        npcId: String(target.id),
+                        targetType: target.type,
+                        relation: getDraftRelationValue(target.id, friend)
                     });
                 }
 
-                isRelationshipPickerVisible = false;
                 renderRelationshipList(friend);
                 renderRelationshipPicker(friend);
-                showToast(`已拉取NPC：${npc.nickname}`);
+                renderRelationshipPreview(friend);
+                showToast(`已添加${getRelationshipTypeLabel(target)}：${displayName}`);
             });
 
             relationshipPickerList.appendChild(item);
@@ -565,16 +518,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (relationshipSheet && relationshipSheet.style.display === 'none' && tempRelationshipDrafts.length === 0) {
             tempRelationshipDrafts = friend.memory.relationships.map(rel => ({
-                npcId: String(rel.npcId),
+                npcId: getRelationshipTargetId(rel),
+                targetType: rel.targetType || getRelationshipTarget(rel)?.type,
                 relation: rel.relation || '',
                 offsetX: rel.offsetX,
                 offsetY: rel.offsetY
             }));
         }
         
-        resetRelView();
-        initRelationshipPreviewInteractions();
-
         renderRelationshipList(friend);
         renderRelationshipPicker(friend);
         setTimeout(() => renderRelationshipPreview(friend), 150);
@@ -584,18 +535,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!relationshipList) return;
         const inputs = relationshipList.querySelectorAll('.relationship-input');
         const currentValues = Array.from(inputs).map(input => {
-            const npcId = input.getAttribute('data-npc-id');
-            const existingRel = tempRelationshipDrafts.find(r => r.npcId === npcId);
+            const targetId = input.getAttribute('data-target-id');
+            const existingRel = tempRelationshipDrafts.find(r => getRelationshipTargetId(r) === targetId);
+            const target = getRelationshipTarget(targetId);
             return {
-                npcId: npcId,
+                npcId: targetId,
+                targetType: target?.type || existingRel?.targetType,
                 relation: input.value.trim(),
                 offsetX: existingRel ? existingRel.offsetX : undefined,
                 offsetY: existingRel ? existingRel.offsetY : undefined
             };
         });
 
-        const existingIds = new Set(currentValues.map(item => String(item.npcId)));
-        const hiddenDrafts = tempRelationshipDrafts.filter(item => !existingIds.has(String(item.npcId)));
+        const existingIds = new Set(currentValues.map(getRelationshipTargetId));
+        const hiddenDrafts = tempRelationshipDrafts.filter(item => !existingIds.has(getRelationshipTargetId(item)));
         tempRelationshipDrafts = [...currentValues, ...hiddenDrafts];
     }
 
@@ -1596,8 +1549,10 @@ document.addEventListener('DOMContentLoaded', () => {
         relationshipBtn.addEventListener('click', () => {
             if (!window.imData.currentSettingsFriend) return;
             isRelationshipPickerVisible = false;
+            relationshipPickerType = 'all';
             tempRelationshipDrafts = (window.imData.currentSettingsFriend.memory?.relationships || []).map(rel => ({
-                npcId: String(rel.npcId),
+                npcId: getRelationshipTargetId(rel),
+                targetType: rel.targetType || getRelationshipTarget(rel)?.type,
                 relation: rel.relation || '',
                 offsetX: rel.offsetX,
                 offsetY: rel.offsetY
@@ -1614,12 +1569,14 @@ document.addEventListener('DOMContentLoaded', () => {
             collectRelationshipDrafts();
             const normalizedRelations = tempRelationshipDrafts
                 .map(item => ({
-                    npcId: item.npcId,
+                    // Keep npcId for compatibility with existing prompt and export readers.
+                    npcId: getRelationshipTargetId(item),
+                    targetType: item.targetType || getRelationshipTarget(item)?.type || 'npc',
                     relation: (item.relation || '').trim(),
                     offsetX: item.offsetX,
                     offsetY: item.offsetY
                 }))
-                .filter(item => item.relation);
+                .filter(item => item.npcId && item.relation && !!getRelationshipTarget(item.npcId));
 
             const saved = await commitSettingsFriendChange((targetFriend) => {
                 targetFriend.memory = targetFriend.memory || window.imApp.createDefaultMemory();
@@ -1632,7 +1589,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             tempRelationshipDrafts = (window.imData.currentSettingsFriend.memory.relationships || []).map(rel => ({
-                npcId: String(rel.npcId),
+                npcId: getRelationshipTargetId(rel),
+                targetType: rel.targetType || getRelationshipTarget(rel)?.type,
                 relation: rel.relation || '',
                 offsetX: rel.offsetX,
                 offsetY: rel.offsetY
@@ -1648,22 +1606,34 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!window.imData.currentSettingsFriend) return;
             collectRelationshipDrafts();
 
-            const allNpcs = window.imData.friends.filter(item => item.type === 'npc');
-            const selectedNpcIds = new Set(tempRelationshipDrafts.map(item => String(item.npcId)));
-            const availableNpcs = allNpcs.filter(npc => !selectedNpcIds.has(String(npc.id)));
+            const allPeople = (window.imData.friends || []).filter(item =>
+                (item.type === 'char' || item.type === 'npc')
+                && String(item.id) !== String(window.imData.currentSettingsFriend.id)
+            );
+            const selectedTargetIds = new Set(tempRelationshipDrafts.map(getRelationshipTargetId));
+            const availablePeople = allPeople.filter(person => !selectedTargetIds.has(String(person.id)));
 
-            if (allNpcs.length === 0) {
-                showToast('暂无可拉取的已有NPC，请先在联系人中创建NPC');
+            if (allPeople.length === 0) {
+                showToast('暂无可添加的人物，请先创建 Char 或 NPC');
                 return;
             }
 
-            if (availableNpcs.length === 0) {
-                showToast('已有NPC已全部拉取');
+            if (availablePeople.length === 0) {
+                showToast('已有 Char 和 NPC 均已添加');
                 return;
             }
 
             isRelationshipPickerVisible = !isRelationshipPickerVisible;
             renderRelationshipSheet(window.imData.currentSettingsFriend);
+        });
+    }
+
+    if (relationshipPickerFilters) {
+        relationshipPickerFilters.addEventListener('click', (event) => {
+            const button = event.target.closest('.relationship-filter-btn');
+            if (!button || !window.imData.currentSettingsFriend) return;
+            relationshipPickerType = button.dataset.type || 'all';
+            renderRelationshipPicker(window.imData.currentSettingsFriend);
         });
     }
 
@@ -1721,26 +1691,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 try {
-                    const bgUrl = window.imApp.compressImageFile
-                        ? await window.imApp.compressImageFile(file, {
-                            maxWidth: 1440,
-                            maxHeight: 1440,
-                            mimeType: 'image/jpeg',
-                            quality: 0.82
-                        })
-                        : await window.imApp.readFileAsDataUrl(file);
-
-                    const saved = await commitSettingsFriendChange((targetFriend) => {
-                        targetFriend.chatBg = bgUrl;
-                    }, { silent: true });
-
-                    if (!saved) {
+                    const result = await saveChatBackgroundUpload(file, friend);
+                    if (result.status === 'failed') {
                         showToast('聊天背景保存失败');
                         return;
                     }
-
-                    applyFriendBg(window.imData.currentSettingsFriend);
-                    showToast('已更换聊天背景');
+                    if (result.status === 'saved') showToast('已更换聊天背景');
                 } catch (error) {
                     console.error('Failed to process NPC chat background image', error);
                     showToast('聊天背景处理失败');
@@ -1753,19 +1709,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (bgResetIcon && bgResetIcon.dataset.bound !== 'true') {
             bgResetIcon.dataset.bound = 'true';
             bgResetIcon.addEventListener('click', async () => {
-                if (!window.imData.currentSettingsFriend) return;
-
-                const saved = await commitSettingsFriendChange((targetFriend) => {
-                    targetFriend.chatBg = null;
-                }, { silent: true });
-
-                if (!saved) {
+                const friend = window.imData.currentSettingsFriend;
+                if (!friend) return;
+                const result = await resetChatBackground(friend);
+                if (result.status === 'failed') {
                     showToast('聊天背景重置失败');
                     return;
                 }
-
-                applyFriendBg(window.imData.currentSettingsFriend);
-                showToast('已重置聊天背景');
+                if (result.status === 'reset') showToast('已重置聊天背景');
             });
         }
 
@@ -2321,28 +2272,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         chatBgUpload.addEventListener('change', async (e) => {
             const file = e.target.files[0];
-            if (file && window.imData.currentSettingsFriend) {
+            const friend = window.imData.currentSettingsFriend;
+            if (file && friend) {
                 try {
-                    const bgUrl = window.imApp.compressImageFile
-                        ? await window.imApp.compressImageFile(file, {
-                            maxWidth: 1440,
-                            maxHeight: 1440,
-                            mimeType: 'image/jpeg',
-                            quality: 0.82
-                        })
-                        : await window.imApp.readFileAsDataUrl(file);
-
-                    const saved = await commitSettingsFriendChange((targetFriend) => {
-                        targetFriend.chatBg = bgUrl;
-                    }, { silent: true });
-
-                    if (!saved) {
+                    const result = await saveChatBackgroundUpload(file, friend);
+                    if (result.status === 'failed') {
                         showToast('聊天背景保存失败');
                         return;
                     }
-
-                    applyFriendBg(window.imData.currentSettingsFriend);
-                    showToast('已更换聊天背景');
+                    if (result.status === 'saved') showToast('已更换聊天背景');
                 } catch (error) {
                     console.error('Failed to process chat background image', error);
                     showToast('聊天背景处理失败');
@@ -2354,19 +2292,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (chatBgResetIcon) {
         chatBgResetIcon.addEventListener('click', async () => {
-            if (window.imData.currentSettingsFriend) {
-                const saved = await commitSettingsFriendChange((targetFriend) => {
-                    targetFriend.chatBg = null;
-                }, { silent: true });
-
-                if (!saved) {
-                    showToast('聊天背景重置失败');
-                    return;
-                }
-
-                applyFriendBg(window.imData.currentSettingsFriend);
-                showToast('已重置聊天背景');
+            const friend = window.imData.currentSettingsFriend;
+            if (!friend) return;
+            const result = await resetChatBackground(friend);
+            if (result.status === 'failed') {
+                showToast('聊天背景重置失败');
+                return;
             }
+            if (result.status === 'reset') showToast('已重置聊天背景');
         });
     }
 
@@ -3802,9 +3735,13 @@ document.addEventListener('DOMContentLoaded', () => {
         window.imData.currentSettingsFriend = friend;
         friend.memory = window.imApp.normalizeFriendData(friend).memory;
         isRelationshipPickerVisible = false;
+        relationshipPickerType = 'all';
         tempRelationshipDrafts = (friend.memory.relationships || []).map(rel => ({
-            npcId: String(rel.npcId),
-            relation: rel.relation || ''
+            npcId: getRelationshipTargetId(rel),
+            targetType: rel.targetType || getRelationshipTarget(rel)?.type,
+            relation: rel.relation || '',
+            offsetX: rel.offsetX,
+            offsetY: rel.offsetY
         }));
         initChatSettingsInteractions();
         setActiveChatSettingsTab('info');

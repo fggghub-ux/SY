@@ -187,7 +187,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getGroupMemberCount(group) {
-        return (Array.isArray(group?.members) ? group.members.length : 0) + 1;
+        const userIsInGroup = !(group && Number(group.leftGroupAt) > 0);
+        return (Array.isArray(group?.members) ? group.members.length : 0) + (userIsInGroup ? 1 : 0);
     }
 
     function formatGroupMemberCount(count) {
@@ -574,6 +575,8 @@ document.addEventListener('DOMContentLoaded', () => {
         tempGroupMembers = [];
         const nameInput = document.getElementById('group-name-input');
         if (nameInput) nameInput.value = '';
+        const includeUserInput = document.getElementById('create-group-include-user');
+        if (includeUserInput) includeUserInput.checked = true;
         setGroupAvatar(null);
         renderCreateGroupMembersList();
         updateCreateGroupConfirmBtn();
@@ -745,7 +748,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.getElementById('group-details-name').textContent = group.nickname;
 
-        const count = (group.members ? group.members.length : 0) + 1;
+        const count = getGroupMemberCount(group);
         document.getElementById('group-details-count').textContent = formatGroupMemberCount(count);
 
         const listContainer = document.getElementById('group-details-members-list');
@@ -753,7 +756,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const myName = userMeta.name;
         const myAvatarUrl = userMeta.avatarUrl;
 
-        let membersHtml = `
+        let membersHtml = Number(group.leftGroupAt) > 0 ? '' : `
             <div class="group-detail-member-item" data-id="__user__" style="padding: 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #f2f2f7; cursor: pointer;">
                 <div style="display: flex; align-items: center; gap: 15px;">
                     <div style="width: 40px; height: 40px; border-radius: 50%; background: #e5e5ea; display: flex; justify-content: center; align-items: center; overflow: hidden;">
@@ -1087,6 +1090,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const img = document.getElementById('group-avatar-img');
             const avatarUrl = (img && img.style.display === 'block') ? img.src : null;
+            const includeUserInput = document.getElementById('create-group-include-user');
+            const includeUser = includeUserInput ? includeUserInput.checked : true;
+            const observerStartedAt = includeUser ? 0 : Date.now();
 
             const group = window.imApp.normalizeFriendData({
                 id: 'group_' + Date.now(),
@@ -1097,6 +1103,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 persona: '',
                 avatarUrl: avatarUrl,
                 members: [...tempGroupMembers],
+                leftGroupAt: observerStartedAt,
+                groupObserverMode: !includeUser,
                 messages: [],
                 chatBg: null,
                 customCssEnabled: false,
@@ -1104,6 +1112,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 isPinned: false,
                 memory: window.imApp.createDefaultMemory()
             });
+            if (!includeUser && window.imApp.createGroupMemberSnapshot) {
+                group.leftGroupMemberSnapshot = window.imApp.createGroupMemberSnapshot(group);
+            }
 
             const saved = window.imApp.commitFriendsChange
                 ? await window.imApp.commitFriendsChange(() => {
@@ -1119,9 +1130,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderGroupsList();
             closeView(createGroupSheet);
 
-            if (window.showToast) {
-                window.showToast('Created a group', 'Groups can have:\n✓ Persistent chat history\n✓ Member management\n✓ Public links and group summaries\n✓ Mounted member memories', 3000);
-            }
+            if (window.showToast) window.showToast(includeUser ? '群聊已创建' : '旁观群聊已创建');
         });
     }
 
@@ -1561,6 +1570,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         ? await window.imApp.commitScopedFriendChange(groupId, (targetGroup) => {
                             if (!targetGroup) return;
                             targetGroup.leftGroupAt = leftAt;
+                            targetGroup.groupObserverMode = false;
                             targetGroup.leftGroupMemberSnapshot = window.imApp.createGroupMemberSnapshot
                                 ? window.imApp.createGroupMemberSnapshot(targetGroup)
                                 : [];

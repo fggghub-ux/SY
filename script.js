@@ -221,65 +221,123 @@
         let isDown = false;
         let startX;
         let scrollLeft;
-        let scrollRAF = null;
+        let dragRAF = null;
+        let pendingScrollLeft = null;
+        let indicatorSettleTimer = null;
+        let pageWidth = Math.max(1, pagesContainer.clientWidth);
+        let activeIndicatorPage = -1;
+
+        function refreshPageWidth(width = pagesContainer.clientWidth) {
+            if (Number.isFinite(width) && width > 0) pageWidth = width;
+        }
+
+        function renderPendingMouseScroll() {
+            dragRAF = null;
+            if (pendingScrollLeft === null) return;
+            pagesContainer.scrollLeft = pendingScrollLeft;
+            pendingScrollLeft = null;
+        }
+
+        function flushPendingMouseScroll() {
+            if (dragRAF !== null) {
+                cancelAnimationFrame(dragRAF);
+                dragRAF = null;
+            }
+            renderPendingMouseScroll();
+        }
+
+        function cancelPendingMouseScroll() {
+            if (dragRAF !== null) cancelAnimationFrame(dragRAF);
+            dragRAF = null;
+            pendingScrollLeft = null;
+        }
+
+        function updateVisiblePageIndicator() {
+            const pageIndex = Math.min(
+                getMaxHomePageIndex(),
+                Math.max(0, Math.round(pagesContainer.scrollLeft / pageWidth))
+            );
+            if (pageIndex === activeIndicatorPage) return;
+            activeIndicatorPage = pageIndex;
+            updateHomePageIndicators(pageIndex);
+        }
+
+        function finishMouseDrag() {
+            if (!isDown) return;
+            isDown = false;
+            flushPendingMouseScroll();
+            pagesContainer.style.scrollSnapType = '';
+            pagesContainer.style.cursor = '';
+            snapToNearestPage();
+        }
 
         // Using mousedown/mousemove/mouseup to support desktop mouse sliding 
         // while preserving native CSS scroll-snap on touch devices
         pagesContainer.addEventListener('mousedown', (e) => {
             if (window.isJiggleMode || window.preventAppClick || e.target.closest('.bottom-sheet-overlay')) return;
             isDown = true;
-            startX = e.pageX - pagesContainer.offsetLeft;
+            refreshPageWidth();
+            startX = e.clientX;
             scrollLeft = pagesContainer.scrollLeft;
             pagesContainer.style.scrollSnapType = 'none'; // Temporarily disable snap during drag
             pagesContainer.style.cursor = 'grabbing';
         });
 
-        pagesContainer.addEventListener('mouseleave', () => {
-            if (!isDown) return;
-            isDown = false;
-            pagesContainer.style.scrollSnapType = '';
-            pagesContainer.style.cursor = '';
-            snapToNearestPage();
-        });
-
-        pagesContainer.addEventListener('mouseup', () => {
-            if (!isDown) return;
-            isDown = false;
-            pagesContainer.style.scrollSnapType = '';
-            pagesContainer.style.cursor = '';
-            snapToNearestPage();
-        });
+        pagesContainer.addEventListener('mouseleave', finishMouseDrag);
+        pagesContainer.addEventListener('mouseup', finishMouseDrag);
 
         pagesContainer.addEventListener('mousemove', (e) => {
             if (!isDown) return;
             if (window.isJiggleMode) {
                 isDown = false;
+                cancelPendingMouseScroll();
                 pagesContainer.style.scrollSnapType = '';
                 pagesContainer.style.cursor = '';
                 return;
             }
             
             e.preventDefault();
-            const x = e.pageX - pagesContainer.offsetLeft;
-            const walk = (x - startX) * 1.5;
-            pagesContainer.scrollLeft = scrollLeft - walk;
+            const walk = (e.clientX - startX) * 1.5;
+            pendingScrollLeft = scrollLeft - walk;
+            if (dragRAF === null) dragRAF = requestAnimationFrame(renderPendingMouseScroll);
         });
 
         function snapToNearestPage() {
-            if (!pagesContainer.clientWidth) return;
-            const pageIndex = Math.round(pagesContainer.scrollLeft / pagesContainer.clientWidth);
-            scrollToHomePageIndex(pageIndex, 'smooth');
+            const pageIndex = Math.min(
+                getMaxHomePageIndex(),
+                Math.max(0, Math.round(pagesContainer.scrollLeft / pageWidth))
+            );
+            pagesContainer.scrollTo({ left: pageIndex * pageWidth, behavior: 'smooth' });
         }
         
-        pagesContainer.addEventListener('scroll', () => {
-            if (scrollRAF) return;
-            scrollRAF = requestAnimationFrame(() => {
-                updateHomePageIndicators();
-                scrollRAF = null;
-            });
-        });
+        function settleVisiblePageIndicator() {
+            if (indicatorSettleTimer !== null) {
+                clearTimeout(indicatorSettleTimer);
+                indicatorSettleTimer = null;
+            }
+            updateVisiblePageIndicator();
+        }
 
-        updateHomePageIndicators();
+        if ('onscrollend' in pagesContainer) {
+            pagesContainer.addEventListener('scrollend', settleVisiblePageIndicator, { passive: true });
+        } else {
+            // Legacy fallback: no layout work runs until scrolling has been quiet.
+            pagesContainer.addEventListener('scroll', () => {
+                if (indicatorSettleTimer !== null) clearTimeout(indicatorSettleTimer);
+                indicatorSettleTimer = window.setTimeout(settleVisiblePageIndicator, 120);
+            }, { passive: true });
+        }
+
+        if (typeof ResizeObserver === 'function') {
+            const pageResizeObserver = new ResizeObserver((entries) => {
+                refreshPageWidth(entries[0]?.contentRect?.width);
+            });
+            pageResizeObserver.observe(pagesContainer);
+        } else {
+            window.addEventListener('resize', () => refreshPageWidth(), { passive: true });
+        }
+
+        updateVisiblePageIndicator();
     }
     
 

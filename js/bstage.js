@@ -907,6 +907,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const BSTAGE_STATE_SCHEMA_VERSION = 2;
     const BSTAGE_POP_MONTHLY_KRW = 4500;
     const BSTAGE_KRW_TO_CNY = 0.0052;
+    const BSTAGE_MAX_SUBSCRIBERS = 9999999;
     let teams = []; // { id, name, avatar, bg, members: [], isSubscribed: false }
     let currentTeam = null;
     let tempMembers = []; // For creation process
@@ -1665,6 +1666,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function normalizeLoadedBstageData() {
         let changed = false;
+        if (bstageFanSubscriberCount != null && Number.isFinite(Number(bstageFanSubscriberCount))) {
+            const normalizedSubscriberCount = normalizeBstageSubscriberCount(bstageFanSubscriberCount);
+            if (normalizedSubscriberCount !== bstageFanSubscriberCount) {
+                bstageFanSubscriberCount = normalizedSubscriberCount;
+                changed = true;
+            }
+        }
         const normalizeVideoComments = (team) => {
             if (!team || !Array.isArray(team.videos)) return;
             team.videos.forEach(video => {
@@ -1747,6 +1755,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function saveBstageData(options = {}) {
         if (!bstageHydrationComplete) return false;
         try {
+            if (bstageFanSubscriberCount != null) {
+                bstageFanSubscriberCount = normalizeBstageSubscriberCount(bstageFanSubscriberCount);
+            }
             const flush = options && options.flush === true;
             const nextUpdatedAt = Date.now();
             bstageStateUpdatedAt = nextUpdatedAt;
@@ -1803,7 +1814,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 bstageUserTeamState = { ...bstageUserTeamState, ...window.__bstageGlobalState.bstageUserTeamState };
             }
             if (Number.isFinite(Number(window.__bstageGlobalState.bstageFanSubscriberCount))) {
-                bstageFanSubscriberCount = Math.max(0, parseInt(window.__bstageGlobalState.bstageFanSubscriberCount, 10) || 0);
+                bstageFanSubscriberCount = normalizeBstageSubscriberCount(window.__bstageGlobalState.bstageFanSubscriberCount);
             }
             if (window.__bstageGlobalState.bstageRevenueState && typeof window.__bstageGlobalState.bstageRevenueState === 'object') {
                 const withdrawnCny = Number(window.__bstageGlobalState.bstageRevenueState.withdrawnCny);
@@ -5494,16 +5505,36 @@ ${charInfo}
         return hasForeignScript && !hasChinese;
     }
 
+    function normalizeBstageSubscriberCount(value) {
+        const numeric = parseInt(value, 10);
+        if (!Number.isFinite(numeric)) return 0;
+        return Math.max(0, Math.min(BSTAGE_MAX_SUBSCRIBERS, numeric));
+    }
+
     function getFanSubscriberCount() {
-        if (!Number.isFinite(Number(bstageFanSubscriberCount))) {
+        if (bstageFanSubscriberCount == null || !Number.isFinite(Number(bstageFanSubscriberCount))) {
             bstageFanSubscriberCount = Math.floor(800 + Math.random() * 9200);
             saveBstageData();
         }
-        return Math.max(0, parseInt(bstageFanSubscriberCount, 10) || 0);
+        bstageFanSubscriberCount = normalizeBstageSubscriberCount(bstageFanSubscriberCount);
+        return bstageFanSubscriberCount;
+    }
+
+    function formatBstageSubscriberCount(value) {
+        const count = normalizeBstageSubscriberCount(value);
+        if (count >= 1000000) {
+            const millions = Math.floor(count / 10000) / 100;
+            return `${millions}M`;
+        }
+        if (count >= 1000) {
+            const thousands = Math.floor(count / 100) / 10;
+            return `${thousands}K`;
+        }
+        return String(count);
     }
 
     function getFanSubscriberText() {
-        return `已订阅 ${getFanSubscriberCount()} 人`;
+        return `已订阅 ${formatBstageSubscriberCount(getFanSubscriberCount())} 人`;
     }
 
     function getBstageTotalRevenueCny() {
@@ -5529,7 +5560,7 @@ ${charInfo}
         const withdrawBtn = document.getElementById('bstage-withdraw-revenue-btn');
         const count = getFanSubscriberCount();
         const available = getBstageAvailableRevenueCny();
-        if (subCountEl) subCountEl.textContent = String(count);
+        if (subCountEl) subCountEl.textContent = formatBstageSubscriberCount(count);
         if (revenueEl) revenueEl.textContent = formatBstageCny(available);
         if (withdrawBtn) {
             withdrawBtn.style.opacity = available > 0 ? '1' : '0.55';
@@ -5547,12 +5578,17 @@ ${charInfo}
     }
 
     function growFanSubscriberCount(burst = false) {
+        const currentCount = getFanSubscriberCount();
+        if (currentCount >= BSTAGE_MAX_SUBSCRIBERS) {
+            updateFanSubscriberLabels();
+            return;
+        }
         const delta = getFanSubscriberGrowthDelta(burst);
         if (delta <= 0) {
             updateFanSubscriberLabels();
             return;
         }
-        bstageFanSubscriberCount = getFanSubscriberCount() + delta;
+        bstageFanSubscriberCount = normalizeBstageSubscriberCount(currentCount + delta);
         updateFanSubscriberLabels();
         saveBstageData();
     }
@@ -5565,6 +5601,8 @@ ${charInfo}
         if (bstageFanSubscriberGrowthTimer) {
             clearTimeout(bstageFanSubscriberGrowthTimer);
         }
+        bstageFanSubscriberGrowthTimer = null;
+        if (getFanSubscriberCount() >= BSTAGE_MAX_SUBSCRIBERS) return;
         const delay = 30000 + Math.floor(Math.random() * 60000);
         bstageFanSubscriberGrowthTimer = setTimeout(() => {
             growFanSubscriberCount(false);

@@ -1006,12 +1006,18 @@
 
     function buildUserLiveLotteryLaunchPrompt(lottery) {
         const effectiveUser = getCurrentYtLiveUser();
-        return `你正在模拟真实 YouTube 直播间宣布抽奖后的即时评论。\n主播：${effectiveUser.name || '我'}\n主播人设：${effectiveUser.persona || '普通主播'}\n直播标题：${getUserLiveTitle()}\n直播主题：${getUserLiveTopic()}\n开奖剩余时间：${lottery.durationSec} 秒\n奖项：${JSON.stringify(lottery.prizes)}\n\n生成不少于 10 条与本次抽奖直接相关、昵称不重复的短评论。评论者可以报名、期待、讨论奖品或围观；只有明确想参加抽奖的人 participates 才能为 true。至少一半评论必须来自使用英语、日语、韩语、法语、西班牙语等非中文语言的外国观众，外国观众使用符合其语言习惯的昵称和原文；非中文评论必须填写自然准确的简体中文 translationZh，中文评论的 translationZh 为空字符串。\n只返回严格 JSON：{"comments":[{"name":"viewer name","text":"original comment","translationZh":"简体中文翻译或空字符串","participates":true}]}。comments 不少于 10 条，不要 Markdown，不要 emoji。`;
+        const wbContext = window.getYtWorldBookContext
+            ? window.getYtWorldBookContext(`${getUserLiveTitle()}\n${getUserLiveTopic()}\n${JSON.stringify(lottery.prizes)}`)
+            : '';
+        return `你正在模拟真实 YouTube 直播间宣布抽奖后的即时评论。\n主播：${effectiveUser.name || '我'}\n主播人设：${effectiveUser.persona || '普通主播'}\n直播标题：${getUserLiveTitle()}\n直播主题：${getUserLiveTopic()}\n世界书：${wbContext || '无'}\n开奖剩余时间：${lottery.durationSec} 秒\n奖项：${JSON.stringify(lottery.prizes)}\n\n生成不少于 10 条与本次抽奖直接相关、昵称不重复的短评论。评论者可以报名、期待、讨论奖品或围观；只有明确想参加抽奖的人 participates 才能为 true。至少一半评论必须来自使用英语、日语、韩语、法语、西班牙语等非中文语言的外国观众，外国观众使用符合其语言习惯的昵称和原文；非中文评论必须填写自然准确的简体中文 translationZh，中文评论的 translationZh 为空字符串。\n只返回严格 JSON：{"comments":[{"name":"viewer name","text":"original comment","translationZh":"简体中文翻译或空字符串","participates":true}]}。comments 不少于 10 条，不要 Markdown，不要 emoji。`;
     }
 
     function buildUserLiveLotteryFollowupPrompt(lottery) {
         const effectiveUser = getCurrentYtLiveUser();
-        return `你正在模拟真实 YouTube 直播抽奖开奖后的观众反应。\n主播：${effectiveUser.name || '我'}\n主播人设：${effectiveUser.persona || '普通主播'}\n直播标题：${getUserLiveTitle()}\n直播主题：${getUserLiveTopic()}\n奖项：${JSON.stringify(lottery.prizes)}\n参与人数：${lottery.participants.length}\n中奖结果：${JSON.stringify(lottery.winners)}\n\n生成不少于 10 条短评论，必须同时包含中奖者的惊喜回应、未中奖者的反应和围观观众的祝贺或调侃；不得篡改中奖名单。至少一半评论使用英语、日语、韩语、法语、西班牙语等非中文语言，并使用符合语言地区的外国昵称。所有非中文评论必须填写自然准确的简体中文 translationZh，中文评论的 translationZh 为空字符串。\n此外，每一位实际中奖者都要给主播发送 2 至 5 条连续私信。私信可以谈论本场直播或刚刚获得的奖品，语气要符合中奖后的即时反应。winnerName 必须逐字使用中奖结果中的昵称，不得给未中奖者生成私信；同一中奖者的 messages 数量必须在 2 到 5 条之间。私信若不是中文，translationZh 必须提供自然准确的简体中文；中文私信的 translationZh 为空字符串。\n只返回严格 JSON：{"comments":[{"name":"viewer name","text":"original comment","translationZh":"简体中文翻译或空字符串"}],"winnerDMs":[{"winnerName":"中奖者原昵称","messages":[{"text":"私信原文","translationZh":"简体中文翻译或空字符串"}]}]}。comments 不少于 10 条；每位中奖者必须各有 2 至 5 条 messages；不要 Markdown，不要 emoji。`;
+        const wbContext = window.getYtWorldBookContext
+            ? window.getYtWorldBookContext(`${getUserLiveTitle()}\n${getUserLiveTopic()}\n${JSON.stringify(lottery.winners)}`)
+            : '';
+        return `你正在模拟真实 YouTube 直播抽奖开奖后的观众反应。\n主播：${effectiveUser.name || '我'}\n主播人设：${effectiveUser.persona || '普通主播'}\n直播标题：${getUserLiveTitle()}\n直播主题：${getUserLiveTopic()}\n世界书：${wbContext || '无'}\n奖项：${JSON.stringify(lottery.prizes)}\n参与人数：${lottery.participants.length}\n中奖结果：${JSON.stringify(lottery.winners)}\n\n生成不少于 10 条短评论，必须同时包含中奖者的惊喜回应、未中奖者的反应和围观观众的祝贺或调侃；不得篡改中奖名单。至少一半评论使用英语、日语、韩语、法语、西班牙语等非中文语言，并使用符合语言地区的外国昵称。所有非中文评论必须填写自然准确的简体中文 translationZh，中文评论的 translationZh 为空字符串。\n此外，每一位实际中奖者都要给主播发送 2 至 5 条连续私信。私信可以谈论本场直播或刚刚获得的奖品，语气要符合中奖后的即时反应。winnerName 必须逐字使用中奖结果中的昵称，不得给未中奖者生成私信；同一中奖者的 messages 数量必须在 2 到 5 条之间。私信若不是中文，translationZh 必须提供自然准确的简体中文；中文私信的 translationZh 为空字符串。\n只返回严格 JSON：{"comments":[{"name":"viewer name","text":"original comment","translationZh":"简体中文翻译或空字符串"}],"winnerDMs":[{"winnerName":"中奖者原昵称","messages":[{"text":"私信原文","translationZh":"简体中文翻译或空字符串"}]}]}。comments 不少于 10 条；每位中奖者必须各有 2 至 5 条 messages；不要 Markdown，不要 emoji。`;
     }
 
     function normalizeUserLiveLotteryWinnerDmBatches(lottery, rawWinnerDms) {
@@ -1730,24 +1736,6 @@
     }
 
     function buildUserLiveAudiencePrompt() {
-        const worldBookSections = [];
-        if (typeof window.getGlobalWorldBookContext === 'function') {
-            const globalCtx = window.getGlobalWorldBookContext();
-            if (globalCtx) worldBookSections.push(globalCtx);
-        } else if (channelState && Array.isArray(channelState.boundWorldBookIds) && typeof window.getWorldBooks === 'function') {
-            const worldBooks = window.getWorldBooks();
-            channelState.boundWorldBookIds.forEach(id => {
-                const boundBook = worldBooks.find(book => String(book.id) === String(id));
-                if (boundBook && Array.isArray(boundBook.entries) && boundBook.entries.length > 0) {
-                    const entries = boundBook.entries
-                        .map(entry => `${entry.keyword || 'entry'}: ${entry.content || ''}`)
-                        .filter(Boolean)
-                        .join('\n');
-                    if (entries.trim()) worldBookSections.push(`【${boundBook.name || 'World Book'}】\n${entries}`);
-                }
-            });
-        }
-
         const effectiveYtUser = getCurrentYtLiveUser();
         const hostName = effectiveYtUser.name || '我';
         const hostPersona = effectiveYtUser.persona || effectiveYtUser.desc || '普通主播';
@@ -1755,6 +1743,9 @@
         const liveTopic = getUserLiveTopic();
         const recentHostMsg = userLiveHistory.filter(item => item?.type === 'host').slice(-5).map(m => m.text).filter(Boolean).join(' | ') || '刚开播，还没有明显发言';
         const activeConnections = getActiveUserLiveConnections();
+        const worldBookContext = window.getYtWorldBookContext
+            ? window.getYtWorldBookContext(`${hostName}\n${hostPersona}\n${liveTitle}\n${liveTopic}`)
+            : '';
         const connectionHistory = Array.isArray(channelState?.activeUserLive?.connectionHistory)
             ? channelState.activeUserLive.connectionHistory
             : [];
@@ -1781,8 +1772,8 @@
             return `participantId=${participant.imCharId || participant.id}\n姓名=${participant.name || '未知'}\n完整人设与关系=${persona}`;
         }).join('\n\n');
         const needsGuestTurns = activeConnections.length > 0;
-        const worldBookSection = worldBookSections.length > 0
-            ? `\n已挂载世界书内容：\n${worldBookSections.join('\n\n')}\n`
+        const worldBookSection = worldBookContext
+            ? `\n已挂载世界书内容：\n${worldBookContext}\n`
             : '';
         const activeLottery = getActiveUserLiveLottery();
         const lotteryContext = activeLottery?.status === 'active'

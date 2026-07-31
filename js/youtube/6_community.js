@@ -1014,8 +1014,8 @@
         if (!post) throw new Error('NO_POST');
         if (!window.apiConfig?.endpoint || !window.apiConfig?.apiKey) throw new Error('API_NOT_CONFIGURED');
         const effectiveUser = getCurrentYtCommunityUser();
-        const wbContext = typeof window.getGlobalWorldBookContext === 'function'
-            ? (window.getGlobalWorldBookContext() || '')
+        const wbContext = window.getYtWorldBookContext
+            ? window.getYtWorldBookContext(`${post.content || ''}\n${rootComment?.text || ''}\n${userReply?.text || ''}`)
             : '';
         const imageContext = post.imageUrl ? (post.imageDescription || '用户未填写图片描述') : '无图片';
         const existingContext = buildYtPostCommentContext(post, rootComment);
@@ -2321,18 +2321,9 @@
             const effectiveYtUser = getCurrentYtCommunityUser();
             const userPersona = effectiveYtUser.persona || '普通粉丝';
             
-            let wbContext = '';
-            if (typeof window.getGlobalWorldBookContext === 'function') {
-                wbContext = window.getGlobalWorldBookContext() || '';
-            } else if (channelState && channelState.boundWorldBookIds && Array.isArray(channelState.boundWorldBookIds) && window.getWorldBooks) {
-                const wbs = window.getWorldBooks();
-                channelState.boundWorldBookIds.forEach(id => {
-                    const boundWb = wbs.find(w => w.id === id);
-                    if (boundWb && boundWb.entries) {
-                        wbContext += `\n【${boundWb.name}】:\n` + boundWb.entries.map(e => `${e.keyword}: ${e.content}`).join('\n');
-                    }
-                });
-            }
+            const wbContext = window.getYtWorldBookContext
+                ? window.getYtWorldBookContext(`${thread.title || ''}\n${userMessage || ''}`)
+                : '';
 
             const fanGroup = char?.generatedContent?.fanGroup || null;
             const isOwnedGroup = !isDM && Boolean(char.isUserOwnedCommunity || fanGroup?.isOwned);

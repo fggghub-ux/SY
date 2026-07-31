@@ -1847,18 +1847,9 @@
         
         const effectiveYtUser = getCurrentYtViewer();
         const userPersona = effectiveYtUser.persona || '普通观众';
-        let wbContext = '';
-        if (typeof window.getGlobalWorldBookContext === 'function') {
-            wbContext = window.getGlobalWorldBookContext() || '';
-        } else if (channelState && channelState.boundWorldBookIds && Array.isArray(channelState.boundWorldBookIds) && window.getWorldBooks) {
-            const wbs = window.getWorldBooks();
-            channelState.boundWorldBookIds.forEach(id => {
-                const boundWb = wbs.find(w => w.id === id);
-                if (boundWb && boundWb.entries) {
-                    wbContext += `\n【${boundWb.name}】:\n` + boundWb.entries.map(e => `${e.keyword}: ${e.content}`).join('\n');
-                }
-            });
-        }
+        const wbContext = window.getYtWorldBookContext
+            ? window.getYtWorldBookContext(`${titleOverride || ''}\n${userMessage || ''}`)
+            : '';
 
         let promptStr = channelState.vodPrompt || defaultVODPrompt;
         const charPersona = typeof window.getYtChannelPersonaWithRelationships === 'function'
@@ -2060,6 +2051,9 @@ ${formatYtReplayPromptComments(video?.comments, Math.min(20, Array.isArray(video
         const commentRequest = isLiveReplay
             ? '请生成 12–16 条与本场直播内容直接相关的回放评论。可以讨论具体内容、表达错过直播的遗憾、分享看回放的感受，或回应上面的实时观众'
             : '请生成 12–16 条与本期视频内容直接相关的普通视频评论。可以讨论视频主题、具体观点、观看感受或回应已有评论';
+        const wbContext = window.getYtWorldBookContext
+            ? window.getYtWorldBookContext(`${video?.title || ''}\n${sourceDescription}`)
+            : '';
         const prompt = `你正在为一个已经发布的 YouTube ${isLiveReplay ? '直播回放' : '普通往期视频'}生成新的顶层评论。
 
 频道主播：${channel?.name || '未知'}
@@ -2067,6 +2061,7 @@ ${formatYtReplayPromptComments(video?.comments, Math.min(20, Array.isArray(video
 本场嘉宾：${guestName}
 视频标题：${video?.title || '未知'}
 标题中文翻译：${video?.titleTranslationZh || '无'}
+世界书：${wbContext || '无'}
 
 ${sourceDescription}
 
@@ -2249,18 +2244,9 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
         const effectiveYtUser = getCurrentYtViewer();
         const userName = effectiveYtUser.name || '我';
         const userPersona = effectiveYtUser.persona || '普通观众';
-        let wbContext = '';
-        if (typeof window.getGlobalWorldBookContext === 'function') {
-            wbContext = window.getGlobalWorldBookContext() || '';
-        } else if (channelState && channelState.boundWorldBookIds && Array.isArray(channelState.boundWorldBookIds) && window.getWorldBooks) {
-            const wbs = window.getWorldBooks();
-            channelState.boundWorldBookIds.forEach(id => {
-                const boundWb = wbs.find(w => w.id === id);
-                if (boundWb && boundWb.entries) {
-                    wbContext += `\n【${boundWb.name}】:\n` + boundWb.entries.map(e => `${e.keyword}: ${e.content}`).join('\n');
-                }
-            });
-        }
+        const wbContext = window.getYtWorldBookContext
+            ? window.getYtWorldBookContext(`${currentVideoData?.title || ''}\n${userMessage || ''}`)
+            : '';
 
         // Get last summary for live context
         let lastSummary = '暂无';
@@ -2595,12 +2581,20 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
             promptStr += `\n\n请在JSON中额外返回一个 "newSubs" 字段（整数），代表本次直播带来的新增订阅数。`;
         }
 
+        const wbContext = window.getYtWorldBookContext
+            ? window.getYtWorldBookContext(`${char?.name || ''}\n${historyStr}`)
+            : '';
+        const hasWorldBookPlaceholder = promptStr.includes('{wb_context}');
         let finalPrompt = promptStr
             .replace(/{char}/g, char.name || '')
             .replace(/{char_persona}/g, charPersona)
             .replace(/{user}/g, userPersona)
             .replace(/{current_time}/g, new Date().toLocaleString())
-            .replace(/{chat_history}/g, historyStr);
+            .replace(/{chat_history}/g, historyStr)
+            .replace(/{wb_context}/g, wbContext);
+        if (!hasWorldBookPlaceholder && wbContext) {
+            finalPrompt += `\n\n世界书内容：\n${wbContext}`;
+        }
 
         try {
             let endpoint = window.apiConfig.endpoint;
@@ -3411,6 +3405,10 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
             }
             prompt += `\n\n【最高优先级：观众评论国际化协议】角色本人创作的标题、主播发言和社区正文继续跟随角色默认语言；currentLive.comments、pastVideos[].comments 和 communityPosts[].comments 必须模拟来自世界各地的真实 YouTube 观众，绝对不能全部跟随角色默认语言。每组评论要混合英语、日语、韩语、法语、西班牙语及其他自然语言，评论不少于 5 条时至少包含 3 种语言，且至少一半为非中文评论；昵称必须符合对应国家或地区。每条评论严格返回 {"name":"viewer name","text":"观众自己的语言原文","translationZh":"自然准确的简体中文翻译或空字符串"}；text 非中文时 translationZh 必须填写，text 中文时必须为空字符串。此协议覆盖上方任何要求观众评论跟随角色默认语言的内容。`;
             prompt += `\n\n【UI 指标固定规则】viewerCount、viewCount 只能返回非负纯整数；观看人数、观看次数、发布时间等 UI 指标不受角色默认语言影响，禁止翻译或添加外语单位，中文展示单位由前端生成。`;
+            const generationWorldBookContext = window.getYtWorldBookContext
+                ? window.getYtWorldBookContext(`${currentSubChannelData.name || ''}\n${currentSubChannelData.desc || ''}`)
+                : '';
+            prompt += `\n\n世界书内容：\n${generationWorldBookContext || '无'}`;
 
             try {
                 let endpoint = window.apiConfig.endpoint;
@@ -3646,17 +3644,10 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
         setTimeout(() => ytCharGenerateRequirement?.focus(), 80);
     }
 
-    function getYtCharGenerationWorldBookContext() {
-        if (typeof window.getGlobalWorldBookContext === 'function') return window.getGlobalWorldBookContext() || '';
-        let context = '';
-        if (channelState?.boundWorldBookIds && Array.isArray(channelState.boundWorldBookIds) && window.getWorldBooks) {
-            const books = window.getWorldBooks();
-            channelState.boundWorldBookIds.forEach(id => {
-                const book = books.find(item => item.id === id);
-                if (book?.entries) context += `\n【${book.name}】\n${book.entries.map(entry => `${entry.keyword}: ${entry.content}`).join('\n')}`;
-            });
-        }
-        return context;
+    function getYtCharGenerationWorldBookContext(contextText = '') {
+        return window.getYtWorldBookContext
+            ? window.getYtWorldBookContext(contextText)
+            : '';
     }
 
     function buildYtCharTabGenerationPrompt(mode, requirement, count) {
@@ -3665,7 +3656,7 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
             ? window.getYtChannelPersonaWithRelationships(channel)
             : (channel.desc || '未知');
         const userRequirement = requirement || '无额外要求，请根据角色人设自然发挥';
-        const common = `频道名称：${channel.name}\n角色人设：${persona}\n世界书：${getYtCharGenerationWorldBookContext() || '无'}\n用户本次要求：${userRequirement}`;
+        const common = `频道名称：${channel.name}\n角色人设：${persona}\n世界书：${getYtCharGenerationWorldBookContext(`${channel.name}\n${persona}\n${userRequirement}`) || '无'}\n用户本次要求：${userRequirement}`;
         let prompt = '';
         if (mode === 'live') {
             prompt = `你是 YouTube Char 直播生成助手。${common}\n只生成一场新直播，返回 {"currentLive":{"title":"直播标题原文","titleTranslationZh":"中文翻译或空字符串","viewerCount":15000,"initialBubbles":[{"text":"主播原话","translationZh":"中文翻译或空字符串"}],"comments":[{"name":"观众昵称","text":"评论原文","translationZh":"中文翻译或空字符串"}]}}。initialBubbles 生成 3–5 条，comments 生成 6–10 条。`;

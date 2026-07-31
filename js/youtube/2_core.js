@@ -492,6 +492,72 @@
         return relationshipContext ? `${basePersona}\n${relationshipContext}` : basePersona;
     }
 
+    function normalizeYtWorldBookIds(ids = []) {
+        return (Array.isArray(ids) ? ids : [])
+            .map(id => String(id || '').trim())
+            .filter((id, index, allIds) => id && allIds.indexOf(id) === index);
+    }
+
+    function getYtMountedWorldBookIds() {
+        return normalizeYtWorldBookIds(
+            Array.isArray(channelState?.boundWorldBookIds)
+                ? channelState.boundWorldBookIds
+                : []
+        );
+    }
+
+    function getYtWorldBookContext(contextText = '') {
+        const sourceText = String(contextText || '');
+        const sections = [];
+        const hasGlobalContextHelper = typeof window.getGlobalWorldBookContext === 'function';
+        const globalContext = hasGlobalContextHelper
+            ? window.getGlobalWorldBookContext(sourceText)
+            : '';
+        if (globalContext) sections.push(globalContext.trim());
+
+        const selectedIds = new Set(getYtMountedWorldBookIds());
+        if (typeof window.getWorldBooks === 'function') {
+            const books = window.getWorldBooks();
+            if (Array.isArray(books)) {
+                books.forEach(book => {
+                    if (!book || !Array.isArray(book.entries)) return;
+                    const isGlobalFallback = !hasGlobalContextHelper && book.isGlobal;
+                    if (!isGlobalFallback && !selectedIds.has(String(book.id))) return;
+                    if (hasGlobalContextHelper && book.isGlobal) return;
+
+                    const entries = book.entries
+                        .map(entry => window.normalizeWorldBookEntry
+                            ? window.normalizeWorldBookEntry(entry)
+                            : entry)
+                        .filter(entry => entry && entry.enabled !== false)
+                        .filter(entry => !window.worldBookKeywordMatched
+                            || window.worldBookKeywordMatched(entry, sourceText));
+                    if (entries.length === 0) return;
+
+                    const entryBlocks = entries.map(entry => {
+                        if (typeof window.formatWorldBookEntryForPrompt === 'function') {
+                            return window.formatWorldBookEntryForPrompt(entry);
+                        }
+                        const label = entry.title || entry.name || entry.keyword || '未命名词条';
+                        return `【${label}】\n${entry.content || ''}`.trim();
+                    }).filter(Boolean);
+                    if (entryBlocks.length > 0) {
+                        sections.push(`Mounted World Book / 已挂载世界书：\n【${book.name || book.id || '未命名世界书'}】\n${entryBlocks.join('\n\n')}`);
+                    }
+                });
+            }
+        }
+
+        if (!hasGlobalContextHelper && typeof window.getBuiltinWorldBookContext === 'function') {
+            ['system_depth', 'before_role', 'after_role'].forEach(position => {
+                const builtinContext = window.getBuiltinWorldBookContext(position, sourceText);
+                if (builtinContext) sections.push(builtinContext.trim());
+            });
+        }
+
+        return sections.filter(Boolean).join('\n\n').trim();
+    }
+
     function resolveYtChannelAvatar(channel) {
         const linkedChar = resolveYtLinkedImChar(channel);
         return (linkedChar && linkedChar.avatarUrl)
@@ -503,6 +569,8 @@
     window.resolveYtExplicitImChar = resolveYtExplicitImChar;
     window.getYtChannelRelationshipContext = getYtChannelRelationshipContext;
     window.getYtChannelPersonaWithRelationships = getYtChannelPersonaWithRelationships;
+    window.getYtMountedWorldBookIds = getYtMountedWorldBookIds;
+    window.getYtWorldBookContext = getYtWorldBookContext;
     window.resolveYtChannelAvatar = resolveYtChannelAvatar;
 
     function normalizeYtSubscription(sub, index = 0) {
@@ -1081,18 +1149,9 @@
             msgRefreshBtn.style.pointerEvents = 'none';
             if(window.showToast) window.showToast('正在生成新消息...');
 
-            let wbContext = '';
-            if (typeof window.getGlobalWorldBookContext === 'function') {
-                wbContext = window.getGlobalWorldBookContext() || '';
-            } else if (channelState && channelState.boundWorldBookIds && Array.isArray(channelState.boundWorldBookIds) && window.getWorldBooks) {
-                const wbs = window.getWorldBooks();
-                channelState.boundWorldBookIds.forEach(id => {
-                    const boundWb = wbs.find(w => w.id === id);
-                    if (boundWb && boundWb.entries) {
-                        wbContext += `\n【${boundWb.name}】:\n` + boundWb.entries.map(e => `${e.keyword}: ${e.content}`).join('\n');
-                    }
-                });
-            }
+            const wbContext = window.getYtWorldBookContext
+                ? window.getYtWorldBookContext(currentMsgFilter)
+                : '';
 
             const effectiveYtUser = typeof window.getYtEffectiveUserState === 'function'
                 ? window.getYtEffectiveUserState()

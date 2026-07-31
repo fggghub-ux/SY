@@ -2,7 +2,6 @@
     const SUPABASE_URL = 'https://xesofmxgvsnpldrjtxur.supabase.co';
     const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_CbaMneYIuVFIvUNiTtTgHQ_ouUMzmI5';
     const AUTH_SESSION_KEY = 'u2_auth_session_v1';
-    const DEVICE_ID_KEY = 'u2_auth_device_id_v1';
     const OLD_ACTIVATION_KEY = 'u2_activation_granted_v1';
     const USERNAME_PATTERN = /^[a-z0-9_]{3,24}$/;
     const ACTIVATION_CODE_PATTERN = /^U2(?:-[A-Z2-9]{4}){4}$/;
@@ -10,6 +9,7 @@
     let dom = null;
     let mode = 'signin';
     let currentSession = null;
+    let loginFocusTimer = null;
 
     function collectDom() {
         return {
@@ -48,50 +48,32 @@
         return ['U2', ...groups].join('-');
     }
 
-    async function sha256Hex(value) {
-        if (!window.crypto?.subtle || typeof TextEncoder !== 'function') {
-            throw new Error('SHA-256 is unavailable in this browser.');
-        }
-        const encoded = new TextEncoder().encode(value);
-        const digest = await window.crypto.subtle.digest('SHA-256', encoded);
-        return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
-    }
-
-    function createUuid() {
-        if (typeof window.crypto?.randomUUID === 'function') return window.crypto.randomUUID();
-        const bytes = new Uint8Array(16);
-        window.crypto.getRandomValues(bytes);
-        bytes[6] = (bytes[6] & 0x0f) | 0x40;
-        bytes[8] = (bytes[8] & 0x3f) | 0x80;
-        const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-        return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-    }
-
-    function getDeviceId() {
-        let deviceId = window.localStorage.getItem(DEVICE_ID_KEY);
-        if (!deviceId) {
-            deviceId = createUuid();
-            window.localStorage.setItem(DEVICE_ID_KEY, deviceId);
-        }
-        return deviceId;
-    }
-
     function setLoginLocked(locked) {
         document.body?.classList.toggle('u2-login-locked', !!locked);
     }
 
     function showLoginScreen(options = {}) {
         if (!dom?.screen) return;
-        dom.screen.classList.remove('is-hidden');
+        clearTimeout(loginFocusTimer);
+        dom.screen.classList.remove('is-checking', 'is-hidden');
+        dom.screen.inert = false;
         dom.screen.setAttribute('aria-hidden', 'false');
         setLoginLocked(true);
-        if (options.focus !== false) setTimeout(() => dom.accountInput?.focus(), 80);
+        if (options.focus !== false) {
+            loginFocusTimer = setTimeout(() => {
+                if (!dom?.screen?.classList.contains('is-hidden')) dom.accountInput?.focus();
+            }, 80);
+        }
     }
 
     function hideLoginScreen() {
         if (!dom?.screen) return;
-        dom.screen.classList.add('is-hidden');
+        clearTimeout(loginFocusTimer);
+        if (dom.screen.contains(document.activeElement)) document.activeElement.blur();
+        dom.screen.inert = true;
         dom.screen.setAttribute('aria-hidden', 'true');
+        dom.screen.classList.remove('is-checking');
+        dom.screen.classList.add('is-hidden');
         setLoginLocked(false);
     }
 
@@ -176,17 +158,16 @@
         return refreshSession(session);
     }
 
-    async function checkDevice(session) {
-        const deviceHash = await sha256Hex(getDeviceId());
+    async function checkAccountAccess(session) {
         return request('/rest/v1/rpc/u2_check_device', {
             headers: { Authorization: `Bearer ${session.access_token}` },
-            body: { p_device_hash: deviceHash }
+            body: { p_device_hash: null }
         });
     }
 
     async function authorizeSession(session) {
         const freshSession = await ensureFreshSession(session);
-        const state = await checkDevice(freshSession);
+        const state = await checkAccountAccess(freshSession);
         if (!state?.allowed) {
             const error = new Error(state?.reason || 'AUTHORIZATION_FAILED');
             error.code = state?.reason || 'AUTHORIZATION_FAILED';
@@ -223,7 +204,7 @@
         setMessage('');
     }
 
-    function setMode(nextMode) {
+    function setMode(nextMode, options = {}) {
         mode = nextMode === 'register' ? 'register' : 'signin';
         const registering = mode === 'register';
         dom?.screen?.classList.toggle('is-register-mode', registering);
@@ -235,7 +216,12 @@
         if (dom?.submitLabel) dom.submitLabel.textContent = registering ? '注册并进入' : '登录';
         if (dom?.passwordInput) dom.passwordInput.autocomplete = registering ? 'new-password' : 'current-password';
         clearValidation();
-        setTimeout(() => dom?.accountInput?.focus(), 30);
+        clearTimeout(loginFocusTimer);
+        if (options.focus !== false) {
+            loginFocusTimer = setTimeout(() => {
+                if (!dom?.screen?.classList.contains('is-hidden')) dom.accountInput?.focus();
+            }, 30);
+        }
     }
 
     function messageForError(error) {
@@ -248,8 +234,6 @@
             CODE_DISABLED: '这个激活码已被停用。',
             CODE_USED: '这个激活码已经被使用。',
             CODE_EXPIRED: '这个激活码已经过期。',
-            DEVICE_INVALID: '无法识别当前设备，请检查浏览器存储权限。',
-            DEVICE_MISMATCH: '账号已绑定其他设备，请联系管理员换机。',
             ACCOUNT_DISABLED: '账号已被停用，请联系管理员。',
             ACCOUNT_EXPIRED: '账号已到期，请联系管理员。',
             PROFILE_MISSING: '账号尚未完成激活，请联系管理员。',
@@ -320,7 +304,7 @@
         try {
             if (mode === 'register') {
                 const result = await request('/functions/v1/register-account', {
-                    body: { ...values, deviceId: getDeviceId() }
+                    body: values
                 });
                 if (!result?.ok) throw Object.assign(new Error(result?.code || 'REGISTRATION_FAILED'), { code: result?.code });
                 if (result.session) {
@@ -354,7 +338,7 @@
         setMode('signin');
         if (!session?.access_token) return;
         try {
-            await request('/auth/v1/logout', {
+            await request('/auth/v1/logout?scope=local', {
                 headers: { Authorization: `Bearer ${session.access_token}` },
                 body: {}
             });
@@ -406,10 +390,9 @@
 
         setLoginLocked(true);
         bindEvents();
-        setMode('signin');
+        setMode('signin', { focus: false });
 
         try {
-            getDeviceId();
             const savedSession = readSession();
             if (!savedSession) {
                 showLoginScreen();
