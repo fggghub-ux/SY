@@ -320,9 +320,34 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function renderFriendsList() {
+    let lastFriendsListSnapshot = [];
+
+    function getFriendsListRenderSnapshot() {
+        return (window.imData.friends || [])
+            .filter(friend => friend.type !== 'group')
+            .map(friend => ({ friend, id: friend.id, type: friend.type, nickname: friend.nickname, avatarUrl: friend.avatarUrl || '' }));
+    }
+
+    function isSameFriendsListSnapshot(nextSnapshot) {
+        return nextSnapshot.length === lastFriendsListSnapshot.length
+            && nextSnapshot.every((row, index) => {
+                const previous = lastFriendsListSnapshot[index];
+                return previous
+                    && previous.friend === row.friend
+                    && previous.id === row.id
+                    && previous.type === row.type
+                    && previous.nickname === row.nickname
+                    && previous.avatarUrl === row.avatarUrl;
+            });
+    }
+
+    function renderFriendsList(options = {}) {
         const friendsContent = document.getElementById('friends-content');
         const npcsContent = document.getElementById('npcs-content');
+        const nextSnapshot = getFriendsListRenderSnapshot();
+        const renderedItemCount = (friendsContent?.children.length || 0) + (npcsContent?.children.length || 0);
+        const isCurrent = renderedItemCount === nextSnapshot.length && isSameFriendsListSnapshot(nextSnapshot);
+        if (!options.force && isCurrent) return false;
         
         if (friendsContent) friendsContent.innerHTML = '';
         if (npcsContent) npcsContent.innerHTML = '';
@@ -352,6 +377,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (friendsContent) friendsContent.appendChild(item);
             }
         });
+        lastFriendsListSnapshot = nextSnapshot;
+        return true;
     }
 
     window.imApp.renderFriendsList = renderFriendsList;

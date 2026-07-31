@@ -5879,6 +5879,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if(imContent) imContent.style.display = 'none';
         if(chatsContent) chatsContent.style.display = 'none';
         if(momentsContent) momentsContent.style.display = 'none';
+        if(imContent) imContent.setAttribute('aria-hidden', 'true');
+        if(chatsContent) chatsContent.setAttribute('aria-hidden', 'true');
         
         if(navHomeBtn) navHomeBtn.classList.remove('active');
         if(navChatsBtn) navChatsBtn.classList.remove('active');
@@ -5892,6 +5894,7 @@ document.addEventListener('DOMContentLoaded', () => {
         navHomeBtn.addEventListener('click', () => {
             hideAllTabs();
             if(imContent) imContent.style.display = 'block';
+            if(imContent) imContent.setAttribute('aria-hidden', 'false');
             if(imBottomNavContainer) imBottomNavContainer.style.display = 'flex';
             navHomeBtn.classList.add('active');
             updateLineNavIndicator(navHomeBtn);
@@ -5906,6 +5909,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if(chatsContent) {
                 chatsContent.style.display = 'flex';
                 chatsContent.style.flexDirection = 'column';
+                chatsContent.setAttribute('aria-hidden', 'false');
                 if (window.imApp.updateChatsView) window.imApp.updateChatsView();
             }
             navChatsBtn.classList.add('active');

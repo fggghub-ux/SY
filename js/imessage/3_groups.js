@@ -583,9 +583,32 @@ document.addEventListener('DOMContentLoaded', () => {
         openView(createGroupSheet);
     }
 
-    function renderGroupsList() {
+    let lastGroupsListSnapshot = [];
+
+    function getGroupsListRenderSnapshot() {
+        return (window.imData.friends || [])
+            .filter(friend => friend.type === 'group')
+            .map(group => ({ group, id: group.id, nickname: group.nickname, avatarUrl: group.avatarUrl || '' }));
+    }
+
+    function isSameGroupsListSnapshot(nextSnapshot) {
+        return nextSnapshot.length === lastGroupsListSnapshot.length
+            && nextSnapshot.every((row, index) => {
+                const previous = lastGroupsListSnapshot[index];
+                return previous
+                    && previous.group === row.group
+                    && previous.id === row.id
+                    && previous.nickname === row.nickname
+                    && previous.avatarUrl === row.avatarUrl;
+            });
+    }
+
+    function renderGroupsList(options = {}) {
         const groupsContent = document.getElementById('groups-content');
         if (!groupsContent) return;
+        const nextSnapshot = getGroupsListRenderSnapshot();
+        const hasCurrentItems = groupsContent.children.length === nextSnapshot.length + 1;
+        if (!options.force && hasCurrentItems && isSameGroupsListSnapshot(nextSnapshot)) return false;
 
         groupsContent.innerHTML = `
             <div class="line-list-item" id="create-group-trigger">
@@ -621,6 +644,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             groupsContent.appendChild(item);
         });
+        lastGroupsListSnapshot = nextSnapshot;
+        return true;
     }
 
     function openGroupEditSheet() {
