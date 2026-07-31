@@ -386,7 +386,10 @@
 
     async function initializeAuthGate() {
         dom = collectDom();
-        if (!dom.screen || !dom.form || !dom.accountInput || !dom.passwordInput) return;
+        if (!dom.screen || !dom.form || !dom.accountInput || !dom.passwordInput) {
+            window.markAuthGateSettled?.();
+            return;
+        }
 
         setLoginLocked(true);
         bindEvents();
@@ -406,6 +409,8 @@
             clearSession();
             showLoginScreen({ focus: false });
             setMessage(messageForError(error));
+        } finally {
+            window.markAuthGateSettled?.();
         }
     }
 

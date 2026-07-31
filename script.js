@@ -211,6 +211,9 @@
             if (index === pageIndex) dot.classList.add('active');
             else dot.classList.remove('active');
         });
+        document.querySelectorAll('#pages-container > .page-wrapper').forEach((page, index) => {
+            page.classList.toggle('is-current', index === pageIndex);
+        });
     }
 
     // ==========================================

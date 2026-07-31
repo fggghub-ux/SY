@@ -251,6 +251,11 @@
         if (!searchButton || !searchView || !backButton || !title || !input || !status || !resultsEl) return;
         let searchFriendId = '';
 
+        global.mobileInputCompat?.registerFocusScope?.({
+            selector: '#chat-history-search-view',
+            preferFocusScope: true
+        });
+
         function getLiveSearchFriend() {
             if (!searchFriendId) return null;
             return global.imApp?.getFriendById
@@ -375,7 +380,7 @@
             renderResults();
             if (global.openView) global.openView(searchView);
             else searchView.classList.add('active');
-            global.setTimeout(() => input.focus(), 80);
+            global.setTimeout(() => input.focus({ preventScroll: true }), 80);
         });
         backButton.addEventListener('click', closeSearchView);
         input.addEventListener('input', renderResults);

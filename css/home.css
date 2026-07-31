@@ -33,6 +33,15 @@
     padding-bottom: 0 !important;
 }
 
+#pages-container > .page-wrapper:not(.is-current) *,
+.home-widget-library-preview *,
+#app:has(.app-view.active) #pages-container > .page-wrapper *,
+#app:has(.settings-view.active) #pages-container > .page-wrapper *,
+#app:has(.edit-view.active) #pages-container > .page-wrapper *,
+body:has(#u2-login-screen:not(.is-hidden)) #pages-container > .page-wrapper * {
+    animation-play-state: paused !important;
+}
+
 /* Page Indicators */
 .page-indicators {
     position: absolute;

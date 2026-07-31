@@ -9,6 +9,7 @@
             this.tabs = ['food', 'mall', 'cart', 'me'];
             this.currentTab = 'food';
             this.scrollTimer = null;
+            this.ordersRefreshTimer = null;
             
             // Cart state
             this.cart = this.loadCart();
@@ -369,14 +370,29 @@
                 this.ordersBtn.addEventListener('click', () => {
                     this.renderOrders();
                     this.ordersSheet?.classList.add('active');
+                    this.startOrdersRefresh();
                 });
             }
-            
-            // Auto refresh orders status periodically if sheet is active
-            setInterval(() => {
-                if (this.ordersSheet && this.ordersSheet.classList.contains('active')) {
-                    this.renderOrders();
-                }
+
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) this.stopOrdersRefresh();
+                else if (this.ordersSheet?.classList.contains('active')) this.startOrdersRefresh();
+            });
+        }
+
+        stopOrdersRefresh() {
+            if (this.ordersRefreshTimer) clearTimeout(this.ordersRefreshTimer);
+            this.ordersRefreshTimer = null;
+        }
+
+        startOrdersRefresh() {
+            this.stopOrdersRefresh();
+            if (!this.ordersSheet?.classList.contains('active') || document.hidden) return;
+            this.ordersRefreshTimer = window.setTimeout(() => {
+                this.ordersRefreshTimer = null;
+                if (!this.ordersSheet?.classList.contains('active') || document.hidden) return;
+                this.renderOrders();
+                this.startOrdersRefresh();
             }, 1000);
         }
 

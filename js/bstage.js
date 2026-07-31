@@ -1529,7 +1529,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const input = document.getElementById(isFan ? 'bstage-fan-chat-input' : 'bstage-chat-input');
-        if (target && input) input.focus();
+        if (target && input) input.focus({ preventScroll: true });
     }
 
     function clearPendingReply(kind) {
@@ -1593,7 +1593,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         window.openView(generateTypeSheet);
         setTimeout(() => {
-            if (inputEl) inputEl.focus();
+            if (inputEl) inputEl.focus({ preventScroll: true });
         }, 80);
     }
 
@@ -2738,7 +2738,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setSearchGenerateLoading(false);
         window.openView(searchGenerateModal);
         setTimeout(() => {
-            if (queryInput) queryInput.focus();
+            if (queryInput) queryInput.focus({ preventScroll: true });
         }, 80);
     }
 
@@ -4926,7 +4926,7 @@ ${charInfo}
             }
         }
         const input = document.getElementById('bstage-vid-comment-input');
-        if (comment && input) input.focus();
+        if (comment && input) input.focus({ preventScroll: true });
     }
 
     function renderCommentTranslation(comment) {
@@ -5805,7 +5805,7 @@ ${charInfo}
         window.openView(bstageFanChatView);
         const input = document.getElementById('bstage-fan-chat-input');
         setTimeout(() => {
-            if (input) input.focus();
+            if (input) input.focus({ preventScroll: true });
         }, 80);
     }
 

@@ -36,6 +36,20 @@
     pointer-events: auto;
 }
 
+/* Keep off-screen application trees mounted without letting decorative motion
+   consume compositor time behind the visible surface. */
+.app-view:not(.active) *,
+.settings-view:not(.active) *,
+.edit-view:not(.active) *,
+.bottom-sheet-overlay:not(.active) *,
+.tk-sub-profile-view:not(.active) *,
+.tk-tab-content:not(.active) *,
+.yt-tab-content:not(.active) *,
+.x-tab-content:not(.active) *,
+[hidden] * {
+    animation-play-state: paused !important;
+}
+
 /* 隐藏全局滚动条 */
 ::-webkit-scrollbar {
     width: 0;

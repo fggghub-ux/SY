@@ -2547,28 +2547,19 @@ ${friend.type === 'group' ? `6. 无论其他附加任务是否能完成，<chat_
 
         const customStatusPrompt = typeof friend.statusPrompt === 'string' ? friend.statusPrompt.trim() : '';
         const hasCustomStatusPrompt = friend.type !== 'group' && friend.statusPromptEnabled === true && !!customStatusPrompt;
-        const profileThoughtNow = new Date();
-        const profileThoughtTimestamp = [
-            profileThoughtNow.getFullYear(),
-            String(profileThoughtNow.getMonth() + 1).padStart(2, '0'),
-            String(profileThoughtNow.getDate()).padStart(2, '0')
-        ].join('-') + ` ${String(profileThoughtNow.getHours()).padStart(2, '0')}:${String(profileThoughtNow.getMinutes()).padStart(2, '0')}:${String(profileThoughtNow.getSeconds()).padStart(2, '0')}`;
         const singleChatThoughtContextRequirement = `- thought 必须与本轮单聊回复使用完全相同的角色身份、核心人设、User 人设、关系阶段、单聊真实交流原则、角色记忆和当前聊天上下文，不能脱离单聊提示词另写一个无关状态。
-- thought 必须遵循本轮已经注入的全部已绑定世界书内容，包括 System Depth Rules、Before Role Rules 和 After Role Rules；不得遗漏世界书中的事实、关系、背景、行为限制或风格要求，也不得生成与世界书冲突的心声。
-- thought 必须严格写成四行，并在 JSON 字符串中使用 \\n 表示换行：第一行必须原样写成 [${profileThoughtTimestamp}]，这是系统注入的本轮真实时间戳，不得修改或另行推算；第二行和第三行各写一句约 10 个汉字、角色没有说出口的真实心里话；第四行写一句贴合此刻心境的短歌词或短诗句，不标注歌名、诗名或作者。
-- thought 除第一行数字时间戳外，第二、三、四行必须全部使用自然简体中文；即使角色聊天语言不是中文、自定义状态栏提示词要求外语或歌词原文是外语，也必须改写为简体中文。
-- 除第一行真实时间戳外，不再添加其他时间说明；后面三行保持简短、自然、完整，不分点，不复述已经发送的聊天气泡。`;
+- thought 必须遵循本轮已经注入的全部已绑定世界书内容，包括 System Depth Rules、Before Role Rules 和 After Role Rules；不得遗漏世界书中的事实、关系、背景、行为限制或风格要求，也不得生成与世界书冲突的心声。`;
         const statusContentRequirement = hasCustomStatusPrompt
             ? `${singleChatThoughtContextRequirement}
-- 下面的用户自定义状态栏提示词只作为 thought 的附加内容与表达偏好；必须在遵循上述单聊提示词、世界书和固定四行格式的前提下执行。它不能覆盖角色身份、世界书事实、当前聊天上下文、真实时间戳、每行长度、好感度、事件或 JSON 结构。
+- 下面的用户自定义状态栏提示词直接决定 thought 的内容、语言、人称、长度、风格和分行格式；不要叠加默认心声格式。它不能覆盖角色身份、世界书事实、当前聊天上下文、好感度、事件或 JSON 结构。
 <custom_status_prompt>
 ${customStatusPrompt}
 </custom_status_prompt>`
             : `${singleChatThoughtContextRequirement}
-- 根据角色本轮真正关注、犹豫、期待或没说出口的内容填写第二、三行，并选择一句贴合此刻心境的短歌词或短诗句作为第四行。`;
+- 根据角色本轮真正关注、犹豫、期待或没说出口的内容，自然地写出此刻心声；不限制固定行数或字数，不额外附加歌词或诗句。`;
         const profilePanelRequirement = friend.type === 'group'
             ? ''
-            : `\n\nProfile Panel Requirement:\n- 在正常聊天气泡之外，你必须额外输出 1 个 <profile_panel>...</profile_panel>\n- <profile_panel> 内必须是合法 JSON，不能有 markdown 代码块，不能有额外解释文字\n- JSON 必须且只能包含字段：thought、affectionChange、events\n- thought 必须是字符串且不能省略，必须保留规定的真实时间戳和四行结构\n${statusContentRequirement}\n- thought 第一行的真实时间戳已经由系统直接注入；必须原样保留，禁止过滤、改写、虚构或沿用旧时间\n- affectionChange 必须是整数（范围 -5 到 5），表示你对用户好感度因本轮对话产生的增减变化\n- events 以及 memoryPayload 内所有可见文本必须使用简体中文\n- events 必须是 JSON 数组；如果当前没有新的事件就输出 []；如果有事件，最多 3 条\n- 普通事件格式为 {"title":"事件标题","description":"事件描述","time":"时间或留空","type":"note"}\n- 珍视回忆必须由你（当前角色/char）自己发起：只有当你基于自己的感受，觉得刚刚这段聊天很在意、很珍贵、自己想以后记住时，才额外加入 1 条珍视回忆事件，type 必须为 "memory_request"\n- 不要把珍视回忆写成外部指令、替对方保存、接受要求或向对方请求许可；即使对方提到保存或记忆相关内容，也只在你自己也真心想珍藏时才输出\n- 珍视回忆事件格式为 {"title":"想珍藏这一刻","description":"一句简短说明","time":"时间或留空","type":"memory_request","requestText":"我想记住的具体事情","detail":"我为什么想记住或补充细节","confirmText":"收下","cancelText":"算了","memoryPayload":{"title":"珍视回忆标题","content":"我想记住的内容","detail":"更多细节","reason":"我想记住的原因","createdAt":"时间或留空","sourceThought":"可留空"}}\n- 只有当你真的觉得值得自己记住时才输出 memory_request，不能每次都输出`;
+            : `\n\nProfile Panel Requirement:\n- 在正常聊天气泡之外，你必须额外输出 1 个 <profile_panel>...</profile_panel>\n- <profile_panel> 内必须是合法 JSON，不能有 markdown 代码块，不能有额外解释文字\n- JSON 必须且只能包含字段：thought、affectionChange、events\n- thought 必须是字符串且不能省略；内容和格式服从当前启用的状态栏提示词\n${statusContentRequirement}\n- affectionChange 必须是整数（范围 -5 到 5），表示你对用户好感度因本轮对话产生的增减变化\n- events 以及 memoryPayload 内所有可见文本必须使用简体中文\n- events 必须是 JSON 数组；如果当前没有新的事件就输出 []；如果有事件，最多 3 条\n- 普通事件格式为 {"title":"事件标题","description":"事件描述","time":"时间或留空","type":"note"}\n- 珍视回忆必须由你（当前角色/char）自己发起：只有当你基于自己的感受，觉得刚刚这段聊天很在意、很珍贵、自己想以后记住时，才额外加入 1 条珍视回忆事件，type 必须为 "memory_request"\n- 不要把珍视回忆写成外部指令、替对方保存、接受要求或向对方请求许可；即使对方提到保存或记忆相关内容，也只在你自己也真心想珍藏时才输出\n- 珍视回忆事件格式为 {"title":"想珍藏这一刻","description":"一句简短说明","time":"时间或留空","type":"memory_request","requestText":"我想记住的具体事情","detail":"我为什么想记住或补充细节","confirmText":"收下","cancelText":"算了","memoryPayload":{"title":"珍视回忆标题","content":"我想记住的内容","detail":"更多细节","reason":"我想记住的原因","createdAt":"时间或留空","sourceThought":"可留空"}}\n- 只有当你真的觉得值得自己记住时才输出 memory_request，不能每次都输出`;
 
         const languageNames = {
             zh: 'Chinese',
@@ -2581,7 +2572,7 @@ ${customStatusPrompt}
         let languageRequirement = '';
         if (targetLanguage !== 'zh') {
             const langName = languageNames[targetLanguage] || targetLanguage;
-            languageRequirement = `\n\n【!!! CRITICAL LANGUAGE RULE / 绝对最高优先级语言指令 !!!】：\n- [ABSOLUTE REQUIREMENT]: You MUST speak ONLY in ${langName} for the "text" field. This overrides ALL persona and memory settings.\n- Even if your persona is Chinese or the user speaks in Chinese, your spoken "text" MUST be in ${langName}.\n- [TRANSLATION]: You MUST provide an accurate Chinese translation of your ${langName} "text" in the "translation" field.\n- [THOUGHT]: The "thought" field MUST always remain in Simplified Chinese, including when a custom status prompt is enabled.`;
+            languageRequirement = `\n\n【!!! CRITICAL LANGUAGE RULE / 绝对最高优先级语言指令 !!!】：\n- [ABSOLUTE REQUIREMENT]: You MUST speak ONLY in ${langName} for the "text" field. This overrides ALL persona and memory settings.\n- Even if your persona is Chinese or the user speaks in Chinese, your spoken "text" MUST be in ${langName}.\n- [TRANSLATION]: You MUST provide an accurate Chinese translation of your ${langName} "text" in the "translation" field.\n- [THOUGHT]: ${hasCustomStatusPrompt ? 'Follow the enabled <custom_status_prompt> for the thought field language and format.' : 'Use natural Simplified Chinese for the thought field.'}`;
         }
         const effectiveProfilePanelRequirement = friend.type === 'group'
             ? ''
@@ -2691,6 +2682,8 @@ ${isSingleChat ? '- 禁止执着于旧话题，例如当user明确表达不困�
         const effectiveUserPersona = window.imApp?.getEffectivePersonaForFriend
             ? window.imApp.getEffectivePersonaForFriend(friend)
             : (currentUserState.persona || '');
+        const currentUserPromptName = currentUserState.name || 'User';
+        const userPersonaPromptEntry = `【User 人设】：${effectiveUserPersona || '一个普通用户'}`;
 
         let worldBookContextText = '';
         if (friend.messages && friend.messages.length > 0) {
@@ -2821,7 +2814,7 @@ ${isSingleChat ? '- 禁止执着于旧话题，例如当user明确表达不困�
 
             const membersInfo = groupMembers.length > 0
                 ? groupMembers.map(member => {
-                    let infoStr = `Name: ${member.nickname}\nMember ID: ${member.id}\nPersona: ${member.persona || 'None'}\n与 User 的关系: ${String(member.relationship || '').trim() || '未填写'}\nOverview: ${member.memory?.overview || 'None'}`;
+                    let infoStr = `【成员姓名】：${member.nickname}\n【成员 ID】：${member.id}\n【Char 核心人设】：${member.persona || 'None'}\n【与 User 的关系】：${String(member.relationship || '').trim() || '未填写'}\n【角色概要】：${member.memory?.overview || 'None'}`;
                     const memberStickers = buildMountedStickerContext(member);
                     if (memberStickers) {
                         infoStr += `\nAvailable Stickers for ${member.nickname}:\n${memberStickers}`;
@@ -2886,8 +2879,9 @@ ${isSingleChat ? '- 禁止执着于旧话题，例如当user明确表达不困�
             addOnlinePromptSection('priority', beforeRoleWorldBookContext
                 ? `角色前规则：\n${beforeRoleWorldBookContext}`
                 : '');
-            addOnlinePromptSection('identity', `你正在模拟一个名为 "${friend.nickname}" 的群聊。${groupExitPrompt}
-${isGroupAfterUserLeft ? `${currentUserState.name || 'User'} 曾在这个群聊中，其人设为: ${effectiveUserPersona || '一个普通用户'}。` : `你正在与 ${currentUserState.name || 'User'} 聊天，其人设为: ${effectiveUserPersona || '一个普通用户'}。`}
+            addOnlinePromptSection('identity', `【群聊身份】：你正在模拟一个名为 "${friend.nickname}" 的群聊。${groupExitPrompt}
+${isGroupAfterUserLeft ? `【User 状态】：${currentUserPromptName} 曾在这个群聊中。` : `【对话对象】：${currentUserPromptName}。`}
+${userPersonaPromptEntry}
 ${userInputModalityRule}
 
 此群内允许发言的成员名单（除用户外）：
@@ -3040,10 +3034,11 @@ ${singleChatRolePsychologyPrompt}
             addOnlinePromptSection('priority', beforeRoleWorldBookContext
                 ? `Before Role Rules:\n${beforeRoleWorldBookContext}`
                 : '');
-            addOnlinePromptSection('identity', `You are playing the role of ${friend.realName || friend.nickname}. 
-【核心设定/Core Persona】：${friend.persona || 'No specific persona'}。
-You are talking to ${currentUserState.name || 'User'}, whose persona is: ${effectiveUserPersona || 'A normal user'}。
-现在认为与 User 的关系是：${userRelationship}
+            addOnlinePromptSection('identity', `【角色身份】：You are playing the role of ${friend.realName || friend.nickname}.
+【Char 核心人设】：${friend.persona || 'No specific persona'}
+【对话对象】：${currentUserPromptName}
+${userPersonaPromptEntry}
+【与 User 的关系】：${userRelationship}
 ${userInputModalityRule}`);
             addOnlinePromptSection('identity', afterRoleWorldBookContext
                 ? `After Role Rules:\n${afterRoleWorldBookContext}`
@@ -5134,6 +5129,7 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
     window.imChat.refreshAutonomousActivityTimers = refreshAutonomousActivityTimers;
 
     window.addEventListener('u2:background-activity-tick', () => {
+        if (!document.hidden) return;
         void checkAutonomousActivities('background-tick');
     });
     document.addEventListener('visibilitychange', () => {
@@ -5143,6 +5139,7 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
         void checkAutonomousActivities('pageshow');
     });
     setInterval(() => {
+        if (document.hidden) return;
         void checkAutonomousActivities('interval');
     }, 60000);
     setTimeout(() => {

@@ -3190,13 +3190,64 @@
             'textarea[placeholder*="CSS"]',
             'textarea[placeholder*="css"]'
         ].join(',');
+        const THEME_FONT_SURFACE_CANDIDATE_SELECTOR = [
+            '#u2-login-screen',
+            '.app-view',
+            '.settings-view',
+            '.edit-view',
+            '.bottom-sheet-overlay',
+            '.tk-sub-profile-view',
+            '.tk-tab-content',
+            '.yt-tab-content',
+            '.x-tab-content',
+            '.modal-overlay',
+            '.wb-centered-modal-overlay',
+            '.toast-bubble'
+        ].join(',');
+        const THEME_FONT_ACTIVE_SURFACE_SELECTOR = [
+            '.app-view.active',
+            '.settings-view.active',
+            '.edit-view.active',
+            '.bottom-sheet-overlay.active',
+            '.tk-sub-profile-view.active',
+            '.tk-tab-content.active',
+            '.yt-tab-content.active',
+            '.x-tab-content.active',
+            '.modal-overlay.active',
+            '.wb-centered-modal-overlay.active',
+            '.toast-bubble.show'
+        ].join(',');
+        const THEME_FONT_INACTIVE_SURFACE_SELECTOR = [
+            '#u2-login-screen.is-hidden',
+            '.app-view:not(.active)',
+            '.settings-view:not(.active)',
+            '.edit-view:not(.active)',
+            '.bottom-sheet-overlay:not(.active)',
+            '.tk-sub-profile-view:not(.active)',
+            '.tk-tab-content:not(.active)',
+            '.yt-tab-content:not(.active)',
+            '.x-tab-content:not(.active)',
+            '[hidden]',
+            '[aria-hidden="true"]'
+        ].join(',');
+        const THEME_FONT_HOME_SURFACE_SELECTOR = [
+            '#pages-container',
+            '#dock',
+            '.page-indicators',
+            '.home-search-pill',
+            '#home-ios-status-bar'
+        ].join(',');
         const themeFontFaceRegistry = new Map();
         const themeFontBaseSizes = new Set();
+        const themeFontObservedSurfaces = new WeakSet();
+        const themeFontPendingRoots = new Set();
         let themeFontSaveTimer = null;
         let themeFontSelectedFile = null;
         let themeFontSourceMode = 'local';
         let themeFontApplyToken = 0;
         let themeFontScaleObserver = null;
+        let themeFontScaleSurfaceObserver = null;
+        let themeFontCaptureFrame = 0;
         let themeFontScaleRefreshFrame = 0;
 
         function cloneThemeFontSources(sources = {}) {
@@ -3389,6 +3440,7 @@
             if (!(element instanceof HTMLElement) || element.matches(THEME_FONT_SCALE_EXCLUDE_SELECTOR)) {
                 return false;
             }
+            if (element.closest(THEME_FONT_INACTIVE_SURFACE_SELECTOR)) return false;
             if (!recapture && element.hasAttribute('data-theme-font-base-size')) return false;
 
             if (recapture) element.removeAttribute('data-theme-font-base-size');
@@ -3428,34 +3480,115 @@
             });
         }
 
+        function isThemeFontLoginVisible() {
+            const loginScreen = document.getElementById('u2-login-screen');
+            return !!loginScreen && !loginScreen.classList.contains('is-hidden');
+        }
+
+        function getThemeFontActiveRoots() {
+            if (!document.body) return [];
+            const loginScreen = document.getElementById('u2-login-screen');
+            if (isThemeFontLoginVisible()) return loginScreen ? [loginScreen] : [];
+
+            const roots = Array.from(document.querySelectorAll(THEME_FONT_ACTIVE_SURFACE_SELECTOR));
+            if (!document.querySelector('.app-view.active, .settings-view.active, .edit-view.active')) {
+                document.querySelectorAll(THEME_FONT_HOME_SURFACE_SELECTOR).forEach(root => roots.push(root));
+            }
+            return Array.from(new Set(roots));
+        }
+
+        function getThemeFontActiveSurfaceFor(node) {
+            if (!(node instanceof Element)) return null;
+            const loginScreen = document.getElementById('u2-login-screen');
+            if (isThemeFontLoginVisible()) return loginScreen?.contains(node) ? loginScreen : null;
+            if (node.closest(THEME_FONT_INACTIVE_SURFACE_SELECTOR)) return null;
+
+            const activeSurface = node.matches(THEME_FONT_ACTIVE_SURFACE_SELECTOR)
+                ? node
+                : node.closest(THEME_FONT_ACTIVE_SURFACE_SELECTOR);
+            if (activeSurface) return activeSurface;
+
+            if (!document.querySelector('.app-view.active, .settings-view.active, .edit-view.active')) {
+                return node.matches(THEME_FONT_HOME_SURFACE_SELECTOR)
+                    ? node
+                    : node.closest(THEME_FONT_HOME_SURFACE_SELECTOR);
+            }
+            return null;
+        }
+
+        function flushThemeFontCaptureQueue() {
+            themeFontCaptureFrame = 0;
+            const roots = Array.from(themeFontPendingRoots);
+            themeFontPendingRoots.clear();
+            let addedSize = false;
+            roots.forEach(root => {
+                if (!root.isConnected || !getThemeFontActiveSurfaceFor(root)) return;
+                if (captureThemeFontSizesIn(root)) addedSize = true;
+            });
+            if (addedSize) scheduleThemeFontScaleCssRefresh();
+        }
+
+        function queueThemeFontCapture(root) {
+            if (!(root instanceof Element) || !getThemeFontActiveSurfaceFor(root)) return;
+            themeFontPendingRoots.add(root);
+            if (themeFontCaptureFrame) return;
+            themeFontCaptureFrame = window.requestAnimationFrame(flushThemeFontCaptureQueue);
+        }
+
+        function queueAllActiveThemeFontRoots() {
+            getThemeFontActiveRoots().forEach(queueThemeFontCapture);
+        }
+
+        function observeThemeFontSurface(surface) {
+            if (!(surface instanceof Element) || themeFontObservedSurfaces.has(surface)) return;
+            themeFontObservedSurfaces.add(surface);
+            themeFontScaleSurfaceObserver.observe(surface, {
+                attributes: true,
+                attributeFilter: ['class', 'hidden', 'aria-hidden']
+            });
+        }
+
+        function registerThemeFontSurfacesIn(root) {
+            if (!(root instanceof Element)) return;
+            if (root.matches(THEME_FONT_SURFACE_CANDIDATE_SELECTOR)) observeThemeFontSurface(root);
+            root.querySelectorAll(THEME_FONT_SURFACE_CANDIDATE_SELECTOR).forEach(observeThemeFontSurface);
+        }
+
         function ensureThemeFontGlobalScaling() {
             if (!document.body) return;
-            if (captureThemeFontSizesIn(document.body)) rebuildThemeFontScaleCss();
-
             if (themeFontScaleObserver) return;
-            themeFontScaleObserver = new MutationObserver(mutations => {
-                let addedSize = false;
+
+            let addedSize = false;
+            getThemeFontActiveRoots().forEach(root => {
+                if (captureThemeFontSizesIn(root)) addedSize = true;
+            });
+            if (addedSize) rebuildThemeFontScaleCss();
+
+            themeFontScaleSurfaceObserver = new MutationObserver(mutations => {
                 mutations.forEach(mutation => {
-                    if (mutation.type === 'childList') {
-                        mutation.addedNodes.forEach(node => {
-                            if (node instanceof Element && captureThemeFontSizesIn(node)) addedSize = true;
-                        });
+                    const target = mutation.target;
+                    if (!(target instanceof Element)) return;
+                    if (target.id === 'u2-login-screen') {
+                        queueAllActiveThemeFontRoots();
                         return;
                     }
-                    if (
-                        mutation.type === 'attributes'
-                        && mutation.target instanceof HTMLElement
-                    ) {
-                        if (captureThemeFontSizesIn(mutation.target, { recapture: true }, false)) addedSize = true;
-                    }
+                    queueThemeFontCapture(target);
                 });
-                if (addedSize) scheduleThemeFontScaleCssRefresh();
+            });
+            registerThemeFontSurfacesIn(document.body);
+
+            themeFontScaleObserver = new MutationObserver(mutations => {
+                mutations.forEach(mutation => {
+                    mutation.addedNodes.forEach(node => {
+                        if (!(node instanceof Element)) return;
+                        registerThemeFontSurfacesIn(node);
+                        queueThemeFontCapture(node);
+                    });
+                });
             });
             themeFontScaleObserver.observe(document.body, {
                 childList: true,
-                subtree: true,
-                attributes: true,
-                attributeFilter: ['class']
+                subtree: true
             });
         }
 

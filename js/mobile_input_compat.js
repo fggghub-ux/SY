@@ -255,6 +255,7 @@
 
         const registration = {
             selector,
+            preferFocusScope: options.preferFocusScope === true,
             resolveScrollContainer: typeof options.resolveScrollContainer === 'function'
                 ? options.resolveScrollContainer
                 : null,
@@ -341,6 +342,21 @@
         bindBottomSheetViewportGuard();
         scheduleBottomSheetFocusRestore();
         return true;
+    }
+
+    function activateAndroidInputGuard(target) {
+        const preferredScope = resolveFocusScope(target);
+        if (preferredScope?.registration.preferFocusScope) {
+            if (bottomSheetFocusGuard.active) unlockBottomSheetFocusScroll();
+            return captureFocusScope(target) ? 'focus-scope' : '';
+        }
+
+        const bottomSheetLocked = lockBottomSheetFocusScroll(target);
+        if (bottomSheetLocked) {
+            if (activeFocusScope) releaseFocusScope(activeFocusScope);
+            return 'bottom-sheet';
+        }
+        return captureFocusScope(target) ? 'focus-scope' : '';
     }
 
     function unlockBottomSheetFocusScroll() {
@@ -572,8 +588,7 @@
     }
 
     document.addEventListener('focusin', (event) => {
-        lockBottomSheetFocusScroll(event.target);
-        captureFocusScope(event.target);
+        activateAndroidInputGuard(event.target);
 
         const entry = registrations.get(event.target);
         if (entry) {
@@ -585,13 +600,11 @@
     }, true);
 
     document.addEventListener('pointerdown', (event) => {
-        lockBottomSheetFocusScroll(event.target);
-        captureFocusScope(event.target);
+        activateAndroidInputGuard(event.target);
     }, { capture: true, passive: true });
 
     document.addEventListener('touchstart', (event) => {
-        lockBottomSheetFocusScroll(event.target);
-        captureFocusScope(event.target);
+        activateAndroidInputGuard(event.target);
     }, { capture: true, passive: true });
 
     document.addEventListener('focusout', () => {

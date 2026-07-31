@@ -1380,38 +1380,4 @@ JSON shape:
         });
     }
 
-    // 强行绑定编辑按钮，防止委托失效或者层级拦截
-    setInterval(() => {
-        const editBtn = document.getElementById('tk-profile-edit-btn');
-        if (editBtn && !editBtn.dataset.forceBound) {
-            editBtn.dataset.forceBound = "true";
-            editBtn.onclick = (e) => {
-                e.stopPropagation();
-                try {
-                    const p = tkState.profile;
-                    const elName = document.getElementById('tk-edit-name');
-                    if(elName) elName.value = p.name || '';
-                    const elHandle = document.getElementById('tk-edit-handle');
-                    if(elHandle) elHandle.value = p.handle || '';
-                    const elBio = document.getElementById('tk-edit-bio');
-                    if(elBio) elBio.value = p.bio || '';
-                    const elPersona = document.getElementById('tk-edit-persona');
-                    if(elPersona) elPersona.value = p.persona || '';
-                    
-                    const elFollowing = document.getElementById('tk-edit-following');
-                    if(elFollowing) elFollowing.value = p.following || 0;
-                    const elFollowers = document.getElementById('tk-edit-followers');
-                    if(elFollowers) elFollowers.value = p.followers || 0;
-                    const elLikes = document.getElementById('tk-edit-likes');
-                    if(elLikes) elLikes.value = p.likes || 0;
-                    
-                    const sheet = document.getElementById('tk-edit-profile-sheet');
-                    if(sheet) window.openView(sheet);
-                } catch(err) {
-                    console.error('打开编辑资料报错:', err);
-                }
-            };
-        }
-    }, 1000);
-
 });
