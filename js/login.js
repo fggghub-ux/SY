@@ -2,7 +2,10 @@
     const SUPABASE_URL = 'https://xesofmxgvsnpldrjtxur.supabase.co';
     const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_CbaMneYIuVFIvUNiTtTgHQ_ouUMzmI5';
     const AUTH_SESSION_KEY = 'u2_auth_session_v1';
+    const AUTH_LOGOUT_EVENT_KEY = 'u2_auth_logout_event_v1';
     const OLD_ACTIVATION_KEY = 'u2_activation_granted_v1';
+    const AUTH_REQUEST_TIMEOUT_MS = 12000;
+    const AUTH_RECOVERY_DELAYS = [1000, 3000, 8000, 15000, 30000];
     const USERNAME_PATTERN = /^[a-z0-9_]{3,24}$/;
     const ACTIVATION_CODE_PATTERN = /^U2(?:-[A-Z2-9]{4}){4}$/;
 
@@ -10,6 +13,9 @@
     let mode = 'signin';
     let currentSession = null;
     let loginFocusTimer = null;
+    let authRecoveryPromise = null;
+    let authRecoveryTimer = null;
+    let authRecoveryAttempt = 0;
 
     function collectDom() {
         return {
@@ -109,16 +115,32 @@
     }
 
     async function request(path, options = {}) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), Number(options.timeoutMs) || AUTH_REQUEST_TIMEOUT_MS);
         const headers = {
             apikey: SUPABASE_PUBLISHABLE_KEY,
             'Content-Type': 'application/json',
             ...(options.headers || {})
         };
-        const response = await fetch(`${SUPABASE_URL}${path}`, {
-            method: options.method || 'POST',
-            headers,
-            body: options.body === undefined ? undefined : JSON.stringify(options.body)
-        });
+        let response;
+        try {
+            response = await fetch(`${SUPABASE_URL}${path}`, {
+                method: options.method || 'POST',
+                headers,
+                body: options.body === undefined ? undefined : JSON.stringify(options.body),
+                signal: controller.signal
+            });
+        } catch (error) {
+            if (error?.name === 'AbortError') {
+                const timeoutError = new Error('AUTH_REQUEST_TIMEOUT');
+                timeoutError.code = 'AUTH_REQUEST_TIMEOUT';
+                timeoutError.cause = error;
+                throw timeoutError;
+            }
+            throw error;
+        } finally {
+            clearTimeout(timeout);
+        }
         let payload = {};
         try {
             payload = await response.json();
@@ -146,10 +168,15 @@
     }
 
     async function refreshSession(session) {
-        const data = await request('/auth/v1/token?grant_type=refresh_token', {
-            body: { refresh_token: session.refresh_token }
-        });
-        return saveSession(data, session.username);
+        try {
+            const data = await request('/auth/v1/token?grant_type=refresh_token', {
+                body: { refresh_token: session.refresh_token }
+            });
+            return saveSession(data, session.username);
+        } catch (error) {
+            error.authPhase = 'refresh';
+            throw error;
+        }
     }
 
     async function ensureFreshSession(session) {
@@ -175,6 +202,67 @@
         }
         if (state.username && state.username !== freshSession.username) saveSession(freshSession, state.username);
         return state;
+    }
+
+    function isPermanentSessionError(error) {
+        const code = error?.code || error?.payload?.code || '';
+        if (['ACCOUNT_DISABLED', 'ACCOUNT_EXPIRED', 'PROFILE_MISSING', 'NOT_AUTHENTICATED'].includes(code)) return true;
+        if (Number(error?.status) === 401) return true;
+        return error?.authPhase === 'refresh' && Number(error?.status) === 400;
+    }
+
+    function cancelAuthRecovery() {
+        clearTimeout(authRecoveryTimer);
+        authRecoveryTimer = null;
+        authRecoveryAttempt = 0;
+    }
+
+    function scheduleAuthRecovery() {
+        if (authRecoveryTimer || !(currentSession || readSession())) return;
+        const delay = AUTH_RECOVERY_DELAYS[Math.min(authRecoveryAttempt, AUTH_RECOVERY_DELAYS.length - 1)];
+        authRecoveryAttempt += 1;
+        authRecoveryTimer = setTimeout(() => {
+            authRecoveryTimer = null;
+            if (document.visibilityState === 'hidden') return;
+            recoverSession({ releaseGateOnTransient: false });
+        }, delay);
+    }
+
+    async function recoverSession(options = {}) {
+        if (authRecoveryPromise) return authRecoveryPromise;
+        const session = currentSession || readSession();
+        if (!session) {
+            if (options.showLoginWhenMissing !== false) showLoginScreen({ focus: false });
+            return false;
+        }
+
+        currentSession = session;
+        authRecoveryPromise = (async () => {
+            try {
+                await authorizeSession(currentSession || session);
+                cancelAuthRecovery();
+                hideLoginScreen();
+                return true;
+            } catch (error) {
+                if (isPermanentSessionError(error)) {
+                    cancelAuthRecovery();
+                    clearSession();
+                    showLoginScreen({ focus: false });
+                    setMode('signin', { focus: false });
+                    setMessage(messageForError(error));
+                    return false;
+                }
+
+                currentSession = readSession() || currentSession || session;
+                if (options.releaseGateOnTransient) hideLoginScreen();
+                scheduleAuthRecovery();
+                console.warn('[auth] Temporary authorization failure; session retained:', error);
+                return false;
+            } finally {
+                authRecoveryPromise = null;
+            }
+        })();
+        return authRecoveryPromise;
     }
 
     function setBusy(busy) {
@@ -237,7 +325,8 @@
             ACCOUNT_DISABLED: '账号已被停用，请联系管理员。',
             ACCOUNT_EXPIRED: '账号已到期，请联系管理员。',
             PROFILE_MISSING: '账号尚未完成激活，请联系管理员。',
-            NOT_AUTHENTICATED: '登录状态已失效，请重新登录。'
+            NOT_AUTHENTICATED: '登录状态已失效，请重新登录。',
+            AUTH_REQUEST_TIMEOUT: '授权服务响应较慢，请稍后重试。'
         };
         if (messages[code]) return messages[code];
         if (error?.status === 400 && /credentials|login/i.test(error.message || '')) return '账号或密码错误。';
@@ -334,6 +423,7 @@
     async function logout() {
         const session = currentSession || readSession();
         clearSession();
+        window.localStorage.setItem(AUTH_LOGOUT_EVENT_KEY, JSON.stringify({ at: Date.now() }));
         showLoginScreen();
         setMode('signin');
         if (!session?.access_token) return;
@@ -376,11 +466,25 @@
         });
         dom?.noticeLink?.addEventListener('click', () => window.u2AboutInfoModal?.open('disclaimer'));
         window.addEventListener('storage', (event) => {
-            if (event.key === AUTH_SESSION_KEY && !event.newValue) {
+            if (event.key === AUTH_SESSION_KEY && event.newValue) {
+                currentSession = readSession();
+                return;
+            }
+            if (event.key === AUTH_LOGOUT_EVENT_KEY && event.newValue) {
+                cancelAuthRecovery();
                 clearSession();
                 showLoginScreen();
                 setMode('signin');
             }
+        });
+
+        const resumeAuth = () => {
+            if (!(currentSession || readSession())) return;
+            recoverSession({ releaseGateOnTransient: false, showLoginWhenMissing: false });
+        };
+        window.addEventListener('pageshow', resumeAuth);
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') resumeAuth();
         });
     }
 
@@ -402,13 +506,7 @@
                 return;
             }
             currentSession = savedSession;
-            await authorizeSession(savedSession);
-            hideLoginScreen();
-        } catch (error) {
-            console.warn('[auth] Saved session rejected:', error);
-            clearSession();
-            showLoginScreen({ focus: false });
-            setMessage(messageForError(error));
+            await recoverSession({ releaseGateOnTransient: true });
         } finally {
             window.markAuthGateSettled?.();
         }

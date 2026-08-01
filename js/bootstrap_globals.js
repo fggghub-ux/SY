@@ -138,7 +138,7 @@
                     </div>
                     ` : ''}
                 </div>
-                <button class="api-error-button" onclick="this.closest('.api-error-overlay').classList.remove('show'); setTimeout(() => this.closest('.api-error-overlay').remove(), 300)">OK</button>
+                <button class="api-error-button" onclick="this.closest('.api-error-overlay').classList.remove('show'); setTimeout(() => this.closest('.api-error-overlay').remove(), 300)">确定</button>
             </div>
         `;
 
@@ -178,14 +178,14 @@
             try {
                 rawBody = await clonedResponse.text();
             } catch (e) {
-                rawBody = '[Failed to read response body]';
+                rawBody = '[无法读取接口返回内容]';
             }
             
             // 弹出错误提示
             setTimeout(() => {
                 showApiErrorPopup(
-                    'API Request Failed', 
-                    `HTTP Error: ${response.status} ${response.statusText}`, 
+                    'API 请求失败', 
+                    `接口返回错误状态：HTTP ${response.status}`, 
                     rawBody
                 );
             }, 0);
@@ -199,8 +199,8 @@
             if (!silentErrors && !isAborted) {
                 setTimeout(() => {
                     showApiErrorPopup(
-                        'Network Error',
-                        'Failed to fetch. Please check your network connection or CORS policy.',
+                        '网络连接失败',
+                        '无法连接 API 接口，请检查接口地址、网络连接、代理服务或跨域设置。',
                         error.message || String(error)
                     );
                 }, 0);

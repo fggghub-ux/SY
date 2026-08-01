@@ -1678,8 +1678,7 @@
             this.view.style.display = 'flex';
             window.requestAnimationFrame(() => {
                 this.view.classList.add('active');
-                this.switchTab('food');
-                this.updateIndicator();
+                this.switchTab('food', { behavior: 'auto' });
             });
             document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#f7f7f5');
         }
@@ -1712,7 +1711,7 @@
                 const index = this.tabs.indexOf(targetTab);
                 this.panelsWrap.scrollTo({
                     left: index * this.panelsWrap.clientWidth,
-                    behavior: 'smooth'
+                    behavior: options.behavior || 'smooth'
                 });
             }
 

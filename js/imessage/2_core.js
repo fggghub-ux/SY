@@ -46,6 +46,7 @@ window.imData = {
 };
 
 window.imApp = window.imApp || {};
+window.imApp.DEFAULT_STATUS_PROMPT = '固定使用简体中文，写角色此刻没有说出口的三句真实心声。每句约10个汉字，每行一句，共三行；不要添加序号、引号、标题、前缀或解释。';
 window.imApp.DEFAULT_SINGLE_CHAT_COT_PROMPT = '我该怎么回？';
 
 window.imApp.scopeUserCss = function(css, scope) {
@@ -640,12 +641,20 @@ window.imApp.normalizeFriendData = function(friend) {
     normalized.showTimestamp = !!normalized.showTimestamp;
     normalized.timeAware = normalized.timeAware !== false;
     normalized.allowRoleRecall = normalized.allowRoleRecall !== false;
+    normalized.autoExpandTranslation = normalized.autoExpandTranslation === true;
+    normalized.showGroupUserAvatar = isGroupChat && normalized.showGroupUserAvatar === true;
     const cotDefaultVersion = Number(normalized.cotDefaultVersion) || 0;
     normalized.cotEnabled = cotDefaultVersion >= 2 && normalized.cotEnabled === true;
     normalized.cotDefaultVersion = 2;
     normalized.cotPrompt = typeof normalized.cotPrompt === 'string' ? normalized.cotPrompt : '';
     normalized.statusPromptEnabled = normalized.statusPromptEnabled === true;
     normalized.statusPrompt = typeof normalized.statusPrompt === 'string' ? normalized.statusPrompt : '';
+    if (normalized.statusPrompt.trim() === '生成角色此刻没有说出口的心声。内容贴合本轮聊天、人设、关系进展和已绑定世界书。') {
+        normalized.statusPrompt = window.imApp.DEFAULT_STATUS_PROMPT;
+    }
+    if (normalized.statusPromptEnabled && !normalized.statusPrompt.trim()) {
+        normalized.statusPrompt = window.imApp.DEFAULT_STATUS_PROMPT;
+    }
     normalized.offlineStreamEnabled = normalized.offlineStreamEnabled !== false;
     normalized.offlineRequestReasoning = true;
     normalized.offlineMaxResponseTokens = 30000;

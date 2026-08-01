@@ -155,6 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnFamily = document.getElementById('pay-action-family');
     const familySheet = document.getElementById('pay-family-sheet');
     const familyListEl = document.getElementById('pay-family-list');
+    let payUiRendered = false;
 
     // --- App Launch/Close ---
     // Launch logic is now handled in HTML via onclick, but we can hook into render here
@@ -164,7 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 appContainer.scrollTop = 0;
                 appContainer.scrollLeft = 0;
             }
-            renderPayUI();
+            if (!payUiRendered) renderPayUI();
         });
     }
 
@@ -256,6 +257,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Rendering Logic ---
     function renderPayUI() {
+        payUiRendered = true;
         const currentCard = getCurrentCard();
         
         // Render Main Card

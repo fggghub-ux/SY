@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const groupContextEnabledToggle = document.getElementById('group-context-enabled-toggle');
     const groupContextLimitInput = document.getElementById('group-context-limit-input');
     const groupTimeAwareToggle = document.getElementById('group-time-aware-toggle');
+    const groupShowUserAvatarToggle = document.getElementById('group-show-user-avatar-toggle');
     const groupManualSummaryBtn = document.getElementById('group-manual-summary-btn');
     const groupMemoryShortTermBtn = document.getElementById('group-memory-shortterm-btn');
     const groupMemoryLongTermBtn = document.getElementById('group-memory-longterm-btn');
@@ -680,6 +681,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (groupTimeAwareToggle) {
             groupTimeAwareToggle.checked = currentViewingGroup.timeAware !== false;
+        }
+        if (groupShowUserAvatarToggle) {
+            groupShowUserAvatarToggle.checked = currentViewingGroup.showGroupUserAvatar === true;
         }
 
         refreshGroupMemoryCounts(currentViewingGroup);
@@ -1729,6 +1733,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const timeAware = groupTimeAwareToggle
                 ? !!groupTimeAwareToggle.checked
                 : currentViewingGroup.timeAware !== false;
+            const showGroupUserAvatar = groupShowUserAvatarToggle?.checked === true;
             let limit = groupContextLimitInput ? Number(groupContextLimitInput.value) : 100;
 
             if (!Number.isFinite(limit) || limit <= 0) {
@@ -1747,6 +1752,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 targetGroup.memory.context.enabled = enabled;
                 targetGroup.memory.context.limit = limit;
                 targetGroup.timeAware = timeAware;
+                targetGroup.showGroupUserAvatar = showGroupUserAvatar;
             }, { silent: true });
 
             if (!saved) {
@@ -1754,6 +1760,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            const latestGroup = resolveLatestGroup(currentViewingGroup) || currentViewingGroup;
+            const activePage = document.getElementById(`chat-interface-${latestGroup.id}`);
+            const activeContainer = activePage?.querySelector('.ins-chat-messages');
+            if (activeContainer && window.imChat?.syncGroupUserAvatarState) {
+                window.imChat.syncGroupUserAvatarState(latestGroup, activeContainer);
+            }
             closeView(groupContextSettingsSheet);
             if (window.showToast) window.showToast('设置已保存');
         });

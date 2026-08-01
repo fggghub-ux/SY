@@ -2333,6 +2333,12 @@
   margin-bottom: 16px;
   min-height: 40px;
   position: relative;
+  white-space: pre-wrap;
+  word-break: break-word;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .gmp-inner-voice::before {
@@ -3240,6 +3246,9 @@
         const themeFontFaceRegistry = new Map();
         const themeFontBaseSizes = new Set();
         const themeFontObservedSurfaces = new WeakSet();
+        const themeFontCapturedSurfaces = new WeakSet();
+        const themeFontPendingFullSurfaces = new WeakSet();
+        const themeFontDeferredRoots = new WeakMap();
         const themeFontPendingRoots = new Set();
         let themeFontSaveTimer = null;
         let themeFontSelectedFile = null;
@@ -3516,6 +3525,20 @@
             return null;
         }
 
+        function getThemeFontRegisteredSurfaceFor(node) {
+            if (!(node instanceof Element)) return null;
+            return node.matches(THEME_FONT_SURFACE_CANDIDATE_SELECTOR)
+                ? node
+                : node.closest(THEME_FONT_SURFACE_CANDIDATE_SELECTOR);
+        }
+
+        function deferThemeFontCapture(root) {
+            const surface = getThemeFontRegisteredSurfaceFor(root);
+            if (!surface) return;
+            if (!themeFontDeferredRoots.has(surface)) themeFontDeferredRoots.set(surface, new Set());
+            themeFontDeferredRoots.get(surface).add(root);
+        }
+
         function flushThemeFontCaptureQueue() {
             themeFontCaptureFrame = 0;
             const roots = Array.from(themeFontPendingRoots);
@@ -3524,19 +3547,64 @@
             roots.forEach(root => {
                 if (!root.isConnected || !getThemeFontActiveSurfaceFor(root)) return;
                 if (captureThemeFontSizesIn(root)) addedSize = true;
+                if (themeFontPendingFullSurfaces.has(root)) {
+                    themeFontPendingFullSurfaces.delete(root);
+                    themeFontCapturedSurfaces.add(root);
+                    themeFontDeferredRoots.delete(root);
+                    root.querySelectorAll(THEME_FONT_SURFACE_CANDIDATE_SELECTOR).forEach(surface => {
+                        if (!getThemeFontActiveSurfaceFor(surface)) return;
+                        themeFontCapturedSurfaces.add(surface);
+                        themeFontDeferredRoots.delete(surface);
+                    });
+                }
             });
             if (addedSize) scheduleThemeFontScaleCssRefresh();
         }
 
-        function queueThemeFontCapture(root) {
-            if (!(root instanceof Element) || !getThemeFontActiveSurfaceFor(root)) return;
+        function queueThemeFontCapture(root, { fullSurface = false } = {}) {
+            if (!(root instanceof Element)) return;
+            if (!getThemeFontActiveSurfaceFor(root)) {
+                deferThemeFontCapture(root);
+                return;
+            }
+            if (fullSurface) themeFontPendingFullSurfaces.add(root);
             themeFontPendingRoots.add(root);
             if (themeFontCaptureFrame) return;
             themeFontCaptureFrame = window.requestAnimationFrame(flushThemeFontCaptureQueue);
         }
 
+        function queueThemeFontSurfaceActivation(surface) {
+            if (!(surface instanceof Element) || !getThemeFontActiveSurfaceFor(surface)) return;
+            if (!themeFontCapturedSurfaces.has(surface)) {
+                queueThemeFontCapture(surface, { fullSurface: true });
+                return;
+            }
+            const deferredRoots = themeFontDeferredRoots.get(surface);
+            if (!deferredRoots) return;
+            themeFontDeferredRoots.delete(surface);
+            deferredRoots.forEach(root => queueThemeFontCapture(root));
+        }
+
+        function queueThemeFontActivatedSurfaceTree(surface) {
+            if (!(surface instanceof Element) || !getThemeFontActiveSurfaceFor(surface)) return;
+            if (!themeFontCapturedSurfaces.has(surface)) {
+                queueThemeFontCapture(surface, { fullSurface: true });
+                return;
+            }
+            queueThemeFontSurfaceActivation(surface);
+            surface.querySelectorAll(THEME_FONT_SURFACE_CANDIDATE_SELECTOR).forEach(candidate => {
+                if (getThemeFontActiveSurfaceFor(candidate)) queueThemeFontSurfaceActivation(candidate);
+            });
+        }
+
         function queueAllActiveThemeFontRoots() {
-            getThemeFontActiveRoots().forEach(queueThemeFontCapture);
+            getThemeFontActiveRoots().forEach(root => {
+                if (root.matches(THEME_FONT_SURFACE_CANDIDATE_SELECTOR)) {
+                    queueThemeFontSurfaceActivation(root);
+                } else {
+                    queueThemeFontCapture(root);
+                }
+            });
         }
 
         function observeThemeFontSurface(surface) {
@@ -3561,6 +3629,7 @@
             let addedSize = false;
             getThemeFontActiveRoots().forEach(root => {
                 if (captureThemeFontSizesIn(root)) addedSize = true;
+                if (root.matches(THEME_FONT_SURFACE_CANDIDATE_SELECTOR)) themeFontCapturedSurfaces.add(root);
             });
             if (addedSize) rebuildThemeFontScaleCss();
 
@@ -3572,7 +3641,7 @@
                         queueAllActiveThemeFontRoots();
                         return;
                     }
-                    queueThemeFontCapture(target);
+                    queueThemeFontActivatedSurfaceTree(target);
                 });
             });
             registerThemeFontSurfacesIn(document.body);
@@ -3582,7 +3651,11 @@
                     mutation.addedNodes.forEach(node => {
                         if (!(node instanceof Element)) return;
                         registerThemeFontSurfacesIn(node);
-                        queueThemeFontCapture(node);
+                        if (node.matches(THEME_FONT_SURFACE_CANDIDATE_SELECTOR)) {
+                            queueThemeFontSurfaceActivation(node);
+                        } else {
+                            queueThemeFontCapture(node);
+                        }
                     });
                 });
             });
@@ -5334,7 +5407,7 @@
                         } catch (err) {
                             console.error('Import failed:', err);
                             hideOperation();
-                            showToast('导入失败，备份文件可能已损坏');
+                            showToast(err?.message || '导入失败，当前数据未替换');
                             setBusy(importDataBtn, false);
                         }
                     })();
@@ -5361,7 +5434,7 @@
                         console.error('Import preview failed:', err);
                         resetPreview();
                         hideOperation();
-                        showToast('文件格式错误或备份已损坏');
+                        showToast(err?.message || '文件格式错误或备份已损坏');
                     } finally {
                         setBusy(importDataBtn, false);
                         e.target.value = '';

@@ -3697,8 +3697,6 @@ ${direction || '无'}
         this.view.style.display = 'flex';
         this.view.classList.add('active');
         this.isOpen = true;
-        this.renderUserProfile();
-        this.renderHomeCatalog();
         this.switchTab('home');
         setTimeout(() => this.updateNavIndicator(), 0);
         document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#000000');

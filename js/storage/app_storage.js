@@ -7,6 +7,7 @@
 (function() {
     const DB_NAME = 'iiso_app_storage';
     const OPTIMIZATION_SHADOW_DB_NAME = 'iiso_app_storage_optimization_shadow_v8';
+    const IMPORT_SHADOW_DB_NAME = 'iiso_app_storage_import_shadow_v8';
     const DB_VERSION = 7;
     const STORAGE_SCHEMA_VERSION = 8;
     const BACKUP_APP_NAME = 'u2phone';
@@ -62,6 +63,7 @@
         lastCacheCleanup: null
     };
     let storageReadyPromise = null;
+    let replacementInProgress = false;
 
     function isTransientIndexedDbError(error) {
         const name = String(error?.name || '');
@@ -988,6 +990,7 @@
     }
 
     async function commitDomain(name, reducer, options = {}) {
+        if (replacementInProgress) throw new Error('Storage replacement is in progress.');
         const domainName = String(name || '').trim();
         if (!domainName) throw new Error('Domain name is required.');
         if (storageReadyPromise) await storageReadyPromise;
@@ -1067,6 +1070,7 @@
     }
 
     async function commitRecords(operations = [], options = {}) {
+        if (replacementInProgress) throw new Error('Storage replacement is in progress.');
         if (storageReadyPromise) await storageReadyPromise;
         const safeOperations = (Array.isArray(operations) ? operations : []).filter((operation) => {
             return operation && Object.values(STORES).includes(operation.store);
@@ -2903,7 +2907,7 @@
                 serialized.dataUrl = await blobToDataUrl(serialized.blob);
                 delete serialized.blob;
             } catch (err) {
-                console.warn(`Failed to convert asset ${serialized.id} to dataUrl`, err);
+                throw new Error(`Asset ${serialized.id || 'unknown'} could not be included in the backup: ${err?.message || err}`);
             }
         }
 
@@ -2918,7 +2922,7 @@
                 restored.blob = dataUrlToBlob(restored.dataUrl);
                 delete restored.dataUrl;
             } catch (err) {
-                console.warn(`Failed to restore asset ${restored.id}`, err);
+                throw new Error(`Backup asset ${restored.id || 'unknown'} contains invalid image data.`);
             }
         }
 
@@ -3058,7 +3062,9 @@
             };
         }
 
-        if (payload.globalData || payload.imessage || payload.assets) {
+        const hasLegacyImessageRoot = ['friends', 'messages', 'moments', 'momentMessages', 'stickers', 'momentsCoverUrl']
+            .some((key) => Object.prototype.hasOwnProperty.call(payload, key));
+        if (payload.globalData || payload.imessage || payload.assets || hasLegacyImessageRoot) {
             return {
                 format: 'legacy',
                 payload,
@@ -3079,6 +3085,250 @@
         throw new Error('Unsupported backup format.');
     }
 
+    const BACKUP_STORE_KEY_FIELDS = {
+        [STORES.meta]: 'key',
+        [STORES.settings]: 'key',
+        [STORES.accounts]: 'id',
+        [STORES.appState]: 'key',
+        [STORES.theme]: 'key',
+        [STORES.worldbooks]: 'key',
+        [STORES.assets]: 'id',
+        [STORES.imFriends]: 'id',
+        [STORES.imChatSummaries]: 'friendId',
+        [STORES.imMessages]: 'id',
+        [STORES.imMoments]: 'id',
+        [STORES.imMomentMessages]: 'id',
+        [STORES.imStickers]: 'categoryName',
+        [STORES.libraryBooks]: 'id',
+        [STORES.libraryBookContent]: 'id',
+        [STORES.libraryPlaylists]: 'id',
+        [STORES.libraryTracks]: 'id',
+        [STORES.libraryDailyStats]: 'id',
+        [STORES.appDomains]: 'name',
+        [STORES.xPosts]: 'id',
+        [STORES.xThreads]: 'postId',
+        [STORES.xDms]: 'id',
+        [STORES.storageCheckpoints]: 'id'
+    };
+
+    function createEmptyBackupStores() {
+        return Object.fromEntries(BACKUP_STORES.map((storeName) => [storeName, []]));
+    }
+
+    function upsertBackupRecord(storesData, storeName, record) {
+        const keyField = BACKUP_STORE_KEY_FIELDS[storeName];
+        const key = record?.[keyField];
+        if (key === undefined || key === null || key === '') return false;
+        const rows = storesData[storeName];
+        const existingIndex = rows.findIndex((item) => String(item?.[keyField]) === String(key));
+        if (existingIndex >= 0) rows[existingIndex] = record;
+        else rows.push(record);
+        return true;
+    }
+
+    function normalizeImportRecord(storeName, record, index = 0) {
+        if (!record || typeof record !== 'object' || Array.isArray(record)) {
+            throw new Error(`Invalid ${storeName} record at index ${index}.`);
+        }
+        const next = sanitizePersistentValue(cloneDeep(record));
+        if (storeName === STORES.assets && record.dataUrl) {
+            const restored = deserializeBackupRecord(storeName, record);
+            if (!restored?.id) throw new Error(`Backup record ${storeName}[${index}] is missing id.`);
+            if (typeof Blob !== 'undefined' && !(restored.blob instanceof Blob)) {
+                throw new Error(`Backup asset ${restored.id} contains invalid image data.`);
+            }
+            return restored;
+        }
+        if (storeName === STORES.assets && next.blob && typeof Blob !== 'undefined' && !(next.blob instanceof Blob)) {
+            throw new Error(`Backup asset ${next.id || index} contains an invalid blob.`);
+        }
+        if (storeName === STORES.imChatSummaries && next.friendId == null && next.id != null) next.friendId = String(next.id);
+        if (storeName === STORES.imMessages) {
+            const friendId = String(next.friendId ?? next.chatId ?? 'legacy');
+            return normalizeMessageRecord(friendId, next, next.order ?? index);
+        }
+        if (storeName === STORES.imMoments && next.id == null) next.id = `legacy_moment_${next.time || next.timestamp || index}`;
+        if (storeName === STORES.imMomentMessages && next.id == null) next.id = `legacy_moment_message_${next.time || next.timestamp || index}`;
+        if (storeName === STORES.imStickers && next.categoryName == null) next.categoryName = String(next.name ?? next.title ?? `legacy_${index}`);
+        if (storeName === STORES.appDomains && next.name == null && next.key != null) next.name = String(next.key);
+        if (storeName === STORES.xPosts && next.id == null) next.id = `legacy_x_post_${next.createdAt || index}`;
+        if (storeName === STORES.xThreads && next.postId == null && next.id != null) next.postId = String(next.id);
+        if (storeName === STORES.xDms && next.id == null) next.id = String(next.charId ?? `legacy_x_dm_${index}`);
+        const keyField = BACKUP_STORE_KEY_FIELDS[storeName];
+        if (next[keyField] === undefined || next[keyField] === null || next[keyField] === '') {
+            throw new Error(`Backup record ${storeName}[${index}] is missing ${keyField}.`);
+        }
+        return next;
+    }
+
+    function mergeLegacyStorageRowsIntoSnapshot(storesData, localStorageRows = []) {
+        const rows = Array.isArray(localStorageRows) ? localStorageRows.filter((row) => row?.key) : [];
+        if (rows.length === 0) return;
+        const settingsMap = {
+            u2_userState: 'userState',
+            u2_apiConfig: 'apiConfig',
+            u2_minimaxConfig: 'minimaxConfig',
+            u2_apiPresets: 'apiPresets',
+            u2_fetchedModels: 'fetchedModels',
+            u2_assistiveBallSettings: 'assistiveBallSettings',
+            u2_accounts: 'accounts',
+            u2_currentAccountId: 'currentAccountId',
+            u2_themeState: 'themeState',
+            u2_worldBooks: 'worldBooks',
+            u2_wbGroups: 'wbGroups'
+        };
+        const existingSettings = storesData[STORES.appDomains].find((row) => row?.name === 'settings');
+        const settings = existingSettings?.value && typeof existingSettings.value === 'object'
+            ? cloneDeep(existingSettings.value)
+            : {};
+        const existingLegacy = storesData[STORES.appDomains].find((row) => row?.name === 'legacy');
+        const legacy = existingLegacy?.value && typeof existingLegacy.value === 'object'
+            ? cloneDeep(existingLegacy.value)
+            : {};
+        rows.forEach((row) => {
+            if (row.key === 'u2_mockAuthSession' || row.key === 'u2_appState') return;
+            const value = parseLegacyRawValue(row.value);
+            const settingKey = settingsMap[row.key];
+            if (settingKey && !Object.prototype.hasOwnProperty.call(settings, settingKey)) settings[settingKey] = value;
+            else if (!settingKey && !Object.prototype.hasOwnProperty.call(legacy, row.key)) legacy[row.key] = value;
+        });
+        const now = Date.now();
+        upsertBackupRecord(storesData, STORES.appDomains, {
+            name: 'settings', schemaVersion: STORAGE_SCHEMA_VERSION, revision: 1, updatedAt: now, value: settings
+        });
+        upsertBackupRecord(storesData, STORES.appDomains, {
+            name: 'legacy', schemaVersion: STORAGE_SCHEMA_VERSION, revision: 1, updatedAt: now, value: legacy
+        });
+        const oldAppState = parseLegacyBackupJson(rows, 'u2_appState');
+        if (oldAppState && typeof oldAppState === 'object') {
+            Object.entries(oldAppState).forEach(([name, value]) => {
+                if (!name || !value || typeof value !== 'object') {
+                    legacy[`u2_appState_${name}`] = sanitizePersistentValue(value);
+                    return;
+                }
+                if (!storesData[STORES.appDomains].some((row) => row?.name === name)) {
+                    storesData[STORES.appDomains].push({
+                        name, schemaVersion: STORAGE_SCHEMA_VERSION, revision: 1, updatedAt: now,
+                        value: sanitizePersistentValue(cloneDeep(value))
+                    });
+                }
+            });
+        }
+    }
+
+    function addLegacyImessageToSnapshot(storesData, imessage = {}) {
+        const safe = imessage && typeof imessage === 'object' ? imessage : {};
+        const directMessages = Array.isArray(safe.messages) ? safe.messages : [];
+        (Array.isArray(safe.friends) ? safe.friends : []).forEach((friend, friendIndex) => {
+            if (!friend || friend.id == null) return;
+            const friendId = String(friend.id);
+            const meta = sanitizePersistentValue(cloneDeep(friend));
+            const embeddedMessages = Array.isArray(meta.messages) ? meta.messages : [];
+            delete meta.messages;
+            meta.id = friendId;
+            upsertBackupRecord(storesData, STORES.imFriends, meta);
+            const allFriendMessages = [...embeddedMessages, ...directMessages.filter((message) => String(message?.friendId ?? message?.chatId ?? '') === friendId)];
+            allFriendMessages.forEach((message, index) => {
+                upsertBackupRecord(storesData, STORES.imMessages, normalizeMessageRecord(friendId, message, index));
+            });
+            upsertBackupRecord(storesData, STORES.imChatSummaries, normalizeChatSummary(friendId, {
+                lastMessagePreview: friend.lastMessagePreview,
+                lastMessageTimestamp: friend.lastMessageTimestamp,
+                messageCount: allFriendMessages.length || friend.messageCount,
+                unreadCount: friend.unreadCount
+            }));
+        });
+        directMessages.forEach((message, index) => {
+            const friendId = String(message?.friendId ?? message?.chatId ?? 'legacy');
+            upsertBackupRecord(storesData, STORES.imMessages, normalizeMessageRecord(friendId, message, index));
+        });
+        (Array.isArray(safe.moments) ? safe.moments : []).forEach((record, index) => {
+            upsertBackupRecord(storesData, STORES.imMoments, normalizeImportRecord(STORES.imMoments, record, index));
+        });
+        (Array.isArray(safe.momentMessages) ? safe.momentMessages : []).forEach((record, index) => {
+            upsertBackupRecord(storesData, STORES.imMomentMessages, normalizeImportRecord(STORES.imMomentMessages, record, index));
+        });
+        (Array.isArray(safe.stickers) ? safe.stickers : []).forEach((record, index) => {
+            upsertBackupRecord(storesData, STORES.imStickers, normalizeImportRecord(STORES.imStickers, record, index));
+        });
+        if (safe.momentsCoverUrlMeta !== undefined) {
+            upsertBackupRecord(storesData, STORES.meta, { key: META_KEYS.imMomentsCoverAssetId, value: safe.momentsCoverUrlMeta });
+        } else if (safe.momentsCoverUrl) {
+            upsertBackupRecord(storesData, STORES.meta, {
+                key: META_KEYS.imMomentsCoverAssetId,
+                value: { externalUrl: safe.momentsCoverUrl }
+            });
+        }
+    }
+
+    function buildLegacyImportSnapshot(payload = {}) {
+        const storesData = createEmptyBackupStores();
+        const now = Date.now();
+        const normalized = normalizeGlobalPayload(cloneDeep(payload.globalData || {}));
+        const settingsValue = {
+            userState: normalized.userState,
+            accounts: normalized.accounts,
+            currentAccountId: normalized.currentAccountId,
+            apiConfig: normalized.apiConfig,
+            apiPresets: normalized.apiPresets,
+            fetchedModels: normalized.fetchedModels,
+            assistiveBallSettings: normalized.assistiveBallSettings,
+            themeState: normalized.themeState,
+            wbGroups: normalized.wbGroups,
+            worldBooks: normalized.worldBooks
+        };
+        Object.entries(settingsValue).forEach(([key, value]) => {
+            if (key !== 'accounts') storesData[STORES.settings].push({ key, value: sanitizePersistentValue(cloneDeep(value)) });
+        });
+        storesData[STORES.accounts].push({ id: '__all__', value: cloneDeep(normalized.accounts) });
+        storesData[STORES.appDomains].push({
+            name: 'settings', schemaVersion: STORAGE_SCHEMA_VERSION, revision: 1, updatedAt: now,
+            value: sanitizePersistentValue(cloneDeep(settingsValue))
+        });
+        storesData[STORES.appDomains].push({
+            name: 'legacy', schemaVersion: STORAGE_SCHEMA_VERSION, revision: 1, updatedAt: now, value: {}
+        });
+        Object.entries(normalized.appState || {}).forEach(([name, value]) => {
+            storesData[STORES.appDomains].push({
+                name, schemaVersion: STORAGE_SCHEMA_VERSION, revision: 1, updatedAt: now,
+                value: sanitizePersistentValue(cloneDeep(value))
+            });
+        });
+        const imessage = payload.imessage && typeof payload.imessage === 'object' ? payload.imessage : payload;
+        addLegacyImessageToSnapshot(storesData, imessage);
+        (Array.isArray(payload.assets) ? payload.assets : []).forEach((record, index) => {
+            upsertBackupRecord(storesData, STORES.assets, normalizeImportRecord(STORES.assets, record, index));
+        });
+        storesData[STORES.meta].push({ key: META_KEYS.schemaVersion, value: STORAGE_SCHEMA_VERSION });
+        return { stores: storesData, localStorage: [] };
+    }
+
+    function prepareSnapshotForImport(validation) {
+        const source = validation.format === 'legacy'
+            ? buildLegacyImportSnapshot(validation.payload)
+            : validation.payload;
+        const storesData = createEmptyBackupStores();
+        BACKUP_STORES.forEach((storeName) => {
+            const records = Array.isArray(source.stores?.[storeName]) ? source.stores[storeName] : [];
+            records.forEach((record, index) => {
+                upsertBackupRecord(storesData, storeName, normalizeImportRecord(storeName, record, index));
+            });
+        });
+        mergeLegacyStorageRowsIntoSnapshot(storesData, source.localStorage);
+
+        const oldAppStateIndex = storesData[STORES.settings].findIndex((row) => row?.key === 'appState');
+        if (oldAppStateIndex >= 0) {
+            const oldAppState = storesData[STORES.settings][oldAppStateIndex]?.value;
+            if (oldAppState && typeof oldAppState === 'object') {
+                const syntheticRows = [{ key: 'u2_appState', value: JSON.stringify(oldAppState) }];
+                mergeLegacyStorageRowsIntoSnapshot(storesData, syntheticRows);
+            }
+            storesData[STORES.settings].splice(oldAppStateIndex, 1);
+        }
+        upsertBackupRecord(storesData, STORES.meta, { key: META_KEYS.schemaVersion, value: STORAGE_SCHEMA_VERSION });
+        return { stores: storesData, localStorage: [] };
+    }
+
     function inspectBackupPayload(payload = {}) {
         return validateBackupPayload(payload).summary;
     }
@@ -3089,6 +3339,89 @@
         } catch (e) {}
         const databaseDeleted = await clearAllData();
         return { databaseDeleted };
+    }
+
+    async function writeSnapshotToConnection(db, snapshot = {}, progressCallback) {
+        const signatures = {};
+        for (let index = 0; index < BACKUP_STORES.length; index += 1) {
+            const storeName = BACKUP_STORES[index];
+            const rows = Array.isArray(snapshot.stores?.[storeName]) ? snapshot.stores[storeName] : [];
+            const keyField = BACKUP_STORE_KEY_FIELDS[storeName];
+            const orderedRows = rows.slice().sort((left, right) => String(left?.[keyField] ?? '').localeCompare(String(right?.[keyField] ?? '')));
+            reportProgress(progressCallback, `校验并写入 ${storeName}...`, 12 + ((index + 1) / BACKUP_STORES.length) * 58);
+            await replaceConnectionStore(db, storeName, orderedRows);
+            const copiedRows = await getAllFromConnection(db, storeName);
+            const expected = await buildStoreSignature(storeName, orderedRows);
+            const actual = await buildStoreSignature(storeName, copiedRows);
+            if (expected.count !== actual.count || expected.bytes !== actual.bytes || expected.checksum !== actual.checksum) {
+                throw new Error(`Import verification failed for ${storeName}.`);
+            }
+            signatures[storeName] = actual;
+        }
+        return signatures;
+    }
+
+    async function promoteImportShadow(shadowDb, importId, progressCallback) {
+        const currentDb = await openDb();
+        try {
+            currentDb.close();
+        } catch (error) {}
+        dbPromise = null;
+        reportProgress(progressCallback, '正在安全切换数据库...', 76);
+        const deleted = await deleteDatabaseSafe(DB_NAME);
+        if (!deleted.deleted) {
+            throw new Error(deleted.reason === 'blocked'
+                ? '数据库正被其他页面占用，请关闭本项目的其他标签页后重试。'
+                : `Current database could not be replaced: ${deleted.reason}`);
+        }
+        const replacementDb = await openDb();
+        await copyDatabaseContents(shadowDb, replacementDb, progressCallback, 78, 19);
+        await setConnectionMeta(replacementDb, 'import_restore_complete', { importId, restoredAt: Date.now() });
+        return true;
+    }
+
+    async function openExistingImportShadowDatabase() {
+        if (!window.indexedDB) return null;
+        if (typeof window.indexedDB.databases === 'function') {
+            try {
+                const databases = await window.indexedDB.databases();
+                if (!databases.some((item) => item?.name === IMPORT_SHADOW_DB_NAME)) return null;
+            } catch (error) {}
+        }
+        const db = await createDbConnection(IMPORT_SHADOW_DB_NAME);
+        const marker = await new Promise((resolve, reject) => {
+            const request = db.transaction(STORES.meta, 'readonly').objectStore(STORES.meta).get('import_shadow_ready');
+            request.onsuccess = () => resolve(request.result?.value || null);
+            request.onerror = () => reject(request.error);
+        });
+        if (!marker?.importId) {
+            db.close();
+            await deleteDatabaseSafe(IMPORT_SHADOW_DB_NAME);
+            return null;
+        }
+        return { db, marker };
+    }
+
+    async function recoverImportShadowIfNeeded() {
+        const shadow = await openExistingImportShadowDatabase();
+        if (!shadow) return false;
+        const mainDb = await openDb();
+        const currentMarker = await new Promise((resolve, reject) => {
+            const request = mainDb.transaction(STORES.meta, 'readonly').objectStore(STORES.meta).get('import_restore_complete');
+            request.onsuccess = () => resolve(request.result?.value || null);
+            request.onerror = () => reject(request.error);
+        });
+        if (!currentMarker || currentMarker.importId !== shadow.marker.importId) {
+            await copyDatabaseContents(shadow.db, mainDb, null);
+            await setConnectionMeta(mainDb, 'import_restore_complete', {
+                importId: shadow.marker.importId,
+                restoredAt: Date.now(),
+                recoveredAtStartup: true
+            });
+        }
+        shadow.db.close();
+        await deleteDatabaseSafe(IMPORT_SHADOW_DB_NAME);
+        return true;
     }
 
     async function restoreBackupSnapshot(snapshot = {}, progressCallback) {
@@ -3196,6 +3529,8 @@
     }
 
     async function exportAllData(progressCallback) {
+        reportProgress(progressCallback, '正在完成待保存数据...', 0);
+        if (!await flushPendingWrites()) throw new Error('Pending writes could not be completed before export.');
         const snapshot = await collectBackupSnapshot(progressCallback);
         const blob = await serializeBackupBlob(snapshot, progressCallback);
         reportProgress(progressCallback, '导出完成', 100);
@@ -3204,14 +3539,56 @@
 
     async function importAllData(payload = {}, progressCallback) {
         const validation = validateBackupPayload(payload);
-
-        if (validation.format === 'snapshot') {
-            return restoreBackupSnapshot(validation.payload, progressCallback);
+        reportProgress(progressCallback, '正在预迁移并校验备份...', 3);
+        const prepared = prepareSnapshotForImport(validation);
+        const approximateBytes = estimateJsonBytes(prepared);
+        if (navigator.storage?.estimate) {
+            const estimate = await navigator.storage.estimate();
+            const usage = Math.max(0, Number(estimate?.usage) || 0);
+            const quota = Math.max(0, Number(estimate?.quota) || 0);
+            const required = Math.max(4 * 1024 * 1024, Math.ceil(approximateBytes * 1.2));
+            if (quota > 0 && Math.max(0, quota - usage) < required) {
+                throw new DOMException(`安全导入需要约 ${formatBytes(required)} 的临时空间。`, 'QuotaExceededError');
+            }
         }
+        if (!await flushPendingWrites()) throw new Error('Pending writes could not be completed before import.');
 
-        reportProgress(progressCallback, '清理旧数据...', 0);
-        await clearManagedPersistence();
-        return importLegacyBackupPayload(validation.payload, progressCallback);
+        replacementInProgress = true;
+        let shadowDb = null;
+        let completed = false;
+        const importId = `import_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        try {
+            await deleteDatabaseSafe(IMPORT_SHADOW_DB_NAME);
+            shadowDb = await createDbConnection(IMPORT_SHADOW_DB_NAME);
+            const signatures = await writeSnapshotToConnection(shadowDb, prepared, progressCallback);
+            await setConnectionMeta(shadowDb, 'import_shadow_ready', {
+                importId,
+                createdAt: Date.now(),
+                sourceVersion: validation.summary.schemaVersion,
+                sourceFormat: validation.format,
+                signatures
+            });
+            reportProgress(progressCallback, '隔离数据校验完成...', 74);
+            await promoteImportShadow(shadowDb, importId, progressCallback);
+            shadowDb.close();
+            shadowDb = null;
+            await deleteDatabaseSafe(IMPORT_SHADOW_DB_NAME);
+            domainCache.clear();
+            const importedDomains = await getAllRecords(STORES.appDomains);
+            for (const record of importedDomains) {
+                if (record?.name) domainCache.set(String(record.name), cloneDeep(record.value));
+            }
+            completed = true;
+            reportProgress(progressCallback, '导入完成', 100);
+            return true;
+        } catch (error) {
+            try {
+                if (shadowDb) shadowDb.close();
+            } catch (closeError) {}
+            throw error;
+        } finally {
+            if (!completed) replacementInProgress = false;
+        }
     }
 
     function formatBytes(bytes = 0) {
@@ -3866,6 +4243,7 @@
 
     async function initializeUnifiedStorage() {
         storageHealthState.status = 'initializing';
+        await recoverImportShadowIfNeeded();
         await recoverOptimizationShadowIfNeeded();
         const existingDomains = await getAllRecords(STORES.appDomains);
 

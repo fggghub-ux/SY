@@ -57,7 +57,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusPromptEnabledToggle = document.getElementById('status-prompt-enabled-toggle');
     const statusPromptInput = document.getElementById('status-prompt-input');
     const saveStatusPromptBtn = document.getElementById('save-status-prompt-btn');
-    const DEFAULT_STATUS_PROMPT = '生成角色此刻没有说出口的心声。内容贴合本轮聊天、人设、关系进展和已绑定世界书。';
+    const DEFAULT_STATUS_PROMPT = window.imApp.DEFAULT_STATUS_PROMPT
+        || '固定使用简体中文，写角色此刻没有说出口的三句真实心声。每句约10个汉字，每行一句，共三行；不要添加序号、引号、标题、前缀或解释。';
     const chatCotSettingsSheet = document.getElementById('chat-cot-settings-sheet');
     const chatCotSettingsBtn = document.getElementById('chat-cot-settings-btn');
     const chatCotSettingsLabel = document.getElementById('chat-cot-settings-label');
@@ -1988,7 +1989,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const friend = window.imData.currentSettingsFriend;
             if (!friend) return;
             const nextEnabled = statusPromptEnabledToggle?.checked === true;
-            const nextPrompt = statusPromptInput?.value || '';
+            const nextPrompt = String(statusPromptInput?.value || '').trim();
+            if (nextEnabled && !nextPrompt) {
+                showToast('自定义提示词不能为空');
+                statusPromptInput?.focus();
+                return;
+            }
             saveStatusPromptBtn.disabled = true;
 
             const saved = await commitSettingsFriendChange((targetFriend) => {
@@ -3775,6 +3781,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const chatLanguageSelect = document.getElementById('chat-language-select');
         const chatTimeAwareToggle = document.getElementById('chat-time-aware-toggle');
         const chatRoleRecallToggle = document.getElementById('chat-role-recall-toggle');
+        const chatAutoExpandTranslationToggle = document.getElementById('chat-auto-expand-translation-toggle');
         const chatMinimaxEnabledToggle = document.getElementById('chat-minimax-enabled-toggle');
         const chatMinimaxBody = document.getElementById('chat-minimax-settings-body');
         const chatMinimaxVoiceInput = document.getElementById('chat-minimax-voice-id-input');
@@ -3794,6 +3801,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (chatRoleRecallToggle) {
             chatRoleRecallToggle.checked = friend.allowRoleRecall !== false;
+        }
+        if (chatAutoExpandTranslationToggle) {
+            chatAutoExpandTranslationToggle.checked = friend.autoExpandTranslation === true;
         }
         renderChatCotSettings(friend);
 
@@ -4068,6 +4078,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!saved) {
                     e.target.checked = previousValue;
                     showToast('角色撤回设置保存失败');
+                }
+            }
+        });
+    }
+
+    const chatAutoExpandTranslationToggle = document.getElementById('chat-auto-expand-translation-toggle');
+    if (chatAutoExpandTranslationToggle && chatAutoExpandTranslationToggle.dataset.bound !== 'true') {
+        chatAutoExpandTranslationToggle.dataset.bound = 'true';
+        chatAutoExpandTranslationToggle.addEventListener('change', async (e) => {
+            if (window.imData.currentSettingsFriend) {
+                const previousValue = window.imData.currentSettingsFriend.autoExpandTranslation === true;
+                const nextValue = e.target.checked;
+
+                const saved = await commitSettingsFriendChange((targetFriend) => {
+                    targetFriend.autoExpandTranslation = nextValue;
+                }, { silent: true });
+
+                if (!saved) {
+                    e.target.checked = previousValue;
+                    showToast('自动展开翻译设置保存失败');
                 }
             }
         });

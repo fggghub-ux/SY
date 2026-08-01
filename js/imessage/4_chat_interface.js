@@ -159,10 +159,29 @@ document.addEventListener('DOMContentLoaded', () => {
         keyboardRestoreTimers = [];
     }
 
-    function restoreAndroidChatViewport(page, msgContainer) {
-        if (!isAndroid || !page || page.style.display === 'none') return;
+    function applyAndroidChatViewport(page, msgContainer, metrics = getAndroidViewportMetrics()) {
+        if (!isAndroid || !page || !window.visualViewport || metrics.height <= 0) return;
 
+        page.style.setProperty('--u2-android-chat-viewport-height', `${metrics.height}px`);
+        page.style.setProperty(
+            '--u2-android-chat-viewport-top',
+            `${Math.round(window.visualViewport.offsetTop || 0)}px`
+        );
+        page.classList.add('u2-android-chat-viewport-sized');
+
+        requestAnimationFrame(() => {
+            if (msgContainer) msgContainer.scrollTop = msgContainer.scrollHeight;
+        });
+    }
+
+    function restoreAndroidChatViewport(page, msgContainer) {
+        if (!isAndroid || !page) return;
+
+        page.classList.remove('u2-android-chat-viewport-sized');
+        page.style.removeProperty('--u2-android-chat-viewport-height');
+        page.style.removeProperty('--u2-android-chat-viewport-top');
         page.classList.remove('keyboard-open');
+        if (page.style.display === 'none') return;
         window.scrollTo(0, 0);
         document.documentElement.scrollTop = 0;
         document.body.scrollTop = 0;
@@ -204,8 +223,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 androidRestingViewportHeight = Math.max(androidRestingViewportHeight, metrics.height);
             }
 
-            if (androidRestingViewportHeight - metrics.height > 100) {
+            if (inputFocused && androidRestingViewportHeight - metrics.height > 100) {
                 androidKeyboardWasOpen = true;
+                applyAndroidChatViewport(page, msgContainer, metrics);
                 return;
             }
 
@@ -1069,8 +1089,9 @@ async function openChatTab(friend) {
 
                 input.addEventListener('blur', () => {
                     page.classList.remove('keyboard-open');
-                    if (isAndroid && !window.visualViewport) {
-                        scheduleAndroidChatViewportRestore(page, msgContainer);
+                    if (isAndroid) {
+                        if (window.visualViewport) restoreAndroidChatViewport(page, msgContainer);
+                        else scheduleAndroidChatViewportRestore(page, msgContainer);
                     }
                 });
             }

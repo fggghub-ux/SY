@@ -16,7 +16,9 @@
     flex-direction: column;
     padding-top: var(--safe-top); /* 移除写死的 44px 顶栏距离，适配主界面 */
     transform: translateX(100%);
-    transition: transform 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
+    visibility: hidden;
+    contain: layout paint style;
+    transition: transform 0.3s cubic-bezier(0.25, 0.1, 0.25, 1), visibility 0s linear 0.3s;
     min-height: 0;
     pointer-events: none;
 }
@@ -34,6 +36,8 @@
 .app-view.active, .settings-view.active, .edit-view.active {
     transform: translateX(0);
     pointer-events: auto;
+    visibility: visible;
+    transition-delay: 0s;
 }
 
 /* Keep off-screen application trees mounted without letting decorative motion

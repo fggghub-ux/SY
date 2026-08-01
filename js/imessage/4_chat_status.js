@@ -97,13 +97,13 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/'/g, '&#39;');
     }
 
-    function getProfileStatusHistory(friend) {
-        const panel = window.imChat.getProfilePanelData(friend);
+    function getProfileStatusHistory(friend, panelOverride = null) {
+        const panel = panelOverride || window.imChat.getProfilePanelData(friend);
         return Array.isArray(panel.statusHistory) ? panel.statusHistory : [];
     }
 
-    function getSelectedProfileStatus(friend) {
-        const history = getProfileStatusHistory(friend);
+    function getSelectedProfileStatus(friend, panelOverride = null) {
+        const history = getProfileStatusHistory(friend, panelOverride);
         const uiState = window.imChat.getProfilePanelUiState(friend);
         const index = Math.max(0, Math.min(uiState.selectedHistoryIndex || 0, Math.max(0, history.length - 1)));
         uiState.selectedHistoryIndex = index;
@@ -307,12 +307,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 220);
     }
 
-    function buildProfilePanelBody(friend, activeTab) {
-        const panel = window.imChat.getProfilePanelData(friend);
+    function buildProfilePanelBody(friend, activeTab, renderContext = {}) {
+        const panel = renderContext.panel || window.imChat.getProfilePanelData(friend);
         const safeTab = ['thought', 'events'].includes(activeTab) ? activeTab : 'thought';
 
         if (safeTab === 'events') {
-            const events = window.imChat.getProfilePanelEvents(friend);
+            const events = Array.isArray(renderContext.events)
+                ? renderContext.events
+                : (Array.isArray(panel.events) ? panel.events : []);
             if (events.length === 0) {
                 return `
                     <div class="chat-profile-panel-empty">
@@ -375,7 +377,8 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }
 
-        const { history, index: selectedIndex } = getSelectedProfileStatus(friend);
+        const { history, index: selectedIndex } = renderContext.statusSelection
+            || getSelectedProfileStatus(friend, panel);
         if (history.length === 0) {
             return `
                 <div class="chat-profile-panel-empty">
@@ -396,6 +399,42 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="chat-profile-status-counter"><span>${selectedIndex + 1}</span> / ${history.length}</div>
             </div>
         `;
+    }
+
+    function renderProfileStatusSelection(friend, panelEl, panelOverride = null) {
+        if (!friend || !panelEl) return;
+        const panel = panelOverride || window.imChat.getProfilePanelData(friend);
+        const statusSelection = getSelectedProfileStatus(friend, panel);
+        const selectedStatus = statusSelection.snapshot;
+        const contentEl = panelEl.querySelector('.chat-profile-panel-content');
+
+        if (contentEl) {
+            contentEl.innerHTML = buildProfilePanelBody(friend, 'thought', {
+                panel,
+                statusSelection
+            });
+        }
+
+        const affection = typeof selectedStatus?.affection === 'number'
+            ? selectedStatus.affection
+            : (typeof panel.affection === 'number' ? panel.affection : 0);
+        const affectionChange = typeof selectedStatus?.affectionChange === 'number'
+            ? selectedStatus.affectionChange
+            : (typeof panel.affectionChange === 'number' ? panel.affectionChange : 0);
+        const affectionEl = panelEl.querySelector('.chat-profile-status-affection span');
+        const affectionChangeEl = panelEl.querySelector('.chat-profile-status-affection-change');
+        if (affectionEl) affectionEl.textContent = String(affection);
+        if (affectionChangeEl) {
+            affectionChangeEl.textContent = affectionChange >= 0 ? `+${affectionChange}` : String(affectionChange);
+            affectionChangeEl.style.display = affectionChange === 0 ? 'none' : '';
+        }
+
+        panelEl.querySelectorAll('[data-action="page-status"]').forEach((button) => {
+            const isNewer = button.getAttribute('data-direction') === 'newer';
+            button.disabled = isNewer
+                ? statusSelection.index <= 0
+                : statusSelection.index >= statusSelection.history.length - 1;
+        });
     }
 
     function renderProfilePanel(friend, panelEl) {
@@ -439,7 +478,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const signature = friend.signature || '这个人很懒，什么都没写';
         const onlineLabel = formatProfileStatusLabel(panel.status || friend.status || 'online', isSleeping);
         
-        const statusSelection = getSelectedProfileStatus(friend);
+        const statusSelection = getSelectedProfileStatus(friend, panel);
         const selectedStatus = statusSelection.snapshot;
         const canPageNewer = statusSelection.index > 0;
         const canPageOlder = statusSelection.index < statusSelection.history.length - 1;
@@ -475,7 +514,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                         <div class="gmp-signature">${signature}</div>
                         <div class="chat-profile-panel-content">
-                            ${window.imChat.buildProfilePanelBody(friend, activeTab)}
+                            ${window.imChat.buildProfilePanelBody(friend, activeTab, {
+                                panel,
+                                events: panel.events,
+                                statusSelection
+                            })}
                         </div>
                     </div>
                     <div class="chat-profile-event-detail-overlay" style="display:none;">
@@ -542,88 +585,14 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        const statusCard = panelEl.querySelector('.chat-profile-panel-card');
-        if (statusCard && activeTab === 'thought') {
-            let pointerId = null;
-            let startX = 0;
-            let startY = 0;
-            let currentDeltaX = 0;
-            let dragging = false;
-
-            const restoreCardPosition = () => {
-                statusCard.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
-                statusCard.style.transform = 'translateX(0) scale(1)';
-                statusCard.style.opacity = '1';
-            };
-
-            statusCard.addEventListener('pointerdown', (e) => {
-                const latestFriend = window.imApp.getFriendById(friend) || friend;
-                if (getSelectedProfileStatus(latestFriend).history.length < 2) return;
-                if (e.target.closest('button, input, textarea, .chat-profile-status-edit-overlay, .chat-profile-event-detail-overlay')) return;
-                pointerId = e.pointerId;
-                startX = e.clientX;
-                startY = e.clientY;
-                currentDeltaX = 0;
-                dragging = true;
-                statusCard.style.transition = 'none';
-                statusCard.setPointerCapture?.(pointerId);
-            });
-
-            statusCard.addEventListener('pointermove', (e) => {
-                if (!dragging || e.pointerId !== pointerId) return;
-                const deltaX = e.clientX - startX;
-                const deltaY = e.clientY - startY;
-                if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 8) {
-                    dragging = false;
-                    restoreCardPosition();
-                    return;
-                }
-                if (Math.abs(deltaX) < 6) return;
-                e.preventDefault();
-                currentDeltaX = deltaX;
-                const progress = Math.min(1, Math.abs(deltaX) / Math.max(1, statusCard.clientWidth));
-                statusCard.style.transform = `translateX(${deltaX}px) scale(${1 - progress * 0.025})`;
-                statusCard.style.opacity = String(1 - progress * 0.22);
-            });
-
-            const finishCardSwipe = (e) => {
-                if (!dragging || e.pointerId !== pointerId) return;
-                dragging = false;
-                statusCard.releasePointerCapture?.(pointerId);
-                const latestFriend = window.imApp.getFriendById(friend) || friend;
-                const { history, index } = getSelectedProfileStatus(latestFriend);
-                const direction = currentDeltaX < -55 ? 1 : (currentDeltaX > 55 ? -1 : 0);
-                const nextIndex = index + direction;
-                if (!direction || nextIndex < 0 || nextIndex >= history.length) {
-                    restoreCardPosition();
-                    return;
-                }
-
-                const exitX = currentDeltaX < 0 ? -(statusCard.clientWidth + 80) : statusCard.clientWidth + 80;
-                statusCard.style.transition = 'transform 0.18s ease, opacity 0.18s ease';
-                statusCard.style.transform = `translateX(${exitX}px) scale(0.96)`;
-                statusCard.style.opacity = '0';
-                setTimeout(() => {
-                    window.imChat.getProfilePanelUiState(latestFriend).selectedHistoryIndex = nextIndex;
-                    const refreshedFriend = window.imApp.getFriendById(latestFriend) || latestFriend;
-                    window.imChat.renderProfilePanel(refreshedFriend, panelEl);
-                }, 180);
-            };
-
-            statusCard.addEventListener('pointerup', finishCardSwipe);
-            statusCard.addEventListener('pointercancel', () => {
-                dragging = false;
-                restoreCardPosition();
-            });
-        }
-
         panelEl.querySelectorAll('[data-action="page-status"]').forEach((button) => {
-            button.addEventListener('click', async (e) => {
+            button.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 if (button.disabled) return;
                 const latestFriend = window.imApp.getFriendById(friend) || friend;
-                const { history, index } = getSelectedProfileStatus(latestFriend);
+                const panel = window.imChat.getProfilePanelData(latestFriend);
+                const { history, index } = getSelectedProfileStatus(latestFriend, panel);
                 const direction = button.getAttribute('data-direction') === 'newer' ? -1 : 1;
                 const nextIndex = index + direction;
                 if (nextIndex < 0 || nextIndex >= history.length) return;
@@ -631,12 +600,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const uiState = window.imChat.getProfilePanelUiState(latestFriend);
                 uiState.selectedHistoryIndex = nextIndex;
                 uiState.activeTab = 'thought';
-                await commitStatusFriendChange(latestFriend, (targetFriend) => {
-                    if (!targetFriend) return;
-                    ensureProfilePanelData(targetFriend).activeTab = 'thought';
-                }, { silent: true });
-                const refreshedFriend = window.imApp.getFriendById(latestFriend) || latestFriend;
-                window.imChat.renderProfilePanel(refreshedFriend, panelEl);
+                renderProfileStatusSelection(latestFriend, panelEl, panel);
             });
         });
 

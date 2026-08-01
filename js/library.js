@@ -325,7 +325,6 @@
         if (TABS.includes(tab)) switchTab(tab, false);
         dom.view.classList.add('active');
         setLibraryViewHidden(false);
-        if (state.activeTab === 'overview') renderOverview();
     }
 
     function closeApp() {

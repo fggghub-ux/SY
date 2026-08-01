@@ -1827,7 +1827,7 @@ Do not output markdown, code fences, explanations, chain-of-thought, [Comment] t
             };
             if (cleanReplies[index].translation) {
                 msgObj.translation = cleanReplies[index].translation;
-                msgObj.showTranslation = false;
+                msgObj.showTranslation = liveFriend.autoExpandTranslation === true;
             }
 
             if (window.imApp.appendFriendMessage) {

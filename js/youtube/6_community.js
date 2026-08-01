@@ -2320,9 +2320,13 @@
             const char = thread.channel;
             const effectiveYtUser = getCurrentYtCommunityUser();
             const userPersona = effectiveYtUser.persona || '普通粉丝';
+            const promptHistory = targetHistory.filter(message => message?.type !== 'system');
+            const worldBookSearchText = promptHistory
+                .map(message => `${message?.name || ''}: ${message?.text || ''}`)
+                .join('\n');
             
             const wbContext = window.getYtWorldBookContext
-                ? window.getYtWorldBookContext(`${thread.title || ''}\n${userMessage || ''}`)
+                ? window.getYtWorldBookContext(`${char?.name || ''}\n${worldBookSearchText}`)
                 : '';
 
             const fanGroup = char?.generatedContent?.fanGroup || null;
@@ -2334,7 +2338,6 @@
             const adminContext = resolvedAdmins.length > 0
                 ? resolvedAdmins.map(admin => `- speakerId: ${admin.charId}; 姓名: ${admin.name}; 人设: ${admin.persona || '未设置'}`).join('\n')
                 : '无管理员';
-            const promptHistory = targetHistory.filter(message => message?.type !== 'system');
             const historyStr = promptHistory.map(m => `${m.type || 'fan'}${m.speakerId ? `(${m.speakerId})` : ''} ${m.name}: ${m.text}`).join('\n');
 
             let instructionStr = isUserMsg 

@@ -2479,15 +2479,30 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
         const allFriends = Array.isArray(window.imData?.friends) ? window.imData.friends : [];
         return allFriends.filter(f => f && f.type !== 'group' && f.type !== 'npc');
     },
+
+    getTopFriendsRenderSnapshot: function(friends = this.getTopFriends()) {
+        return friends.map(friend => [
+            friend.id,
+            friend.nickname,
+            friend.realname,
+            friend.avatarUrl,
+            friend.signature,
+            friend.hasLovesSpace ? 1 : 0,
+            friend.pendingLovesInvite ? 1 : 0
+        ].join('\u0001')).join('\u0002');
+    },
     
     renderTopFriends: function() {
         const container = document.getElementById('loves-board');
         if (!container) return;
         
-        container.innerHTML = '';
         
         // 获取有效的好友列表 (排除群组, 官方号, NPC)
         const validFriends = this.getTopFriends();
+        const snapshot = this.getTopFriendsRenderSnapshot(validFriends);
+        if (this._topFriendsRenderSnapshot === snapshot && container.childElementCount > 0) return;
+        this._topFriendsRenderSnapshot = snapshot;
+        container.innerHTML = '';
         
         if (validFriends.length === 0) {
             container.innerHTML = `

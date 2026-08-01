@@ -210,11 +210,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const tkNavItems = document.querySelectorAll('.tk-bottom-nav .tk-nav-item[data-target]');
     const tkTabContents = document.querySelectorAll('.tk-tab-content');
 
-    // Init function
+    // Render only the visible tab when the app opens. Hidden tabs render lazily
+    // when the user switches to them.
     function initTikTok() {
-        if (window.tkRenderHome) window.tkRenderHome();
-        if (window.tkRenderChat) window.tkRenderChat();
-        if (window.tkRenderProfile) window.tkRenderProfile();
+        const targetId = tkNavItems[currentTabIndex]?.getAttribute('data-target');
+        if (targetId === 'tk-chat-tab' && window.tkRenderChat) {
+            window.tkRenderChat();
+        } else if (targetId === 'tk-profile-tab' && window.tkRenderProfile) {
+            window.tkRenderProfile();
+        } else if (window.tkRenderHome) {
+            window.tkRenderHome();
+        }
     }
 
     // Open App

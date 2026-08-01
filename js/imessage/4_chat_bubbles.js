@@ -29,6 +29,19 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    function syncGroupUserAvatarState(friend, container) {
+        if (!container) return;
+        const enabled = friend?.type === 'group' && friend.showGroupUserAvatar === true;
+        container.classList.toggle('show-group-user-avatar', enabled);
+        if (!enabled) {
+            container.style.removeProperty('--group-user-avatar-image');
+            return;
+        }
+
+        const avatarUrl = getEffectiveUserProfile(friend).avatarUrl || 'assets/moren.jpg';
+        container.style.setProperty('--group-user-avatar-image', `url(${JSON.stringify(String(avatarUrl))})`);
+    }
+
     function resolveGroupBubbleIdentity(friend, msg = {}) {
         const member = friend?.type === 'group' && window.imChat?.getGroupMessageSpeaker
             ? window.imChat.getGroupMessageSpeaker(friend, msg)
@@ -1046,6 +1059,7 @@ function renderMessageBubble(msg, friend, container, timestamp = Date.now()) {
 
 function renderChatHistory(friend, container, options = {}) {
         if (!friend || !container) return;
+        syncGroupUserAvatarState(friend, container);
 
         const messages = Array.isArray(friend.messages) ? friend.messages : [];
         const state = getChatHistoryState(friend, container, messages, options);
@@ -2550,6 +2564,7 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
     window.imChat.renderMessageBubble = renderMessageBubble;
     window.imChat.renderCotSummaryCard = renderCotSummaryCard;
     window.imChat.renderUserBubble = renderUserBubble;
+    window.imChat.syncGroupUserAvatarState = syncGroupUserAvatarState;
     window.imChat.renderAiBubble = renderAiBubble;
     window.imChat.renderImageBubble = renderImageBubble;
     window.imChat.renderFakeLinkBubble = renderFakeLinkBubble;
