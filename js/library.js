@@ -485,6 +485,7 @@
     }
 
     async function readEpubBookFile(file) {
+        await window.u2LoadVendorLibrary?.('jszip');
         if (!window.JSZip?.loadAsync) throw new Error('EPUB 解析组件未加载，请检查网络后重试');
 
         const zip = await window.JSZip.loadAsync(await file.arrayBuffer());
@@ -550,6 +551,7 @@
             return readEpubBookFile(file);
         }
         if (lower.endsWith('.docx')) {
+            await window.u2LoadVendorLibrary?.('mammoth');
             if (!window.mammoth?.extractRawText) throw new Error('DOCX 解析组件未加载，请检查网络后重试');
             const result = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
             return {

@@ -28,13 +28,30 @@
             document.head.appendChild(manifestLink);
         }
     </script>
-    <link rel="stylesheet" href="css/global.css?v=20260721-mobile-input-layout-v1-android-focus-scope-v1&assistive=20260801-no-blur-v3&home-swipe=20260801-scrollend-v2">
+    <script>
+        // App views share one document. Set this before their initializers assign image URLs
+        // so off-screen views do not compete with the home screen for decoding work.
+        (function () {
+            function configureStaticImages() {
+                document.querySelectorAll('img').forEach((image) => {
+                    if (!image.hasAttribute('loading')) image.loading = 'lazy';
+                    if (!image.hasAttribute('decoding')) image.decoding = 'async';
+                });
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', configureStaticImages, { once: true });
+            } else {
+                configureStaticImages();
+            }
+        })();
+    </script>
+    <link rel="stylesheet" href="css/global.css?v=20260721-mobile-input-layout-v1-android-focus-scope-v1&assistive=20260801-no-blur-v3&home-swipe=20260801-scrollend-v2&no-glass=20260803-v1">
     <link rel="stylesheet" href="css/login.css?v=20260731-login-gate-focus-v2">
     <link rel="stylesheet" href="css/home.css?v=20260731-ios-swipe-icon-flicker-v1&layout=20260801-fixed-grid-v1&performance=20260801-v1">
-    <link rel="stylesheet" href="css/worldbook.css">
-    <link rel="stylesheet" href="css/imessage.css?v=20260721-status-prompt-v3-group-poll-v3&cot=20260725-single-chat-cot-v1&status=20260802-three-line-thought-v1&cotui=20260725-pill-v1&link=20260726-light-link-theatre-v1&relationship=20260801-static-preview-v3&android-keyboard=20260801-v1&group-user-avatar=20260802-v1&game=20260803-anonymous-qa-v4-composer-modal">
+    <link rel="stylesheet" href="css/worldbook.css?no-glass=20260803-v1">
+    <link rel="stylesheet" href="css/imessage.css?v=20260721-status-prompt-v3-group-poll-v3&cot=20260725-single-chat-cot-v1&status=20260802-three-line-thought-v1&cotui=20260725-pill-v1&link=20260726-light-link-theatre-v1&relationship=20260801-static-preview-v3&android-keyboard=20260801-v1&group-user-avatar=20260802-v1&game=20260803-anonymous-qa-v7-context-layout&image-assets=20260803-v1">
     <link rel="stylesheet" href="css/pay.css?v=20260714-ios-neutral-v1">
-    <link rel="stylesheet" href="css/bstage.css?v=20260721-mobile-input-layout-v1-android-focus-scope-v1">
+    <link rel="stylesheet" href="css/bstage.css?v=20260721-mobile-input-layout-v1-android-focus-scope-v1&no-glass=20260803-v1">
     <link rel="stylesheet" href="css/tiktok.css?v=20260721-mobile-input-layout-v1">
     <link rel="stylesheet" href="css/shopping.css">
     <link rel="stylesheet" href="css/x.css?v=20260702-x-dm-reply-batch-v8">
@@ -42,11 +59,11 @@
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
-    <link rel="stylesheet" href="css/loves.css?v=20260719-friend-phone-bilingual-v8">
+    <link rel="stylesheet" href="css/loves.css?v=20260719-friend-phone-bilingual-v8&no-glass=20260803-v1">
     <link rel="stylesheet" href="css/library.css?v=20260715-reader-streaming-v1">
     <!-- App Styles -->
     <link rel="stylesheet" href="css/settings.css?v=20260721-mobile-input-layout-v1-notification-sound-v1&performance=20260801-v2&api-model-picker=20260803-v1">
-    <link rel="stylesheet" href="css/youtube.css?v=20260717-char-lottery-consistency-v18">
+    <link rel="stylesheet" href="css/youtube.css?v=20260717-char-lottery-consistency-v18&no-glass=20260803-v1">
     <link rel="stylesheet" href="css/netflix.css">
 </head>
 <body>
@@ -4056,7 +4073,7 @@
                     <div id="group-call-minimize-btn" style="width: 36px; height: 36px; border-radius: 18px; background: rgba(255,255,255,0.15); display: flex; justify-content: center; align-items: center; cursor: pointer;">
                         <i class="fas fa-chevron-down" style="font-size: 16px;"></i>
                     </div>
-                    <div id="group-call-status-text" style="font-size: 15px; font-weight: 600; background: rgba(0,0,0,0.4); padding: 4px 12px; border-radius: 12px; backdrop-filter: blur(10px);">00:00</div>
+                    <div id="group-call-status-text" style="font-size: 15px; font-weight: 600; background: rgba(0,0,0,0.4); padding: 4px 12px; border-radius: 12px;">00:00</div>
                     <div style="width: 36px; height: 36px;"></div>
                 </div>
 
@@ -8038,6 +8055,7 @@
 <script src="js/storage/app_storage.js?v=20260715-library-content-store-v1&cot=20260725-single-chat-cot-v1&backup=20260803-sticker-migration-v2&image-generation=20260803-char-face-reference-v2"></script>
     <script src="js/storage/imessage_storage.js?v=20260710-storage-v8-idb1"></script>
     <script src="storage.js?v=20260710-storage-v7-cache1"></script>
+    <script src="js/lazy_vendor_loader.js?v=20260803-v1"></script>
     <script src="js/app_state_bridge.js?v=20260710-bstage-chat-recovery-v1"></script>
     <script src="js/bootstrap_globals.js?v=20260721-fetch-abort-v1&error-copy=20260801-zh-v1&api=20260803-unified-v1&image-generation=20260803-char-face-reference-v2"></script>
     <script src="js/image_generation.js?v=20260803-artist-prompt-v6"></script>
@@ -8046,25 +8064,25 @@
     <script src="js/login.js?v=20260801-resume-recovery-v1"></script>
     <script src="js/mobile_input_compat.js?v=20260713-bstage-enter-v1-android-focus-scope-v1&guard=20260801-v3"></script>
     <script src="js/background_activity.js"></script>
-    <script src="js/system_notifications.js?v=20260721-storage-hydration-v1-custom-sound-v1"></script>
+    <script src="js/system_notifications.js?v=20260721-storage-hydration-v1-custom-sound-v1&image-assets=20260803-v1"></script>
     
     <!-- 引入 iMessage 模块分段代码 -->
-    <script src="js/imessage/game.js?v=20260803-anonymous-qa-v4-composer-modal"></script>
+    <script src="js/imessage/game.js?v=20260803-anonymous-qa-v7-context-layout"></script>
     <script src="js/imessage/data_utils.js?v=20260713-offline-memory-v1-sticker-manifest-v2-memory-event-time-v1-offline-handoff-v2&single-chat-info=20260803-v1"></script>
-    <script src="js/imessage/2_core.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&cotcopy=20260727-v2&observer=20260730-v1&open-performance=20260802-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&group-user-avatar=20260802-v1&image-generation=20260803-artist-prompt-v6&single-chat-info=20260803-v1&offline-handoff=20260803-v2&cot-default=20260803-v3&chat-runtime-performance=20260803-v1"></script>
-    <script src="js/imessage/3_contacts.js?v=20260718-friend-profile-import-v1&render-cache=20260801-v1"></script>
+    <script src="js/imessage/2_core.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&cotcopy=20260727-v2&observer=20260730-v1&open-performance=20260802-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&group-user-avatar=20260802-v1&image-generation=20260803-artist-prompt-v6&single-chat-info=20260803-v1&offline-handoff=20260803-v2&cot-default=20260803-v3&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v2&vendor-lazy=20260803-v1"></script>
+    <script src="js/imessage/3_contacts.js?v=20260718-friend-profile-import-v1&render-cache=20260801-v1&vendor-lazy=20260803-v1"></script>
     <script src="js/imessage/3_groups.js?v=20260718-group-poll-v4-group-memory-editor-v1&observer=20260730-v1&render-cache=20260801-v1&user-avatar=20260802-v1&group-auto-translation=20260803-v1"></script>
-    <script src="js/imessage/4_chat_common.js"></script>
+    <script src="js/imessage/4_chat_common.js?v=image-assets-20260803-v1"></script>
     <script src="js/imessage/4_chat_status.js?v=20260716-status-prompt-v2&paging=20260801-button-only-v1"></script>
     <script src="js/imessage/4_chat_payment.js?v=20260725-single-chat-cot-v1"></script>
-    <script src="js/imessage/4_chat_bubbles.js?v=20260725-single-chat-cot-v1-avatar-pill-v1-link-theatre-js-v1&group-user-avatar=20260802-v1&open-performance=20260802-v1"></script>
+    <script src="js/imessage/4_chat_bubbles.js?v=20260725-single-chat-cot-v1-avatar-pill-v1-link-theatre-js-v1&group-user-avatar=20260802-v1&open-performance=20260802-v1&image-assets=20260803-v1"></script>
     <script src="js/imessage/chat_search.js?v=20260718-chat-history-search-v2&keyboard-guard=20260801-v1"></script>
     <script src="js/imessage/chat_favorites.js?v=20260723-chat-favorites-v3"></script>
     <script src="js/imessage/minimax_tts.js"></script>
-    <script src="js/imessage/4_chat_ai.js?v=20260724-single-chat-prompt-v8-single-chat-cot-v1&cot=20260802-single-chat-cot-full-analysis-v2&online=20260801-persona-entries-v1&observer=20260730-v1&performance=20260801-v1&api=20260803-nonstream-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&single-chat-info=20260803-v1&offline-handoff=20260803-v2&context-dedupe=20260803-v1&nonstream=20260803-v2&group-auto-translation=20260803-v1&chat-runtime-performance=20260803-v1"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260724-single-chat-prompt-v8-single-chat-cot-v1&cot=20260802-single-chat-cot-full-analysis-v2&online=20260801-persona-entries-v1&observer=20260730-v1&performance=20260801-v1&api=20260803-nonstream-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&single-chat-info=20260803-v1&offline-handoff=20260803-v2&context-dedupe=20260803-v1&nonstream=20260803-v2&group-auto-translation=20260803-v1&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v5&image-assets=20260803-v1"></script>
     <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
     <script src="js/imessage/offline_reasoning.js?v=20260718-offline-cot-v1"></script>
-    <script src="js/imessage/4_chat_sheet.js?v=20260718-offline-cot-v1-chat-image-send-v1&cotui=20260725-pill-v1&api=20260803-nonstream-v1&image-generation=20260803-artist-prompt-v6&chat-runtime-performance=20260803-v1"></script>
+    <script src="js/imessage/4_chat_sheet.js?v=20260718-offline-cot-v1-chat-image-send-v1&cotui=20260725-pill-v1&api=20260804-offline-stream-v1&image-generation=20260803-artist-prompt-v6&chat-runtime-performance=20260803-v1&image-assets=20260803-v1"></script>
     <script src="js/imessage/4_chat_link.js?v=20260726-light-link-theatre-v1&api=20260803-unified-v1"></script>
     <script src="js/imessage/4_chat_list.js?chat-runtime-performance=20260803-v1"></script>
     <script src="js/imessage/4_chat_interface.js?v=20260715-chat-context-menu-offline-retry-v1&observer=20260730-v1&android-keyboard=20260802-v1&open-performance=20260802-v1&chat-runtime-performance=20260803-v1"></script>
@@ -8075,17 +8093,15 @@
 
     <!-- 引入其他应用模块 -->
     <script src="js/pay.js?v=20260710-storage-ready-v1&open-performance=20260801-v1"></script>
-    <script src="js/bstage.js?v=20260725-android-keyboard-actions-v2&subscribers=20260730-cap-compact-v1&keyboard-guard=20260801-v1&api=20260803-unified-v1"></script>
+    <script src="js/bstage.js?v=20260725-android-keyboard-actions-v2&subscribers=20260730-cap-compact-v1&keyboard-guard=20260801-v1&api=20260803-unified-v1&image-assets=20260803-v1"></script>
     <!-- 引入世界书核心模块脚本 -->
     <script src="js/builtin_worldbook.js?v=20260713-disable-override-limit-v2"></script>
-    <script src="https://unpkg.com/mammoth@1.8.0/mammoth.browser.min.js"></script>
-    <script src="js/worldbook.js?v=20260801-import-txt-docx-only-v1"></script>
+    <script src="js/worldbook.js?v=20260801-import-txt-docx-only-v1&vendor-lazy=20260803-v1"></script>
     <!-- 引入核心 UI 管理与设置模块脚本 -->
     <script src="js/ui.js"></script>
-    <script src="js/settings.js?v=20260718-ios-pwa-export-v1-notification-sync-v1-custom-notification-sound-v1-api-presets-accessor-v1&global-font-scale=20260801-v3&theme-source=20260802-status-center-v1&assistive=20260801-drag-settle-v3&home-theme=20260731-widgets-v1&app-icon-alpha=20260731-v1&backup=20260803-sticker-migration-v2&api=20260803-config-v2-model-search&image-generation=20260803-char-face-reference-v2"></script>
-    <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
-    <script src="js/library.js?v=20260715-reader-streaming-v1&open-performance=20260801-v1"></script>
-    <script src="js/loves.js?v=20260719-friend-phone-bilingual-v13-android-focus-scope-v1&open-performance=20260801-v1&api=20260803-unified-v1"></script>
+    <script src="js/settings.js?v=20260718-ios-pwa-export-v1-notification-sync-v1-custom-notification-sound-v1-api-presets-accessor-v1&global-font-scale=20260801-v3&theme-source=20260802-status-center-v1&assistive=20260801-drag-settle-v3&home-theme=20260731-widgets-v1&app-icon-alpha=20260731-v1&backup=20260803-sticker-skip-v3&api=20260803-config-v2-model-search&image-generation=20260803-char-face-reference-v2"></script>
+    <script src="js/library.js?v=20260715-reader-streaming-v1&open-performance=20260801-v1&vendor-lazy=20260803-v1"></script>
+    <script src="js/loves.js?v=20260719-friend-phone-bilingual-v13-android-focus-scope-v1&open-performance=20260801-v1&api=20260803-unified-v1&image-assets=20260803-v1"></script>
     <script src="js/tiktok/2_core.js?v=20260712-tiktok-feed-cleanup-v1&open-performance=20260801-v1"></script>
     <script src="js/tiktok/3_home.js?v=20260712-tiktok-feed-cleanup-v1&api=20260803-unified-v1"></script>
     <script src="js/tiktok/4_chat.js?v=20260712-tiktok-polish-v1&api=20260803-unified-v1"></script>
@@ -8100,7 +8116,7 @@
     <script src="js/netflix.js?v=20260710-storage-ready-v2&open-performance=20260801-v1&api=20260803-unified-v1"></script>
     <script src="js/shopping.js?v=20260710-storage-ready-v1&performance=20260801-v2&api=20260803-unified-v1"></script>
     <script src="js/xapp.js?v=20260710-storage-v7-cache1&worldbook=20260729-global-bound-char-v1&api=20260803-unified-v1"></script>
-    <script src="js/home_desktop.js?v=20260710-storage-ready-v1&theme-widgets=20260731-v1"></script>
+    <script src="js/home_desktop.js?v=20260710-storage-ready-v1&theme-widgets=20260731-v1&image-assets=20260804-v1"></script>
     <script src="js/home_widget_panel_enhance.js"></script>
     <!-- 引入主逻辑脚本 -->
     <script src="script.js?v=20260725-modal-owner-v1&home-swipe=20260801-scrollend-v2&performance=20260801-v1"></script>

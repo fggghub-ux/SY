@@ -1770,8 +1770,6 @@
     justify-content: space-between;
     padding: 0 14px;
     background: rgba(242, 242, 247, 0.92);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
     position: relative;
     z-index: 5;
 }
@@ -2007,8 +2005,6 @@
     background: rgba(255, 255, 255, 0.96);
     border: 1px solid rgba(0, 0, 0, 0.06);
     box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
     z-index: 30;
 }
 
@@ -2325,8 +2321,6 @@
     border-radius: 50% !important;
     background: rgba(255, 59, 48, 0.14) !important;
     color: #ff3b30 !important;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
 }
 
 .world-book-files-view .wb-group-delete-btn:active {

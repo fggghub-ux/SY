@@ -3564,7 +3564,7 @@ ${generationIntent}
             bubbleContent = `
                 ${renderReplyQuote(msg.replyTo)}
                 <div class="bstage-msg-text" style="padding: 0; background: transparent;">
-                    <img class="bstage-chat-image-clickable" src="${escapeHtml(msg.imgUrl || 'assets/moren.jpg')}" data-desc="${escapeHtml(msg.imgDesc || '')}" style="max-width: 250px; width: 100%; border-radius: 12px; display: block; object-fit: cover; cursor: zoom-in; border: 1px solid #333;">
+                    <img class="bstage-chat-image-clickable" src="${escapeHtml(msg.imgUrl || 'assets/imessage/chat-image-placeholder-512.jpg')}" data-desc="${escapeHtml(msg.imgDesc || '')}" loading="lazy" decoding="async" style="max-width: 250px; width: 100%; border-radius: 12px; display: block; object-fit: cover; cursor: zoom-in; border: 1px solid #333;">
                 </div>
             `;
         } else {
@@ -4035,7 +4035,7 @@ ${history}
                         id: createBstageMessageId('char'),
                         isUser: false,
                         type: 'image',
-                        imgUrl: 'assets/moren.jpg',
+                        imgUrl: 'assets/imessage/chat-image-placeholder-512.jpg',
                         imgDesc,
                         timestamp: generationStartedAt + delay,
                         replyTo,

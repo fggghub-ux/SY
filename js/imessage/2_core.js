@@ -4133,9 +4133,38 @@ document.addEventListener('DOMContentLoaded', () => {
         return canvasToDataUrl(canvas, mimeType, quality);
     }
 
+    async function createSquareAvatarFromDataUrl(dataUrl, options = {}) {
+        const sourceUrl = String(dataUrl || '').trim();
+        if (!/^data:image\//i.test(sourceUrl)) return null;
+
+        const {
+            size = 256,
+            mimeType = 'image/jpeg',
+            quality = 0.84
+        } = options;
+        const targetSize = Math.max(1, Math.min(512, Math.round(Number(size) || 256)));
+        const img = await loadImageFromDataUrl(sourceUrl);
+        const naturalWidth = img.naturalWidth || img.width || 0;
+        const naturalHeight = img.naturalHeight || img.height || 0;
+        const sourceSize = Math.min(naturalWidth, naturalHeight);
+        if (!sourceSize) return null;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetSize;
+        canvas.height = targetSize;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+
+        const sourceX = Math.max(0, Math.round((naturalWidth - sourceSize) / 2));
+        const sourceY = Math.max(0, Math.round((naturalHeight - sourceSize) / 2));
+        ctx.drawImage(img, sourceX, sourceY, sourceSize, sourceSize, 0, 0, targetSize, targetSize);
+        return canvasToDataUrl(canvas, mimeType, quality);
+    }
+
     window.imApp = window.imApp || {};
     window.imApp.readFileAsDataUrl = readFileAsDataUrl;
     window.imApp.compressImageFile = compressImageFile;
+    window.imApp.createSquareAvatarFromDataUrl = createSquareAvatarFromDataUrl;
 
     // --- Custom Modal Logic ---
     const customModalOverlay = document.getElementById('custom-modal-overlay');
@@ -4698,6 +4727,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function readStickerManifestFile(file) {
         const fileName = String(file?.name || '').toLowerCase();
         if (fileName.endsWith('.docx')) {
+            await window.u2LoadVendorLibrary?.('mammoth');
             if (!window.mammoth?.extractRawText) throw new Error('DOCX 解析组件未加载');
             const result = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
             return String(result?.value || '');

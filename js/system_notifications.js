@@ -255,8 +255,8 @@
             tag,
             renotify: true,
             silent: !!current.hasCustomSound,
-            icon: friend.avatarUrl || 'assets/moren.jpg',
-            badge: 'assets/moren.jpg',
+            icon: friend.avatarUrl || 'assets/moren-thumb.jpg',
+            badge: 'assets/moren-thumb.jpg',
             data: {
                 app: 'imessage',
                 friendId: friend.id || null,

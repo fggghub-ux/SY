@@ -162,6 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
             throw new Error('暂不支持旧版 DOC，请另存为 DOCX 或 TXT 后导入');
         }
         if (lowerName.endsWith('.docx')) {
+            await window.u2LoadVendorLibrary?.('mammoth');
             if (!window.mammoth?.extractRawText) {
                 throw new Error('DOCX 解析组件未加载，请检查网络后重试');
             }

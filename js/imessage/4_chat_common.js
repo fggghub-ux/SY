@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const { apiConfig, userState } = window;
     window.imChat = window.imChat || {};
     const imChat = window.imChat;
-    imChat.CHAT_IMAGE_PLACEHOLDER_URL = 'assets/imessage/chat-image-placeholder.jpg';
+    imChat.CHAT_IMAGE_PLACEHOLDER_URL = 'assets/imessage/chat-image-placeholder-512.jpg';
 
 function createMessageId(prefix = 'msg') {
         return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;

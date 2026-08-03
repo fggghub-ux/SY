@@ -299,8 +299,6 @@ input, textarea, [contenteditable] {
 .assistive-api-ball.has-custom-image {
     background: transparent;
     border-color: transparent;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
 }
 
 .assistive-api-ball.has-custom-image .assistive-api-ball-inner {
@@ -347,8 +345,6 @@ input, textarea, [contenteditable] {
     background: rgba(246, 246, 248, 0.94);
     border: 1px solid rgba(255, 255, 255, 0.5);
     box-shadow: none;
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
     transform: scale(0.96);
     transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }

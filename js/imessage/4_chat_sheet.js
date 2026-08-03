@@ -130,7 +130,7 @@ async function commitSheetFriendChange(friendOrId, mutator, options = {}) {
     imChat.refreshOfflineUserIdentity = refreshOfflineUserIdentity;
 
 function getChatImagePlaceholderUrl() {
-        return window.imChat.CHAT_IMAGE_PLACEHOLDER_URL || 'assets/imessage/chat-image-placeholder.jpg';
+        return window.imChat.CHAT_IMAGE_PLACEHOLDER_URL || 'assets/imessage/chat-image-placeholder-512.jpg';
     }
 
 function resolveChatCompletionsEndpoint(config) {
@@ -3374,6 +3374,8 @@ function createAttachmentSheet(page) {
             }
             const signal = options.signal || null;
             const endpoint = window.u2Api.resolveChatCompletionsEndpoint(currentApiConfig.endpoint);
+            const activeOfflineFriend = window.imData.currentActiveFriend;
+            const shouldStream = options.stream !== false && activeOfflineFriend?.offlineStreamEnabled !== false;
 
             const finishStream = (content, nativeReasoning = '', completionTokens = 0, aborted = false, finishReason = '') => {
                 const streamedResult = streamingBubble?.finish
@@ -3408,7 +3410,8 @@ function createAttachmentSheet(page) {
                 messages: apiMessages,
                 temperature: Number.isFinite(Number.parseFloat(currentApiConfig.temperature))
                     ? Number.parseFloat(currentApiConfig.temperature)
-                    : 0.7
+                    : 0.7,
+                stream: shouldStream
             };
             const reasoningRequest = offlineReasoning?.buildReasoningRequestConfig({
                 endpoint: currentApiConfig.endpoint,
@@ -3446,6 +3449,96 @@ function createAttachmentSheet(page) {
                 error.code = isUnsupportedReasoningConfig ? 'reasoning_config_unsupported' : 'http_error';
                 error.status = response.status;
                 throw error;
+            }
+
+            const isEventStream = shouldStream
+                && /text\/event-stream/i.test(String(response.headers?.get?.('content-type') || ''))
+                && !!response.body?.getReader;
+            if (isEventStream) {
+                let streamedContent = '';
+                let streamedReasoning = '';
+                let completionTokens = 0;
+                let finishReason = '';
+                let streamBuffer = '';
+                let streamFinished = false;
+
+                const appendStreamPayload = (payload) => {
+                    const streamChoice = payload?.choices?.[0] || {};
+                    const delta = streamChoice.delta || streamChoice.message || {};
+                    const responseParts = offlineReasoning?.extractResponseParts([
+                        delta.content,
+                        delta.output_text,
+                        streamChoice.text,
+                        payload?.output_text
+                    ], [
+                        delta.reasoning,
+                        delta.reasoning_content,
+                        delta.reasoning_details,
+                        delta.analysis,
+                        streamChoice.reasoning,
+                        streamChoice.reasoning_content,
+                        streamChoice.reasoning_details,
+                        payload?.reasoning,
+                        payload?.reasoning_content,
+                        payload?.reasoning_details
+                    ]) || { content: '', reasoning: '' };
+                    const contentChunk = String(responseParts.content || '');
+                    const reasoningChunk = String(responseParts.reasoning || '');
+                    if (reasoningChunk) {
+                        streamedReasoning += reasoningChunk;
+                        streamingBubble?.appendReasoningChunk?.(reasoningChunk);
+                    }
+                    if (contentChunk) {
+                        streamedContent += contentChunk;
+                        (streamingBubble?.appendContentChunk || streamingBubble?.appendChunk)?.(contentChunk);
+                    }
+                    completionTokens = Number(payload?.usage?.completion_tokens) || completionTokens;
+                    finishReason = streamChoice.finish_reason || payload?.finish_reason || finishReason;
+                };
+
+                const consumeStreamFrame = (frame) => {
+                    const payloadText = String(frame || '')
+                        .split(/\r?\n/)
+                        .filter(line => line.startsWith('data:'))
+                        .map(line => line.slice(5).trimStart())
+                        .join('\n')
+                        .trim();
+                    if (!payloadText) return;
+                    if (payloadText === '[DONE]') {
+                        streamFinished = true;
+                        return;
+                    }
+                    try {
+                        appendStreamPayload(JSON.parse(payloadText));
+                    } catch (error) {
+                        console.warn('[iMessage Offline] Ignored malformed stream frame', error);
+                    }
+                };
+
+                try {
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    while (!streamFinished) {
+                        const { value, done } = await reader.read();
+                        if (done) break;
+                        streamBuffer += decoder.decode(value, { stream: true });
+                        const frames = streamBuffer.split(/\r?\n\r?\n/);
+                        streamBuffer = frames.pop() || '';
+                        for (const frame of frames) {
+                            consumeStreamFrame(frame);
+                            if (streamFinished) break;
+                        }
+                    }
+                    streamBuffer += decoder.decode();
+                    if (streamBuffer.trim() && !streamFinished) consumeStreamFrame(streamBuffer);
+                } catch (error) {
+                    if (signal?.aborted || error?.name === 'AbortError') {
+                        return finishStream(streamedContent, streamedReasoning, completionTokens, true, finishReason);
+                    }
+                    throw error;
+                }
+
+                return finishStream(streamedContent, streamedReasoning, completionTokens, false, finishReason);
             }
 
             const data = await response.json();
@@ -5374,6 +5467,31 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
 
         const renderOfflineTavernSettingsEditor = (listEl, activeFriend) => {
             listEl.innerHTML = '';
+
+            const streamRow = document.createElement('div');
+            streamRow.className = 'offline-settings-streaming';
+            streamRow.innerHTML = `
+                <div class="offline-settings-worldbook-main">
+                    <i class="fas fa-bolt"></i>
+                    <span><strong>流式传输</strong><small>STREAM RESPONSE</small></span>
+                </div>
+            `;
+            const streamToggle = document.createElement('label');
+            streamToggle.className = 'toggle-switch';
+            streamToggle.setAttribute('aria-label', '线下流式传输');
+            const streamCheckbox = document.createElement('input');
+            streamCheckbox.type = 'checkbox';
+            streamCheckbox.checked = activeFriend.offlineStreamEnabled !== false;
+            streamCheckbox.addEventListener('change', async () => {
+                await commitSheetFriendChange(activeFriend.id, (targetFriend) => {
+                    targetFriend.offlineStreamEnabled = streamCheckbox.checked;
+                }, { silent: true, metaOnly: true });
+            });
+            const streamSlider = document.createElement('span');
+            streamSlider.className = 'slider';
+            streamToggle.append(streamCheckbox, streamSlider);
+            streamRow.appendChild(streamToggle);
+            listEl.appendChild(streamRow);
 
             const wbBtnDiv = document.createElement('div');
             wbBtnDiv.className = 'offline-settings-worldbook';

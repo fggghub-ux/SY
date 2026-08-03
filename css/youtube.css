@@ -1287,8 +1287,6 @@
     box-sizing: border-box;
     align-items: center;
     gap: 9px;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
 }
 
 .yt-live-connections-stack {

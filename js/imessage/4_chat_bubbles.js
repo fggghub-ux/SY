@@ -25,7 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         return {
             name: source.name || source.realName || source.nickname || 'User',
-            avatarUrl: source.avatarUrl || 'assets/moren.jpg'
+            avatarUrl: source.avatarUrl || 'assets/moren-thumb.jpg'
         };
     }
 
@@ -38,7 +38,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const avatarUrl = getEffectiveUserProfile(friend).avatarUrl || 'assets/moren.jpg';
+        const avatarUrl = getEffectiveUserProfile(friend).avatarUrl || 'assets/moren-thumb.jpg';
         container.style.setProperty('--group-user-avatar-image', `url(${JSON.stringify(String(avatarUrl))})`);
     }
 
@@ -133,17 +133,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="chat-header-date" style="font-size: 12px; color: #888;">${dateStr} ${ampmTimeStr}</div>
                     </div>
                     <div class="chat-header-avatar" style="width: 44px; height: 44px; border-radius: 50%; overflow: hidden; border: 1px solid #eee; z-index: 2; background: #fff; flex-shrink: 0;">
-                        <img src="${userAvatar}" onerror="this.src='assets/moren.jpg'" style="width: 100%; height: 100%; object-fit: cover;">
+                        <img src="${userAvatar}" onerror="this.src='assets/moren-thumb.jpg'" loading="lazy" decoding="async" style="width: 100%; height: 100%; object-fit: cover;">
                     </div>
                 </div>
             `;
         } else {
             const aiName = speakerName || friend.nickname || friend.realName || 'AI';
-            const aiAvatar = speakerAvatar || friend.avatarUrl || 'assets/moren.jpg';
+            const aiAvatar = speakerAvatar || friend.avatarUrl || 'assets/moren-thumb.jpg';
             return `
                 <div class="chat-message-header ai-header" style="display: flex; justify-content: flex-start; width: 100%; margin-bottom: 4px; padding-left: 0px; align-items: flex-start;">
                     <div class="chat-header-avatar" style="width: 44px; height: 44px; border-radius: 50%; overflow: hidden; border: 1px solid #eee; z-index: 2; background: #fff; flex-shrink: 0;">
-                        <img src="${aiAvatar}" onerror="this.src='assets/moren.jpg'" style="width: 100%; height: 100%; object-fit: cover;">
+                        <img src="${aiAvatar}" onerror="this.src='assets/moren-thumb.jpg'" loading="lazy" decoding="async" style="width: 100%; height: 100%; object-fit: cover;">
                     </div>
                     <div class="chat-header-info" style="display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding-left: 25px; margin-bottom: 0px; margin-left: -20px; padding-bottom: 0px;">
                         <div class="chat-header-name" style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 2px;">${aiName}</div>
@@ -554,7 +554,7 @@ function renderGroupRedPacketBubble(msg, friend, container, timestamp = Date.now
             if (isGroupMessage) {
                 const avatarInitial = String(speakerName).trim().charAt(0) || '?';
                 const avatarImg = speakerAvatar
-                    ? `<img src="${speakerAvatar}" onerror="this.src='assets/moren.jpg'" style="width: 28px; height: 28px; border-radius: 50%; object-fit: cover;">`
+                    ? `<img src="${speakerAvatar}" onerror="this.src='assets/moren-thumb.jpg'" loading="lazy" decoding="async" style="width: 28px; height: 28px; border-radius: 50%; object-fit: cover;">`
                     : `<div class="chat-avatar-small">${avatarInitial}</div>`;
 
                 bubbleWrapperHtml = `
@@ -621,7 +621,7 @@ function renderGroupRedPacketBubble(msg, friend, container, timestamp = Date.now
                     : (window.imData?.friends || []).find(item => String(item.id) === String(vote?.voterId));
                 const profile = isUser ? getEffectiveUserProfile(friend) : null;
                 const voterName = vote?.voterName || member?.nickname || member?.realName || (isUser ? profile?.name : '群成员');
-                const avatarUrl = member?.avatarUrl || profile?.avatarUrl || 'assets/moren.jpg';
+                const avatarUrl = member?.avatarUrl || profile?.avatarUrl || 'assets/moren-thumb.jpg';
                 return `<span class="group-poll-voter"><img src="${escapeHtml(avatarUrl)}" alt="">${escapeHtml(voterName)}</span>`;
             }).join('');
             return `
@@ -1254,7 +1254,7 @@ function renderUserBubble(text, container, timestamp = Date.now(), replyTo = nul
             if (isGroupMessage) {
                 const avatarInitial = String(speakerName).trim().charAt(0) || '?';
                 const avatarImg = speakerAvatar
-                    ? `<img src="${speakerAvatar}" onerror="this.src='assets/moren.jpg'" style="width: 28px; height: 28px; border-radius: 50%; object-fit: cover;">`
+                ? `<img src="${speakerAvatar}" onerror="this.src='assets/moren-thumb.jpg'" loading="lazy" decoding="async" style="width: 28px; height: 28px; border-radius: 50%; object-fit: cover;">`
                     : `<div class="chat-avatar-small">${avatarInitial}</div>`;
 
                 bubbleWrapperHtml = `
@@ -1391,7 +1391,7 @@ function renderImageBubble(msg, friend, container, timestamp = Date.now()) {
             if (isGroupMessage) {
                 const avatarInitial = String(speakerName).trim().charAt(0) || '?';
                 const avatarImg = speakerAvatar
-                    ? `<img src="${escapeHtml(speakerAvatar)}" onerror="this.src='assets/moren.jpg'" style="width: 28px; height: 28px; border-radius: 50%; object-fit: cover;">`
+                ? `<img src="${escapeHtml(speakerAvatar)}" onerror="this.src='assets/moren-thumb.jpg'" loading="lazy" decoding="async" style="width: 28px; height: 28px; border-radius: 50%; object-fit: cover;">`
                     : `<div class="chat-avatar-small">${escapeHtml(avatarInitial)}</div>`;
 
                 bubbleWrapperHtml = `
@@ -1555,7 +1555,7 @@ function renderPayTransferBubble(msg, friend, container, timestamp = Date.now())
                     ? `<div class="group-ai-bubble-wrap">
                         ${sameSpeaker ? '' : `<div class="group-ai-speaker-name">${escapeHtml(speakerName)}</div>`}
                         <div class="group-ai-bubble-row">
-                            <div class="group-ai-avatar-slot">${sameSpeaker ? '<div class="group-ai-avatar-placeholder"></div>' : (speakerAvatar ? `<img src="${escapeHtml(speakerAvatar)}" onerror="this.src='assets/moren.jpg'" style="width:28px;height:28px;border-radius:50%;object-fit:cover;">` : `<div class="chat-avatar-small">${escapeHtml(String(speakerName).charAt(0) || '?')}</div>`)}</div>
+                            <div class="group-ai-avatar-slot">${sameSpeaker ? '<div class="group-ai-avatar-placeholder"></div>' : (speakerAvatar ? `<img src="${escapeHtml(speakerAvatar)}" onerror="this.src='assets/moren-thumb.jpg'" loading="lazy" decoding="async" style="width:28px;height:28px;border-radius:50%;object-fit:cover;">` : `<div class="chat-avatar-small">${escapeHtml(String(speakerName).charAt(0) || '?')}</div>`)}</div>
                             <div class="chat-bubble ai-bubble im-card-bubble pay-transfer-bubble">${contentHtml}${metaHtml}</div>
                         </div>
                     </div>`
@@ -2393,7 +2393,7 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
         if (isGroupMessage) {
             const avatarInitial = String(speakerName).trim().charAt(0) || '?';
             const avatarImg = speakerAvatar
-                ? `<img src="${escapeHtml(speakerAvatar)}" onerror="this.src='assets/moren.jpg'" style="width:28px;height:28px;border-radius:50%;object-fit:cover;">`
+                ? `<img src="${escapeHtml(speakerAvatar)}" onerror="this.src='assets/moren-thumb.jpg'" loading="lazy" decoding="async" style="width:28px;height:28px;border-radius:50%;object-fit:cover;">`
                 : `<div class="chat-avatar-small">${escapeHtml(avatarInitial)}</div>`;
             bubbleWrapperHtml = `
                 <div class="group-ai-bubble-wrap">

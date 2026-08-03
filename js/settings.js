@@ -5706,12 +5706,10 @@
                             const importReport = await window.appStorage.importAllData(selectedImportPayload, updateOperation);
                             const stickerReport = importReport?.stickers;
                             const skippedStickers = Math.max(0, Number(stickerReport?.skippedItems) || 0);
-                            const importedStickers = Math.max(0, Number(stickerReport?.importedItems) || 0);
                             const resultMessage = skippedStickers > 0
-                                ? `导入成功，表情包导入 ${importedStickers} 张、跳过 ${skippedStickers} 张，正在重启...`
+                                ? `导入成功，已跳过 ${skippedStickers} 张无法恢复的表情，正在重启...`
                                 : '导入成功，正在重启...';
                             updateOperation({ message: resultMessage, progress: 100 });
-                            if (skippedStickers > 0) showToast(`有 ${skippedStickers} 张旧表情图片已损坏或缺失，其他数据已正常导入`);
                             setTimeout(() => window.location.reload(), 1200);
                         } catch (err) {
                             console.error('Import failed:', err);

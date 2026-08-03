@@ -712,6 +712,11 @@ async function readWorldBookImportText(file) {
     const lowerName = fileName.toLowerCase();
 
     if (lowerName.endsWith('.docx')) {
+        try {
+            await window.u2LoadVendorLibrary?.('mammoth');
+        } catch (error) {
+            console.warn('[worldbook] Failed to load DOCX parser.', error);
+        }
         if (!window.mammoth || typeof window.mammoth.extractRawText !== 'function') {
             showToast('docx 解析库加载失败，请检查网络或先另存为 txt 后导入');
             return null;

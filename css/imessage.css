@@ -1384,6 +1384,129 @@ button.group-private-chat-detail-bubble {
     font: inherit;
 }
 
+.im-anonymous-context-control {
+    min-height: 70px;
+    margin: 0 0 18px;
+    padding: 10px 12px 10px 14px;
+    border: 1px solid #e3e0e7;
+    border-radius: 12px;
+    background: #faf9fc;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 8px;
+}
+
+.im-anonymous-context-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.im-anonymous-context-control.is-disabled .im-anonymous-context-copy {
+    opacity: 0.56;
+}
+
+.im-anonymous-context-control strong {
+    color: #302e35;
+    font-size: 14px;
+}
+
+.im-anonymous-context-control small {
+    color: #77747d;
+    font-size: 11px;
+    line-height: 1.35;
+}
+
+.im-anonymous-context-options {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+}
+
+.im-anonymous-context-count-field {
+    height: 44px;
+    min-width: 62px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: #66636c;
+    font-size: 12px;
+}
+
+.im-anonymous-context-switch {
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+}
+
+.im-anonymous-context-switch input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.im-anonymous-context-switch span {
+    width: 36px;
+    height: 22px;
+    position: relative;
+    border-radius: 999px;
+    background: #d2d0d7;
+    transition: background-color 0.18s ease;
+}
+
+.im-anonymous-context-switch span::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    transition: transform 0.18s ease;
+}
+
+.im-anonymous-context-switch input:checked + span { background: #302e35; }
+.im-anonymous-context-switch input:checked + span::after { transform: translateX(14px); }
+.im-anonymous-context-switch input:focus-visible + span { outline: 2px solid #4d79d8; outline-offset: 3px; }
+.im-anonymous-context-switch input:disabled + span { opacity: 0.55; }
+
+#im-anonymous-context-count {
+    width: 52px;
+    height: 44px;
+    border: 1px solid #dedce5;
+    border-radius: 10px;
+    background: #fff;
+    color: #17171b;
+    text-align: center;
+    font: inherit;
+}
+
+#im-anonymous-context-count:disabled { opacity: 0.55; }
+
+@media (max-width: 360px) {
+    .im-anonymous-context-control {
+        grid-template-columns: minmax(0, 1fr);
+        align-items: stretch;
+    }
+
+    .im-anonymous-context-options {
+        justify-content: flex-end;
+    }
+}
+
 .im-anonymous-composer-overlay {
     position: absolute;
     inset: 0;
@@ -3228,7 +3351,7 @@ button.group-private-chat-detail-bubble {
     border-radius: 50%;
     border: 1px solid rgba(0, 0, 0, 0.08);
     background-color: #e5e5ea;
-    background-image: var(--group-user-avatar-image, url('../assets/moren.jpg'));
+    background-image: var(--group-user-avatar-image, url('../assets/moren-thumb.jpg'));
     background-position: center;
     background-repeat: no-repeat;
     background-size: cover;

@@ -7,6 +7,7 @@
 
     const MAX_BATCH_SIZE = 10;
     const DEFAULT_BATCH_SIZE = 1;
+    const DEFAULT_CONTEXT_MESSAGE_COUNT = 20;
     const MAX_RECENT_MESSAGES = 50;
     const MAX_CONTEXT_CHARS = 36000;
 
@@ -22,6 +23,12 @@
         const parsed = Number.parseInt(value, 10);
         if (!Number.isFinite(parsed)) return DEFAULT_BATCH_SIZE;
         return Math.max(1, Math.min(MAX_BATCH_SIZE, parsed));
+    }
+
+    function clampContextMessageCount(value) {
+        const parsed = Number.parseInt(value, 10);
+        if (!Number.isFinite(parsed)) return DEFAULT_CONTEXT_MESSAGE_COUNT;
+        return Math.max(1, Math.min(MAX_RECENT_MESSAGES, parsed));
     }
 
     function normalizeAnonymousQaEntry(entry, index = 0) {
@@ -135,10 +142,9 @@
         return (Array.isArray(entries) ? entries : []).map(entryText).filter(Boolean).join('\n');
     }
 
-    function formatRecentMessages(friend, userName) {
+    function formatRecentMessages(friend, userName, contextMessageCount = DEFAULT_CONTEXT_MESSAGE_COUNT) {
         const messages = Array.isArray(friend?.messages) ? friend.messages : [];
-        const configuredLimit = Number(friend?.memory?.context?.limit);
-        const limit = Math.max(1, Math.min(MAX_RECENT_MESSAGES, Number.isFinite(configuredLimit) ? configuredLimit : MAX_RECENT_MESSAGES));
+        const limit = clampContextMessageCount(contextMessageCount);
         const charName = friend?.nickname || friend?.realName || 'Char';
         return messages
             .filter(message => message && (message.role === 'user' || message.role === 'assistant'))
@@ -224,6 +230,16 @@
                             <button type="button" class="is-active" data-anonymous-mode="manual" role="tab" aria-selected="true">匿名提问</button>
                             <button type="button" data-anonymous-mode="generated" role="tab" aria-selected="false">生成匿名来信</button>
                         </div>
+                        <div class="im-anonymous-context-control" id="im-anonymous-context-control">
+                            <div class="im-anonymous-context-copy"><strong>挂载聊天上下文</strong><small>默认最近 20 条，世界书始终挂载</small></div>
+                            <div class="im-anonymous-context-options">
+                                <label class="im-anonymous-context-switch" for="im-anonymous-context-enabled" title="是否挂载最近聊天上下文">
+                                    <input id="im-anonymous-context-enabled" type="checkbox" checked aria-label="挂载最近聊天上下文">
+                                    <span aria-hidden="true"></span>
+                                </label>
+                                <label class="im-anonymous-context-count-field" for="im-anonymous-context-count"><input id="im-anonymous-context-count" type="number" inputmode="numeric" min="1" max="50" step="1" value="20" aria-label="挂载聊天上下文条数"><em>条</em></label>
+                            </div>
+                        </div>
                         <div class="im-anonymous-mode-panel is-active" data-anonymous-panel="manual" role="tabpanel">
                             <div class="im-anonymous-section-title"><span>写下问题</span><small>TA 不会知道提问者是你</small></div>
                             <textarea id="im-anonymous-question" maxlength="500" rows="4" placeholder="写下你想匿名问 TA 的问题…"></textarea>
@@ -263,6 +279,9 @@
             modePanels: Array.from(root.document.querySelectorAll('[data-anonymous-panel]')),
             characterBar: root.document.getElementById('im-anonymous-character-bar'),
             question: root.document.getElementById('im-anonymous-question'),
+            contextControl: root.document.getElementById('im-anonymous-context-control'),
+            contextEnabled: root.document.getElementById('im-anonymous-context-enabled'),
+            contextCount: root.document.getElementById('im-anonymous-context-count'),
             ask: root.document.getElementById('im-anonymous-ask'),
             count: root.document.getElementById('im-anonymous-count'),
             generate: root.document.getElementById('im-anonymous-generate'),
@@ -324,6 +343,12 @@
             elements.composerOpen.focus({ preventScroll: true });
         }
 
+        function syncContextControlState() {
+            const enabled = !!elements.contextEnabled.checked;
+            elements.contextControl.classList.toggle('is-disabled', !enabled);
+            elements.contextCount.disabled = state.inFlight || !enabled;
+        }
+
         function setBusy(busy, label = '') {
             state.inFlight = !!busy;
             elements.composerOpen.disabled = busy;
@@ -334,6 +359,8 @@
             elements.characterBar.dataset.busy = busy ? 'true' : 'false';
             elements.characterBar.querySelectorAll('button').forEach(button => { button.disabled = busy; });
             elements.count.disabled = busy;
+            elements.contextEnabled.disabled = busy;
+            syncContextControlState();
             elements.question.disabled = busy;
             elements.ask.textContent = busy && label === 'manual' ? '正在回答…' : '匿名提问';
             elements.generate.textContent = busy && label === 'generated' ? '正在生成…' : '生成问答';
@@ -396,13 +423,14 @@
             renderHistory();
         }
 
-        async function buildRequestContext(friend, seedText) {
+        async function buildRequestContext(friend, seedText, contextMessageCount, includeRecentChat = true) {
             if (root.imApp?.ensureFriendMessagesLoaded) await root.imApp.ensureFriendMessagesLoaded(friend);
             const latestFriend = root.imApp?.getFriendById?.(friend.id) || friend;
             const userState = root.getUserState?.() || root.userState || {};
-            const recentChat = formatRecentMessages(latestFriend, userState.name || 'User');
+            const recentChat = includeRecentChat ? formatRecentMessages(latestFriend, userState.name || 'User', contextMessageCount) : '';
+            const worldBookTriggerContext = [seedText, recentChat].filter(Boolean).join('\n');
             const worldBookContext = ['before_role', 'after_role', 'system_depth']
-                .map(position => root.getWorldBookContextForFriendByPosition?.(position, latestFriend, `${seedText}\n${recentChat}`) || '')
+                .map(position => root.getWorldBookContextForFriendByPosition?.(position, latestFriend, worldBookTriggerContext) || '')
                 .filter(Boolean).join('\n\n');
             return {
                 friend: latestFriend,
@@ -410,11 +438,11 @@
             };
         }
 
-        async function requestAnonymousQa(friend, mode, count, question) {
+        async function requestAnonymousQa(friend, mode, count, question, contextMessageCount, includeRecentChat = true) {
             const apiConfig = root.getApiConfig?.() || root.apiConfig || {};
             const endpoint = root.u2Api?.resolveChatCompletionsEndpoint?.(apiConfig.endpoint || '');
             if (!endpoint || !apiConfig.apiKey || !apiConfig.model) throw new Error('请先在设置中完成 API 配置');
-            const prepared = await buildRequestContext(friend, question || '匿名问答');
+            const prepared = await buildRequestContext(friend, question || '匿名问答', contextMessageCount, includeRecentChat);
             const charName = prepared.friend.nickname || prepared.friend.realName || 'Char';
             const language = prepared.friend.language || 'zh';
             const task = mode === 'manual'
@@ -515,13 +543,16 @@
             const question = cleanText(elements.question.value);
             if (mode === 'manual' && !question) return setModalStatus('请先输入匿名问题', 'error');
             const count = mode === 'generated' ? clampBatchSize(elements.count.value) : 1;
+            const contextMessageCount = clampContextMessageCount(elements.contextCount.value);
+            const includeRecentChat = elements.contextEnabled.checked;
             elements.count.value = String(count);
+            elements.contextCount.value = String(contextMessageCount);
             setBusy(true, mode);
             setStatus('');
             setModalStatus(mode === 'manual' ? '匿名来信已送达，正在等待回答…' : `正在生成 ${count} 条匿名问答…`, 'loading');
             let succeeded = false;
             try {
-                const entries = await requestAnonymousQa(friend, mode, count, question);
+                const entries = await requestAnonymousQa(friend, mode, count, question, contextMessageCount, includeRecentChat);
                 await persistEntries(friend.id, entries);
                 if (mode === 'manual') elements.question.value = '';
                 renderHistory();
@@ -571,6 +602,8 @@
             void refreshCharacters();
         });
         elements.count.addEventListener('change', () => { elements.count.value = String(clampBatchSize(elements.count.value)); });
+        elements.contextCount.addEventListener('change', () => { elements.contextCount.value = String(clampContextMessageCount(elements.contextCount.value)); });
+        elements.contextEnabled.addEventListener('change', syncContextControlState);
         elements.ask.addEventListener('click', () => void runGeneration('manual'));
         elements.generate.addEventListener('click', () => void runGeneration('generated'));
         elements.history.addEventListener('click', event => {
@@ -591,7 +624,9 @@
     return {
         MAX_BATCH_SIZE,
         DEFAULT_BATCH_SIZE,
+        DEFAULT_CONTEXT_MESSAGE_COUNT,
         clampBatchSize,
+        clampContextMessageCount,
         normalizeAnonymousQaEntry,
         normalizeAnonymousQaData,
         removeAnonymousQaEntry,
@@ -599,6 +634,7 @@
         extractResponseContent,
         parseAnonymousQaResponse,
         buildAnonymousQaContext,
+        formatRecentMessages,
         initializeBrowserGame
     };
 });
