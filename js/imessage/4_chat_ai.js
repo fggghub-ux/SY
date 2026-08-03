@@ -231,6 +231,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return String(message.content || message.text || message.description || '').trim();
     }
 
+    function getSingleChatMessageRange(friend) {
+        return window.imDataUtils?.normalizeChatMessageRange
+            ? window.imDataUtils.normalizeChatMessageRange(friend?.messageCountMin, friend?.messageCountMax, 2, 8)
+            : { min: 2, max: 8 };
+    }
+
     function buildAutonomousActivityPrompt(friend, now = Date.now()) {
         const messages = Array.isArray(friend?.messages) ? friend.messages : [];
         const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
@@ -239,6 +245,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const userHasNotReplied = !!lastAssistantMessage && (!lastUserMessage || Number(lastAssistantMessage.timestamp) > Number(lastUserMessage.timestamp));
         const charName = friend?.realName || friend?.nickname || '你';
 
+        const messageRange = getSingleChatMessageRange(friend);
         return `【自主活动触发】
 这不是 User 刚刚发来的消息，而是 ${charName} 在自动回复开关开启后，间隔 30-240 分钟随机主动发起的一轮消息。
 当前真实时间：${formatAutonomousPromptTime(now)}
@@ -252,7 +259,7 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
 1. 必须注意上下文里的时间戳，先判断上一轮消息是什么时候、现在是什么时候、这段时间你可能在做什么。
 2. 如果 User 在你上一轮之后一直没回复，可以自然地问 User 在干嘛、怎么没回，或报备你现在正在做什么；不要像客服催促。
 3. 如果最近话题没有结束，要承接上一轮；如果间隔较久，可以开启自然的新话题或分享身边状态。
-4. 输出 2-8 条独立聊天气泡，必须继续遵守原本 <chat_json> JSON 输出格式。`;
+4. 输出 ${messageRange.min}-${messageRange.max} 条独立聊天气泡，必须继续遵守原本 <chat_json> JSON 输出格式。`;
     }
 
     function createApiRunId(friendId) {
@@ -1142,6 +1149,14 @@ ${prompt}
         }, timeoutMs);
 
         try {
+            const temperature = Number.parseFloat(apiConfig.temperature);
+            const headers = globalThis.u2Api?.buildApiHeaders
+                ? globalThis.u2Api.buildApiHeaders(apiConfig, { 'X-U2-Silent-Errors': '1' })
+                : {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiConfig.apiKey}`,
+                    'X-U2-Silent-Errors': '1'
+                };
             console.log('[iMessage API] request start', {
                 endpoint,
                 model: apiConfig.model || '',
@@ -1151,15 +1166,12 @@ ${prompt}
 
             return await fetch(endpoint, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiConfig.apiKey}`,
-                    'X-U2-Silent-Errors': '1'
-                },
+                headers,
                 body: JSON.stringify({
                     model: apiConfig.model || '',
                     messages: messages,
-                    temperature: parseFloat(apiConfig.temperature) || 0.7
+                    temperature: Number.isFinite(temperature) ? temperature : 0.7,
+                    stream: false
                 }),
                 signal: controller.signal
             });
@@ -1176,8 +1188,7 @@ ${prompt}
         }
     }
 
-    const IM_CHAT_FIRST_RESPONSE_TIMEOUT_MS = 45000;
-    const IM_CHAT_STREAM_IDLE_TIMEOUT_MS = 45000;
+    const IM_CHAT_ATTEMPT_TIMEOUT_MS = 90000;
     const IM_CHAT_TOTAL_TIMEOUT_MS = 180000;
     const IM_CHAT_MAX_ATTEMPTS = 2;
 
@@ -1202,19 +1213,9 @@ ${prompt}
         }, 0);
     }
 
-    function extractStreamingText(delta) {
-        const content = delta?.content;
-        if (typeof content === 'string') return content;
-        if (!Array.isArray(content)) return '';
-        return content.map((item) => {
-            if (typeof item === 'string') return item;
-            return typeof item?.text === 'string' ? item.text : '';
-        }).join('');
-    }
-
     function isRetryableChatError(error) {
         if (!error) return false;
-        if (error.name === 'TimeoutError') return error.timeoutPhase === 'first_response';
+        if (error.name === 'TimeoutError') return error.timeoutPhase === 'response';
         if (error.name === 'TypeError') return true;
         return [408, 429, 502, 503, 504].includes(Number(error.status));
     }
@@ -1238,53 +1239,43 @@ ${prompt}
         });
     }
 
-    async function fetchChatCompletionStreamAttempt(endpoint, apiConfig, messages, externalController = null, totalTimeoutMs = IM_CHAT_TOTAL_TIMEOUT_MS) {
+    async function fetchChatCompletionAttempt(endpoint, apiConfig, messages, externalController = null, totalTimeoutMs = IM_CHAT_TOTAL_TIMEOUT_MS) {
         const controller = new AbortController();
         let timeoutPhase = '';
-        let firstResponseTimer = null;
-        let idleTimer = null;
-        let totalTimer = null;
+        let responseTimer = null;
         const startedAt = Date.now();
         const cancelFromOutside = () => controller.abort();
-        const abortForTimeout = (phase) => {
-            timeoutPhase = phase;
+        const abortForTimeout = () => {
+            timeoutPhase = 'response';
             controller.abort();
-        };
-        const resetIdleTimer = () => {
-            if (idleTimer) clearTimeout(idleTimer);
-            idleTimer = setTimeout(() => abortForTimeout('stream_idle'), IM_CHAT_STREAM_IDLE_TIMEOUT_MS);
         };
 
         if (externalController?.signal?.aborted) {
             throw createChatRequestError('AbortError', 'Conversation request was cancelled');
         }
         externalController?.signal?.addEventListener('abort', cancelFromOutside, { once: true });
-        firstResponseTimer = setTimeout(
-            () => abortForTimeout('first_response'),
-            Math.min(IM_CHAT_FIRST_RESPONSE_TIMEOUT_MS, totalTimeoutMs)
-        );
-        totalTimer = setTimeout(() => abortForTimeout('total'), totalTimeoutMs);
+        responseTimer = setTimeout(abortForTimeout, Math.min(IM_CHAT_ATTEMPT_TIMEOUT_MS, totalTimeoutMs));
 
         try {
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: {
+            const temperature = Number.parseFloat(apiConfig.temperature);
+            const headers = globalThis.u2Api?.buildApiHeaders
+                ? globalThis.u2Api.buildApiHeaders(apiConfig, { 'X-U2-Silent-Errors': '1' })
+                : {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${apiConfig.apiKey}`,
-                    'Accept': 'text/event-stream, application/json',
                     'X-U2-Silent-Errors': '1'
-                },
+                };
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers,
                 body: JSON.stringify({
                     model: apiConfig.model || '',
                     messages,
-                    temperature: parseFloat(apiConfig.temperature) || 0.7,
-                    stream: true
+                    temperature: Number.isFinite(temperature) ? temperature : 0.7,
+                    stream: false
                 }),
                 signal: controller.signal
             });
-
-            clearTimeout(firstResponseTimer);
-            firstResponseTimer = null;
 
             if (!response.ok) {
                 let rawBody = '';
@@ -1298,74 +1289,17 @@ ${prompt}
                     retryAfter: response.headers?.get?.('retry-after') || ''
                 });
             }
-
-            const reader = response.body?.getReader?.();
-            if (!reader) {
-                resetIdleTimer();
-                const data = await response.json();
-                return data;
+            let data;
+            try {
+                data = await response.json();
+            } catch (error) {
+                throw createChatRequestError('ApiResponseError', 'API returned invalid JSON', { cause: error });
             }
-
-            const decoder = new TextDecoder();
-            let isEventStream = String(response.headers?.get?.('content-type') || '').toLowerCase().includes('text/event-stream');
-            let rawText = '';
-            let eventBuffer = '';
-            let fullContent = '';
-            let finishReason = '';
-            const consumeEvent = (eventText) => {
-                const payload = eventText.split('\n')
-                    .filter(line => line.startsWith('data:'))
-                    .map(line => line.slice(5).trimStart())
-                    .join('\n')
-                    .trim();
-                if (!payload || payload === '[DONE]') return;
-                try {
-                    const eventData = JSON.parse(payload);
-                    const choice = Array.isArray(eventData?.choices) ? eventData.choices[0] : null;
-                    fullContent += extractStreamingText(choice?.delta || choice?.message);
-                    finishReason = choice?.finish_reason || choice?.finishReason || finishReason;
-                } catch (error) {
-                    console.warn('[iMessage API] ignored malformed SSE event', error);
-                }
-            };
-            resetIdleTimer();
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                resetIdleTimer();
-                const chunk = decoder.decode(value, { stream: true });
-                rawText += chunk;
-                if (!isEventStream && /^\s*(?:event:|data:)/.test(rawText)) isEventStream = true;
-                if (!isEventStream) continue;
-
-                eventBuffer += chunk.replace(/\r\n/g, '\n');
-                const events = eventBuffer.split('\n\n');
-                eventBuffer = events.pop() || '';
-                events.forEach(consumeEvent);
-            }
-
-            const decodedTail = decoder.decode();
-            rawText += decodedTail;
-            if (isEventStream && decodedTail) eventBuffer += decodedTail.replace(/\r\n/g, '\n');
-            if (!isEventStream) {
-                try {
-                    return JSON.parse(rawText);
-                } catch (error) {
-                    throw createChatRequestError('ApiResponseError', 'API returned invalid JSON', { cause: error });
-                }
-            }
-            if (eventBuffer.trim()) consumeEvent(eventBuffer);
-            if (!fullContent) {
-                throw createChatRequestError('ApiResponseError', 'API stream ended without message content');
-            }
-
-            console.log('[iMessage API] stream completed', {
+            console.log('[iMessage API] response completed', {
                 endpointHost: getSafeEndpointHost(endpoint),
-                durationMs: Date.now() - startedAt,
-                contentLength: fullContent.length
+                durationMs: Date.now() - startedAt
             });
-            return { choices: [{ message: { content: fullContent }, finish_reason: finishReason }] };
+            return data;
         } catch (error) {
             if (timeoutPhase && (error?.name === 'AbortError' || controller.signal.aborted)) {
                 throw createChatRequestError('TimeoutError', `API request timed out during ${timeoutPhase}`, {
@@ -1375,9 +1309,7 @@ ${prompt}
             }
             throw error;
         } finally {
-            if (firstResponseTimer) clearTimeout(firstResponseTimer);
-            if (idleTimer) clearTimeout(idleTimer);
-            if (totalTimer) clearTimeout(totalTimer);
+            if (responseTimer) clearTimeout(responseTimer);
             externalController?.signal?.removeEventListener('abort', cancelFromOutside);
         }
     }
@@ -1399,7 +1331,7 @@ ${prompt}
             }
             console.log('[iMessage API] chat attempt start', { ...requestMeta, attempt });
             try {
-                const data = await fetchChatCompletionStreamAttempt(endpoint, apiConfig, messages, externalController, remainingTotalMs);
+                const data = await fetchChatCompletionAttempt(endpoint, apiConfig, messages, externalController, remainingTotalMs);
                 console.log('[iMessage API] chat attempt succeeded', { ...requestMeta, attempt, durationMs: Date.now() - startedAt });
                 return data;
             } catch (error) {
@@ -1435,8 +1367,7 @@ ${prompt}
 
     function getChatApiErrorMessage(error) {
         if (error?.name === 'TimeoutError') {
-            if (error.timeoutPhase === 'first_response') return '接口长时间没有开始响应，已自动重试仍失败';
-            if (error.timeoutPhase === 'stream_idle') return '回复生成中断，接口长时间没有继续返回内容';
+            if (error.timeoutPhase === 'response') return '接口长时间没有返回完整响应，已自动重试仍失败';
             return '回复生成超过 3 分钟，已停止本次请求';
         }
         const status = Number(error?.status) || 0;
@@ -1621,13 +1552,11 @@ ${userRequirementSection}
     const linkedAccountBotInFlight = new Set();
 
     function resolveChatCompletionsEndpoint(apiConfig) {
-        let endpoint = String(apiConfig?.endpoint || '').trim();
+        const endpoint = String(apiConfig?.endpoint || '').trim();
         if (!endpoint) return '';
-        if (endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-        if (!endpoint.endsWith('/chat/completions')) {
-            endpoint = endpoint.endsWith('/v1') ? `${endpoint}/chat/completions` : `${endpoint}/v1/chat/completions`;
-        }
-        return endpoint;
+        return globalThis.u2Api?.resolveChatCompletionsEndpoint
+            ? globalThis.u2Api.resolveChatCompletionsEndpoint(endpoint)
+            : endpoint;
     }
 
     function parseJsonObjectFromText(rawText) {
@@ -2217,7 +2146,7 @@ Output only valid JSON with this exact shape:
                 allowImages: false
             });
             if (!generated) return false;
-            if (window.showBannerNotification) {
+            if (!window.imApp?.isChatConversationOpen?.() && window.showBannerNotification) {
                 window.showBannerNotification(latestFriend, '发布了一条朋友圈');
             }
             return true;
@@ -2331,6 +2260,7 @@ ${unvotedMemberLines.length > 0 ? unvotedMemberLines.join('\n') : '- 无'}
         const requestController = new AbortController();
         const isConversationEpochCurrent = () => getConversationEpoch(friendKey) === conversationEpoch;
         const isConversationCurrent = () => isConversationEpochCurrent() && !requestController.signal.aborted;
+        const finishChatsListRefreshBatch = window.imApp?.beginChatsListRefreshBatch?.();
         aiReplyInFlight.add(friendKey);
         aiReplyControllers.set(friendKey, requestController);
 
@@ -2447,13 +2377,23 @@ ${unvotedMemberLines.length > 0 ? unvotedMemberLines.join('\n') : '- 无'}
             const meetingMemoryScope = safeActorLabel === '群成员'
                 ? '群成员共同经历过的公开事件'
                 : `${safeActorLabel}亲身经历过的事件`;
+            const endedAt = String(meeting.dateText || '').trim()
+                || (Number(meeting.timestamp) > 0 ? formatPromptTime(meeting.timestamp) : '未知');
+            const title = String(meeting.title || '').trim() || '见面记录';
+            const summary = String(meeting.summary || meeting.rawSummary || meeting.content || '').trim()
+                || '（本次见面没有保存可用总结；不得虚构具体细节。）';
             return `【线下转线上衔接｜本轮强制执行】
-当前 User 消息是线下见面结束后、${safeActorLabel}尚未在线回复时发来的首轮线上消息。
-必须先完整读取本轮 <offline_meeting_context>，把其中总结当作${meetingMemoryScope}，再同时回应 User 当前消息；禁止只回复当前文字而跳过见面形成的事实、情绪、约定、未决事项或关系变化。
-见面时的即时动作和物理场景已经结束，不得机械延续；但总结中的有效经历与后续影响仍然成立。`;
+当前处于线下见面结束后、${safeActorLabel}尚未在线回复的交接轮次。以下是本次待交接会面的完整、直接上下文，不依赖任何更早的标签或近期消息窗口：
+<offline_meeting_handoff>
+<ended_at>${endedAt}</ended_at>
+<title>${title}</title>
+<meeting_summary>${summary}</meeting_summary>
+</offline_meeting_handoff>
+把以上总结当作${meetingMemoryScope}，同时回应 User 当前消息。回复须自然体现至少一项与当前消息相关的见面事实、情绪、约定、未决事项或关系变化；若当前话题没有直接对应，也要自然保留关系或情绪余波，不得机械复述整个总结。
+见面时的即时动作和物理场景已经结束，不得把它们当作当前场景继续；但总结中的有效经历与后续影响仍然成立。${safeActorLabel === '群成员' ? ' 只可使用这里的公开会面总结，禁止引入或推断任何私聊内容。' : ''}`;
         }
 
-        function buildTemporalDecisionPrompt({ currentTime, lastInteraction, actorLabel }) {
+        function buildTemporalDecisionPrompt({ currentTime, lastInteraction, actorLabel, continuityAnchor = null, responseTrigger = null }) {
             const now = currentTime instanceof Date ? currentTime : new Date(currentTime);
             const currentTimeText = formatPromptTime(now.getTime());
             const currentPeriod = getPromptTimePeriod(now);
@@ -2474,13 +2414,18 @@ ${unvotedMemberLines.length > 0 ? unvotedMemberLines.join('\n') : '- 无'}
             const interactionTime = Number(lastInteraction.timestamp);
             const interactionDate = new Date(interactionTime);
             const gapMs = Math.max(0, now.getTime() - interactionTime);
-            const crossedDate = !isSamePromptCalendarDate(interactionDate, now);
-            const crossedPeriod = getPromptTimePeriod(interactionDate) !== currentPeriod;
+            const continuityTime = Number(continuityAnchor?.timestamp) || interactionTime;
+            const continuityEndTime = Number(responseTrigger?.timestamp) || now.getTime();
+            const continuityDate = new Date(continuityTime);
+            const continuityEndDate = new Date(continuityEndTime);
+            const continuityGapMs = Math.max(0, continuityEndTime - continuityTime);
+            const crossedDate = !isSamePromptCalendarDate(continuityDate, continuityEndDate);
+            const crossedPeriod = getPromptTimePeriod(continuityDate) !== getPromptTimePeriod(continuityEndDate);
             let timeMode = '即时继续';
             if (crossedDate) timeMode = '跨日期';
             else if (crossedPeriod) timeMode = '跨时间段';
-            else if (gapMs >= 2 * 60 * 60 * 1000) timeMode = '长时间间隔';
-            else if (gapMs >= 15 * 60 * 1000) timeMode = '短暂间隔';
+            else if (continuityGapMs >= 2 * 60 * 60 * 1000) timeMode = '长时间间隔';
+            else if (continuityGapMs >= 15 * 60 * 1000) timeMode = '短暂间隔';
 
             const isDelayed = gapMs >= 15 * 60 * 1000;
             let replyResponsibility = '双方即时';
@@ -2497,6 +2442,9 @@ ${unvotedMemberLines.length > 0 ? unvotedMemberLines.join('\n') : '- 无'}
                 : timeMode === '短暂间隔'
                     ? '需要自然过渡'
                     : '强制重置到当前时间点';
+            const reopenedByUserRule = continuityAnchor && responseTrigger?.role === 'user'
+                ? `User 已在 ${formatPromptTime(responseTrigger.timestamp)} 发来本轮新消息，这条新消息是当前回复对象。场景连续性必须从 ${formatPromptTime(continuityAnchor.timestamp)} 的上一次互动计算，不得因 User 的新消息距现在很近就把旧场景判成即时连续。`
+                : '';
             let responsibilityRule = '双方间隔很短，可以自然接话，不必刻意解释时间。';
             if (replyResponsibility === `${safeActorLabel}延迟回复`) {
                 responsibilityRule = `这段空白是${safeActorLabel}没有及时回复 User，不是 User 失联。先用符合人设的简短说法自然表示回复晚了，再回应仍有必要回应的旧消息；禁止反问 User 为什么没回复或去了哪里。`;
@@ -2512,12 +2460,14 @@ ${unvotedMemberLines.length > 0 ? unvotedMemberLines.join('\n') : '- 无'}
             return `【本轮时间状态｜代码已完成判定｜最高优先级】
 - 当前时间：${currentTimeText}（${currentPeriod}）
 - 上一轮互动：${formatPromptTime(interactionTime)}（${lastInteraction.type === 'offline_meeting_record' ? '线下见面' : lastInteraction.role === 'user' ? 'User 消息' : `${safeActorLabel}消息`}）
-- 间隔：约 ${formatPromptDuration(gapMs)}
+- 当前回复间隔：约 ${formatPromptDuration(gapMs)}
+- 场景承接锚点：${formatPromptTime(continuityTime)}${responseTrigger?.timestamp ? ` → User 本轮消息 ${formatPromptTime(responseTrigger.timestamp)}` : ` → 当前时间`}（约 ${formatPromptDuration(continuityGapMs)}）
 - 时间模式：${timeMode}
 - 回复责任：${replyResponsibility}
 - 场景连续性：${sceneContinuity}
 
 必须服从以上判定，不得重新计算或自行改变时间模式。角色当前的动作、地点、作息、环境和话题承接必须以当前时间为准。
+${reopenedByUserRule}
 ${responsibilityRule}
 场景规则：允许连续时可以直接承接未完成内容；需要自然过渡时先体现时间已经过去；强制重置时，上一轮的即时动作、用餐、通勤、催睡、争执、等待等状态默认已经结束，必须先建立当前状态。
 话题规则：普通闲聊和即时状态跨时间后可以过期；约定、问题、重要事件或明确未完成事项可以在自然过渡后继续。不得把所有旧话题全部丢掉，也不得机械延续所有旧话题。`;
@@ -2820,6 +2770,13 @@ ${groupTemporalDecisionPrompt}
 当前聊天以多气泡独立渲染。<chat_json> JSON 数组中的每一个对象只对应一条原子消息：一句独立发言、一个动作、一个反应，或一次明确的语义切换；一个 text/voice/image 等对象绝不能承载多条消息。严禁把多条气泡合并进同一个 text 字段。
 只要回复包含两句及以上彼此独立的话、动作、反应、追问、转折或话题切换，就必须拆成两个及以上独立对象，按真实发送顺序排列；例如连续说三句不同的话，就输出三个 text 对象。只有“嗯”“好”“知道了”这类极短、单一的回应才允许只输出一个气泡。
 严禁把多条消息用换行、斜杠、序号、分号、连续长段落或引号塞进同一个 text 字段来伪装多气泡；宁可缩短每条消息，也必须保持每个对象只是一条自然、可单独发送的聊天气泡。严禁输出 JSON 数组以外的正文、解释、Markdown 或分隔符。`;
+        const chatContextAntiRepetitionPrompt = `\n【基于已注入聊天上下文的表达去重】：
+- 输出前先完整阅读本轮实际可见的聊天记录，特别确认 Char/当前群成员已经表达过的结论、情绪、承诺、解释、追问、计划和正在进行的话题。
+- 本轮不得重复已有角色消息中的核心意思、信息、观点、情绪结论、承诺、提问或句式；仅替换少量词语、语序或表情的同义改写，仍然视为重复。
+- 必须优先回应 User 当前新增的信息，并至少完成一项推进：补充新的具体细节、回答尚未回答的问题、表达新的真实反应、让话题自然往下一步发展，或在无人新发言时分享新的当下状态。不要把已经说完的话换一种说法再发一遍。
+- User 明确要求复述、引用、解释先前内容时，可以简短针对该要求回答；除非 User 明确要求逐字重复，否则不要整段复制旧消息。
+- 同一轮 <chat_json> 内的多个气泡也必须各自承担不同作用，禁止连续气泡反复表达同一句意思。
+- 群聊中，每位成员优先与自己已说过的内容保持连续且不复读；不同成员可以回应同一事件，但必须提供各自不同的视角、信息或反应，禁止多人换着名字复述同一句话。`;
         const chatOutputPriorityPrompt = `\n【严格输出顺序｜聊天气泡最高优先级】：
 1. 回复的第一个非空白字符必须是 <chat_json> 的“<”；禁止在 <chat_json> 前输出状态、解释、思考、Markdown 或任何其他标签。
 2. 必须先完整输出并闭合 <chat_json>...</chat_json>，其中至少包含 1 条有效聊天气泡，然后才能输出任何附加标签。
@@ -3191,6 +3148,7 @@ ${commonMemorySections || 'None'}`);
             addOnlinePromptSection('behavior', `群成员心理、关系与聊天风格规则：
 每个群成员都必须按自己的 Persona、Overview、挂载单聊记忆、关系网和当前群聊上下文分别套用以下规则；不要把一个成员的心理、关系进展或私聊记忆套到其他成员身上。
 ${rolePsychologyAndEvolutionPrompt}
+${chatContextAntiRepetitionPrompt}
 
 群聊特定规则：
 1. 请根据上下文和群成员性格进行回复，所有群员都必须参与回复，除非群聊人数大于10人则挑选5-8人回复。每个发言成员的回复应该被拆分成独立短消息，模拟真实群聊的断续感；超过60中文字/70外文字符的单条 text 必须分段；偶尔可以出现轻微错别字，并由同一个 speaker 在下一条消息中用“*是[正确词汇]”的方式修正，不能让其他成员代为修正。
@@ -3264,8 +3222,9 @@ ${chatOutputPriorityPrompt}
                     .filter(Boolean)
                     .reduce((latest, item) => (!latest || Number(item.timestamp) > Number(latest.timestamp) ? item : latest), null);
                 const lastInteraction = pendingOfflineHandoff || lastRecordedInteraction;
-                const messagesBeforeLastUser = lastUserMessage
-                    ? historyMessages.filter(msg => msg && Number(msg.timestamp) > 0 && Number(msg.timestamp) < Number(lastUserMessage.timestamp))
+                const lastUserIndex = lastUserMessage ? historyMessages.lastIndexOf(lastUserMessage) : -1;
+                const messagesBeforeLastUser = lastUserIndex >= 0
+                    ? historyMessages.slice(0, lastUserIndex)
                     : historyMessages;
                 const lastCharOrMeetingBeforeUser = messagesBeforeLastUser.slice().reverse().find(msg => (
                     msg
@@ -3279,7 +3238,9 @@ ${chatOutputPriorityPrompt}
                 const charTemporalDecisionPrompt = buildTemporalDecisionPrompt({
                     currentTime,
                     lastInteraction,
-                    actorLabel: 'Char'
+                    actorLabel: 'Char',
+                    continuityAnchor: lastInteraction === lastUserMessage ? lastCharOrMeetingBeforeUser : null,
+                    responseTrigger: lastInteraction === lastUserMessage ? lastUserMessage : null
                 });
                 timeRequirement = `\n【时间感知】：
 - 当前系统时间是：${timeString}。现在的时间段是：${currentTimePeriod}。
@@ -3288,6 +3249,7 @@ ${chatOutputPriorityPrompt}
 - 本轮时间与内容承接基准：${lastInteraction ? `${lastInteraction.type === 'offline_meeting_record' ? '线下见面' : lastInteraction.role === 'user' ? 'User 线上消息' : 'Char 线上消息'}，发生于 ${formatPromptTime(lastInteraction.timestamp)}（距离现在约 ${formatPromptDuration(gapSinceLastInteraction)}）` : '未知'}。
 - 线下转线上首轮衔接：${pendingOfflineHandoff ? '是；Char 尚未在线回应本次见面后的 User 消息，必须优先承接见面总结' : '否'}。
 - User 回复前最近一次 Char/线下互动：${lastCharOrMeetingBeforeUser ? `${lastCharOrMeetingBeforeUser.type === 'offline_meeting_record' ? '线下见面结束' : 'Char 发消息'}于 ${formatPromptTime(lastCharOrMeetingBeforeUser.timestamp)}` : '未知'}${userReplyDelay != null ? `（User 隔了约 ${formatPromptDuration(userReplyDelay)}才回复）` : ''}。
+- 如果 User 是间隔很久后今天重新发言，必须优先回应 User 当前这条消息并建立当前场景；旧的即时动作和普通话题默认已结束，只有 User 主动重提或明确未完成的重要事项才能继续。
 - 线下见面与线上消息同样算作一次互动；如果线下见面更新，必须从见面结束时间计算间隔，不得因更早的线上消息而误判 User 长期失联或未回复。
 ${charTemporalDecisionPrompt}
 - **间隔 < 2小时**：可以延续上次话题，提及时间时不刻意。
@@ -3335,9 +3297,11 @@ ${userInputModalityRule}`);
                 : '');
             addOnlinePromptSection('data', `Character Memory:
 ${commonMemorySections || 'None'}`);
+            const singleChatMessageRange = getSingleChatMessageRange(friend);
             addOnlinePromptSection('behavior', `${singleChatHumanPrompt}
+${chatContextAntiRepetitionPrompt}
 Reply naturally as your character in a chat app.
-- 角色的回复应该被拆分成2-8条条独立的短消息，模拟真实聊天的断续感，就像你在思考和打字一样。
+- 角色的回复必须被拆分成 ${singleChatMessageRange.min}-${singleChatMessageRange.max} 条独立的短消息，模拟真实聊天的断续感，就像你在思考和打字一样。
 - 避免一次性写出长篇大论。（超过60中文字/70外文的段落应被强制分段）
 - 偶尔可以出现轻微的错别字，并在下一条消息中用“是[正确词汇]”的方式修正，例如：
   角色: 我明天去那家参观尝尝。
@@ -3402,7 +3366,7 @@ Never truncate OUTPUT(x)
         appendOnlinePromptSections(messages, 'identity');
         appendOnlinePromptSections(messages, 'data');
         const offlineMeetingContext = window.imApp.buildOfflineMeetingContext
-            ? window.imApp.buildOfflineMeetingContext(friend)
+            ? window.imApp.buildOfflineMeetingContext(friend, { excludeRecord: pendingOfflineHandoff })
             : '';
         if (offlineMeetingContext) {
             messages.push({
@@ -3515,13 +3479,6 @@ Never truncate OUTPUT(x)
             });
         }
 
-        if (offlineHandoffContext) {
-            messages.push({
-                role: 'system',
-                content: `<offline_handoff_context>\n${offlineHandoffContext}\n</offline_handoff_context>`
-            });
-        }
-
         if (String(temporalContext || '').trim()) {
             messages.push({
                 role: 'system',
@@ -3557,6 +3514,12 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
             role: 'system',
             content: finalChatJsonFormatReminder
         });
+        if (offlineHandoffContext) {
+            messages.push({
+                role: 'system',
+                content: `<offline_handoff_context>\n${offlineHandoffContext}\n</offline_handoff_context>`
+            });
+        }
         if (responseTriggerMessage) messages.push(responseTriggerMessage);
 
         // Skip API call and return immediately if chatting with official account
@@ -3566,11 +3529,7 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
             return;
         }
 
-            let endpoint = currentApiConfig.endpoint;
-            if(endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-            if(!endpoint.endsWith('/chat/completions')) {
-                endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
-            }
+            const endpoint = resolveChatCompletionsEndpoint(currentApiConfig);
 
             const isRegenerateRequest = options.source === 'regenerate' || !!pendingRegenerateContext;
             const requestApiConfig = getRegenerateRequestApiConfig(currentApiConfig, isRegenerateRequest);
@@ -3903,10 +3862,12 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
                         
                         friend.lovesData.moments.unshift(newMoment);
                         
-                        if (window.showBannerNotification) {
-                            window.showBannerNotification(friend, `【Loves】更新了一条动态`);
-                        } else if (window.showToast) {
-                            window.showToast(`【Loves】${friend.nickname || friend.realName || 'TA'} 刚刚更新了一条动态`);
+                        if (!window.imApp?.isChatConversationOpen?.()) {
+                            if (window.showBannerNotification) {
+                                window.showBannerNotification(friend, `【Loves】更新了一条动态`);
+                            } else if (window.showToast) {
+                                window.showToast(`【Loves】${friend.nickname || friend.realName || 'TA'} 刚刚更新了一条动态`);
+                            }
                         }
                         
                         if (window.lovesApp && window.lovesApp.persistFriendState) {
@@ -3960,10 +3921,12 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
 
                             if (savedSchedule) {
                                 friend = getLiveFriendById(friend.id) || friend;
-                                if (window.showBannerNotification) {
-                                    window.showBannerNotification(friend, `【iCloud行程】添加了: ${scheduleData.title}`);
-                                } else if (window.showToast) {
-                                    window.showToast(`【iCloud行程】${friend.nickname || friend.realName || 'TA'} 添加了: ${scheduleData.title}`);
+                                if (!window.imApp?.isChatConversationOpen?.()) {
+                                    if (window.showBannerNotification) {
+                                        window.showBannerNotification(friend, `【iCloud行程】添加了: ${scheduleData.title}`);
+                                    } else if (window.showToast) {
+                                        window.showToast(`【iCloud行程】${friend.nickname || friend.realName || 'TA'} 添加了: ${scheduleData.title}`);
+                                    }
                                 }
 
                                 if (window.lovesApp && window.lovesApp.currentFriend && String(window.lovesApp.currentFriend.id) === String(friend.id)) {
@@ -4381,7 +4344,7 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
                         window.imChat.rerenderChatContainer(updatedFriend, freshContainer, { scroll: true });
                     } else if (isUserStillLooking && window.imChat.renderSystemNoticeBubble) {
                         window.imChat.renderSystemNoticeBubble(recallNotice, activeFriend, freshContainer, nowMsg);
-                    } else if (window.showBannerNotification) {
+                    } else if (!window.imApp?.isChatConversationOpen?.() && window.showBannerNotification) {
                         window.showBannerNotification(activeFriend, `${actorName}撤回了一条消息`);
                     }
 
@@ -4874,8 +4837,7 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
                 }
                 if (itemTranslation) {
                     msgObj.translation = itemTranslation;
-                    msgObj.showTranslation = speakerFriend.type !== 'group'
-                        && speakerFriend.autoExpandTranslation === true;
+                    msgObj.showTranslation = speakerFriend.autoExpandTranslation === true;
                 }
                 attachSingleChatCot(msgObj);
 
@@ -4886,7 +4848,7 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
 
                 if (isUserStillLooking) {
                     renderGeneratedMessage(msgObj, renderFriend, freshContainer, nowMsg);
-                } else if (window.showBannerNotification) {
+                } else if (!window.imApp?.isChatConversationOpen?.() && window.showBannerNotification) {
                     // Not looking at chat, show banner for this specific message bubble
                     window.showBannerNotification(renderFriend, isStickerReply ? `[表情] ${resolvedSticker.stickerName}` : (isImageReply ? `[图片] ${text}` : text));
                 }
@@ -5211,6 +5173,7 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
             console.error('[iMessage API] request failed', error);
             if (btnEl) btnEl.style.opacity = '1';
         } finally {
+            if (typeof finishChatsListRefreshBatch === 'function') finishChatsListRefreshBatch();
             if (aiReplyControllers.get(friendKey) === requestController) {
                 aiReplyControllers.delete(friendKey);
                 aiReplyInFlight.delete(friendKey);

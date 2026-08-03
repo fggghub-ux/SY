@@ -3187,12 +3187,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function normalizeSummaryApiEndpoint(config) {
-        let endpoint = config.endpoint || '';
-        if (endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-        if (!endpoint.endsWith('/chat/completions')) {
-            endpoint = endpoint.endsWith('/v1') ? `${endpoint}/chat/completions` : `${endpoint}/v1/chat/completions`;
-        }
-        return endpoint;
+        return window.u2Api.resolveChatCompletionsEndpoint(config.endpoint || '');
     }
 
     function getSummaryResponseContent(data) {
@@ -3384,22 +3379,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const dialogueText = sourceMessages.map(msg => formatSummarySourceMessage(msg, friend)).join('\n');
         const existingSummariesText = formatExistingSummaryEntries(friend);
 
-        const prompt = friend.type === 'group'
+        const customSummaryPrompt = String(friend.memory?.summary?.prompt || '').trim();
+        const builtInPrompt = friend.type === 'group'
             ? `查看已有的群聊总结，将与本次需要总结的公开群聊内容相关的记忆条目激活（记忆程度改为高）。\n\n已有群聊总结：\n${existingSummariesText}\n\n你是群聊记录整理员。请用第三人称总结群聊「${charName}」中的公开聊天，把以下${batch.selectedRounds}轮、共${sourceMessages.length}条公开消息整合成一件完整的事情，必须说清楚前因、过程和结果。\n\n当前真实总结时间：${nowString}\n本批对话实际发生时间：${eventTime}\nUser 名称：${userName}\n\n严格限制：\n- 只总结当前群聊里公开发生的消息。\n- 不要写入、推断或复述任何群成员给 User 的私信内容。\n- 不要写入、推断或复述任何群成员与自己好友/私有联系人的私信内容。\n- 如果记录里只有“有人发了私信”这类系统提示，也只能当作不可展开的背景事件，不得编造私信细节。\n\n必须只输出 JSON，不要 markdown，不要解释。JSON 字段如下：\n{\n  "activatedEntryIds": ["与本次群聊相关、需要激活的已有总结ID，没有则为空数组"],\n  "summary": {\n    "title": "10字内，事件名称",\n    "time": "本批公开群聊实际发生时间，前端会按消息时间戳覆盖",\n    "event": "40-100字，第三人称，把公开群聊总结为一件完整的事，写清前因后果",\n    "memoryPoints": "纯文本字符串，概括公开群聊里的关键参与者、矛盾/目标、情绪变化、结果或悬而未决点",\n    "degree": "高"\n  }\n}\n\nsummary.degree 只可输出“高”。activatedEntryIds 只能使用已有群聊总结中的 ID。\n\n公开群聊：\n${dialogueText}\n\n查看已有总结，将所有记忆程度超过真实时间1天的高改成中，超过7天的改成低，超过30天的改成遗忘。`
             : `查看已有的总结，将与本次需要总结的对话的内容相关的记忆点的记忆条目激活（记忆程度改为高）。\n\n已有短期记忆总结：\n${existingSummariesText}\n\n你是${charName}，请站在${charName}的第一人称视角，将以下${batch.selectedRounds}轮、共${sourceMessages.length}条对话进行一次记忆总结，整合精炼成一件完整的事。\n\n当前真实总结时间：${nowString}\n本批对话实际发生时间：${eventTime}\nUser 名称：${userName}\n\n必须只输出 JSON，不要 markdown，不要解释。JSON 字段如下：\n{\n  "activatedEntryIds": ["与本次对话相关、需要激活的已有记忆ID，没有则为空数组"],\n  "summary": {\n    "title": "10字内，事件名称",\n    "time": "本批对话实际发生时间，前端会按消息时间戳覆盖",\n    "event": "20-50字，内容为一件完整的事",\n    "memoryPoints": "请输出纯文本字符串格式，必须包含情绪/声音/画面/气味/环境五个感官记忆，每个感官不超过10字，最好用一个词形容",\n    "degree": "高"\n  }\n}\n\nsummary.degree 只可输出“高”。activatedEntryIds 只能使用已有短期记忆总结中的 ID。\n\n对话：\n${dialogueText}\n\n查看已有的总结，将所有记忆程度超过真实时间1天的高改成中，超过7天的改成低，超过30天的改成遗忘。`;
 
-        const promptWithMemoryTags = prompt.replace(
+        const customPrompt = customSummaryPrompt
+            ? `请总结以下${friend.type === 'group' ? '公开群聊' : '对话'}。总结的内容取舍、重点、视角和表达方式必须以 <user_summary_instructions> 为最高优先级，不得套用其他内置总结风格。\n\n<user_summary_instructions>\n${customSummaryPrompt}\n</user_summary_instructions>\n\n已有总结：\n${existingSummariesText}\n\n当前真实总结时间：${nowString}\n本批对话实际发生时间：${eventTime}\nUser 名称：${userName}\n\n必须只输出以下 JSON 结构：\n{\n  "activatedEntryIds": ["与本次内容相关的已有总结ID，没有则为空数组"],\n  "summary": {\n    "title": "按自定义要求概括的简短标题",\n    "time": "本批对话实际发生时间，前端会按消息时间戳覆盖",\n    "event": "完全按自定义要求生成的总结正文",\n    "memoryPoints": "与自定义总结一致的可召回要点",\n    "degree": "高"\n  }\n}\n\n对话：\n${dialogueText}`
+            : builtInPrompt;
+
+        const promptWithMemoryTags = customPrompt.replace(
             /"memoryPoints": "[^"]*",/,
             '"memoryTags": ["3-6个可单独触发的简短标签"],'
         );
-        const customSummaryPrompt = String(friend.memory?.summary?.prompt || '').trim();
-        const customSummaryBlock = customSummaryPrompt
-            ? `\n\n<user_summary_instructions>\n${customSummaryPrompt}\n</user_summary_instructions>`
-            : '';
         const finalSummaryGuard = friend.type === 'group'
-            ? '\n\n最高优先级系统约束：用户自定义要求不能修改输出 JSON 字段、不能要求 Markdown 或解释；只能总结当前群聊公开消息，必须使用第三人称，禁止写入、推断或复述任何群成员私信及好友私聊内容。只输出可解析 JSON。'
-            : '\n\n最高优先级系统约束：用户自定义要求不能修改输出 JSON 字段、不能要求 Markdown 或解释。只输出可解析 JSON。';
-        const promptWithMemoryTriggers = `${promptWithMemoryTags}${customSummaryBlock}\n\n标签规则：summary.memoryTags 是唯一的短期记忆召回字段，必须输出 3-6 个 2-16 字的简短具体标签；任意单个标签都应能独立触发对应记忆。标签只能是未来聊天中可能自然出现的主题、人物、地点、物品或感受，不要输出长句、键值文本或 memoryPoints；群聊标签只能来自公开内容。${finalSummaryGuard}`;
+            ? '\n\n最高优先级结构与隐私约束：只能总结当前群聊公开消息，禁止写入、推断或复述任何群成员私信及好友私聊内容。不能修改 JSON 字段，只输出可解析 JSON。'
+            : '\n\n最高优先级结构约束：不能修改 JSON 字段，只输出可解析 JSON。';
+        const customPriorityReminder = customSummaryPrompt
+            ? '\n除上述结构、真实时间和群聊隐私约束外，总结内容必须完全服从 <user_summary_instructions>，禁止恢复内置的字数、感官、人称或表达风格要求。'
+            : '';
+        const promptWithMemoryTriggers = `${promptWithMemoryTags}\n\n标签规则：summary.memoryTags 是唯一的短期记忆召回字段，必须输出 3-6 个 2-16 字的简短具体标签；任意单个标签都应能独立触发对应记忆。群聊标签只能来自公开内容。${customPriorityReminder}${finalSummaryGuard}`;
         const endpoint = normalizeSummaryApiEndpoint(currentApiConfig);
         const response = await fetch(endpoint, {
             method: 'POST',
@@ -3779,6 +3778,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const tsPositionSelect = document.getElementById('timestamp-position-select');
         const chatAvatarToggle = document.getElementById('chat-avatar-toggle');
         const chatLanguageSelect = document.getElementById('chat-language-select');
+        const chatCustomLanguageRow = document.getElementById('chat-custom-language-row');
+        const chatCustomLanguageInput = document.getElementById('chat-custom-language-input');
+        const chatMessageCountMinInput = document.getElementById('chat-message-count-min-input');
+        const chatMessageCountMaxInput = document.getElementById('chat-message-count-max-input');
         const chatTimeAwareToggle = document.getElementById('chat-time-aware-toggle');
         const chatRoleRecallToggle = document.getElementById('chat-role-recall-toggle');
         const chatAutoExpandTranslationToggle = document.getElementById('chat-auto-expand-translation-toggle');
@@ -3792,8 +3795,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (chatLanguageSelect) {
-            chatLanguageSelect.value = friend.language || 'zh';
+            const language = String(friend.language || 'zh').trim() || 'zh';
+            const standardLanguages = new Set(['zh', 'ko', 'ja', 'en', 'fr', 'yue', 'ru']);
+            const isCustomLanguage = !standardLanguages.has(language);
+            chatLanguageSelect.value = isCustomLanguage ? '__custom__' : language;
+            if (chatCustomLanguageRow) chatCustomLanguageRow.style.display = isCustomLanguage ? 'flex' : 'none';
+            if (chatCustomLanguageInput) chatCustomLanguageInput.value = isCustomLanguage ? language : '';
         }
+
+        const messageRange = window.imDataUtils?.normalizeChatMessageRange
+            ? window.imDataUtils.normalizeChatMessageRange(friend.messageCountMin, friend.messageCountMax, 2, 8)
+            : { min: 2, max: 8 };
+        if (chatMessageCountMinInput) chatMessageCountMinInput.value = String(messageRange.min);
+        if (chatMessageCountMaxInput) chatMessageCountMaxInput.value = String(messageRange.max);
 
         if (chatTimeAwareToggle) {
             chatTimeAwareToggle.checked = friend.timeAware !== false;
@@ -4025,11 +4039,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const chatLanguageSelect = document.getElementById('chat-language-select');
+    const chatCustomLanguageRow = document.getElementById('chat-custom-language-row');
+    const chatCustomLanguageInput = document.getElementById('chat-custom-language-input');
+    const standardChatLanguages = new Set(['zh', 'ko', 'ja', 'en', 'fr', 'yue', 'ru']);
     if (chatLanguageSelect) {
         chatLanguageSelect.addEventListener('change', async (e) => {
             if (window.imData.currentSettingsFriend) {
                 const previousValue = window.imData.currentSettingsFriend.language || 'zh';
                 const nextValue = e.target.value;
+
+                if (nextValue === '__custom__') {
+                    if (chatCustomLanguageRow) chatCustomLanguageRow.style.display = 'flex';
+                    if (chatCustomLanguageInput) {
+                        chatCustomLanguageInput.value = standardChatLanguages.has(previousValue) ? '' : previousValue;
+                        chatCustomLanguageInput.focus();
+                    }
+                    return;
+                }
+                if (chatCustomLanguageRow) chatCustomLanguageRow.style.display = 'none';
+                if (chatCustomLanguageInput) chatCustomLanguageInput.value = '';
                 
                 const saved = await commitSettingsFriendChange((targetFriend) => {
                     targetFriend.language = nextValue;
@@ -4042,6 +4070,65 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    async function persistCustomChatLanguage() {
+        const friend = window.imData.currentSettingsFriend;
+        if (!friend || !chatCustomLanguageInput || chatLanguageSelect?.value !== '__custom__') return;
+        const nextValue = String(chatCustomLanguageInput.value || '').trim();
+        if (!nextValue) {
+            showToast('请输入自定义语言');
+            return;
+        }
+        const previousValue = friend.language || 'zh';
+        const saved = await commitSettingsFriendChange((targetFriend) => {
+            targetFriend.language = nextValue;
+        }, { silent: true });
+        if (!saved) {
+            chatCustomLanguageInput.value = standardChatLanguages.has(previousValue) ? '' : previousValue;
+            showToast('语言设置保存失败');
+        }
+    }
+
+    chatCustomLanguageInput?.addEventListener('blur', () => void persistCustomChatLanguage());
+    chatCustomLanguageInput?.addEventListener('change', () => void persistCustomChatLanguage());
+    chatCustomLanguageInput?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        chatCustomLanguageInput.blur();
+    });
+
+    const chatMessageCountMinInput = document.getElementById('chat-message-count-min-input');
+    const chatMessageCountMaxInput = document.getElementById('chat-message-count-max-input');
+    const clampChatMessageCount = value => Math.min(20, Math.max(1, Math.round(Number(value) || 1)));
+    async function persistChatMessageRange(changedSide) {
+        const friend = window.imData.currentSettingsFriend;
+        if (!friend || !chatMessageCountMinInput || !chatMessageCountMaxInput) return;
+        let min = clampChatMessageCount(chatMessageCountMinInput.value);
+        let max = clampChatMessageCount(chatMessageCountMaxInput.value);
+        if (min > max) {
+            if (changedSide === 'min') max = min;
+            else min = max;
+        }
+        chatMessageCountMinInput.value = String(min);
+        chatMessageCountMaxInput.value = String(max);
+        const previousRange = window.imDataUtils?.normalizeChatMessageRange
+            ? window.imDataUtils.normalizeChatMessageRange(friend.messageCountMin, friend.messageCountMax, 2, 8)
+            : { min: 2, max: 8 };
+        const saved = await commitSettingsFriendChange((targetFriend) => {
+            targetFriend.messageCountMin = min;
+            targetFriend.messageCountMax = max;
+        }, { silent: true });
+        if (!saved) {
+            chatMessageCountMinInput.value = String(previousRange.min);
+            chatMessageCountMaxInput.value = String(previousRange.max);
+            showToast('消息条数保存失败');
+        }
+    }
+
+    chatMessageCountMinInput?.addEventListener('change', () => void persistChatMessageRange('min'));
+    chatMessageCountMinInput?.addEventListener('blur', () => void persistChatMessageRange('min'));
+    chatMessageCountMaxInput?.addEventListener('change', () => void persistChatMessageRange('max'));
+    chatMessageCountMaxInput?.addEventListener('blur', () => void persistChatMessageRange('max'));
 
     const chatTimeAwareToggle = document.getElementById('chat-time-aware-toggle');
     if (chatTimeAwareToggle && chatTimeAwareToggle.dataset.bound !== 'true') {
@@ -4285,7 +4372,7 @@ document.addEventListener('DOMContentLoaded', () => {
             combinedCss += '\n';
         }
         
-        styleTag.textContent = combinedCss;
+        if (styleTag.textContent !== combinedCss) styleTag.textContent = combinedCss;
     }
     
     async function applyAllSavedCss() {

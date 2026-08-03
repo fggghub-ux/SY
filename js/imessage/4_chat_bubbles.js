@@ -964,6 +964,34 @@ function renderMessageBubble(msg, friend, container, timestamp = Date.now()) {
         container.appendChild(wrapper);
     }
 
+    function getChatHistoryRenderKey(friend) {
+        const messages = Array.isArray(friend?.messages) ? friend.messages : [];
+        const lastMessage = messages[messages.length - 1] || null;
+        const recallPresentation = friend?.memory?.recallPresentation || null;
+        return [
+            String(friend?.id ?? ''),
+            messages.length,
+            String(lastMessage?.id ?? ''),
+            Number(lastMessage?.timestamp) || 0,
+            String(lastMessage?.content ?? lastMessage?.text ?? ''),
+            lastMessage?.showTranslation ? 1 : 0,
+            friend?.showTimestamp ? 1 : 0,
+            String(friend?.timestampPosition || ''),
+            String(recallPresentation?.apiRunId || ''),
+            String(recallPresentation?.triggerUserMessageId || '')
+        ].join('\u0001');
+    }
+
+    function markChatHistoryRenderCurrent(friend, container) {
+        if (container) container._imHistoryRenderKey = getChatHistoryRenderKey(friend);
+    }
+
+    function isChatHistoryRenderCurrent(friend, container) {
+        return !!container
+            && container.childElementCount > 0
+            && container._imHistoryRenderKey === getChatHistoryRenderKey(friend);
+    }
+
     function appendMessageToContainer(friend, container, msg, options = {}) {
         if (!friend || !container || !msg) return false;
 
@@ -986,6 +1014,7 @@ function renderMessageBubble(msg, friend, container, timestamp = Date.now()) {
         if (rendered && container._imHistoryState && container._imHistoryState.friendId === String(friend.id)) {
             container._imHistoryState.totalMessages = Array.isArray(friend.messages) ? friend.messages.length : container._imHistoryState.totalMessages;
         }
+        if (rendered) markChatHistoryRenderCurrent(friend, container);
         if (rendered && options.scroll !== false) {
             window.imChat.scrollToBottom(container);
         }
@@ -1105,6 +1134,7 @@ function renderChatHistory(friend, container, options = {}) {
         if (options.scroll !== false) {
             window.imChat.scrollToBottom(container);
         }
+        markChatHistoryRenderCurrent(friend, container);
     }
 
 function scrollToBottom(container) {
@@ -2559,6 +2589,7 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
     window.imChat.removeMessageFromContainer = removeMessageFromContainer;
     window.imChat.rerenderChatContainer = rerenderChatContainer;
     window.imChat.renderChatHistory = renderChatHistory;
+    window.imChat.isChatHistoryRenderCurrent = isChatHistoryRenderCurrent;
     window.imChat.scrollToBottom = scrollToBottom;
     window.imChat.renderTimestamp = renderTimestamp;
     window.imChat.renderMessageBubble = renderMessageBubble;

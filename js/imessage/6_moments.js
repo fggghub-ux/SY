@@ -2358,12 +2358,7 @@ Do not output markdown, code fences, explanations, chain-of-thought, [Comment] t
     }
 
     function getApiChatCompletionsEndpoint(config = getCurrentMomentApiConfig()) {
-        let endpoint = String(config?.endpoint || '').trim();
-        if (endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-        if (!endpoint.endsWith('/chat/completions')) {
-            endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
-        }
-        return endpoint;
+        return window.u2Api.resolveChatCompletionsEndpoint(config?.endpoint || '');
     }
 
     async function requestMomentApiCompletion(messages, temperature = 0.8) {

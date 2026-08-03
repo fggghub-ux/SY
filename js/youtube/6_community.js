@@ -1027,8 +1027,7 @@
         if (typeof window.buildYtLocalizedJsonContract === 'function') {
             prompt += window.buildYtLocalizedJsonContract(currentSubChannelData, 'every generated comment and thread reply text field');
         }
-        let endpoint = window.apiConfig.endpoint.replace(/\/$/, '');
-        if (!endpoint.endsWith('/chat/completions')) endpoint = endpoint.endsWith('/v1') ? `${endpoint}/chat/completions` : `${endpoint}/v1/chat/completions`;
+        const endpoint = window.u2Api.resolveChatCompletionsEndpoint(window.apiConfig.endpoint);
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -2407,11 +2406,7 @@
                 finalPrompt += `\n\n【统一群聊输出协议｜不可省略】\n- 返回 {"groupReplies":[{"role":"角色","speakerId":"管理员ID或空字符串","name":"显示名","text":"原文","translationZh":"中文翻译或空字符串"}]}。\n- role 只能是 ${allowedRoles}。\n- admin 只能从管理员名单选择，speakerId 必须完全一致；fan 使用自然的粉丝昵称。\n- text 不是中文时必须提供自然中文翻译；text 是中文时 translationZh 为空字符串。\n- 生成 2–6 条简短、自然、有连续性的消息。\n- 只返回合法 JSON，不要 Markdown。`;
             }
 
-            let endpoint = window.apiConfig.endpoint;
-            if(endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-            if(!endpoint.endsWith('/chat/completions')) {
-                endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
-            }
+            const endpoint = window.u2Api.resolveChatCompletionsEndpoint(window.apiConfig.endpoint);
 
             const res = await fetch(endpoint, {
                 method: 'POST',

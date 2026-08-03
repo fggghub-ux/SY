@@ -323,13 +323,8 @@
         }
 
         function normalizeApiEndpoint(config = {}) {
-            let endpoint = safeText(config.endpoint);
-            if (!endpoint) return '';
-            if (endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-            if (!endpoint.endsWith('/chat/completions')) {
-                endpoint = endpoint.endsWith('/v1') ? `${endpoint}/chat/completions` : `${endpoint}/v1/chat/completions`;
-            }
-            return endpoint;
+            const endpoint = safeText(config.endpoint);
+            return endpoint ? window.u2Api.resolveChatCompletionsEndpoint(endpoint) : '';
         }
 
         function buildXUserBoundaryPrompt() {

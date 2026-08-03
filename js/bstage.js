@@ -1104,12 +1104,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function normalizeChatCompletionsEndpoint(endpoint) {
-        let nextEndpoint = String(endpoint || '').trim();
-        if (nextEndpoint.endsWith('/')) nextEndpoint = nextEndpoint.slice(0, -1);
-        if (!nextEndpoint.endsWith('/chat/completions')) {
-            nextEndpoint = nextEndpoint.endsWith('/v1') ? `${nextEndpoint}/chat/completions` : `${nextEndpoint}/v1/chat/completions`;
-        }
-        return nextEndpoint;
+        return window.u2Api.resolveChatCompletionsEndpoint(endpoint);
     }
 
     function stripGeneratedText(value, fallback = '') {
@@ -3880,11 +3875,7 @@ ${history}
 `;
 
         try {
-            let endpoint = resolvedApiConfig.endpoint;
-            if(endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-            if(!endpoint.endsWith('/chat/completions')) {
-                endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
-            }
+            const endpoint = window.u2Api.resolveChatCompletionsEndpoint(resolvedApiConfig.endpoint);
 
             const response = await fetch(endpoint, {
                 method: 'POST',
@@ -4331,11 +4322,7 @@ ${charInfo}
 `;
 
         try {
-            let endpoint = window.apiConfig.endpoint;
-            if(endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-            if(!endpoint.endsWith('/chat/completions')) {
-                endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
-            }
+            const endpoint = window.u2Api.resolveChatCompletionsEndpoint(window.apiConfig.endpoint);
 
             const response = await fetch(endpoint, {
                 method: 'POST',
@@ -4830,11 +4817,7 @@ ${charInfo}
 `;
 
         try {
-            let endpoint = window.apiConfig.endpoint;
-            if(endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-            if(!endpoint.endsWith('/chat/completions')) {
-                endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
-            }
+            const endpoint = window.u2Api.resolveChatCompletionsEndpoint(window.apiConfig.endpoint);
 
             const response = await fetch(endpoint, {
                 method: 'POST',
@@ -5176,11 +5159,7 @@ ${charInfo}
 `;
 
         try {
-            let endpoint = window.apiConfig.endpoint;
-            if(endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-            if(!endpoint.endsWith('/chat/completions')) {
-                endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
-            }
+            const endpoint = window.u2Api.resolveChatCompletionsEndpoint(window.apiConfig.endpoint);
 
             const response = await fetch(endpoint, {
                 method: 'POST',

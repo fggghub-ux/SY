@@ -250,6 +250,7 @@ function buildChatAvatarHtml(friend) {
         }
 
         if (window.imApp.updateChatsUnreadBadges) window.imApp.updateChatsUnreadBadges();
+        if (window.imApp.markChatsListRendered) window.imApp.markChatsListRendered();
     }
 
     window.imChat.updateChatsView = updateChatsView;

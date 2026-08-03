@@ -1874,11 +1874,7 @@
         }
 
         try {
-            let endpoint = window.apiConfig.endpoint;
-            if(endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-            if(!endpoint.endsWith('/chat/completions')) {
-                endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
-            }
+            const endpoint = window.u2Api.resolveChatCompletionsEndpoint(window.apiConfig.endpoint);
 
             const res = await fetch(endpoint, {
                 method: 'POST',
@@ -2073,11 +2069,7 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
 - 每条外语评论必须提供自然准确的简体中文翻译；中文评论的 translationZh 必须为空字符串。
 - 只返回合法 JSON：{"comments":[{"name":"viewer name","text":"原文","translationZh":"简体中文翻译或空字符串"}]}`;
 
-        let endpoint = window.apiConfig.endpoint;
-        if (endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-        if (!endpoint.endsWith('/chat/completions')) {
-            endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
-        }
+        const endpoint = window.u2Api.resolveChatCompletionsEndpoint(window.apiConfig.endpoint);
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -2366,11 +2358,7 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
         }
 
         try {
-            let endpoint = window.apiConfig.endpoint;
-            if(endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-            if(!endpoint.endsWith('/chat/completions')) {
-                endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
-            }
+            const endpoint = window.u2Api.resolveChatCompletionsEndpoint(window.apiConfig.endpoint);
 
             const res = await fetch(endpoint, {
                 method: 'POST',
@@ -2597,11 +2585,7 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
         }
 
         try {
-            let endpoint = window.apiConfig.endpoint;
-            if(endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-            if(!endpoint.endsWith('/chat/completions')) {
-                endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
-            }
+            const endpoint = window.u2Api.resolveChatCompletionsEndpoint(window.apiConfig.endpoint);
 
             const res = await fetch(endpoint, {
                 method: 'POST',
@@ -3411,11 +3395,7 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
             prompt += `\n\n世界书内容：\n${generationWorldBookContext || '无'}`;
 
             try {
-                let endpoint = window.apiConfig.endpoint;
-                if(endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-                if(!endpoint.endsWith('/chat/completions')) {
-                    endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
-                }
+                const endpoint = window.u2Api.resolveChatCompletionsEndpoint(window.apiConfig.endpoint);
 
                 const res = await fetch(endpoint, {
                     method: 'POST',
@@ -3680,11 +3660,7 @@ ${commentRequest}，但不要生成主播“${channel?.name || ''}”、嘉宾�
     }
 
     async function requestYtCharTabGeneration(mode, requirement, count) {
-        let endpoint = window.apiConfig.endpoint;
-        if (endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-        if (!endpoint.endsWith('/chat/completions')) {
-            endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
-        }
+        const endpoint = window.u2Api.resolveChatCompletionsEndpoint(window.apiConfig.endpoint);
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: {

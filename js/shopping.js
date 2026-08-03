@@ -461,11 +461,7 @@
                     throw new Error('请先在系统设置中配置 API');
                 }
 
-                let endpoint = apiConfig.endpoint;
-                if(endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-                if(!endpoint.endsWith('/chat/completions')) {
-                    endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
-                }
+                const endpoint = window.u2Api.resolveChatCompletionsEndpoint(apiConfig.endpoint);
 
                 const response = await fetch(endpoint, {
                     method: 'POST',

@@ -164,17 +164,30 @@ document.addEventListener('DOMContentLoaded', () => {
         const row = window.imData.currentActiveRow;
         if (!row) return false;
 
-        const bubble = row.querySelector('.chat-bubble');
-        if (!bubble) return false;
+        const messageId = String(row.getAttribute('data-message-id') || '').trim();
+        const messageTimestamp = String(row.getAttribute('data-timestamp') || '').trim();
+        const activeFriend = window.imData.currentActiveFriend;
+        const sourceMessages = Array.isArray(activeFriend?.messages) ? activeFriend.messages : [];
+        const sourceMessage = window.imDataUtils?.findMessageByReference
+            ? window.imDataUtils.findMessageByReference(sourceMessages, messageId, messageTimestamp)
+            : (sourceMessages.find(message => messageId && String(message?.id || '') === messageId)
+                || sourceMessages.find(message => messageTimestamp && String(message?.timestamp || '') === messageTimestamp)
+                || null);
+        let text = sourceMessage && window.imApp.getFriendMessagePreview
+            ? String(window.imApp.getFriendMessagePreview(sourceMessage) || '').trim()
+            : '';
 
-        const clone = bubble.cloneNode(true);
-        clone.querySelectorAll('.bubble-meta, .msg-translation, .msg-reply-quote, .bubble-reaction-icon').forEach(node => node.remove());
-
-        const text = (clone.innerText || clone.textContent || '').trim();
+        if (!text) {
+            const bubble = row.querySelector('.chat-bubble') || row.querySelector('.sticker-message-wrap');
+            if (!bubble) return false;
+            const clone = bubble.cloneNode(true);
+            clone.querySelectorAll('.bubble-meta, .msg-translation, .msg-reply-quote, .bubble-reaction-icon').forEach(node => node.remove());
+            text = (clone.innerText || clone.textContent || '').trim();
+        }
         if (!text) return false;
 
         window.imData.currentReplyText = text;
-        window.imData.currentReplyMessageId = row.getAttribute('data-message-id') || null;
+        window.imData.currentReplyMessageId = sourceMessage?.id || messageId || null;
 
         const page = getActiveChatPageForContextMenu();
         if (page) {

@@ -983,8 +983,7 @@
 
     async function requestUserLiveLotteryJson(prompt) {
         if (!window.apiConfig?.endpoint || !window.apiConfig?.apiKey) throw new Error('API_NOT_CONFIGURED');
-        let endpoint = window.apiConfig.endpoint.replace(/\/$/, '');
-        if (!endpoint.endsWith('/chat/completions')) endpoint = endpoint.endsWith('/v1') ? `${endpoint}/chat/completions` : `${endpoint}/v1/chat/completions`;
+        const endpoint = window.u2Api.resolveChatCompletionsEndpoint(window.apiConfig.endpoint);
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -1850,11 +1849,7 @@ JSON 结构必须完全符合：
                 .join('|');
 
             try {
-                let endpoint = window.apiConfig.endpoint;
-                if(endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-                if(!endpoint.endsWith('/chat/completions')) {
-                    endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
-                }
+                const endpoint = window.u2Api.resolveChatCompletionsEndpoint(window.apiConfig.endpoint);
 
                 const res = await fetch(endpoint, {
                     method: 'POST',

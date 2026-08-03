@@ -245,10 +245,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function resolveChatCompletionsEndpoint(config = {}) {
-        const endpoint = String(config.endpoint || '').trim().replace(/\/+$/, '');
-        if (!endpoint) return '';
-        if (/\/chat\/completions$/i.test(endpoint)) return endpoint;
-        return endpoint.endsWith('/v1') ? `${endpoint}/chat/completions` : `${endpoint}/v1/chat/completions`;
+        const endpoint = String(config.endpoint || '').trim();
+        return endpoint ? window.u2Api.resolveChatCompletionsEndpoint(endpoint) : '';
     }
 
     function extractJsonObject(text) {

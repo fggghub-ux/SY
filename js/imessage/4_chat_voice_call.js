@@ -976,11 +976,7 @@ ${chatContextStr || '无'}
 【当前的语音通话上下文】:
 ${recentMessages}`;
 
-                let endpoint = apiConfig.endpoint;
-                if(endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-                if(!endpoint.endsWith('/chat/completions')) {
-                    endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
-                }
+                const endpoint = window.u2Api.resolveChatCompletionsEndpoint(apiConfig.endpoint);
 
                 const response = await fetch(endpoint, {
                     method: 'POST',
@@ -1078,6 +1074,7 @@ ${recentMessages}`;
     let groupCallMessages = [];
     let activeGroupMembers = [];
     let groupCallMessageSeq = 0;
+    let lastGroupCallAiTurn = null;
 
     function startGroupTimer(statusEl, minTimeTextEl) {
         groupCallSeconds = 0;
@@ -1172,6 +1169,7 @@ ${recentMessages}`;
         activeGroupMembers = memberIds;
         groupCallMessages = [];
         groupCallMessageSeq = 0;
+        lastGroupCallAiTurn = null;
 
         // UI Elements
         const hangupBtn = newView.querySelector('#group-call-hangup-btn');
@@ -1182,6 +1180,8 @@ ${recentMessages}`;
         const inputEl = newView.querySelector('#group-call-input');
         const sendBtn = newView.querySelector('#group-call-send-btn');
         const aiBtn = newView.querySelector('#group-call-ai-btn');
+        const regenerateBtn = newView.querySelector('#group-call-regenerate-btn');
+        const actionsRow = newView.querySelector('#group-call-actions-row');
         const groupBgEl = newView.querySelector('#group-call-bg');
         
         let minBanner = document.getElementById('group-call-minimized-banner');
@@ -1381,6 +1381,7 @@ ${recentMessages}`;
 
             groupCallTarget = null;
             groupCallMessages = [];
+            lastGroupCallAiTurn = null;
         };
 
         if (hangupBtn) hangupBtn.addEventListener('click', closeGroupCall);
@@ -1415,6 +1416,7 @@ ${recentMessages}`;
                 const text = inputEl.value.trim();
                 if (!text) return;
                 addGroupCallBubble(text, '__user__', messagesArea);
+                lastGroupCallAiTurn = null;
                 inputEl.value = '';
             });
         }
@@ -1424,7 +1426,7 @@ ${recentMessages}`;
                 root: newView,
                 scrollContainer: messagesArea,
                 bottomControls: inputEl.parentElement?.parentElement,
-                collapseElements: [avatarsGrid],
+                collapseElements: [avatarsGrid, actionsRow],
                 dismissAfterSend: false,
                 onSend: () => {
                     if (!inputEl.value.trim()) return false;
@@ -1434,9 +1436,51 @@ ${recentMessages}`;
             });
         }
 
+        let pendingGroupCallRegenerateContext = null;
+
+        function buildGroupCallRegeneratePrompt(previousReply) {
+            if (!previousReply) return '';
+            return `
+
+【重回重新生成要求】:
+- User 按下了“重回”，请直接重新生成刚才那一轮群通话对话。
+- 新一轮必须自然接住当前通话上下文，但不得复用下面旧回复中的句子、称呼、话题推进方式或结尾。
+- 不要提及“重回”、旧回复或重新生成。
+【刚才被重回的群通话对话】:
+${previousReply}`;
+        }
+
+        function removeGroupCallAiTurn(turn) {
+            const messages = Array.isArray(turn?.messages) ? turn.messages : [];
+            const turnIds = new Set(messages.map(message => message?.callTurnId).filter(Boolean));
+            if (turnIds.size > 0 && messagesArea) {
+                turnIds.forEach(turnId => {
+                    messagesArea.querySelectorAll(`[data-call-turn-id="${turnId}"]`).forEach(node => node.remove());
+                });
+            }
+            groupCallMessages = groupCallMessages.filter(message => !messages.includes(message));
+        }
+
+        function restoreGroupCallAiTurn(messages) {
+            const restoredMessages = [];
+            (Array.isArray(messages) ? messages : []).forEach(message => {
+                const restored = addGroupCallBubble(
+                    message?.text || '',
+                    message?.senderId || '__user__',
+                    messagesArea,
+                    message?.actionText || '',
+                    message?.translationText || ''
+                );
+                if (restored) restoredMessages.push(restored);
+            });
+            return restoredMessages;
+        }
+
         if (aiBtn) {
             bindCallFocusPreservingAction(aiBtn, async () => {
                 if (!groupCallTarget) return;
+                const regenerateContext = pendingGroupCallRegenerateContext;
+                pendingGroupCallRegenerateContext = null;
                 
                 const { apiConfig } = window;
                 const userState = window.userState || {};
@@ -1445,8 +1489,10 @@ ${recentMessages}`;
                     return;
                 }
 
-                aiBtn.style.opacity = '0.5';
-                aiBtn.style.pointerEvents = 'none';
+                [aiBtn, regenerateBtn].filter(Boolean).forEach(button => {
+                    button.style.opacity = '0.5';
+                    button.style.pointerEvents = 'none';
+                });
 
                 try {
                     // Fetch group members details
@@ -1488,6 +1534,7 @@ ${recentMessages}`;
                     const beforeRole = window.getGlobalWorldBookContextByPosition ? window.getGlobalWorldBookContextByPosition('before_role') : '';
                     const afterRole = window.getGlobalWorldBookContextByPosition ? window.getGlobalWorldBookContextByPosition('after_role') : '';
                     const customGroupPrompt = groupCallTarget.memory?.context?.prompt || '';
+                    const regeneratePrompt = buildGroupCallRegeneratePrompt(regenerateContext?.previousReply || '');
                     
                     const effectiveUserPersona = window.imApp?.getEffectivePersonaForFriend ? window.imApp.getEffectivePersonaForFriend(groupCallTarget) : (userState?.persona || '普通用户');
                     
@@ -1523,15 +1570,10 @@ systemPrompt += `\n【!!!重要指示!!!】:
 2. 每次生成 3-8 条按实际发生顺序排列的简短发言。无需让所有成员出现，也不限制一名成员只能说一次；允许两三个人围绕同一件事连续来回。有至少两名可用成员时，本轮通常应形成至少两人之间的接话。
 3. 已接入成员名单：${activeSpeakerNames.length > 0 ? activeSpeakerNames.join('、') : 'None'}。senderName 必须严格使用名单中的准确名字，禁止添加名单外的人，禁止替 User 发言。
 4. 每条 text 都必须是成员真正说出口的短句，口语化、即时、自然；避免长篇独白、总结式轮流发言和重复上一句。
-5. action 只能写通话中能被听见或看见的简短动作、环境声或外显语气，可以为空；不得用 action 偷渡心声、动机、感受判断或心理解释。
-6. translation 必须是 text 对应的自然中文翻译；text 本身是中文时也给出自然中文复述，不要留空。
-7. 严禁输出 thought、inner、monologue、心声、内心、心理活动等字段或内容。不要先思考后回答，不要展示任何未说出口的信息。
-8. 【输出格式】：只返回纯 JSON 数组，数组顺序就是实际接话顺序。每项只能包含 senderName、action、text、translation 四个字段，格式为：[{"senderName":"成员名","action":"可感知动作/环境声或空字符串","text":"原文台词","translation":"中文翻译"}]。`;
-                    let endpoint = apiConfig.endpoint;
-                    if(endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-                    if(!endpoint.endsWith('/chat/completions')) {
-                        endpoint = endpoint.endsWith('/v1') ? endpoint + '/chat/completions' : endpoint + '/v1/chat/completions';
-                    }
+5. translation 必须是 text 对应的自然中文翻译；text 本身是中文时也给出自然中文复述，不要留空。
+6. 只输出对话。严禁输出 action、thought、inner、monologue、心声、内心、心理活动、动作、环境声、旁白等字段或内容；不要展示任何未说出口的信息。
+7. 【输出格式】：只返回纯 JSON 数组，数组顺序就是实际接话顺序。每项只能包含 senderName、text、translation 三个字段，格式为：[{"senderName":"成员名","text":"原文台词","translation":"中文翻译"}]。${regeneratePrompt}`;
+                    const endpoint = window.u2Api.resolveChatCompletionsEndpoint(apiConfig.endpoint);
 
                     const response = await fetch(endpoint, {
                         method: 'POST',
@@ -1572,7 +1614,6 @@ systemPrompt += `\n【!!!重要指示!!!】:
                         if (!Array.isArray(parsed)) parsed = [parsed];
                         parsed = parsed.slice(0, 8).map(item => ({
                             senderName: typeof item?.senderName === 'string' ? item.senderName.trim() : '',
-                            action: typeof item?.action === 'string' ? item.action.trim() : '',
                             text: typeof item?.text === 'string' ? item.text.trim() : '',
                             translation: typeof item?.translation === 'string' ? item.translation.trim() : ''
                         }));
@@ -1584,8 +1625,9 @@ systemPrompt += `\n【!!!重要指示!!!】:
 
                     if (!groupCallTarget) return; // if hung up during fetch
 
-                    parsed.forEach((msgObj, messageIndex) => {
-                        if (msgObj.senderName && (msgObj.text || msgObj.action)) {
+                    const generatedTurn = { messages: [] };
+                    parsed.forEach((msgObj) => {
+                        if (msgObj.senderName && msgObj.text) {
                             // Find member id by name
                             let friend = groupMembers.find(m => 
                                 m.nickname === msgObj.senderName || 
@@ -1595,20 +1637,51 @@ systemPrompt += `\n【!!!重要指示!!!】:
                             );
                             
                             if (friend) {
-                                setTimeout(() => {
-                                    addGroupCallBubble(msgObj.text || '', friend.id, messagesArea, msgObj.action || '', msgObj.translation || '');
-                                }, 450 + (messageIndex * 700));
+                                const message = addGroupCallBubble(msgObj.text, friend.id, messagesArea, '', msgObj.translation || '');
+                                if (message) generatedTurn.messages.push(message);
                             }
                         }
                     });
 
+                    if (generatedTurn.messages.length === 0) {
+                        throw new Error('No valid group call dialogue returned');
+                    }
+                    lastGroupCallAiTurn = generatedTurn;
+
                 } catch (err) {
                     console.error(err);
+                    if (regenerateContext?.previousMessages) {
+                        const restoredMessages = restoreGroupCallAiTurn(regenerateContext.previousMessages);
+                        lastGroupCallAiTurn = { messages: restoredMessages };
+                    }
                     if (window.showToast) window.showToast('API 请求失败');
                 } finally {
-                    aiBtn.style.opacity = '1';
-                    aiBtn.style.pointerEvents = 'auto';
+                    [aiBtn, regenerateBtn].filter(Boolean).forEach(button => {
+                        button.style.opacity = '1';
+                        button.style.pointerEvents = 'auto';
+                    });
                 }
+            });
+        }
+
+        if (regenerateBtn) {
+            bindCallFocusPreservingAction(regenerateBtn, () => {
+                if (!lastGroupCallAiTurn?.messages?.length) {
+                    if (window.showToast) window.showToast('暂无可重回的回复');
+                    return;
+                }
+
+                const previousMessages = [...lastGroupCallAiTurn.messages];
+                pendingGroupCallRegenerateContext = {
+                    previousMessages,
+                    previousReply: previousMessages
+                        .map(message => `${message.senderName || '成员'}：${message.text || ''}`)
+                        .filter(Boolean)
+                        .join('\n')
+                };
+                removeGroupCallAiTurn(lastGroupCallAiTurn);
+                lastGroupCallAiTurn = null;
+                aiBtn.click();
             });
         }
     };

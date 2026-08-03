@@ -47,7 +47,10 @@ window.imData = {
 
 window.imApp = window.imApp || {};
 window.imApp.DEFAULT_STATUS_PROMPT = '固定使用简体中文，写角色此刻没有说出口的三句真实心声。每句约10个汉字，每行一句，共三行；不要添加序号、引号、标题、前缀或解释。';
-window.imApp.DEFAULT_SINGLE_CHAT_COT_PROMPT = '我该怎么回？';
+window.imApp.DEFAULT_SINGLE_CHAT_COT_PROMPT = `请按以下顺序完整分析：
+1. 当前具体日期、时间与时间段，以及这对本轮场景和聊天承接意味着什么。
+2. 结合自己的核心人设、性格、当前情绪和与 User 的关系，分析自己现在最真实的想法与适合的回应方式。
+3. 结合 User 人设、当前消息的内容与语气，分析 User 此刻的需求、感受和适合被怎样回应。`;
 
 window.imApp.scopeUserCss = function(css, scope) {
     if (!css || !scope) return '';
@@ -274,9 +277,10 @@ window.imApp.applyGlobalChatCss = function(themeState = window.u2ThemeState || {
 
     const enabled = !!themeState.imessageChatCssEnabled;
     const css = typeof themeState.imessageChatCss === 'string' ? themeState.imessageChatCss : '';
-    styleTag.textContent = enabled && css.trim()
+    const nextCss = enabled && css.trim()
         ? window.imApp.scopeUserCss(css, '.active-chat-interface.im-chat-single')
         : '';
+    if (styleTag.textContent !== nextCss) styleTag.textContent = nextCss;
 };
 
 window.imApp.createDefaultAutonomousTask = function() {
@@ -626,8 +630,33 @@ window.imApp.normalizeFriendData = function(friend) {
     normalized.relationship = typeof normalized.relationship === 'string' ? normalized.relationship.trim() : '';
     normalized.avatarUrl = normalized.avatarUrl || null;
     normalized.avatarAssetId = normalized.avatarAssetId || null;
+    normalized.imageFaceReferenceUrl = normalized.imageFaceReferenceUrl || null;
+    normalized.imageFaceReferenceAssetId = normalized.imageFaceReferenceAssetId || null;
+    normalized.imageFaceReferenceFileName = normalized.imageFaceReferenceFileName || '';
+    const imagePromptConfig = normalized.imagePromptConfig && typeof normalized.imagePromptConfig === 'object'
+        ? normalized.imagePromptConfig
+        : {};
+    normalized.imagePromptConfig = {
+        charAppearance: String(imagePromptConfig.charAppearance || ''),
+        userAppearance: String(imagePromptConfig.userAppearance || ''),
+        artistPrompt: String(imagePromptConfig.artistPrompt || ''),
+        negativePrompt: String(imagePromptConfig.negativePrompt || ''),
+        lastPrompt: String(imagePromptConfig.lastPrompt || '')
+    };
     normalized.messages = Array.isArray(normalized.messages) ? normalized.messages : [];
+    normalized.language = String(normalized.language || 'zh').trim() || 'zh';
+    const chatMessageRange = window.imDataUtils?.normalizeChatMessageRange
+        ? window.imDataUtils.normalizeChatMessageRange(normalized.messageCountMin, normalized.messageCountMax, 2, 8)
+        : {
+            min: Math.min(20, Math.max(1, Math.round(Number(normalized.messageCountMin) || 2))),
+            max: Math.min(20, Math.max(1, Math.round(Number(normalized.messageCountMax) || 8)))
+        };
+    normalized.messageCountMin = chatMessageRange.min;
+    normalized.messageCountMax = Math.max(chatMessageRange.min, chatMessageRange.max);
     normalized.favoriteUserMessages = window.imApp.normalizeFavoriteUserMessages(normalized.favoriteUserMessages);
+    normalized.anonymousQa = window.imGame?.normalizeAnonymousQaData
+        ? window.imGame.normalizeAnonymousQaData(normalized.anonymousQa)
+        : { entries: [] };
     normalized.chatBg = normalized.chatBg || null;
     normalized.chatBgAssetId = normalized.chatBgAssetId || null;
     normalized.customCssEnabled = !!normalized.customCssEnabled;
@@ -971,9 +1000,23 @@ window.imApp.formatOfflineMeetingRecordForContext = function(message) {
     ].join('\n');
 };
 
-window.imApp.buildOfflineMeetingContext = function(friend) {
+window.imApp.buildOfflineMeetingContext = function(friend, options = {}) {
+    const excludedRecord = options && typeof options === 'object'
+        ? options.excludeRecord
+        : null;
+    const excludedId = String(excludedRecord?.id || '').trim();
+    const excludedSessionId = String(excludedRecord?.offlineSessionId || '').trim();
+    const excludedTimestamp = Number(excludedRecord?.timestamp) || 0;
+    const isExcludedRecord = (message) => {
+        if (!excludedRecord || !message) return false;
+        if (excludedId && String(message.id || '') === excludedId) return true;
+        if (excludedSessionId && String(message.offlineSessionId || '') === excludedSessionId) return true;
+        return !excludedId && !excludedSessionId
+            && excludedTimestamp > 0
+            && Number(message.timestamp) === excludedTimestamp;
+    };
     const records = window.imApp.getRecentContextMessages(friend)
-        .filter(message => message?.type === 'offline_meeting_record')
+        .filter(message => message?.type === 'offline_meeting_record' && !isExcludedRecord(message))
         .map(window.imApp.formatOfflineMeetingRecordForContext)
         .filter(Boolean);
     if (records.length === 0) return '';
@@ -1948,6 +1991,71 @@ window.imApp.persistMomentData = async function(momentId, options = {}) {
     }
 };
 
+const IM_CHAT_LIST_RENDER_DEBOUNCE_MS = 180;
+let imChatListRenderTimer = null;
+let imChatListRenderBatchDepth = 0;
+let imChatListRenderDirty = false;
+
+function isImChatConversationOpen() {
+    if (document.hidden) return false;
+
+    const activeFriendId = window.imData?.currentActiveFriend?.id;
+    if (activeFriendId == null || activeFriendId === '') return false;
+
+    const imessageView = document.getElementById('imessage-view');
+    if (!imessageView || (!imessageView.classList.contains('active') && !imessageView.classList.contains('library-together-popup'))) {
+        return false;
+    }
+
+    const page = document.getElementById(`chat-interface-${activeFriendId}`);
+    return !!page && page.style.display !== 'none';
+}
+
+function flushImChatListRender() {
+    imChatListRenderTimer = null;
+    if (!imChatListRenderDirty || imChatListRenderBatchDepth > 0 || isImChatConversationOpen()) return;
+
+    imChatListRenderDirty = false;
+    if (window.imChat?.renderChatsList) window.imChat.renderChatsList();
+    else if (window.imApp.updateChatsUnreadBadges) window.imApp.updateChatsUnreadBadges();
+}
+
+window.imApp.isChatConversationOpen = isImChatConversationOpen;
+window.imApp.requestChatsListRefresh = function(options = {}) {
+    imChatListRenderDirty = true;
+    if (imChatListRenderBatchDepth > 0 || isImChatConversationOpen()) return false;
+
+    if (options.immediate) {
+        if (imChatListRenderTimer) clearTimeout(imChatListRenderTimer);
+        flushImChatListRender();
+        return true;
+    }
+
+    if (imChatListRenderTimer) return false;
+    imChatListRenderTimer = setTimeout(flushImChatListRender, IM_CHAT_LIST_RENDER_DEBOUNCE_MS);
+    return true;
+};
+window.imApp.beginChatsListRefreshBatch = function() {
+    imChatListRenderBatchDepth += 1;
+    let released = false;
+
+    return () => {
+        if (released) return;
+        released = true;
+        imChatListRenderBatchDepth = Math.max(0, imChatListRenderBatchDepth - 1);
+        if (imChatListRenderBatchDepth === 0 && imChatListRenderDirty) {
+            window.imApp.requestChatsListRefresh();
+        }
+    };
+};
+window.imApp.markChatsListRendered = function() {
+    imChatListRenderDirty = false;
+    if (imChatListRenderTimer) {
+        clearTimeout(imChatListRenderTimer);
+        imChatListRenderTimer = null;
+    }
+};
+
 window.imApp.appendFriendMessage = async function(friendId, message, options = {}) {
     const safeFriendId = String(friendId);
     const targetFriend = (window.imData.friends || []).find(
@@ -1991,9 +2099,8 @@ window.imApp.appendFriendMessage = async function(friendId, message, options = {
         }
         targetMessage.__messageOrder = nextOrder;
         window.imApp.saveState.lastError = null;
-        if (window.imChat?.renderChatsList) window.imChat.renderChatsList();
-        if (window.imApp.updateChatsUnreadBadges) window.imApp.updateChatsUnreadBadges();
-        if (isIncomingMessage && window.u2SystemNotifications?.notifyIncomingMessage) {
+        if (window.imApp.requestChatsListRefresh) window.imApp.requestChatsListRefresh();
+        if (isIncomingMessage && !window.imApp.isChatConversationOpen?.() && window.u2SystemNotifications?.notifyIncomingMessage) {
             window.u2SystemNotifications.notifyIncomingMessage({
                 friend: targetFriend,
                 message: targetMessage
@@ -2011,8 +2118,7 @@ window.imApp.appendFriendMessage = async function(friendId, message, options = {
         window.imApp.syncFriendMessageSummary(targetFriend);
         targetFriend.unreadCount = previousUnreadCount;
         window.imApp.syncActiveFriendReference(targetFriend);
-        if (window.imChat?.renderChatsList) window.imChat.renderChatsList();
-        if (window.imApp.updateChatsUnreadBadges) window.imApp.updateChatsUnreadBadges();
+        if (window.imApp.requestChatsListRefresh) window.imApp.requestChatsListRefresh();
         window.imApp.saveState.lastError = e;
         if (!options.silent && window.showToast) {
             window.showToast('消息保存失败');
@@ -4041,6 +4147,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalInputGroup = document.getElementById('modal-input-group');
     const modalTextareaGroup = document.getElementById('modal-textarea-group');
     const modalTextarea = document.getElementById('modal-textarea');
+    const modalToggleGroup = document.getElementById('modal-toggle-group');
+    const modalToggleLabel = document.getElementById('modal-toggle-label');
+    const modalToggleInput = document.getElementById('modal-toggle-input');
+    const modalReferenceFaceGroup = document.getElementById('modal-reference-face-group');
+    const modalReferenceFacePreview = document.getElementById('modal-reference-face-preview');
+    const modalReferenceFaceTitle = document.getElementById('modal-reference-face-title');
+    const modalReferenceFaceStatus = document.getElementById('modal-reference-face-status');
+    const modalReferenceFaceUploadBtn = document.getElementById('modal-reference-face-upload-btn');
+    const modalReferenceFaceDeleteBtn = document.getElementById('modal-reference-face-delete-btn');
+    const modalReferenceFaceInput = document.getElementById('modal-reference-face-input');
+    const modalImageComposerGroup = document.getElementById('modal-image-composer-group');
+    const modalImageComposerPreview = document.getElementById('modal-image-composer-preview');
+    const modalImageComposerStatus = document.getElementById('modal-image-composer-status');
+    const modalImageComposerUploadBtn = document.getElementById('modal-image-composer-upload-btn');
+    const modalImageComposerRemoveBtn = document.getElementById('modal-image-composer-remove-btn');
+    const modalImageComposerRecognizeBtn = document.getElementById('modal-image-composer-recognize-btn');
+    const modalImageComposerInput = document.getElementById('modal-image-composer-input');
+    const modalGenerationPromptGroup = document.getElementById('modal-generation-prompt-group');
+    const modalGenerationContextBtn = document.getElementById('modal-generation-context-btn');
+    const modalGenerationCharAppearance = document.getElementById('modal-generation-char-appearance');
+    const modalGenerationUserAppearance = document.getElementById('modal-generation-user-appearance');
+    const modalGenerationArtistPrompt = document.getElementById('modal-generation-artist-prompt');
+    const modalGenerationNegativePrompt = document.getElementById('modal-generation-negative-prompt');
     
     // Buttons
     const modalConfirmBtn = document.getElementById('modal-confirm-btn');
@@ -4049,6 +4178,65 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let currentModalCallback = null;
     let currentModalCancelCallback = null;
+    let currentModalReferenceFace = null;
+    let currentModalImageComposer = null;
+    let currentModalGenerationPrompt = null;
+
+    function renderModalImageComposer(composer) {
+        currentModalImageComposer = composer || null;
+        const imageUrl = String(composer?.imageUrl || '');
+        const previewImage = modalImageComposerPreview?.querySelector('img');
+        const previewIcon = modalImageComposerPreview?.querySelector('i');
+        if (modalImageComposerGroup) modalImageComposerGroup.style.display = composer ? 'block' : 'none';
+        if (modalImageComposerStatus) modalImageComposerStatus.textContent = imageUrl
+            ? (composer?.fileName || '已选择图片')
+            : '未选择图片时发送虚拟图片';
+        if (modalImageComposerUploadBtn) modalImageComposerUploadBtn.textContent = imageUrl ? '更换' : '上传';
+        if (modalImageComposerRemoveBtn) modalImageComposerRemoveBtn.style.display = imageUrl ? '' : 'none';
+        if (modalImageComposerRecognizeBtn) modalImageComposerRecognizeBtn.style.display = imageUrl ? 'block' : 'none';
+        if (previewImage && previewIcon) {
+            if (imageUrl) {
+                previewImage.src = imageUrl;
+                previewImage.style.display = 'block';
+                previewIcon.style.display = 'none';
+            } else {
+                previewImage.removeAttribute('src');
+                previewImage.style.display = 'none';
+                previewIcon.style.display = '';
+            }
+        }
+    }
+
+    function renderModalReferenceFace(referenceFace, enableAfterUpload = false) {
+        currentModalReferenceFace = referenceFace || null;
+        const imageUrl = String(referenceFace?.imageUrl || '');
+        const previewImage = modalReferenceFacePreview?.querySelector('img');
+        const previewIcon = modalReferenceFacePreview?.querySelector('i');
+        if (modalReferenceFaceGroup) modalReferenceFaceGroup.style.display = referenceFace ? 'flex' : 'none';
+        if (modalReferenceFaceTitle) modalReferenceFaceTitle.textContent = referenceFace?.title || '角色参考脸';
+        if (modalReferenceFaceStatus) modalReferenceFaceStatus.textContent = imageUrl
+            ? (referenceFace?.fileName || '已上传')
+            : '尚未上传';
+        if (modalReferenceFaceUploadBtn) modalReferenceFaceUploadBtn.textContent = imageUrl ? '更换' : '上传';
+        if (modalReferenceFaceDeleteBtn) modalReferenceFaceDeleteBtn.style.display = imageUrl ? '' : 'none';
+        if (previewImage && previewIcon) {
+            if (imageUrl) {
+                previewImage.src = imageUrl;
+                previewImage.style.display = 'block';
+                previewIcon.style.display = 'none';
+            } else {
+                previewImage.removeAttribute('src');
+                previewImage.style.display = 'none';
+                previewIcon.style.display = '';
+            }
+        }
+        if (modalToggleGroup) modalToggleGroup.style.display = imageUrl ? 'flex' : 'none';
+        if (modalToggleLabel) modalToggleLabel.textContent = '本次使用参考脸';
+        if (modalToggleInput) {
+            modalToggleInput.checked = imageUrl && enableAfterUpload;
+            modalToggleInput.disabled = !imageUrl;
+        }
+    }
 
     function showCustomModal(options) {
         if (!customModalOverlay) return;
@@ -4056,6 +4244,9 @@ document.addEventListener('DOMContentLoaded', () => {
         modalTitle.textContent = options.title || '提示';
         currentModalCallback = options.onConfirm;
         currentModalCancelCallback = options.onCancel;
+        currentModalReferenceFace = null;
+        currentModalImageComposer = null;
+        currentModalGenerationPrompt = options.generationPrompt || null;
 
         if (options.type === 'prompt') {
             const useTextarea = options.multiline === true;
@@ -4075,6 +4266,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 modalTextarea.value = useTextarea ? (options.defaultValue || '') : '';
                 modalTextarea.placeholder = options.placeholder || '';
             }
+            if (options.imageComposer) renderModalImageComposer(options.imageComposer);
+            else if (modalImageComposerGroup) modalImageComposerGroup.style.display = 'none';
+            if (modalGenerationPromptGroup) modalGenerationPromptGroup.style.display = options.generationPrompt ? 'block' : 'none';
+            if (modalGenerationCharAppearance) modalGenerationCharAppearance.value = options.generationPrompt?.charAppearance || '';
+            if (modalGenerationUserAppearance) modalGenerationUserAppearance.value = options.generationPrompt?.userAppearance || '';
+            if (modalGenerationArtistPrompt) modalGenerationArtistPrompt.value = options.generationPrompt?.artistPrompt || '';
+            if (modalGenerationNegativePrompt) modalGenerationNegativePrompt.value = options.generationPrompt?.negativePrompt || '';
+            if (options.referenceFace) renderModalReferenceFace(options.referenceFace);
+            else {
+                if (modalReferenceFaceGroup) modalReferenceFaceGroup.style.display = 'none';
+                if (modalToggleGroup) modalToggleGroup.style.display = options.toggle ? 'flex' : 'none';
+                if (modalToggleLabel) modalToggleLabel.textContent = options.toggle?.label || '';
+                if (modalToggleInput) {
+                    modalToggleInput.checked = !!options.toggle?.checked;
+                    modalToggleInput.disabled = !!options.toggle?.disabled;
+                }
+            }
             modalPromptConfirmBtn.textContent = options.confirmText || '确认';
             modalPromptConfirmBtn.style.background = options.confirmTone === 'dark' ? '#111' : '#007aff';
             modalPromptConfirmBtn.style.color = '#fff';
@@ -4083,6 +4291,10 @@ document.addEventListener('DOMContentLoaded', () => {
             modalPromptConfirmBtn.style.display = 'none';
             modalConfirmContent.style.display = 'block';
             modalPromptContent.style.display = 'none';
+            if (modalToggleGroup) modalToggleGroup.style.display = 'none';
+            if (modalReferenceFaceGroup) modalReferenceFaceGroup.style.display = 'none';
+            if (modalImageComposerGroup) modalImageComposerGroup.style.display = 'none';
+            if (modalGenerationPromptGroup) modalGenerationPromptGroup.style.display = 'none';
             
             modalMessage.textContent = options.message || '';
             modalConfirmBtn.textContent = options.confirmText || '确认';
@@ -4110,6 +4322,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function getCurrentModalPromptState() {
+        const promptValue = modalTextareaGroup?.style.display === 'block'
+            ? (modalTextarea?.value || '')
+            : (modalInput?.value || '');
+        return {
+            promptValue,
+            toggleChecked: !!modalToggleInput?.checked,
+            referenceImage: currentModalReferenceFace?.imageUrl || '',
+            uploadedImage: currentModalImageComposer?.imageUrl || '',
+            uploadedFileName: currentModalImageComposer?.fileName || '',
+            charAppearance: modalGenerationCharAppearance?.value || '',
+            userAppearance: modalGenerationUserAppearance?.value || '',
+            artistPrompt: modalGenerationArtistPrompt?.value || '',
+            negativePrompt: modalGenerationNegativePrompt?.value || ''
+        };
+    }
+
     function closeCustomModal(isCancel = true) {
         if (!customModalOverlay) return;
         customModalOverlay.classList.remove('active');
@@ -4117,10 +4346,13 @@ document.addEventListener('DOMContentLoaded', () => {
             customModalOverlay.style.display = 'none';
         }, 300);
         if (isCancel && typeof currentModalCancelCallback === 'function') {
-            currentModalCancelCallback();
+            currentModalCancelCallback(getCurrentModalPromptState());
         }
         currentModalCallback = null;
         currentModalCancelCallback = null;
+        currentModalReferenceFace = null;
+        currentModalImageComposer = null;
+        currentModalGenerationPrompt = null;
     }
 
     window.imApp.showCustomModal = showCustomModal;
@@ -4141,13 +4373,96 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (modalPromptConfirmBtn) {
         modalPromptConfirmBtn.addEventListener('click', () => {
-            const promptValue = modalTextareaGroup?.style.display === 'block'
-                ? (modalTextarea?.value || '')
-                : (modalInput?.value || '');
-            if (currentModalCallback) currentModalCallback(promptValue);
+            const modalState = getCurrentModalPromptState();
+            const callbackResult = currentModalCallback
+                ? currentModalCallback(modalState.promptValue, modalState)
+                : undefined;
+            if (callbackResult === false) return;
             closeCustomModal(false);
         });
     }
+
+    modalReferenceFaceUploadBtn?.addEventListener('click', () => modalReferenceFaceInput?.click());
+    modalReferenceFaceInput?.addEventListener('change', async (event) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file || typeof currentModalReferenceFace?.onUpload !== 'function') return;
+        try {
+            modalReferenceFaceUploadBtn.disabled = true;
+            const result = await currentModalReferenceFace.onUpload(file);
+            if (result?.imageUrl) {
+                renderModalReferenceFace({ ...currentModalReferenceFace, ...result }, true);
+            }
+        } catch (error) {
+            window.showToast?.(error?.message || '参考脸上传失败');
+        } finally {
+            modalReferenceFaceUploadBtn.disabled = false;
+        }
+    });
+    modalReferenceFaceDeleteBtn?.addEventListener('click', async () => {
+        if (typeof currentModalReferenceFace?.onDelete !== 'function') return;
+        try {
+            modalReferenceFaceDeleteBtn.disabled = true;
+            await currentModalReferenceFace.onDelete();
+            renderModalReferenceFace({ ...currentModalReferenceFace, imageUrl: '', fileName: '' });
+        } catch (error) {
+            window.showToast?.(error?.message || '参考脸删除失败');
+        } finally {
+            modalReferenceFaceDeleteBtn.disabled = false;
+        }
+    });
+
+    modalImageComposerUploadBtn?.addEventListener('click', () => modalImageComposerInput?.click());
+    modalImageComposerInput?.addEventListener('change', async (event) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file || typeof currentModalImageComposer?.onUpload !== 'function') return;
+        try {
+            modalImageComposerUploadBtn.disabled = true;
+            const result = await currentModalImageComposer.onUpload(file);
+            if (result?.imageUrl) renderModalImageComposer({ ...currentModalImageComposer, ...result });
+        } catch (error) {
+            window.showToast?.(error?.message || '图片处理失败');
+        } finally {
+            modalImageComposerUploadBtn.disabled = false;
+        }
+    });
+    modalImageComposerRemoveBtn?.addEventListener('click', () => {
+        renderModalImageComposer({ ...currentModalImageComposer, imageUrl: '', fileName: '' });
+    });
+    modalImageComposerRecognizeBtn?.addEventListener('click', async () => {
+        if (!currentModalImageComposer?.imageUrl || typeof currentModalImageComposer?.onRecognize !== 'function') return;
+        try {
+            modalImageComposerRecognizeBtn.disabled = true;
+            modalImageComposerRecognizeBtn.textContent = '正在识图…';
+            const description = String(await currentModalImageComposer.onRecognize(currentModalImageComposer.imageUrl) || '').trim();
+            if (!description) throw new Error('识图接口没有返回图片内容');
+            if (modalTextareaGroup?.style.display === 'block' && modalTextarea) modalTextarea.value = description;
+            else if (modalInput) modalInput.value = description;
+            window.showToast?.('已生成图片内容');
+        } catch (error) {
+            window.showToast?.(error?.message || '图片识别失败');
+        } finally {
+            modalImageComposerRecognizeBtn.disabled = false;
+            modalImageComposerRecognizeBtn.textContent = '识图生成图片内容';
+        }
+    });
+    modalGenerationContextBtn?.addEventListener('click', async () => {
+        if (typeof currentModalGenerationPrompt?.onGenerateFromContext !== 'function') return;
+        try {
+            modalGenerationContextBtn.disabled = true;
+            modalGenerationContextBtn.textContent = '正在整理剧情…';
+            const prompt = String(await currentModalGenerationPrompt.onGenerateFromContext() || '').trim();
+            if (!prompt) throw new Error('没有生成可用的生图提示词');
+            if (modalTextarea) modalTextarea.value = prompt;
+            window.showToast?.('已根据当前剧情生成提示词');
+        } catch (error) {
+            window.showToast?.(error?.message || '剧情提示词生成失败');
+        } finally {
+            modalGenerationContextBtn.disabled = false;
+            modalGenerationContextBtn.textContent = '根据当前剧情生成提示词';
+        }
+    });
 
     if (customModalOverlay) {
         customModalOverlay.addEventListener('click', (e) => {

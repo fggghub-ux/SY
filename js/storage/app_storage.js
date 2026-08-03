@@ -383,18 +383,22 @@
     }
 
     function dataUrlToBlob(dataUrl) {
-        const parts = String(dataUrl || '').split(',');
-        const header = parts[0] || '';
-        const data = parts[1] || '';
-        const mimeMatch = header.match(/data:(.*?);base64/);
-        const mimeType = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
-        const binary = atob(data);
-        const len = binary.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i += 1) {
-            bytes[i] = binary.charCodeAt(i);
+        const source = String(dataUrl || '');
+        const separatorIndex = source.indexOf(',');
+        if (!source.startsWith('data:') || separatorIndex < 0) throw new Error('Invalid data URL.');
+        const header = source.slice(0, separatorIndex);
+        const data = source.slice(separatorIndex + 1);
+        const mimeMatch = header.match(/^data:([^;,]*)/i);
+        const mimeType = mimeMatch?.[1] || 'application/octet-stream';
+        if (/;base64(?:;|$)/i.test(header)) {
+            let normalized = data.replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+            while (normalized.length % 4 !== 0) normalized += '=';
+            const binary = atob(normalized);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+            return new Blob([bytes], { type: mimeType });
         }
-        return new Blob([bytes], { type: mimeType });
+        return new Blob([decodeURIComponent(data)], { type: mimeType });
     }
 
     async function hashBlobSha256(blob) {
@@ -1475,6 +1479,10 @@
             payStatus: safe.payStatus,
             claimed: !!safe.claimed,
             imageSource: safe.imageSource,
+            imageProvider: typeof safe.imageProvider === 'string' ? safe.imageProvider : '',
+            imageModel: typeof safe.imageModel === 'string' ? safe.imageModel : '',
+            imageSize: typeof safe.imageSize === 'string' ? safe.imageSize : '',
+            faceReferenceUsed: !!safe.faceReferenceUsed,
             fakeLinkData: safe.fakeLinkData && typeof safe.fakeLinkData === 'object'
                 ? sanitizePersistentValue(cloneDeep(safe.fakeLinkData))
                 : null,
@@ -1603,6 +1611,10 @@
             payStatus: row.payStatus,
             claimed: !!row.claimed,
             imageSource: row.imageSource,
+            imageProvider: row.imageProvider || '',
+            imageModel: row.imageModel || '',
+            imageSize: row.imageSize || '',
+            faceReferenceUsed: !!row.faceReferenceUsed,
             fakeLinkData: row.fakeLinkData && typeof row.fakeLinkData === 'object'
                 ? cloneDeep(row.fakeLinkData)
                 : null,
@@ -1670,7 +1682,8 @@
     const FRIEND_ASSET_FIELDS = [
         ['avatarUrl', 'avatarAssetId'],
         ['chatBg', 'chatBgAssetId'],
-        ['momentsCover', 'momentsCoverAssetId']
+        ['momentsCover', 'momentsCoverAssetId'],
+        ['imageFaceReferenceUrl', 'imageFaceReferenceAssetId']
     ];
 
     async function persistFriendAssets(friend) {
@@ -1723,7 +1736,8 @@
         const mappings = [
             ['avatarAssetId', 'avatarUrl'],
             ['chatBgAssetId', 'chatBg'],
-            ['momentsCoverAssetId', 'momentsCover']
+            ['momentsCoverAssetId', 'momentsCover'],
+            ['imageFaceReferenceAssetId', 'imageFaceReferenceUrl']
         ];
 
         for (const [assetField, urlField] of mappings) {
@@ -3044,7 +3058,7 @@
                     throw new Error('Backup checksum mismatch.');
                 }
             }
-            const storesData = {};
+            const storesData = { ...payload.stores };
             BACKUP_STORES.forEach((storeName) => {
                 storesData[storeName] = Array.isArray(payload.stores[storeName]) ? payload.stores[storeName] : [];
             });
@@ -3249,7 +3263,10 @@
             upsertBackupRecord(storesData, STORES.imMomentMessages, normalizeImportRecord(STORES.imMomentMessages, record, index));
         });
         (Array.isArray(safe.stickers) ? safe.stickers : []).forEach((record, index) => {
-            upsertBackupRecord(storesData, STORES.imStickers, normalizeImportRecord(STORES.imStickers, record, index));
+            if (!record || typeof record !== 'object') return;
+            const category = cloneDeep(record);
+            category.categoryName = String(category.categoryName ?? category.name ?? category.title ?? category.id ?? `legacy_${index}`);
+            upsertBackupRecord(storesData, STORES.imStickers, category);
         });
         if (safe.momentsCoverUrlMeta !== undefined) {
             upsertBackupRecord(storesData, STORES.meta, { key: META_KEYS.imMomentsCoverAssetId, value: safe.momentsCoverUrlMeta });
@@ -3303,17 +3320,174 @@
         return { stores: storesData, localStorage: [] };
     }
 
+    const LEGACY_STICKER_STORE_NAMES = ['stickers', 'imessage_stickers', 'imessageStickers', 'stickerCategories'];
+
+    function getStickerItemsFromCategory(category = {}) {
+        const candidates = [category.items, category.stickers, category.emojis, category.list];
+        const arrayValue = candidates.find(Array.isArray);
+        if (arrayValue) return arrayValue;
+        const objectValue = candidates.find((candidate) => candidate && typeof candidate === 'object');
+        if (!objectValue) return [];
+        return Object.entries(objectValue).map(([name, value]) => {
+            if (typeof value === 'string') return { name, url: value };
+            return value && typeof value === 'object' ? { name, ...value } : null;
+        }).filter(Boolean);
+    }
+
+    function getStickerAssetId(item = {}) {
+        const value = item.assetId ?? item.imageAssetId ?? item.resourceId ?? '';
+        return value == null ? '' : String(value);
+    }
+
+    function getStickerUrl(item = {}) {
+        const candidates = [item.url, item.src, item.image, item.imageUrl, item.dataUrl, item.data];
+        const value = candidates.find((candidate) => typeof candidate === 'string' && candidate.trim());
+        return typeof value === 'string' ? value.trim() : '';
+    }
+
+    function collectRawStickerRows(source = {}) {
+        const stores = source.stores && typeof source.stores === 'object' ? source.stores : {};
+        const rows = Array.isArray(stores[STORES.imStickers]) ? [...stores[STORES.imStickers]] : [];
+        LEGACY_STICKER_STORE_NAMES.forEach((storeName) => {
+            if (Array.isArray(stores[storeName])) rows.push(...stores[storeName]);
+        });
+        return rows;
+    }
+
+    function collectStickerAssetReferences(categories = []) {
+        const references = new Set();
+        categories.forEach((category) => {
+            getStickerItemsFromCategory(category).forEach((item) => {
+                if (!item || typeof item !== 'object') return;
+                const assetId = getStickerAssetId(item);
+                if (assetId) references.add(assetId);
+            });
+        });
+        return references;
+    }
+
+    function normalizeStickerRowsForImport(rawCategories, storesData, report) {
+        const availableAssetIds = new Set(storesData[STORES.assets].map((asset) => String(asset?.id || '')).filter(Boolean));
+        rawCategories.forEach((rawCategory, categoryIndex) => {
+            if (!rawCategory || typeof rawCategory !== 'object') {
+                report.stickers.skippedCategories += 1;
+                return;
+            }
+            const categoryName = String(
+                rawCategory.categoryName ?? rawCategory.name ?? rawCategory.title ?? rawCategory.id ?? `旧表情包 ${categoryIndex + 1}`
+            ).trim();
+            if (!categoryName) {
+                report.stickers.skippedCategories += 1;
+                return;
+            }
+            const normalizedItems = [];
+            getStickerItemsFromCategory(rawCategory).forEach((rawItem, itemIndex) => {
+                const sourceItem = typeof rawItem === 'string'
+                    ? { name: `表情 ${itemIndex + 1}`, url: rawItem }
+                    : rawItem;
+                if (!sourceItem || typeof sourceItem !== 'object') {
+                    report.stickers.skippedItems += 1;
+                    return;
+                }
+                const item = sanitizePersistentValue(cloneDeep(sourceItem));
+                const name = String(sourceItem.name ?? sourceItem.title ?? sourceItem.label ?? sourceItem.id ?? `表情 ${itemIndex + 1}`).trim();
+                let assetId = getStickerAssetId(sourceItem);
+                let url = getStickerUrl(sourceItem);
+                if (isDataUrl(url)) {
+                    try {
+                        const blob = dataUrlToBlob(url);
+                        if (!blob.size) throw new Error('Empty sticker image.');
+                        assetId = assetId || `sticker_import_${createChecksum(url)}`;
+                        upsertBackupRecord(storesData, STORES.assets, {
+                            id: assetId,
+                            blob,
+                            mimeType: blob.type || 'application/octet-stream',
+                            ownerType: 'im_sticker',
+                            ownerId: categoryName,
+                            field: name,
+                            updatedAt: Date.now()
+                        });
+                        availableAssetIds.add(assetId);
+                        url = '';
+                    } catch (error) {
+                        report.stickers.invalidImages += 1;
+                        report.stickers.skippedItems += 1;
+                        return;
+                    }
+                } else if (isBlobUrl(url)) {
+                    url = '';
+                    report.stickers.expiredBlobUrls += 1;
+                }
+                if (assetId && !availableAssetIds.has(assetId)) {
+                    if (!url) {
+                        report.stickers.missingAssets += 1;
+                        report.stickers.skippedItems += 1;
+                        return;
+                    }
+                    assetId = '';
+                }
+                if (!assetId && !url) {
+                    report.stickers.skippedItems += 1;
+                    return;
+                }
+                normalizedItems.push({
+                    ...item,
+                    name,
+                    url: url || null,
+                    assetId: assetId || ''
+                });
+                report.stickers.importedItems += 1;
+            });
+            if (normalizedItems.length === 0) {
+                report.stickers.skippedCategories += 1;
+                return;
+            }
+            upsertBackupRecord(storesData, STORES.imStickers, {
+                ...sanitizePersistentValue(cloneDeep(rawCategory)),
+                categoryName,
+                items: normalizedItems
+            });
+            report.stickers.importedCategories += 1;
+        });
+    }
+
     function prepareSnapshotForImport(validation) {
         const source = validation.format === 'legacy'
             ? buildLegacyImportSnapshot(validation.payload)
             : validation.payload;
         const storesData = createEmptyBackupStores();
+        const report = {
+            sourceFormat: validation.format,
+            sourceVersion: validation.summary.schemaVersion,
+            stickers: {
+                importedCategories: 0,
+                importedItems: 0,
+                skippedCategories: 0,
+                skippedItems: 0,
+                missingAssets: 0,
+                invalidImages: 0,
+                expiredBlobUrls: 0
+            }
+        };
+        const rawStickerRows = collectRawStickerRows(source);
+        const stickerAssetReferences = collectStickerAssetReferences(rawStickerRows);
         BACKUP_STORES.forEach((storeName) => {
+            if (storeName === STORES.imStickers) return;
             const records = Array.isArray(source.stores?.[storeName]) ? source.stores[storeName] : [];
             records.forEach((record, index) => {
-                upsertBackupRecord(storesData, storeName, normalizeImportRecord(storeName, record, index));
+                try {
+                    upsertBackupRecord(storesData, storeName, normalizeImportRecord(storeName, record, index));
+                } catch (error) {
+                    const assetId = storeName === STORES.assets && record?.id != null ? String(record.id) : '';
+                    if (assetId && stickerAssetReferences.has(assetId)) {
+                        report.stickers.invalidImages += 1;
+                        return;
+                    }
+                    throw error;
+                }
             });
         });
+        normalizeStickerRowsForImport(rawStickerRows, storesData, report);
         mergeLegacyStorageRowsIntoSnapshot(storesData, source.localStorage);
 
         const oldAppStateIndex = storesData[STORES.settings].findIndex((row) => row?.key === 'appState');
@@ -3326,7 +3500,7 @@
             storesData[STORES.settings].splice(oldAppStateIndex, 1);
         }
         upsertBackupRecord(storesData, STORES.meta, { key: META_KEYS.schemaVersion, value: STORAGE_SCHEMA_VERSION });
-        return { stores: storesData, localStorage: [] };
+        return { stores: storesData, localStorage: [], report };
     }
 
     function inspectBackupPayload(payload = {}) {
@@ -3566,6 +3740,7 @@
                 createdAt: Date.now(),
                 sourceVersion: validation.summary.schemaVersion,
                 sourceFormat: validation.format,
+                report: prepared.report,
                 signatures
             });
             reportProgress(progressCallback, '隔离数据校验完成...', 74);
@@ -3580,7 +3755,7 @@
             }
             completed = true;
             reportProgress(progressCallback, '导入完成', 100);
-            return true;
+            return cloneDeep(prepared.report);
         } catch (error) {
             try {
                 if (shadowDb) shadowDb.close();

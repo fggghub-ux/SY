@@ -891,12 +891,8 @@ class NetflixApp {
     }
 
     resolveChatCompletionsEndpoint(endpoint = '') {
-        let resolved = String(endpoint || '').trim();
-        if (resolved.endsWith('/')) resolved = resolved.slice(0, -1);
-        if (!resolved.endsWith('/chat/completions')) {
-            resolved = resolved.endsWith('/v1') ? `${resolved}/chat/completions` : `${resolved}/v1/chat/completions`;
-        }
-        return resolved;
+        const resolved = String(endpoint || '').trim();
+        return resolved ? window.u2Api.resolveChatCompletionsEndpoint(resolved) : '';
     }
 
     getNetflixApiConfig() {

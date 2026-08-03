@@ -71,6 +71,7 @@
             accounts: clonePlainData(accounts),
             currentAccountId,
             apiConfig: clonePlainData(apiConfig),
+            imageGenerationConfig: clonePlainData(imageGenerationConfig),
             minimaxConfig: clonePlainData(minimaxConfig),
             apiPresets: clonePlainData(apiPresets),
             fetchedModels: clonePlainData(fetchedModels),
@@ -93,6 +94,9 @@
         model: '',
         temperature: 0.7,
     };
+    let imageGenerationConfig = window.u2ImageGeneration
+        ? window.u2ImageGeneration.normalizeConfig(window.imageGenerationConfig)
+        : (window.imageGenerationConfig || { activeProvider: 'gemini', providers: {} });
     let minimaxConfig = {
         region: 'cn',
         customEndpointEnabled: false,
@@ -192,6 +196,17 @@
         let migratedImessageCssPresets = false;
         if (savedSettings && typeof savedSettings === 'object') {
             apiConfig = { ...apiConfig, ...(savedSettings.apiConfig || {}) };
+            apiConfig = window.u2Api.sanitizeApiConfig(apiConfig);
+            if (apiConfig.endpoint) {
+                try {
+                    apiConfig.endpoint = window.u2Api.resolveChatCompletionsEndpoint(apiConfig.endpoint);
+                } catch (error) {
+                    console.warn('Saved API endpoint is invalid:', error);
+                }
+            }
+            imageGenerationConfig = window.u2ImageGeneration
+                ? window.u2ImageGeneration.normalizeConfig(savedSettings.imageGenerationConfig || imageGenerationConfig)
+                : (savedSettings.imageGenerationConfig || imageGenerationConfig);
             minimaxConfig = { ...minimaxConfig, ...(savedSettings.minimaxConfig || {}) };
             apiPresets = Array.isArray(savedSettings.apiPresets) ? savedSettings.apiPresets : [];
             fetchedModels = Array.isArray(savedSettings.fetchedModels) ? savedSettings.fetchedModels : [];
@@ -258,6 +273,7 @@
         }
         // Expose globally for other modules if needed
         window.apiConfig = apiConfig;
+        window.imageGenerationConfig = imageGenerationConfig;
         if (window.u2MinimaxTts && typeof window.u2MinimaxTts.setConfig === 'function') {
             minimaxConfig = window.u2MinimaxTts.setConfig({ ...(window.u2MinimaxTts.DEFAULT_CONFIG || {}), ...minimaxConfig });
         } else {
@@ -290,7 +306,19 @@
             apiEndpoint: document.getElementById('api-endpoint-input'),
             apiKey: document.getElementById('api-key-input'),
             apiModel: document.getElementById('api-model-select'),
+            apiModelPickerToggle: document.getElementById('api-model-picker-toggle'),
+            apiModelPicker: document.getElementById('api-model-picker'),
+            apiModelSearch: document.getElementById('api-model-search-input'),
+            apiModelList: document.getElementById('api-model-list'),
             apiTemp: document.getElementById('api-temp-input'),
+            imageProvider: document.getElementById('image-generation-provider-select'),
+            imageEndpoint: document.getElementById('image-generation-endpoint-input'),
+            imageApiKey: document.getElementById('image-generation-key-input'),
+            imageModel: document.getElementById('image-generation-model-input'),
+            imageModelOptions: document.getElementById('image-generation-model-options'),
+            imageSize: document.getElementById('image-generation-size-select'),
+            imageKeyLabel: document.getElementById('image-generation-key-label'),
+            imageEndpointHint: document.getElementById('image-generation-endpoint-hint'),
             bgActivityToggle: document.getElementById('bg-activity-toggle'),
             systemNotificationToggle: document.getElementById('system-notification-toggle'),
             notificationSettingsGroup: document.getElementById('notification-settings-group'),
@@ -314,6 +342,7 @@
         UI.lists.presets = document.getElementById('preset-list');
         
         UI.overlays.apiConfig = document.getElementById('api-config-sheet');
+        UI.overlays.imageGenerationConfig = document.getElementById('image-generation-config-sheet');
         UI.overlays.minimaxConfig = document.getElementById('minimax-config-sheet');
         UI.overlays.savePreset = document.getElementById('save-preset-name-sheet');
         UI.overlays.loadPreset = document.getElementById('load-preset-list-sheet');
@@ -334,6 +363,7 @@
         }
 
         function closeApiConfigSheet() {
+            setApiModelPickerOpen(false);
             closeView(UI.overlays.apiConfig);
         }
 
@@ -342,6 +372,15 @@
                 if (event.target === UI.overlays.apiConfig) {
                     event.stopPropagation();
                     closeApiConfigSheet();
+                }
+            });
+        }
+
+        if (UI.overlays.imageGenerationConfig) {
+            UI.overlays.imageGenerationConfig.addEventListener('click', (event) => {
+                if (event.target === UI.overlays.imageGenerationConfig) {
+                    event.stopPropagation();
+                    closeView(UI.overlays.imageGenerationConfig);
                 }
             });
         }
@@ -4844,29 +4883,73 @@
 
         setAssistiveBallEnabled(assistiveBallSettings.enabled);
 
-        function renderNativeModelSelect() {
-            if (!UI.inputs.apiModel) return;
-            UI.inputs.apiModel.innerHTML = '<option value="" disabled selected>选择模型</option>';
-            if (Array.isArray(fetchedModels)) {
-                fetchedModels.forEach(model => {
-                    const opt = document.createElement('option');
-                    opt.value = model;
-                    opt.textContent = model;
-                    UI.inputs.apiModel.appendChild(opt);
-                });
+        function renderNativeModelSelect(searchText = UI.inputs.apiModelSearch?.value || '') {
+            if (!UI.inputs.apiModelList) return;
+            const query = String(searchText || '').trim().toLocaleLowerCase();
+            const models = (Array.isArray(fetchedModels) ? fetchedModels : [])
+                .filter(model => !query || String(model).toLocaleLowerCase().includes(query));
+            UI.inputs.apiModelList.replaceChildren();
+
+            if (!models.length) {
+                const empty = document.createElement('div');
+                empty.className = 'api-model-empty';
+                empty.textContent = fetchedModels.length
+                    ? '没有匹配的模型'
+                    : '暂无模型列表，可先获取模型或直接填写名称';
+                UI.inputs.apiModelList.appendChild(empty);
+                return;
             }
+
+            const selectedModel = String(UI.inputs.apiModel?.value || '').trim();
+            models.forEach(model => {
+                const option = document.createElement('button');
+                option.type = 'button';
+                option.className = 'api-model-option';
+                option.setAttribute('role', 'option');
+                option.setAttribute('aria-selected', String(model === selectedModel));
+                option.classList.toggle('is-selected', model === selectedModel);
+                option.textContent = model;
+                option.addEventListener('click', () => {
+                    syncSelectValue(UI.inputs.apiModel, model);
+                    tempApiConfig.model = model;
+                    setApiModelPickerOpen(false);
+                });
+                UI.inputs.apiModelList.appendChild(option);
+            });
+        }
+
+        function setApiModelPickerOpen(open) {
+            if (!UI.inputs.apiModelPicker || !UI.inputs.apiModelPickerToggle) return;
+            const shouldOpen = !!open;
+            UI.inputs.apiModelPicker.hidden = !shouldOpen;
+            UI.inputs.apiModelPickerToggle.setAttribute('aria-expanded', String(shouldOpen));
+            if (!shouldOpen) return;
+            if (UI.inputs.apiModelSearch) UI.inputs.apiModelSearch.value = '';
+            renderNativeModelSelect('');
+            setTimeout(() => UI.inputs.apiModelSearch?.focus({ preventScroll: true }), 0);
         }
 
         function syncSelectValue(selectEl, value) {
             if (!selectEl) return;
-            let exists = Array.from(selectEl.options).some(opt => opt.value === value);
-            if (value && !exists) {
-                const opt = document.createElement('option');
-                opt.value = value;
-                opt.textContent = value;
-                selectEl.appendChild(opt);
-            }
             selectEl.value = value;
+        }
+
+        function getApiConfigDraft(requireModel = true) {
+            const config = window.u2Api.validateApiConfig({
+                endpoint: UI.inputs.apiEndpoint?.value,
+                apiKey: UI.inputs.apiKey?.value,
+                model: UI.inputs.apiModel?.value,
+                temperature: UI.inputs.apiTemp?.value
+            }, { requireModel });
+            config.endpoint = window.u2Api.resolveChatCompletionsEndpoint(config.endpoint);
+            return config;
+        }
+
+        function formatApiRequestError(error, fallback) {
+            const status = Number(error?.status) || 0;
+            const detail = String(error?.message || '').trim();
+            if (status) return `${fallback}（HTTP ${status}${detail ? `：${detail}` : ''}）`;
+            return detail || fallback;
         }
 
         const apiConfigBtn = document.getElementById('api-config-btn');
@@ -4875,6 +4958,7 @@
                 e.stopPropagation();
                 
                 renderNativeModelSelect();
+                setApiModelPickerOpen(false);
 
                 tempApiConfig = {
                     endpoint: apiConfig.endpoint || '',
@@ -4891,6 +4975,162 @@
                 syncSystemNotificationControls();
 
                 openApiConfigSheet();
+            });
+        }
+
+        const IMAGE_PROVIDER_COPY = {
+            openai: {
+                name: 'GPT Image（OpenAI）',
+                keyLabel: 'OpenAI API Key',
+                endpointHint: '使用 OpenAI 官方 GPT Image 接口，也可替换为同协议代理地址'
+            },
+            gemini: {
+                name: 'Gemini Image',
+                keyLabel: 'Gemini API Key',
+                endpointHint: '使用 x-goog-api-key 调用 Nano Banana / Gemini Image'
+            },
+            novelai: {
+                name: 'NovelAI',
+                keyLabel: 'Persistent Token',
+                endpointHint: '使用 NovelAI Persistent API Token，返回图片将保存到聊天记录'
+            },
+            grok: {
+                name: 'Grok',
+                keyLabel: 'xAI API Key',
+                endpointHint: '使用 Grok Imagine 图片生成接口'
+            },
+            relay: {
+                name: 'OpenAI 兼容中转站',
+                keyLabel: 'API 密钥',
+                endpointHint: '可填写基础地址或完整 /v1/images/generations 地址'
+            }
+        };
+        let tempImageGenerationConfig = window.u2ImageGeneration
+            ? window.u2ImageGeneration.normalizeConfig(imageGenerationConfig)
+            : clonePlainData(imageGenerationConfig);
+
+        function commitImageGenerationInputsToDraft() {
+            const provider = tempImageGenerationConfig.activeProvider;
+            if (!provider || !tempImageGenerationConfig.providers?.[provider]) return;
+            tempImageGenerationConfig.providers[provider] = {
+                endpoint: String(UI.inputs.imageEndpoint?.value || '').trim(),
+                apiKey: String(UI.inputs.imageApiKey?.value || '').trim(),
+                model: String(UI.inputs.imageModel?.value || '').trim(),
+                size: UI.inputs.imageSize?.value || '1024x1024'
+            };
+        }
+
+        function renderImageGenerationInputs() {
+            const provider = tempImageGenerationConfig.activeProvider || 'gemini';
+            const config = tempImageGenerationConfig.providers?.[provider] || {};
+            const copy = IMAGE_PROVIDER_COPY[provider] || IMAGE_PROVIDER_COPY.relay;
+            if (UI.inputs.imageProvider) UI.inputs.imageProvider.value = provider;
+            if (UI.inputs.imageEndpoint) UI.inputs.imageEndpoint.value = config.endpoint || '';
+            if (UI.inputs.imageApiKey) {
+                UI.inputs.imageApiKey.value = config.apiKey || '';
+                UI.inputs.imageApiKey.placeholder = provider === 'novelai' ? 'pst-...' : 'sk-...';
+            }
+            if (UI.inputs.imageModel) {
+                UI.inputs.imageModel.value = config.model || '';
+                UI.inputs.imageModel.placeholder = provider === 'novelai'
+                    ? '填写账号可用的 NovelAI 图片模型'
+                    : provider === 'relay' ? '填写中转站图片模型' : '填写图片模型';
+            }
+            if (UI.inputs.imageSize) UI.inputs.imageSize.value = config.size || '1024x1024';
+            if (UI.inputs.imageModelOptions) UI.inputs.imageModelOptions.replaceChildren();
+            if (UI.inputs.imageKeyLabel) UI.inputs.imageKeyLabel.textContent = copy.keyLabel;
+            if (UI.inputs.imageEndpointHint) UI.inputs.imageEndpointHint.textContent = copy.endpointHint;
+        }
+
+        const imageGenerationConfigBtn = document.getElementById('image-generation-config-btn');
+        if (imageGenerationConfigBtn && UI.overlays.imageGenerationConfig) {
+            imageGenerationConfigBtn.addEventListener('click', (event) => {
+                event.stopPropagation();
+                tempImageGenerationConfig = window.u2ImageGeneration
+                    ? window.u2ImageGeneration.normalizeConfig(imageGenerationConfig)
+                    : clonePlainData(imageGenerationConfig);
+                renderImageGenerationInputs();
+                openView(UI.overlays.imageGenerationConfig);
+            });
+        }
+
+        if (UI.inputs.imageProvider) {
+            UI.inputs.imageProvider.addEventListener('change', () => {
+                commitImageGenerationInputsToDraft();
+                tempImageGenerationConfig.activeProvider = UI.inputs.imageProvider.value;
+                renderImageGenerationInputs();
+            });
+        }
+
+        [UI.inputs.imageEndpoint, UI.inputs.imageApiKey, UI.inputs.imageModel, UI.inputs.imageSize].forEach((input) => {
+            input?.addEventListener('input', commitImageGenerationInputsToDraft);
+            input?.addEventListener('change', commitImageGenerationInputsToDraft);
+        });
+
+        const fetchImageGenerationModelsBtn = document.getElementById('fetch-image-generation-models-btn');
+        if (fetchImageGenerationModelsBtn) {
+            fetchImageGenerationModelsBtn.addEventListener('click', async () => {
+                const originalHtml = fetchImageGenerationModelsBtn.innerHTML;
+                try {
+                    commitImageGenerationInputsToDraft();
+                    const provider = tempImageGenerationConfig.activeProvider;
+                    const activeConfig = tempImageGenerationConfig.providers?.[provider] || {};
+                    fetchImageGenerationModelsBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><div class="settings-text" style="color:var(--blue-color);">正在获取模型…</div>';
+                    fetchImageGenerationModelsBtn.style.pointerEvents = 'none';
+                    const models = await window.u2ImageGeneration.fetchModels({ provider, ...activeConfig });
+                    if (!models.length) throw new Error('接口返回成功，但没有找到可用模型');
+                    if (UI.inputs.imageModelOptions) {
+                        UI.inputs.imageModelOptions.replaceChildren(...models.map((model) => {
+                            const option = document.createElement('option');
+                            option.value = model;
+                            return option;
+                        }));
+                    }
+                    if (UI.inputs.imageModel && !UI.inputs.imageModel.value.trim()) {
+                        UI.inputs.imageModel.value = models[0];
+                        commitImageGenerationInputsToDraft();
+                    }
+                    UI.inputs.imageModel?.focus({ preventScroll: true });
+                    showToast(`成功获取 ${models.length} 个模型`);
+                } catch (error) {
+                    console.error('Fetch Image Generation Models Error:', error);
+                    showToast(error?.message || '获取生图模型失败');
+                } finally {
+                    fetchImageGenerationModelsBtn.innerHTML = originalHtml;
+                    fetchImageGenerationModelsBtn.style.pointerEvents = '';
+                }
+            });
+        }
+
+        const confirmImageGenerationBtn = document.getElementById('confirm-image-generation-btn');
+        if (confirmImageGenerationBtn) {
+            confirmImageGenerationBtn.addEventListener('click', async () => {
+                const previousConfig = imageGenerationConfig;
+                try {
+                    commitImageGenerationInputsToDraft();
+                    const provider = tempImageGenerationConfig.activeProvider;
+                    const activeConfig = tempImageGenerationConfig.providers?.[provider] || {};
+                    window.u2ImageGeneration.validateActiveConfig({ provider, ...activeConfig });
+                    confirmImageGenerationBtn.classList.add('is-busy');
+                    confirmImageGenerationBtn.style.pointerEvents = 'none';
+
+                    imageGenerationConfig = window.u2ImageGeneration.normalizeConfig(tempImageGenerationConfig);
+                    window.imageGenerationConfig = imageGenerationConfig;
+                    const persisted = await saveGlobalData();
+                    if (!persisted) throw new Error('生图配置未能写入本地存储，请重试');
+
+                    closeView(UI.overlays.imageGenerationConfig);
+                    const providerName = IMAGE_PROVIDER_COPY[provider]?.name || '生图服务';
+                    showToast(`已启用 ${providerName}`);
+                } catch (error) {
+                    imageGenerationConfig = previousConfig;
+                    window.imageGenerationConfig = previousConfig;
+                    console.error('Save Image Generation Config Error:', error);
+                    showToast(error?.message || '生图配置保存失败');
+                } finally {
+                    confirmImageGenerationBtn.classList.remove('is-busy');
+                    confirmImageGenerationBtn.style.pointerEvents = '';
+                }
             });
         }
 
@@ -4952,85 +5192,146 @@
 
         const confirmApiBtn = document.getElementById('confirm-api-btn');
         if (confirmApiBtn) {
-            confirmApiBtn.addEventListener('click', () => {
-                tempApiConfig.endpoint = UI.inputs.apiEndpoint.value;
-                tempApiConfig.apiKey = UI.inputs.apiKey.value;
-                tempApiConfig.model = UI.inputs.apiModel.value;
-                tempApiConfig.temperature = parseFloat(UI.inputs.apiTemp.value) || 0.7;
+            confirmApiBtn.addEventListener('click', async () => {
+                const previousConfig = apiConfig;
+                try {
+                    const nextConfig = getApiConfigDraft(true);
+                    confirmApiBtn.classList.add('is-busy');
+                    confirmApiBtn.style.pointerEvents = 'none';
 
-                apiConfig = {
-                    endpoint: tempApiConfig.endpoint,
-                    apiKey: tempApiConfig.apiKey,
-                    model: tempApiConfig.model,
-                    temperature: tempApiConfig.temperature
-                };
+                    tempApiConfig = { ...nextConfig };
+                    apiConfig = { ...nextConfig };
+                    window.apiConfig = apiConfig;
+                    applyBackgroundActivityControls(false);
+                    await applySystemNotificationControls(false);
 
-                applyBackgroundActivityControls(false);
-                applySystemNotificationControls(false);
-                
-                window.apiConfig = apiConfig;
-                saveGlobalData();
-                notifyApiPresetsUpdated();
-                syncAssistiveBallPanel();
-                
-                closeApiConfigSheet();
-                showToast('API 设置已保存');
+                    const persisted = await saveGlobalData();
+                    if (!persisted) throw new Error('API 设置未能写入本地存储，请重试');
+
+                    notifyApiPresetsUpdated();
+                    syncAssistiveBallPanel();
+                    closeApiConfigSheet();
+                    showToast('API 设置已保存');
+                } catch (error) {
+                    apiConfig = previousConfig;
+                    window.apiConfig = apiConfig;
+                    console.error('Save API Config Error:', error);
+                    showToast(error?.message || 'API 设置保存失败');
+                } finally {
+                    confirmApiBtn.classList.remove('is-busy');
+                    confirmApiBtn.style.pointerEvents = '';
+                }
             });
         }
 
         const btnApiFetch = document.getElementById('fetch-models-btn');
         if (btnApiFetch) {
             btnApiFetch.addEventListener('click', async () => {
-                const endpoint = UI.inputs.apiEndpoint.value.trim();
-                const key = UI.inputs.apiKey.value.trim();
-                
-                if (!endpoint) {
-                    showToast('请填写接口地址');
-                    return;
-                }
-
                 const originalText = btnApiFetch.innerHTML;
                 btnApiFetch.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Fetching...';
+                btnApiFetch.style.pointerEvents = 'none';
                 
                 try {
-                    let url = endpoint;
-                    if (url.endsWith('/')) url = url.slice(0, -1);
-                    if (!url.endsWith('/models')) {
-                        url = url.endsWith('/v1') ? url + '/models' : url + '/v1/models';
-                    }
-
-                    const headers = { 'Content-Type': 'application/json' };
-                    if (key) {
-                        headers['Authorization'] = `Bearer ${key}`;
-                    }
-
+                    const draft = getApiConfigDraft(false);
+                    const url = window.u2Api.resolveModelsEndpoint(draft.endpoint);
+                    const headers = window.u2Api.buildApiHeaders(draft, {
+                        [window.u2Api.INTERNAL_SILENT_ERROR_HEADER]: '1'
+                    });
                     const res = await fetch(url, { method: 'GET', headers });
-                    if (!res.ok) throw new Error('网络请求失败');
+                    if (!res.ok) {
+                        const detail = await window.u2Api.readApiError(res);
+                        throw Object.assign(new Error(detail.message), detail);
+                    }
                     
                     const data = await res.json();
-                    
-                    if (data && data.data && Array.isArray(data.data)) {
-                        fetchedModels = data.data.map(m => m.id);
-                        saveGlobalData();
+                    const modelRows = Array.isArray(data?.data)
+                        ? data.data
+                        : Array.isArray(data?.models)
+                            ? data.models
+                            : Array.isArray(data) ? data : [];
+                    fetchedModels = Array.from(new Set(modelRows
+                        .map(item => typeof item === 'string' ? item : (item?.id || item?.name || ''))
+                        .map(item => String(item || '').trim())
+                        .filter(Boolean)))
+                        .sort((a, b) => a.localeCompare(b));
+
+                    if (fetchedModels.length) {
+                        const currentModel = UI.inputs.apiModel?.value || tempApiConfig.model || '';
+                        await saveGlobalData();
                         renderNativeModelSelect();
-                        // 重新应用当前的选中状态
-                        syncSelectValue(UI.inputs.apiModel, tempApiConfig.model || '');
+                        syncSelectValue(UI.inputs.apiModel, currentModel);
                         showToast(`成功获取 ${fetchedModels.length} 个模型`);
                     } else {
-                        throw new Error('格式无效');
+                        throw new Error('接口返回成功，但没有识别到模型列表；可直接手动填写模型名称');
                     }
                 } catch (error) {
                     console.error('Fetch Models Error:', error);
-                    showToast('获取模型失败');
+                    showToast(formatApiRequestError(error, '获取模型失败'));
                 } finally {
                     btnApiFetch.innerHTML = originalText;
+                    btnApiFetch.style.pointerEvents = '';
+                }
+            });
+        }
+
+        const testApiConnectionBtn = document.getElementById('test-api-connection-btn');
+        if (testApiConnectionBtn) {
+            testApiConnectionBtn.addEventListener('click', async () => {
+                const originalText = testApiConnectionBtn.innerHTML;
+                testApiConnectionBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testing...';
+                testApiConnectionBtn.style.pointerEvents = 'none';
+                try {
+                    const draft = getApiConfigDraft(true);
+                    const endpoint = window.u2Api.resolveChatCompletionsEndpoint(draft.endpoint);
+                    const headers = window.u2Api.buildApiHeaders(draft, {
+                        [window.u2Api.INTERNAL_SILENT_ERROR_HEADER]: '1'
+                    });
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({
+                            model: draft.model,
+                            messages: [{ role: 'user', content: 'Reply with OK.' }],
+                            temperature: 0
+                        })
+                    });
+                    if (!response.ok) {
+                        const detail = await window.u2Api.readApiError(response);
+                        throw Object.assign(new Error(detail.message), detail);
+                    }
+                    const data = await response.json();
+                    const hasCompatibleOutput = Array.isArray(data?.choices) || Array.isArray(data?.output);
+                    if (!hasCompatibleOutput) throw new Error('接口已连接，但返回格式不是兼容的聊天响应');
+                    showToast('连接测试成功');
+                } catch (error) {
+                    console.error('Test API Connection Error:', error);
+                    showToast(formatApiRequestError(error, '连接测试失败'));
+                } finally {
+                    testApiConnectionBtn.innerHTML = originalText;
+                    testApiConnectionBtn.style.pointerEvents = '';
                 }
             });
         }
 
         if (UI.inputs.apiModel) {
+            UI.inputs.apiModel.addEventListener('input', (e) => {
+                tempApiConfig.model = e.target.value;
+            });
             UI.inputs.apiModel.addEventListener('change', (e) => {
                 tempApiConfig.model = e.target.value;
+            });
+        }
+
+        if (UI.inputs.apiModelPickerToggle) {
+            UI.inputs.apiModelPickerToggle.addEventListener('click', () => {
+                const isOpen = UI.inputs.apiModelPickerToggle.getAttribute('aria-expanded') === 'true';
+                setApiModelPickerOpen(!isOpen);
+            });
+        }
+
+        if (UI.inputs.apiModelSearch) {
+            UI.inputs.apiModelSearch.addEventListener('input', () => {
+                renderNativeModelSelect(UI.inputs.apiModelSearch.value);
             });
         }
 
@@ -5051,7 +5352,8 @@
                 const endpoint = UI.inputs.apiEndpoint ? UI.inputs.apiEndpoint.value.trim() : '';
                 const apiKey = UI.inputs.apiKey ? UI.inputs.apiKey.value.trim() : '';
                 const model = UI.inputs.apiModel ? UI.inputs.apiModel.value.trim() : '';
-                const temp = UI.inputs.apiTemp ? parseFloat(UI.inputs.apiTemp.value) || 0.7 : 0.7;
+                const parsedTemp = UI.inputs.apiTemp ? Number.parseFloat(UI.inputs.apiTemp.value) : 0.7;
+                const temp = Number.isFinite(parsedTemp) ? Math.max(0, Math.min(2, parsedTemp)) : 0.7;
                 const presetName = UI.inputs.presetName ? UI.inputs.presetName.value.trim() : '';
 
                 apiPresets.push({
@@ -5401,8 +5703,15 @@
                         try {
                             setBusy(importDataBtn, true);
                             showOperation('正在导入备份...');
-                            await window.appStorage.importAllData(selectedImportPayload, updateOperation);
-                            updateOperation({ message: '导入成功，正在重启...', progress: 100 });
+                            const importReport = await window.appStorage.importAllData(selectedImportPayload, updateOperation);
+                            const stickerReport = importReport?.stickers;
+                            const skippedStickers = Math.max(0, Number(stickerReport?.skippedItems) || 0);
+                            const importedStickers = Math.max(0, Number(stickerReport?.importedItems) || 0);
+                            const resultMessage = skippedStickers > 0
+                                ? `导入成功，表情包导入 ${importedStickers} 张、跳过 ${skippedStickers} 张，正在重启...`
+                                : '导入成功，正在重启...';
+                            updateOperation({ message: resultMessage, progress: 100 });
+                            if (skippedStickers > 0) showToast(`有 ${skippedStickers} 张旧表情图片已损坏或缺失，其他数据已正常导入`);
                             setTimeout(() => window.location.reload(), 1200);
                         } catch (err) {
                             console.error('Import failed:', err);

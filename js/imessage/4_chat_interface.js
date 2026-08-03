@@ -11,6 +11,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let androidRestingViewportHeight = 0;
     let androidViewportWidth = 0;
     let androidKeyboardWasOpen = false;
+    let androidViewportFrame = 0;
+    let androidAppliedViewportHeight = 0;
+    let androidAppliedViewportTop = 0;
 
     function getBatchRowDescriptor(row) {
         if (!row || !row.classList?.contains('chat-row') || row.classList.contains('memory-recall-narration')) return null;
@@ -159,17 +162,23 @@ document.addEventListener('DOMContentLoaded', () => {
         keyboardRestoreTimers = [];
     }
 
-    function applyAndroidChatViewport(page, msgContainer, metrics = getAndroidViewportMetrics()) {
+    function applyAndroidChatViewport(page, msgContainer, metrics = getAndroidViewportMetrics(), options = {}) {
         if (!isAndroid || !page || !window.visualViewport || metrics.height <= 0) return;
 
-        page.style.setProperty('--u2-android-chat-viewport-height', `${metrics.height}px`);
-        page.style.setProperty(
-            '--u2-android-chat-viewport-top',
-            `${Math.round(window.visualViewport.offsetTop || 0)}px`
-        );
-        page.classList.add('u2-android-chat-viewport-sized');
+        const viewportTop = Math.round(window.visualViewport.offsetTop || 0);
+        const metricsChanged = metrics.height !== androidAppliedViewportHeight
+            || viewportTop !== androidAppliedViewportTop;
+        const viewportClassApplied = page.classList.contains('u2-android-chat-viewport-sized');
+        if (!metricsChanged && viewportClassApplied) return;
+        if (metricsChanged) {
+            androidAppliedViewportHeight = metrics.height;
+            androidAppliedViewportTop = viewportTop;
+            page.style.setProperty('--u2-android-chat-viewport-height', `${metrics.height}px`);
+            page.style.setProperty('--u2-android-chat-viewport-top', `${viewportTop}px`);
+        }
+        if (!viewportClassApplied) page.classList.add('u2-android-chat-viewport-sized');
 
-        requestAnimationFrame(() => {
+        if (options.scrollToBottom) requestAnimationFrame(() => {
             if (msgContainer) msgContainer.scrollTop = msgContainer.scrollHeight;
         });
     }
@@ -180,6 +189,8 @@ document.addEventListener('DOMContentLoaded', () => {
         page.classList.remove('u2-android-chat-viewport-sized');
         page.style.removeProperty('--u2-android-chat-viewport-height');
         page.style.removeProperty('--u2-android-chat-viewport-top');
+        androidAppliedViewportHeight = 0;
+        androidAppliedViewportTop = 0;
         page.classList.remove('keyboard-open');
         if (page.style.display === 'none') return;
         window.scrollTo(0, 0);
@@ -205,7 +216,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (isAndroid && window.visualViewport && !imChat._androidViewportListenersBound) {
         imChat._androidViewportListenersBound = true;
-        const handleViewportChange = () => {
+        const processViewportChange = () => {
+            androidViewportFrame = 0;
             const page = document.querySelector('.active-chat-interface[style*="display: flex"]');
             if (!page) return;
 
@@ -224,8 +236,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (inputFocused && androidRestingViewportHeight - metrics.height > 100) {
+                const keyboardJustOpened = !androidKeyboardWasOpen;
                 androidKeyboardWasOpen = true;
-                applyAndroidChatViewport(page, msgContainer, metrics);
+                applyAndroidChatViewport(page, msgContainer, metrics, { scrollToBottom: keyboardJustOpened });
                 return;
             }
 
@@ -234,6 +247,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 androidRestingViewportHeight = Math.max(androidRestingViewportHeight, metrics.height);
                 scheduleAndroidChatViewportRestore(page, msgContainer);
             }
+        };
+
+        const handleViewportChange = () => {
+            if (androidViewportFrame) return;
+            androidViewportFrame = requestAnimationFrame(processViewportChange);
         };
 
         window.visualViewport.addEventListener('resize', handleViewportChange, { passive: true });
@@ -462,6 +480,38 @@ document.addEventListener('DOMContentLoaded', () => {
         return true;
     };
 
+const IM_CHAT_PAGE_CACHE_LIMIT = 6;
+
+function touchChatPageCache(page) {
+    if (page) page.dataset.imChatCacheUsedAt = String(Date.now());
+}
+
+function pruneHiddenChatPages(options = {}) {
+    const chatsContent = document.getElementById('chats-content');
+    if (!chatsContent) return 0;
+
+    const keepFriendId = options.keepFriendId == null ? '' : String(options.keepFriendId);
+    const activeFriendId = window.imData?.currentActiveFriend?.id == null
+        ? ''
+        : String(window.imData.currentActiveFriend.id);
+    const pages = Array.from(chatsContent.querySelectorAll('.active-chat-interface[id^="chat-interface-"]'));
+    const candidates = pages
+        .filter((page) => {
+            const friendId = String(page.id).replace(/^chat-interface-/, '');
+            return friendId !== keepFriendId && friendId !== activeFriendId && page.style.display === 'none';
+        })
+        .sort((left, right) => (Number(left.dataset.imChatCacheUsedAt) || 0) - (Number(right.dataset.imChatCacheUsedAt) || 0));
+
+    let overflow = Math.max(0, pages.length - IM_CHAT_PAGE_CACHE_LIMIT);
+    while (overflow > 0 && candidates.length > 0) {
+        candidates.shift().remove();
+        overflow -= 1;
+    }
+    return Math.max(0, pages.length - IM_CHAT_PAGE_CACHE_LIMIT - overflow);
+}
+
+window.imChat.pruneHiddenChatPages = pruneHiddenChatPages;
+
 async function openChatTab(friend) {
         const chatsContent = document.getElementById('chats-content');
         const navChatsBtn = document.getElementById('nav-chats-btn');
@@ -502,8 +552,7 @@ async function openChatTab(friend) {
         if (page) {
             page.className = interfaceClassName;
             page.style.setProperty('--im-chat-status-color', statusColor);
-            const msgContainer = page.querySelector('.ins-chat-messages');
-            if (msgContainer) msgContainer.innerHTML = '';
+            touchChatPageCache(page);
             if (window.imApp.applyFriendCss) {
                 window.imApp.applyFriendCss(friend);
             }
@@ -514,6 +563,7 @@ async function openChatTab(friend) {
             page.id = pageId;
             page.className = interfaceClassName;
             page.style.display = 'none';
+            touchChatPageCache(page);
             page.style.setProperty('--im-chat-status-color', statusColor);
             
             let avatarHtml;
@@ -1270,7 +1320,11 @@ async function openChatTab(friend) {
                   window.imChat.refreshGroupHeaderAvatar(friend);
               }
               const msgContainer = page.querySelector('.ins-chat-messages');
-              window.imChat.renderChatHistory(friend, msgContainer, { resetWindow: true });
+              const canReuseHistory = window.imChat.isChatHistoryRenderCurrent?.(friend, msgContainer);
+              if (!canReuseHistory) {
+                  msgContainer.innerHTML = '';
+                  window.imChat.renderChatHistory(friend, msgContainer, { resetWindow: true });
+              }
 
              // 确保在已存在页面下，麦克风按钮也能绑定点击事件，或者原先的事件中的闭包上下文能够更新
              // 更好的做法是将最新 friend 更新给全局上下文。上面已经做了:
@@ -1299,6 +1353,7 @@ async function openChatTab(friend) {
             if (navChatsBtn.classList.contains('active')) window.imChat.updateChatsView();
             else navChatsBtn.click();
         }
+        pruneHiddenChatPages({ keepFriendId: friend.id });
     }
 
     function measureContextMenuSafeInset(screenEl, propertyName) {

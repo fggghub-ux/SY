@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const imChat = window.imChat;
     const offlineRegexEngine = window.imOfflineRegex;
     const offlineReasoning = window.imOfflineReasoning;
+    const imageGenerationRuns = new Set();
     const OFFLINE_MAX_RESPONSE_TOKENS = 30000;
     const OFFLINE_COT_PROMPT_IDS = new Set([
         'cot_before',
@@ -133,13 +134,8 @@ function getChatImagePlaceholderUrl() {
     }
 
 function resolveChatCompletionsEndpoint(config) {
-        let endpoint = String(config?.endpoint || '').trim();
-        if (!endpoint) return '';
-        if (endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-        if (!endpoint.endsWith('/chat/completions')) {
-            endpoint = endpoint.endsWith('/v1') ? `${endpoint}/chat/completions` : `${endpoint}/v1/chat/completions`;
-        }
-        return endpoint;
+        const endpoint = String(config?.endpoint || '').trim();
+        return endpoint ? window.u2Api.resolveChatCompletionsEndpoint(endpoint) : '';
     }
 
 function getVisionResponseContent(data) {
@@ -151,7 +147,7 @@ async function identifyChatImage(imageUrl) {
         const currentApiConfig = window.apiConfig || apiConfig || {};
         const endpoint = resolveChatCompletionsEndpoint(currentApiConfig);
         if (!endpoint || !currentApiConfig.apiKey || !currentApiConfig.model) {
-            throw new Error('Vision API config missing');
+            throw new Error('请先在 API 配置中填写可识图的接口、密钥和模型');
         }
 
         const controller = new AbortController();
@@ -201,6 +197,78 @@ async function identifyChatImage(imageUrl) {
         }
     }
 
+    async function generateImagePromptFromChatContext(friend) {
+        const currentApiConfig = window.getApiConfig ? window.getApiConfig() : (window.apiConfig || apiConfig || {});
+        const endpoint = resolveChatCompletionsEndpoint(currentApiConfig);
+        if (!endpoint || !currentApiConfig.apiKey || !currentApiConfig.model) {
+            throw new Error('请先完成 API 配置，再根据剧情生成提示词');
+        }
+        if (window.imApp?.ensureFriendMessagesLoaded) await window.imApp.ensureFriendMessagesLoaded(friend);
+        const latestFriend = window.imApp?.getFriendById?.(friend.id) || friend;
+        const charName = latestFriend.nickname || latestFriend.realName || 'Char';
+        const currentUser = window.getUserState?.() || window.userState || {};
+        const userName = currentUser.name || 'User';
+        const context = (Array.isArray(latestFriend.messages) ? latestFriend.messages : [])
+            .filter(message => message && (message.role === 'user' || message.role === 'assistant'))
+            .slice(-30)
+            .map(message => {
+                const speaker = message.role === 'user' ? userName : (message.speaker || message.senderName || charName);
+                const content = message.type === 'image'
+                    ? `[图片：${message.description || message.text || '无描述'}]`
+                    : String(message.content || message.text || '').trim();
+                return content ? `${speaker}：${content}` : '';
+            })
+            .filter(Boolean)
+            .join('\n')
+            .slice(-12000);
+        if (!context) throw new Error('当前聊天还没有可用于生成画面的剧情');
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
+        try {
+            const headers = window.u2Api?.buildApiHeaders
+                ? window.u2Api.buildApiHeaders(currentApiConfig, { 'X-U2-Silent-Errors': '1' })
+                : {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${currentApiConfig.apiKey}`,
+                    'X-U2-Silent-Errors': '1'
+                };
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    model: currentApiConfig.model,
+                    temperature: 0.6,
+                    messages: [
+                        {
+                            role: 'system',
+                            content: '你是剧情画面提炼助手。根据最近聊天选择最适合视觉化的当前剧情瞬间，输出一段可直接用于图片生成的中文提示词。写清人物、动作、场景、构图、光线、氛围，不要解释，不要标题，不要添加负面提示词。'
+                        },
+                        {
+                            role: 'user',
+                            content: `Char 名称：${charName}\nUser 名称：${userName}\n最近剧情：\n${context}`
+                        }
+                    ]
+                }),
+                signal: controller.signal
+            });
+            if (!response.ok) throw new Error(`剧情提示词生成失败（HTTP ${response.status}）`);
+            const data = await response.json();
+            const rawContent = getVisionResponseContent(data);
+            const content = Array.isArray(rawContent)
+                ? rawContent.map(item => item?.text || '').join('')
+                : String(rawContent || '');
+            const prompt = content.replace(/^```(?:text)?\s*|\s*```$/gi, '').trim();
+            if (!prompt) throw new Error('API 没有返回剧情生图提示词');
+            return prompt;
+        } catch (error) {
+            if (error?.name === 'AbortError') throw new Error('剧情提示词生成超时，请稍后重试');
+            throw error;
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+
 function createAttachmentSheet(page) {
         if (window.imData.attachmentSheet) {
             // Ensure it's appended to the correct page if switching chats
@@ -234,17 +302,16 @@ function createAttachmentSheet(page) {
                 <!-- Views Container -->
                 <div style="flex: 1; position: relative; overflow: hidden; background: #fff;">
                     <!-- Gallery View -->
-                    <div class="sheet-view view-gallery" style="position: absolute; inset: 0; overflow-y: auto; padding: 18px; padding-bottom: 120px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-content: flex-start; scrollbar-width: none;">
-                        <div class="grid-item virtual-upload" style="aspect-ratio: 1; background: #f7f7fa; border-radius: 18px; border: 1px solid #ececf1; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer;">
-                            <i class="fas fa-magic" style="font-size: 30px; color: #007aff; margin-bottom: 10px;"></i>
-                            <span style="font-size: 14px; color: #111; font-weight: 800;">虚拟图片</span>
-                            <span style="font-size: 11px; color: #8e8e93; margin-top: 4px;">使用默认图发送</span>
+                    <div class="sheet-view view-gallery" style="position: absolute; inset: 0; overflow-y: auto; padding: 14px 16px 120px; display: flex; flex-direction: column; gap: 10px; align-items: stretch; scrollbar-width: none;">
+                        <div class="grid-item album-image-entry" style="min-height: 68px; box-sizing: border-box; background: #f7f7fa; border-radius: 16px; border: 1px solid #ececf1; display: flex; align-items: center; gap: 13px; padding: 12px 14px; cursor: pointer;">
+                            <div style="width: 42px; height: 42px; border-radius: 13px; background: rgba(52,199,89,0.12); display: flex; align-items: center; justify-content: center; flex-shrink: 0;"><i class="fas fa-images" style="font-size: 20px; color: #34c759;"></i></div>
+                            <div style="display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1;"><span style="font-size: 15px; color: #111; font-weight: 750;">相册图片</span><span style="font-size: 12px; color: #8e8e93;">上传图片或自定义图片内容</span></div>
+                            <i class="fas fa-chevron-right" style="font-size: 13px; color: #c7c7cc; flex-shrink: 0;"></i>
                         </div>
-                        <div class="grid-item real-upload" style="aspect-ratio: 1; background: #f7f7fa; border-radius: 18px; border: 1px solid #ececf1; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; position: relative; overflow: hidden;">
-                            <i class="fas fa-camera" style="font-size: 30px; color: #34c759; margin-bottom: 10px;"></i>
-                            <span style="font-size: 14px; color: #111; font-weight: 800;">真实相册</span>
-                            <span style="font-size: 11px; color: #8e8e93; margin-top: 4px;">上传后自动识图</span>
-                            <input type="file" accept="image/*" class="real-file-input" style="position: absolute; inset: 0; opacity: 0; cursor: pointer;">
+                        <div class="grid-item generated-image-entry" style="min-height: 68px; box-sizing: border-box; background: #f7f7fa; border-radius: 16px; border: 1px solid #ececf1; display: flex; align-items: center; gap: 13px; padding: 12px 14px; cursor: pointer;">
+                            <div style="width: 42px; height: 42px; border-radius: 13px; background: rgba(175,82,222,0.12); display: flex; align-items: center; justify-content: center; flex-shrink: 0;"><i class="fas fa-wand-magic-sparkles" style="font-size: 20px; color: #af52de;"></i></div>
+                            <div style="display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1;"><span style="font-size: 15px; color: #111; font-weight: 750;">生成图片</span><span style="font-size: 12px; color: #8e8e93;">输入提示词生成</span></div>
+                            <i class="fas fa-chevron-right" style="font-size: 13px; color: #c7c7cc; flex-shrink: 0;"></i>
                         </div>
                     </div>
 
@@ -2121,7 +2188,7 @@ function createAttachmentSheet(page) {
                 sheetViews.forEach(view => {
                     if (view.classList.contains(`view-${targetTab}`)) {
                         if (targetTab === 'gallery') {
-                            view.style.display = 'grid';
+                            view.style.display = 'flex';
                         } else if (targetTab === 'file') {
                             view.style.display = 'block';
                         } else {
@@ -3306,13 +3373,7 @@ function createAttachmentSheet(page) {
                 throw new Error('API config missing');
             }
             const signal = options.signal || null;
-            const useStreaming = options.stream !== false;
-
-            let endpoint = currentApiConfig.endpoint;
-            if (endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-            if (!endpoint.endsWith('/chat/completions')) {
-                endpoint = endpoint.endsWith('/v1') ? `${endpoint}/chat/completions` : `${endpoint}/v1/chat/completions`;
-            }
+            const endpoint = window.u2Api.resolveChatCompletionsEndpoint(currentApiConfig.endpoint);
 
             const finishStream = (content, nativeReasoning = '', completionTokens = 0, aborted = false, finishReason = '') => {
                 const streamedResult = streamingBubble?.finish
@@ -3345,8 +3406,9 @@ function createAttachmentSheet(page) {
             const requestBody = {
                 model: currentApiConfig.model || '',
                 messages: apiMessages,
-                temperature: parseFloat(currentApiConfig.temperature) || 0.7,
-                stream: useStreaming
+                temperature: Number.isFinite(Number.parseFloat(currentApiConfig.temperature))
+                    ? Number.parseFloat(currentApiConfig.temperature)
+                    : 0.7
             };
             const reasoningRequest = offlineReasoning?.buildReasoningRequestConfig({
                 endpoint: currentApiConfig.endpoint,
@@ -3359,16 +3421,12 @@ function createAttachmentSheet(page) {
                 parameters: { max_tokens: OFFLINE_MAX_RESPONSE_TOKENS }
             };
             Object.assign(requestBody, reasoningRequest.parameters);
-            if (useStreaming) requestBody.stream_options = { include_usage: true };
 
             let response = null;
             try {
                 response = await fetch(endpoint, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${currentApiConfig.apiKey}`
-                    },
+                    headers: window.u2Api.buildApiHeaders(currentApiConfig),
                     body: JSON.stringify(requestBody),
                     signal: signal || undefined
                 });
@@ -3390,124 +3448,31 @@ function createAttachmentSheet(page) {
                 throw error;
             }
 
-            const responseContentType = String(response.headers?.get?.('content-type') || '').toLowerCase();
-            const returnedJsonInsteadOfStream = useStreaming && responseContentType.includes('application/json');
-            if (!useStreaming || returnedJsonInsteadOfStream) {
-                const data = await response.json();
-                const responseChoice = data?.choices?.[0] || {};
-                const responseMessage = responseChoice.message || {};
-                const responseParts = offlineReasoning?.extractResponseParts([
-                    responseMessage.content,
-                    responseMessage.output_text,
-                    responseChoice.text,
-                    data?.output_text
-                ], [
-                    responseMessage.reasoning,
-                    responseMessage.reasoning_content,
-                    responseMessage.reasoning_details,
-                    responseChoice.reasoning,
-                    responseChoice.reasoning_content,
-                    responseChoice.reasoning_details,
-                    data?.reasoning,
-                    data?.reasoning_content,
-                    data?.reasoning_details
-                ]) || { content: '', reasoning: '' };
-                const content = responseParts.content || '';
-                const nativeReasoning = responseParts.reasoning || '';
-                const completionTokens = Number(data?.usage?.completion_tokens) || 0;
-                if (streamingBubble && nativeReasoning) streamingBubble.appendReasoningChunk?.(nativeReasoning);
-                if (streamingBubble && content) (streamingBubble.appendContentChunk || streamingBubble.appendChunk)?.(content);
-                return finishStream(content, nativeReasoning, completionTokens, false, responseChoice.finish_reason);
-            }
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder('utf-8');
-            let done = false;
-            let fullText = '';
-            let fullReasoning = '';
-            let completionTokens = 0;
-            let aborted = false;
-            let eventBuffer = '';
-            let finishReason = '';
-
-            while (!done) {
-                let readResult = null;
-                try {
-                    readResult = await reader.read();
-                } catch (error) {
-                    if (signal?.aborted || error?.name === 'AbortError') {
-                        aborted = true;
-                        break;
-                    }
-                    throw error;
-                }
-                const { value, done: readerDone } = readResult;
-                done = readerDone;
-                if (!value) continue;
-                const chunkStr = decoder.decode(value, { stream: !done });
-                const lines = `${eventBuffer}${chunkStr}`.split('\n');
-                eventBuffer = lines.pop() || '';
-                for (const line of lines) {
-                    const trimmedLine = line.trim();
-                    if (!trimmedLine.startsWith('data:')) continue;
-                    const eventData = trimmedLine.slice(5).trim();
-                    if (!eventData || eventData === '[DONE]') continue;
-                    try {
-                        const data = JSON.parse(eventData);
-                        if (data.choices?.[0]?.finish_reason) finishReason = data.choices[0].finish_reason;
-                        if (data.usage?.completion_tokens != null) {
-                            completionTokens = Number(data.usage.completion_tokens) || completionTokens;
-                        }
-                        const choice = data.choices?.[0] || {};
-                        const delta = choice.delta || {};
-                        const finalMessage = choice.message || {};
-                        const deltaParts = offlineReasoning?.extractResponseParts([
-                            delta.content,
-                            delta.output_text,
-                            choice.text,
-                            data.output_text,
-                            !fullText ? finalMessage.content : '',
-                            !fullText ? finalMessage.output_text : ''
-                        ], [
-                            delta.reasoning,
-                            delta.reasoning_content,
-                            delta.reasoning_details,
-                            !fullReasoning ? finalMessage.reasoning : '',
-                            !fullReasoning ? finalMessage.reasoning_content : '',
-                            !fullReasoning ? finalMessage.reasoning_details : '',
-                            !fullReasoning ? choice.reasoning : '',
-                            !fullReasoning ? choice.reasoning_content : '',
-                            !fullReasoning ? choice.reasoning_details : '',
-                            !fullReasoning ? data.reasoning : '',
-                            !fullReasoning ? data.reasoning_content : '',
-                            !fullReasoning ? data.reasoning_details : ''
-                        ]) || { content: '', reasoning: '' };
-                        const deltaReasoning = deltaParts.reasoning || '';
-                        if (deltaReasoning) {
-                            fullReasoning += deltaReasoning;
-                            if (streamingBubble?.appendReasoningChunk) streamingBubble.appendReasoningChunk(deltaReasoning);
-                        }
-                        const deltaContent = deltaParts.content || '';
-                        if (deltaContent) {
-                            fullText += deltaContent;
-                            if (streamingBubble) (streamingBubble.appendContentChunk || streamingBubble.appendChunk)?.(deltaContent);
-                        }
-                    } catch (error) {
-                        // Ignore incomplete streaming JSON chunks.
-                    }
-                }
-                if (signal?.aborted) {
-                    aborted = true;
-                    try {
-                        await reader.cancel();
-                    } catch (error) {
-                        // The fetch may already be closed by the abort signal.
-                    }
-                    break;
-                }
-            }
-
-            return finishStream(fullText, fullReasoning, completionTokens, aborted || !!signal?.aborted, finishReason);
+            const data = await response.json();
+            const responseChoice = data?.choices?.[0] || {};
+            const responseMessage = responseChoice.message || {};
+            const responseParts = offlineReasoning?.extractResponseParts([
+                responseMessage.content,
+                responseMessage.output_text,
+                responseChoice.text,
+                data?.output_text
+            ], [
+                responseMessage.reasoning,
+                responseMessage.reasoning_content,
+                responseMessage.reasoning_details,
+                responseChoice.reasoning,
+                responseChoice.reasoning_content,
+                responseChoice.reasoning_details,
+                data?.reasoning,
+                data?.reasoning_content,
+                data?.reasoning_details
+            ]) || { content: '', reasoning: '' };
+            const content = responseParts.content || '';
+            const nativeReasoning = responseParts.reasoning || '';
+            const completionTokens = Number(data?.usage?.completion_tokens) || 0;
+            if (streamingBubble && nativeReasoning) streamingBubble.appendReasoningChunk?.(nativeReasoning);
+            if (streamingBubble && content) (streamingBubble.appendContentChunk || streamingBubble.appendChunk)?.(content);
+            return finishStream(content, nativeReasoning, completionTokens, false, responseChoice.finish_reason);
         };
 
         const requestOfflineAssistantReplyWithCotValidation = async (requestContext, streamingBubble = null, options = {}) => {
@@ -3557,11 +3522,7 @@ function createAttachmentSheet(page) {
                 throw new Error('API config missing');
             }
 
-            let endpoint = currentApiConfig.endpoint;
-            if (endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-            if (!endpoint.endsWith('/chat/completions')) {
-                endpoint = endpoint.endsWith('/v1') ? `${endpoint}/chat/completions` : `${endpoint}/v1/chat/completions`;
-            }
+            const endpoint = window.u2Api.resolveChatCompletionsEndpoint(currentApiConfig.endpoint);
 
             const identityContext = getOfflineIdentityContext(activeFriend);
             const charName = identityContext.charName;
@@ -3886,7 +3847,6 @@ ${transcript}`;
                 const contextMessages = messages.slice(0, targetIndex);
                 const requestContext = buildOfflineApiMessages(activeFriend, contextMessages);
                 const { content, reasoning, tokens } = await requestOfflineAssistantReplyWithCotValidation(requestContext, streamingBubble, {
-                    stream: activeFriend.offlineStreamEnabled !== false,
                     requestReasoning: true
                 });
                 const nextMessages = messages.slice();
@@ -5445,35 +5405,6 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             });
             listEl.appendChild(wbBtnDiv);
 
-            const streamRow = document.createElement('div');
-            streamRow.className = 'offline-settings-streaming';
-            const streamMain = document.createElement('div');
-            streamMain.className = 'offline-settings-worldbook-main';
-            streamMain.innerHTML = '<i class="fas fa-stream"></i><span><strong>流式传输</strong><small>STREAM RESPONSE</small></span>';
-            const streamToggle = document.createElement('label');
-            streamToggle.className = 'toggle-switch';
-            streamToggle.setAttribute('aria-label', '流式传输');
-            const streamCheckbox = document.createElement('input');
-            streamCheckbox.type = 'checkbox';
-            streamCheckbox.checked = activeFriend.offlineStreamEnabled !== false;
-            const streamSlider = document.createElement('span');
-            streamSlider.className = 'slider';
-            streamToggle.append(streamCheckbox, streamSlider);
-            streamCheckbox.addEventListener('change', async () => {
-                const enabled = streamCheckbox.checked;
-                streamCheckbox.disabled = true;
-                const saved = await commitSheetFriendChange(activeFriend.id, (targetFriend) => {
-                    targetFriend.offlineStreamEnabled = enabled;
-                }, { silent: true, metaOnly: true });
-                if (!saved) {
-                    streamCheckbox.checked = !enabled;
-                    if (window.showToast) window.showToast('流式传输设置保存失败');
-                }
-                streamCheckbox.disabled = false;
-            });
-            streamRow.append(streamMain, streamToggle);
-            listEl.appendChild(streamRow);
-
             let prompts = ensureGlobalOfflinePrompts(activeFriend);
             let presets = normalizeOfflinePromptPresets(window.imData.offlinePromptPresets);
             let promptPresetSelect = null;
@@ -6318,7 +6249,6 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                             const requestContext = buildOfflineApiMessages(activeFriend, messagesWithUser);
                             const { content: finalReplyContent, reasoning: finalReplyReasoning, tokens, aborted } = await requestOfflineAssistantReplyWithCotValidation(requestContext, streamingBubble, {
                                 signal: generationController.signal,
-                                stream: activeFriend.offlineStreamEnabled !== false,
                                 requestReasoning: true
                             });
 
@@ -6970,9 +6900,57 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             return window.imData.currentActiveFriend || null;
         };
 
-        // Upload Virtual Photo
-        const virtualUpload = attachmentSheet.querySelector('.virtual-upload');
-        virtualUpload.addEventListener('click', () => {
+        async function generateAndSendChatImage(prompt, targetFriend, referenceImage = '', promptConfig = {}) {
+            const friendId = targetFriend?.id;
+            const runKey = String(friendId ?? '');
+            if (!runKey) {
+                window.showToast?.('当前聊天状态已失效，请重新进入聊天');
+                return false;
+            }
+            if (imageGenerationRuns.has(runKey)) {
+                window.showToast?.('这段聊天已有图片正在生成');
+                return false;
+            }
+            if (!window.u2ImageGeneration?.generate) {
+                window.showToast?.('生图功能尚未加载，请刷新后重试');
+                return false;
+            }
+
+            imageGenerationRuns.add(runKey);
+            window.showToast?.('正在生成图片…');
+            try {
+                const result = await window.u2ImageGeneration.generate(prompt, {
+                    referenceImage,
+                    charAppearance: promptConfig.charAppearance || '',
+                    userAppearance: promptConfig.userAppearance || '',
+                    artistPrompt: promptConfig.artistPrompt || '',
+                    negativePrompt: promptConfig.negativePrompt || ''
+                });
+                const sent = await window.imChat.sendImageMessage(result.imageUrl, prompt, {
+                    role: 'assistant',
+                    imageSource: 'generated',
+                    imageProvider: result.provider,
+                    imageModel: result.model,
+                    imageSize: result.size,
+                    faceReferenceUsed: result.faceReferenceUsed,
+                    senderName: targetFriend.nickname || targetFriend.realName || 'Char',
+                    senderAvatarUrl: targetFriend.avatarUrl || '',
+                    senderAvatarAssetId: targetFriend.avatarAssetId || '',
+                    friendId
+                });
+                if (sent) window.showToast?.('图片已生成并发送');
+                return sent;
+            } catch (error) {
+                console.error('Failed to generate chat image', error);
+                window.showToast?.(error?.message || '图片生成失败，请稍后重试');
+                return false;
+            } finally {
+                imageGenerationRuns.delete(runKey);
+            }
+        }
+
+        const albumImageEntry = attachmentSheet.querySelector('.album-image-entry');
+        albumImageEntry?.addEventListener('click', () => {
             const targetFriend = getAttachmentTargetFriend();
             closeSheet();
             if (!targetFriend) {
@@ -6984,71 +6962,196 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             if (showModal) {
                 showModal({
                     type: 'prompt',
-                    title: '发送虚拟图片',
-                    placeholder: '描述这张图片的内容（供 AI 理解）',
+                    title: '相册图片',
+                    message: '上传图片后可手动描述，或使用识图生成内容',
+                    placeholder: '填写图片内容（供 AI 理解）',
+                    multiline: true,
                     confirmText: '发送',
-                    onConfirm: (desc) => {
+                    imageComposer: {
+                        imageUrl: '',
+                        fileName: '',
+                        onUpload: async (file) => {
+                            if (!/^image\//i.test(file?.type || '')) throw new Error('请选择图片文件');
+                            const imageUrl = window.imApp?.compressImageFile
+                                ? await window.imApp.compressImageFile(file, {
+                                    maxWidth: 1600,
+                                    maxHeight: 1600,
+                                    mimeType: 'image/jpeg',
+                                    quality: 0.82
+                                })
+                                : await window.imApp?.readFileAsDataUrl?.(file);
+                            if (!imageUrl) throw new Error('图片处理失败');
+                            return { imageUrl, fileName: file.name };
+                        },
+                        onRecognize: (imageUrl) => identifyChatImage(imageUrl)
+                    },
+                    onConfirm: (desc, modalState = {}) => {
                         const description = String(desc || '').trim();
                         if (!description) {
-                            if (window.showToast) window.showToast('请输入图片描述');
-                            return;
+                            window.showToast?.('请填写图片内容或使用识图生成');
+                            return false;
                         }
+                        const imageUrl = modalState.uploadedImage || getChatImagePlaceholderUrl();
                         window.imChat.sendImageMessage(
-                            getChatImagePlaceholderUrl(),
+                            imageUrl,
                             description,
                             {
-                                imageSource: 'virtual',
+                                imageSource: modalState.uploadedImage ? 'real' : 'virtual',
+                                fileName: modalState.uploadedFileName || '',
                                 friendId: targetFriend.id
                             }
                         );
+                        return true;
                     }
                 });
             }
         });
 
-        // Upload Real Photo
-        const realFileInput = attachmentSheet.querySelector('.real-file-input');
-        realFileInput.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const targetFriend = getAttachmentTargetFriend();
-                closeSheet();
-                if (!targetFriend) {
-                    if (window.showToast) window.showToast('当前聊天状态已失效，请重新进入聊天');
-                    e.target.value = '';
-                    return;
-                }
-                try {
-                    const imageUrl = window.imApp.compressImageFile
-                        ? await window.imApp.compressImageFile(file, {
-                            maxWidth: 1600,
-                            maxHeight: 1600,
-                            mimeType: 'image/jpeg',
-                            quality: 0.82
-                        })
-                        : await window.imApp.readFileAsDataUrl(file);
-
-                    let description = '';
-                    try {
-                        if (window.showToast) window.showToast('正在识别图片...');
-                        description = await identifyChatImage(imageUrl);
-                    } catch (visionError) {
-                        console.warn('Failed to identify uploaded chat image', visionError);
-                        description = '图片识别失败，未生成描述';
-                        if (window.showToast) window.showToast('图片识别失败，已发送原图');
-                    }
-
-                    window.imChat.sendImageMessage(imageUrl, description, {
-                        imageSource: 'real',
-                        fileName: file.name,
-                        friendId: targetFriend.id
-                    });
-                } catch (error) {
-                    console.error('Failed to process uploaded chat image', error);
-                    if (window.showToast) window.showToast('图片处理失败');
-                }
+        const generatedImageEntry = attachmentSheet.querySelector('.generated-image-entry');
+        generatedImageEntry?.addEventListener('click', async () => {
+            const targetFriend = getAttachmentTargetFriend();
+            closeSheet();
+            if (!targetFriend) {
+                window.showToast?.('当前聊天状态已失效，请重新进入聊天');
+                return;
             }
-            e.target.value = '';
+            if (targetFriend.type === 'group') {
+                window.showToast?.('请进入对应 Char 的单聊生成图片');
+                return;
+            }
+            const runKey = String(targetFriend.id ?? '');
+            if (imageGenerationRuns.has(runKey)) {
+                window.showToast?.('这段聊天已有图片正在生成');
+                return;
+            }
+            const showModal = window.imApp?.showCustomModal || window.showCustomModal;
+            if (!showModal) {
+                window.showToast?.('无法打开生图提示词窗口');
+                return;
+            }
+            const latestTargetFriend = window.imApp?.getFriendById?.(targetFriend.id) || targetFriend;
+            const faceAssetId = latestTargetFriend.imageFaceReferenceAssetId || '';
+            let faceReferenceUrl = '';
+            if (latestTargetFriend.imageFaceReferenceUrl) {
+                faceReferenceUrl = latestTargetFriend.imageFaceReferenceUrl;
+            } else if (faceAssetId && typeof window.appStorage?.getAssetUrl === 'function') {
+                faceReferenceUrl = await window.appStorage.getAssetUrl(faceAssetId).catch(() => '');
+            }
+            const supportsCharacterReference = latestTargetFriend.type !== 'group';
+            const savedPromptConfig = latestTargetFriend.imagePromptConfig || {};
+            showModal({
+                type: 'prompt',
+                title: '生成图片',
+                message: '描述你想生成的画面',
+                placeholder: '输入主体、场景、风格、光线等细节…',
+                defaultValue: savedPromptConfig.lastPrompt || '',
+                multiline: true,
+                confirmText: '开始生成',
+                confirmTone: 'dark',
+                generationPrompt: {
+                    charAppearance: savedPromptConfig.charAppearance || '',
+                    userAppearance: savedPromptConfig.userAppearance || '',
+                    artistPrompt: savedPromptConfig.artistPrompt || '',
+                    negativePrompt: savedPromptConfig.negativePrompt || '',
+                    onGenerateFromContext: () => generateImagePromptFromChatContext(latestTargetFriend)
+                },
+                referenceFace: supportsCharacterReference ? {
+                    title: `${latestTargetFriend.nickname || latestTargetFriend.realName || '当前角色'}的参考脸`,
+                    imageUrl: faceReferenceUrl,
+                    fileName: latestTargetFriend.imageFaceReferenceFileName || '',
+                    onUpload: async (file) => {
+                        if (!/^image\//i.test(file?.type || '')) throw new Error('请选择图片文件');
+                        if (!window.imApp?.compressImageFile || !window.appStorage?.saveAssetFromDataUrl) {
+                            throw new Error('图片存储服务不可用');
+                        }
+                        const dataUrl = await window.imApp.compressImageFile(file, {
+                            maxWidth: 1536,
+                            maxHeight: 1536,
+                            quality: 0.9,
+                            mimeType: 'image/jpeg'
+                        });
+                        const assetId = `im-face-reference-${targetFriend.id}-${Date.now()}`;
+                        const previousAssetId = (window.imApp?.getFriendById?.(targetFriend.id) || targetFriend)
+                            .imageFaceReferenceAssetId || '';
+                        await window.appStorage.saveAssetFromDataUrl(assetId, dataUrl, {
+                            ownerType: 'im_friend_face_reference',
+                            ownerId: String(targetFriend.id),
+                            fileName: file.name
+                        });
+                        const assetUrl = await window.appStorage.getAssetUrl(assetId);
+                        const saved = await commitSheetFriendChange(targetFriend, (friend) => {
+                            friend.imageFaceReferenceAssetId = assetId;
+                            friend.imageFaceReferenceUrl = null;
+                            friend.imageFaceReferenceFileName = file.name;
+                        }, { metaOnly: true });
+                        if (!saved) {
+                            await window.appStorage.deleteAsset(assetId).catch(() => undefined);
+                            throw new Error('参考脸保存失败，请重试');
+                        }
+                        if (previousAssetId && previousAssetId !== assetId) {
+                            await window.appStorage.deleteAsset(previousAssetId).catch(() => undefined);
+                        }
+                        window.showToast?.('已保存当前角色的参考脸');
+                        return { imageUrl: assetUrl, fileName: file.name };
+                    },
+                    onDelete: async () => {
+                        const previousAssetId = (window.imApp?.getFriendById?.(targetFriend.id) || targetFriend)
+                            .imageFaceReferenceAssetId || '';
+                        const saved = await commitSheetFriendChange(targetFriend, (friend) => {
+                            friend.imageFaceReferenceAssetId = null;
+                            friend.imageFaceReferenceUrl = null;
+                            friend.imageFaceReferenceFileName = '';
+                        }, { metaOnly: true });
+                        if (!saved) throw new Error('参考脸删除失败，请重试');
+                        if (previousAssetId) {
+                            await window.appStorage?.deleteAsset?.(previousAssetId).catch(() => undefined);
+                        }
+                        window.showToast?.('已删除当前角色的参考脸');
+                    }
+                } : null,
+                onCancel: (modalState = {}) => {
+                    const promptConfig = {
+                        charAppearance: String(modalState.charAppearance || '').trim(),
+                        userAppearance: String(modalState.userAppearance || '').trim(),
+                        artistPrompt: String(modalState.artistPrompt || '').trim(),
+                        negativePrompt: String(modalState.negativePrompt || '').trim(),
+                        lastPrompt: String(modalState.promptValue || '').trim()
+                    };
+                    commitSheetFriendChange(targetFriend, (friend) => {
+                        friend.imagePromptConfig = promptConfig;
+                    }, { metaOnly: true, silent: true });
+                },
+                onConfirm: (value, modalState = {}) => {
+                    const prompt = String(value || '').trim();
+                    if (!prompt) {
+                        window.showToast?.('请输入生图提示词');
+                        return false;
+                    }
+                    const promptConfig = {
+                        charAppearance: String(modalState.charAppearance || '').trim(),
+                        userAppearance: String(modalState.userAppearance || '').trim(),
+                        artistPrompt: String(modalState.artistPrompt || '').trim(),
+                        negativePrompt: String(modalState.negativePrompt || '').trim(),
+                        lastPrompt: prompt
+                    };
+                    (async () => {
+                        const saved = await commitSheetFriendChange(targetFriend, (friend) => {
+                            friend.imagePromptConfig = promptConfig;
+                        }, { metaOnly: true });
+                        if (!saved) {
+                            window.showToast?.('生图提示词保存失败，请重试');
+                            return;
+                        }
+                        await generateAndSendChatImage(
+                            prompt,
+                            targetFriend,
+                            modalState.toggleChecked ? modalState.referenceImage : '',
+                            promptConfig
+                        );
+                    })();
+                    return true;
+                }
+            });
         });
 
         window.imChat.renderLinkedAccountsPanel = renderLinkedAccountsPanel;
@@ -7082,13 +7185,20 @@ async function sendImageMessage(imgUrl, description, options = {}) {
         const now = Date.now();
         const msgObj = {
             id: window.imChat.createMessageId('img'),
-            role: 'user',
+            role: options.role === 'assistant' ? 'assistant' : 'user',
             type: 'image',
             content: imgUrl,
             text: description,
             description,
             imageSource: options.imageSource || 'unknown',
+            imageProvider: options.imageProvider || '',
+            imageModel: options.imageModel || '',
+            imageSize: options.imageSize || '',
+            faceReferenceUsed: !!options.faceReferenceUsed,
             fileName: options.fileName || '',
+            senderName: options.senderName || '',
+            senderAvatarUrl: options.senderAvatarUrl || '',
+            senderAvatarAssetId: options.senderAvatarAssetId || '',
             timestamp: now
         };
 
@@ -7242,7 +7352,7 @@ function openAttachmentSheet() {
     
     // We wrap the global functions so existing imChat references still work
     function showBannerNotification(friend, messageText) {
-        if (window.showBannerNotification) {
+        if (!window.imApp?.isChatConversationOpen?.() && window.showBannerNotification) {
             window.showBannerNotification(friend, messageText);
         }
     }

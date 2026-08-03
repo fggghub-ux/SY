@@ -873,14 +873,8 @@ window.lovesApp = {
     },
 
     resolveLovesChatEndpoint: function(apiConfig) {
-        let endpoint = String(apiConfig?.endpoint || '').trim();
-        if (!endpoint) return '';
-        if (!endpoint.endsWith('/chat/completions')) {
-            if (endpoint.endsWith('/')) endpoint += 'v1/chat/completions';
-            else if (endpoint.endsWith('/v1')) endpoint += '/chat/completions';
-            else endpoint += '/v1/chat/completions';
-        }
-        return endpoint;
+        const endpoint = String(apiConfig?.endpoint || '').trim();
+        return endpoint ? window.u2Api.resolveChatCompletionsEndpoint(endpoint) : '';
     },
 
     requestDiaryEntries: async function(dateKey, count) {
@@ -1446,12 +1440,7 @@ window.lovesApp = {
 3. comments ${options.reason === 'user_comment' ? '必须包含2-5条 Char 对 User 的连续直接回复' : (isCharMoment ? '包含1-3条' : '包含1-2条')}；messages ${options.reason === 'user_comment' ? '包含0-2条，可以为空数组' : '包含1-3条'}。
 4. 每个数组元素只写一条自然消息，不要带 Char/User 标签，不要把多条回复合并在一个字符串里。`;
 
-            let endpoint = apiConfig.endpoint;
-            if (endpoint && !endpoint.endsWith('/chat/completions')) {
-                if (endpoint.endsWith('/')) endpoint += 'v1/chat/completions';
-                else if (endpoint.endsWith('/v1')) endpoint += '/chat/completions';
-                else endpoint += '/v1/chat/completions';
-            }
+            const endpoint = window.u2Api.resolveChatCompletionsEndpoint(apiConfig.endpoint);
 
             const response = await fetch(endpoint, {
                 method: 'POST',
@@ -1665,13 +1654,7 @@ window.lovesApp = {
 
     getSavingsApiEndpoint: function() {
         if (!window.apiConfig || !window.apiConfig.endpoint || !window.apiConfig.apiKey) return '';
-        let endpoint = window.apiConfig.endpoint;
-        if (endpoint && !endpoint.endsWith('/chat/completions')) {
-            if (endpoint.endsWith('/')) endpoint += 'v1/chat/completions';
-            else if (endpoint.endsWith('/v1')) endpoint += '/chat/completions';
-            else endpoint += '/v1/chat/completions';
-        }
-        return endpoint;
+        return window.u2Api.resolveChatCompletionsEndpoint(window.apiConfig.endpoint);
     },
 
     parseSavingsJsonObject: function(resultText) {
@@ -3422,8 +3405,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
         };
         const realTimeContext = friend.computerIncludeRealTime !== false ? `\n【当前真实时间】${this.getCurrentRealTimeContext()}` : '';
         const prompt = `为 Char 的私人电脑生成真实、克制、符合职业与人设的工作数据。只能输出合法 JSON，不要 Markdown。${realTimeContext}\n【Char 人设】${friend.persona || '普通角色'}\n【User 人设】${window.userState?.persona || '普通用户'}\n【世界书】${globalRule}\n【近期聊天】${chat}\n【选中字段】\n${selected.map(key => requirements[key]).join('\n')}\n只返回一个对象，且只能包含这些顶层字段：${selected.join('、')}。内容避免模板化和重复，所有文本使用中文或符合角色背景的自然语言。`;
-        let endpoint = window.apiConfig.endpoint;
-        if (!endpoint.endsWith('/chat/completions')) endpoint += endpoint.endsWith('/') ? 'v1/chat/completions' : endpoint.endsWith('/v1') ? '/chat/completions' : '/v1/chat/completions';
+        const endpoint = window.u2Api.resolveChatCompletionsEndpoint(window.apiConfig.endpoint);
         button.disabled = true;
         button.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>正在生成...</span>';
         window.showToast?.('正在生成电脑数据，请稍候...');
@@ -3692,17 +3674,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
                 
                 const model = window.apiConfig.model || 'gpt-3.5-turbo';
                 
-                let endpoint = window.apiConfig.endpoint;
-                // 智能补全 endpoint (兼容直接填写的 base url)
-                if (endpoint && !endpoint.endsWith('/chat/completions')) {
-                    if (endpoint.endsWith('/')) {
-                        endpoint += 'v1/chat/completions';
-                    } else if (endpoint.endsWith('/v1')) {
-                        endpoint += '/chat/completions';
-                    } else {
-                        endpoint += '/v1/chat/completions';
-                    }
-                }
+                const endpoint = window.u2Api.resolveChatCompletionsEndpoint(window.apiConfig.endpoint);
 
                 fetch(endpoint, {
                     method: 'POST',

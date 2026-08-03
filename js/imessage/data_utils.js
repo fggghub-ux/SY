@@ -19,14 +19,42 @@
         return normalizeRoundLimit(value, fallback);
     }
 
+    function normalizeChatMessageRange(minValue, maxValue, fallbackMin = 2, fallbackMax = 8) {
+        const clamp = (value, fallback) => {
+            const numeric = Number(value);
+            return Number.isFinite(numeric)
+                ? Math.min(20, Math.max(1, Math.round(numeric)))
+                : fallback;
+        };
+        const min = clamp(minValue, clamp(fallbackMin, 2));
+        const max = Math.max(min, clamp(maxValue, clamp(fallbackMax, 8)));
+        return { min, max };
+    }
+
+    function findMessageByReference(messages, messageId, messageTimestamp) {
+        const source = Array.isArray(messages) ? messages : [];
+        const id = String(messageId || '').trim();
+        const timestamp = String(messageTimestamp || '').trim();
+        if (id) {
+            const byId = source.find(message => message && String(message.id || '') === id);
+            if (byId) return byId;
+        }
+        return timestamp
+            ? source.find(message => message && String(message.timestamp || '') === timestamp) || null
+            : null;
+    }
+
     function normalizeChatLanguage(value) {
-        const language = String(value || '').trim().toLowerCase();
+        const originalLanguage = String(value || '').trim();
+        const language = originalLanguage.toLowerCase();
         if (!language || ['zh', 'cn', 'zh-cn'].includes(language)) return 'zh';
         if (['ko', 'kr'].includes(language)) return 'ko';
         if (['ja', 'jp'].includes(language)) return 'ja';
         if (language === 'en') return 'en';
         if (language === 'fr') return 'fr';
-        return language;
+        if (['yue', 'cantonese', '粤语', '廣東話'].includes(language)) return 'yue';
+        if (['ru', 'russian', '俄语', '俄語'].includes(language)) return 'ru';
+        return originalLanguage || 'zh';
     }
 
     function getChatLanguageName(value) {
@@ -36,7 +64,9 @@
             ko: 'Korean',
             ja: 'Japanese',
             en: 'English',
-            fr: 'French'
+            fr: 'French',
+            yue: 'Cantonese',
+            ru: 'Russian'
         }[language] || language || 'Chinese';
     }
 
@@ -300,6 +330,35 @@
         return safeEntries.filter(entry => !entry || String(entry.id) !== String(entryId));
     }
 
+    function isSuccessfulOnlineAssistantReply(message) {
+        if (!message || message.role !== 'assistant') return false;
+
+        // Online handoff ends only after a real, visible Char response. Payment cards,
+        // notices, calls, recalls, and other auxiliary artifacts must not consume it.
+        const auxiliaryTypes = new Set([
+            'system_notice',
+            'pay_transfer',
+            'group_red_packet',
+            'html',
+            'music_control',
+            'recall',
+            'call',
+            'voice_call_record',
+            'offline_meeting_record'
+        ]);
+        const messageType = String(message.type || '').trim().toLowerCase();
+        if (auxiliaryTypes.has(messageType)) return false;
+
+        const visibleContent = String(
+            message.text
+            || message.transcript
+            || message.description
+            || message.content
+            || ''
+        ).trim();
+        return visibleContent.length > 0;
+    }
+
     function resolvePendingOfflineHandoff(messages) {
         const safeMessages = Array.isArray(messages) ? messages : [];
         const lastOfflineMeeting = safeMessages.reduce((latest, message) => {
@@ -317,7 +376,7 @@
             && Number(message.timestamp) > meetingTimestamp
         ));
         const hasUserReturnedOnline = onlineMessagesAfterMeeting.some(message => message.role === 'user');
-        const hasCharacterRepliedOnline = onlineMessagesAfterMeeting.some(message => message.role === 'assistant');
+        const hasCharacterRepliedOnline = onlineMessagesAfterMeeting.some(isSuccessfulOnlineAssistantReply);
 
         return hasUserReturnedOnline && !hasCharacterRepliedOnline
             ? lastOfflineMeeting
@@ -453,6 +512,8 @@
     return {
         normalizeRoundLimit,
         normalizeMessageLimit,
+        normalizeChatMessageRange,
+        findMessageByReference,
         normalizeChatLanguage,
         getChatLanguageName,
         normalizeLocalizedContent,
@@ -467,6 +528,7 @@
         normalizeSchedule,
         getSummaryBatch,
         removeShortTermSummaryEntry,
+        isSuccessfulOnlineAssistantReply,
         resolvePendingOfflineHandoff,
         normalizeOfflineMemoryTags,
         parseOfflineMeetingArtifacts,

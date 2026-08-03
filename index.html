@@ -32,7 +32,7 @@
     <link rel="stylesheet" href="css/login.css?v=20260731-login-gate-focus-v2">
     <link rel="stylesheet" href="css/home.css?v=20260731-ios-swipe-icon-flicker-v1&layout=20260801-fixed-grid-v1&performance=20260801-v1">
     <link rel="stylesheet" href="css/worldbook.css">
-    <link rel="stylesheet" href="css/imessage.css?v=20260721-status-prompt-v3-group-poll-v3&cot=20260725-single-chat-cot-v1&status=20260802-three-line-thought-v1&cotui=20260725-pill-v1&link=20260726-light-link-theatre-v1&relationship=20260801-static-preview-v3&android-keyboard=20260801-v1&group-user-avatar=20260802-v1">
+    <link rel="stylesheet" href="css/imessage.css?v=20260721-status-prompt-v3-group-poll-v3&cot=20260725-single-chat-cot-v1&status=20260802-three-line-thought-v1&cotui=20260725-pill-v1&link=20260726-light-link-theatre-v1&relationship=20260801-static-preview-v3&android-keyboard=20260801-v1&group-user-avatar=20260802-v1&game=20260803-anonymous-qa-v4-composer-modal">
     <link rel="stylesheet" href="css/pay.css?v=20260714-ios-neutral-v1">
     <link rel="stylesheet" href="css/bstage.css?v=20260721-mobile-input-layout-v1-android-focus-scope-v1">
     <link rel="stylesheet" href="css/tiktok.css?v=20260721-mobile-input-layout-v1">
@@ -45,7 +45,7 @@
     <link rel="stylesheet" href="css/loves.css?v=20260719-friend-phone-bilingual-v8">
     <link rel="stylesheet" href="css/library.css?v=20260715-reader-streaming-v1">
     <!-- App Styles -->
-    <link rel="stylesheet" href="css/settings.css?v=20260721-mobile-input-layout-v1-notification-sound-v1&performance=20260801-v2">
+    <link rel="stylesheet" href="css/settings.css?v=20260721-mobile-input-layout-v1-notification-sound-v1&performance=20260801-v2&api-model-picker=20260803-v1">
     <link rel="stylesheet" href="css/youtube.css?v=20260717-char-lottery-consistency-v18">
     <link rel="stylesheet" href="css/netflix.css">
 </head>
@@ -1864,7 +1864,7 @@
                                 <div class="line-service-icon"><i class="fas fa-bullhorn"></i></div>
                                 <span>Official Accounts</span>
                             </div>
-                            <div class="line-service-item">
+                            <div class="line-service-item" id="imessage-game-btn">
                                 <div class="line-service-icon"><i class="fas fa-gamepad"></i></div>
                                 <span>Game</span>
                             </div>
@@ -2405,6 +2405,11 @@
                         <div class="settings-text">API 配置</div>
                         <i class="fas fa-chevron-right arrow"></i>
                     </div>
+                    <div class="settings-item" id="image-generation-config-btn">
+                        <div class="settings-icon" style="background-color: #af52de;"><i class="fas fa-wand-magic-sparkles"></i></div>
+                        <div class="settings-text">生图配置</div>
+                        <i class="fas fa-chevron-right arrow"></i>
+                    </div>
                     <div class="settings-item" id="minimax-config-btn">
                         <div class="settings-icon" style="background-color: #ff9500;"><i class="fas fa-volume-up"></i></div>
                         <div class="settings-text">Minimax</div>
@@ -2835,16 +2840,27 @@
                             <div class="settings-icon action-icon-blue"><i class="fas fa-cloud-download-alt"></i></div>
                             <div class="settings-text" style="color: var(--blue-color); font-weight: 500; text-align: left;">获取模型列表</div>
                         </div>
+                        <div class="settings-item fully-rounded-item" id="test-api-connection-btn" style="justify-content: flex-start; border-bottom: none;">
+                            <div class="settings-icon action-icon-blue"><i class="fas fa-plug-circle-check"></i></div>
+                            <div class="settings-text" style="color: var(--blue-color); font-weight: 500; text-align: left;">测试连接</div>
+                        </div>
                     </div>
 
                     <!-- Grouped Model & Temperature -->
                     <div class="form-group fully-rounded" style="margin-bottom: 20px;">
                         <div class="form-item">
                             <label style="width: 100px; white-space: nowrap;">模型</label>
-                            <select id="api-model-select" style="flex: 1; border: none; text-align: right; direction: rtl; appearance: none; background: transparent; color: var(--blue-color); outline: none; font-size: 16px; min-width: 0;">
-                                <option value="" disabled selected>选择模型</option>
-                            </select>
-                            <i class="fas fa-chevron-right arrow" style="margin-left: 5px; color: #c7c7cc; pointer-events: none;"></i>
+                            <input type="text" id="api-model-select" placeholder="填写或选择模型" autocomplete="off" style="text-align: right; padding-right: 5px; color: var(--blue-color);">
+                            <button type="button" class="api-model-picker-toggle" id="api-model-picker-toggle" aria-label="打开模型列表" aria-expanded="false">
+                                <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                        <div class="api-model-picker" id="api-model-picker" hidden>
+                            <div class="api-model-search-wrap">
+                                <i class="fas fa-search" aria-hidden="true"></i>
+                                <input type="search" id="api-model-search-input" placeholder="搜索模型" autocomplete="off">
+                            </div>
+                            <div class="api-model-list" id="api-model-list" role="listbox" aria-label="模型列表"></div>
                         </div>
                         <div class="form-item">
                             <label style="width: 100px; white-space: nowrap;">温度</label>
@@ -2903,6 +2919,64 @@
                     </div>
                     
                     <div class="sheet-action confirm-action" id="confirm-api-btn" style="margin-top: 20px; background-color: #1c1c1e; color: #fff;">保存设置</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Image Generation Config Bottom Sheet -->
+        <div class="bottom-sheet-overlay detail-sheet-overlay" id="image-generation-config-sheet" style="z-index: 505;">
+            <div class="bottom-sheet" style="max-height: 85%;">
+                <div class="sheet-handle"></div>
+                <div class="sheet-title">生图配置</div>
+                <div class="detail-sheet-content" style="padding-bottom: 20px;">
+                    <div class="form-group fully-rounded" style="margin-bottom: 20px;">
+                        <div class="form-item">
+                            <label style="width: 112px; white-space: nowrap;">服务商</label>
+                            <select id="image-generation-provider-select" style="flex: 1; border: none; text-align: right; direction: rtl; appearance: none; background: transparent; color: var(--blue-color); outline: none; font-size: 16px; min-width: 0;">
+                                <option value="openai">GPT Image（OpenAI）</option>
+                                <option value="gemini">Gemini Image</option>
+                                <option value="novelai">NovelAI</option>
+                                <option value="grok">Grok</option>
+                                <option value="relay">OpenAI 兼容中转站</option>
+                            </select>
+                            <i class="fas fa-chevron-right arrow" style="margin-left: 5px; color: #c7c7cc; pointer-events: none;"></i>
+                        </div>
+                    </div>
+
+                    <div class="form-group fully-rounded" style="margin-bottom: 12px;">
+                        <div class="form-item">
+                            <label style="width: 112px; white-space: nowrap;">接口地址</label>
+                            <input type="url" id="image-generation-endpoint-input" inputmode="url" placeholder="https://api.example.com">
+                        </div>
+                        <div class="form-item">
+                            <label id="image-generation-key-label" style="width: 112px; white-space: nowrap;">API 密钥</label>
+                            <input type="password" id="image-generation-key-input" autocomplete="off" placeholder="sk-...">
+                        </div>
+                        <div class="form-item">
+                            <label style="width: 112px; white-space: nowrap;">模型</label>
+                            <input type="text" id="image-generation-model-input" list="image-generation-model-options" autocomplete="off" placeholder="填写图片模型">
+                            <datalist id="image-generation-model-options"></datalist>
+                        </div>
+                        <div class="form-item">
+                            <label style="width: 112px; white-space: nowrap;">分辨率</label>
+                            <select id="image-generation-size-select" style="flex: 1; border: none; text-align: right; direction: rtl; appearance: none; background: transparent; color: var(--blue-color); outline: none; font-size: 16px; min-width: 0;">
+                                <option value="1024x1024">1024 × 1024（方形）</option>
+                                <option value="1024x1536">1024 × 1536（竖图）</option>
+                                <option value="1536x1024">1536 × 1024（横图）</option>
+                            </select>
+                            <i class="fas fa-chevron-right arrow" style="margin-left: 5px; color: #c7c7cc; pointer-events: none;"></i>
+                        </div>
+                    </div>
+                    <div id="image-generation-endpoint-hint" style="margin: 0 26px 20px; color: #8e8e93; font-size: 12px; line-height: 1.5;"></div>
+
+                    <div class="form-group fully-rounded" style="margin-bottom: 20px;">
+                        <div class="settings-item fully-rounded-item" id="fetch-image-generation-models-btn" style="justify-content: flex-start; border-bottom: none;">
+                            <div class="settings-icon action-icon-blue"><i class="fas fa-cloud-download-alt"></i></div>
+                            <div class="settings-text" style="color: var(--blue-color); font-weight: 500; text-align: left;">获取模型列表</div>
+                        </div>
+                    </div>
+
+                    <div class="sheet-action confirm-action" id="confirm-image-generation-btn" style="margin-top: 20px; background-color: #1c1c1e; color: #fff;">保存设置</div>
                 </div>
             </div>
         </div>
@@ -3426,10 +3500,7 @@
                     <div style="width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; flex-shrink: 0; padding: 15px 20px max(30px, env(safe-area-inset-bottom, 20px)); display: flex; flex-direction: column; gap: 20px; background: rgba(0,0,0,0.3);">
                         
                         <!-- Actions Row -->
-                        <div style="display: flex; justify-content: space-evenly; align-items: center; width: 100%;" id="voice-call-actions-row">
-                            <!-- 占位，确保两边对称 -->
-                            <div style="width: 64px; display: flex; justify-content: center;"></div>
-                            
+                        <div style="display: flex; justify-content: center; align-items: center; width: 100%;" id="voice-call-actions-row">
                             <div style="display: flex; gap: 30px;">
                                 <div id="voice-call-accept-btn" style="display: none; width: 64px; height: 64px; border-radius: 50%; background: #34c759; justify-content: center; align-items: center; cursor: pointer; color: #fff; font-size: 24px; box-shadow: 0 4px 12px rgba(52, 199, 89, 0.4);">
                                     <i class="fas fa-phone"></i>
@@ -3440,18 +3511,15 @@
                                 <div id="voice-call-regenerate-btn" title="重回上一轮回复" style="width: 64px; height: 64px; border-radius: 50%; background: rgba(255,255,255,0.18); display: flex; justify-content: center; align-items: center; cursor: pointer; color: #fff; font-size: 22px; border: 1px solid rgba(255,255,255,0.22); box-shadow: 0 4px 12px rgba(0,0,0,0.18);">
                                     <i class="fas fa-redo-alt"></i>
                                 </div>
+                                <div id="voice-call-ai-btn" title="调用 API 生成回复" aria-label="调用 API 生成回复" style="width: 64px; height: 64px; border-radius: 50%; background: rgba(255,255,255,0.18); display: flex; justify-content: center; align-items: center; cursor: pointer; color: #fff; font-size: 22px; border: 1px solid rgba(255,255,255,0.22); box-shadow: 0 4px 12px rgba(0,0,0,0.18);">
+                                    <i class="fas fa-magic"></i>
+                                </div>
                             </div>
-                            
-                            <!-- 占位 -->
-                            <div style="width: 64px; display: flex; justify-content: center;"></div>
                         </div>
 
                         <!-- Input Row -->
                         <div id="voice-call-input-row" style="display: flex; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; align-items: center; gap: 12px; background: rgba(255,255,255,0.15); border-radius: 24px; padding: 6px 6px 6px 16px; margin-top: 10px;">
                             <input type="text" id="voice-call-input" inputmode="text" enterkeyhint="send" autocomplete="off" autocapitalize="sentences" placeholder="发消息..." style="flex: 1; width: 0; min-width: 0; height: 36px; border: none; background: transparent; color: #fff; outline: none; font-size: 15px; font-weight: 500;">
-                            <div id="voice-call-ai-btn" style="width: 36px; height: 36px; background: transparent; display: flex; justify-content: center; align-items: center; cursor: pointer; color: #fff; flex-shrink: 0;" title="? AI ??">
-                                <i class="fas fa-chevron-down" style="font-size: 17px;"></i>
-                            </div>
                             <div id="voice-call-send-btn" style="width: 36px; height: 36px; border-radius: 50%; background: #fff; display: flex; justify-content: center; align-items: center; cursor: pointer; color: #111; flex-shrink: 0;">
                                 <i class="fas fa-arrow-up"></i>
                             </div>
@@ -3989,9 +4057,7 @@
                         <i class="fas fa-chevron-down" style="font-size: 16px;"></i>
                     </div>
                     <div id="group-call-status-text" style="font-size: 15px; font-weight: 600; background: rgba(0,0,0,0.4); padding: 4px 12px; border-radius: 12px; backdrop-filter: blur(10px);">00:00</div>
-                    <div id="group-call-hangup-btn" style="width: 36px; height: 36px; border-radius: 18px; background: rgba(255,59,48,0.8); display: flex; justify-content: center; align-items: center; cursor: pointer; color: #fff;">
-                        <i class="fas fa-phone-slash" style="font-size: 14px;"></i>
-                    </div>
+                    <div style="width: 36px; height: 36px;"></div>
                 </div>
 
                 <!-- 成员头像阵列 -->
@@ -4005,12 +4071,22 @@
                 </div>
 
                 <!-- Bottom Controls -->
-                <div style="position: relative; z-index: 1; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; flex-shrink: 0; padding: 15px 20px max(30px, env(safe-area-inset-bottom, 20px)); display: flex; flex-direction: column; gap: 10px; background: rgba(0,0,0,0.3);">
-                    <div style="display: flex; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; align-items: center; gap: 12px; background: rgba(255,255,255,0.15); border-radius: 24px; padding: 6px 6px 6px 16px;">
-                        <input type="text" id="group-call-input" inputmode="text" enterkeyhint="send" autocomplete="off" autocapitalize="sentences" placeholder="发消息参与通话..." style="flex: 1; width: 0; min-width: 0; height: 36px; border: none; background: transparent; color: #fff; outline: none; font-size: 15px; font-weight: 500;">
-                        <div id="group-call-ai-btn" style="width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,0.2); display: flex; justify-content: center; align-items: center; cursor: pointer; color: #fff; flex-shrink: 0;" title="调用群聊 API">
-                            <i class="fas fa-magic"></i>
+                <div style="position: relative; z-index: 1; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; flex-shrink: 0; padding: 15px 20px max(30px, env(safe-area-inset-bottom, 20px)); display: flex; flex-direction: column; gap: 20px; background: rgba(0,0,0,0.3);">
+                    <div id="group-call-actions-row" style="display: flex; justify-content: center; align-items: center; width: 100%;">
+                        <div style="display: flex; gap: 30px;">
+                            <div id="group-call-hangup-btn" title="挂断通话" aria-label="挂断通话" style="width: 64px; height: 64px; border-radius: 50%; background: #ff3b30; display: flex; justify-content: center; align-items: center; cursor: pointer; color: #fff; font-size: 24px; box-shadow: 0 4px 12px rgba(255,59,48,0.4);">
+                                <i class="fas fa-phone-slash"></i>
+                            </div>
+                            <div id="group-call-regenerate-btn" title="重回上一轮回复" aria-label="重回上一轮回复" style="width: 64px; height: 64px; border-radius: 50%; background: rgba(255,255,255,0.18); display: flex; justify-content: center; align-items: center; cursor: pointer; color: #fff; font-size: 22px; border: 1px solid rgba(255,255,255,0.22); box-shadow: 0 4px 12px rgba(0,0,0,0.18);">
+                                <i class="fas fa-redo-alt"></i>
+                            </div>
+                            <div id="group-call-ai-btn" title="调用群聊 API" aria-label="调用群聊 API" style="width: 64px; height: 64px; border-radius: 50%; background: rgba(255,255,255,0.18); display: flex; justify-content: center; align-items: center; cursor: pointer; color: #fff; font-size: 22px; border: 1px solid rgba(255,255,255,0.22); box-shadow: 0 4px 12px rgba(0,0,0,0.18);">
+                                <i class="fas fa-magic"></i>
+                            </div>
                         </div>
+                    </div>
+                    <div id="group-call-input-row" style="display: flex; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; align-items: center; gap: 12px; background: rgba(255,255,255,0.15); border-radius: 24px; padding: 6px 6px 6px 16px; margin-top: 10px;">
+                        <input type="text" id="group-call-input" inputmode="text" enterkeyhint="send" autocomplete="off" autocapitalize="sentences" placeholder="发消息参与通话..." style="flex: 1; width: 0; min-width: 0; height: 36px; border: none; background: transparent; color: #fff; outline: none; font-size: 15px; font-weight: 500;">
                         <div id="group-call-send-btn" style="width: 36px; height: 36px; border-radius: 50%; background: #fff; display: flex; justify-content: center; align-items: center; cursor: pointer; color: #111; flex-shrink: 0;">
                             <i class="fas fa-arrow-up"></i>
                         </div>
@@ -4085,6 +4161,13 @@
                                 <label style="width: auto; font-size: 17px; color: #000; padding-left: 0;">时间感知</label>
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="group-time-aware-toggle" checked="">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <div class="form-item" style="justify-content: space-between; border-bottom: 1px solid var(--separator-color);">
+                                <label style="width: auto; font-size: 17px; color: #000; padding-left: 0;">自动展开翻译</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="group-auto-expand-translation-toggle">
                                     <span class="slider"></span>
                                 </label>
                             </div>
@@ -4463,8 +4546,26 @@
                                         <option value="ja">日语</option>
                                         <option value="en">英语</option>
                                         <option value="fr">法语</option>
+                                        <option value="yue">粤语</option>
+                                        <option value="ru">俄语</option>
+                                        <option value="__custom__">自定义</option>
                                     </select>
                                     <i class="fas fa-chevron-right arrow"></i>
+                                </div>
+                                <div class="settings-item" id="chat-custom-language-row" style="display: none; cursor: default;">
+                                    <div class="settings-icon" style="background-color: #af52de;"><i class="fas fa-pen"></i></div>
+                                    <div class="settings-text">自定义语言</div>
+                                    <input type="text" id="chat-custom-language-input" maxlength="80" placeholder="例如：德语或繁体中文夹粤语" style="width: 190px; border: none; background: transparent; color: #8e8e93; font-size: 14px; outline: none; text-align: right;">
+                                </div>
+                                <div class="settings-item" style="cursor: default;">
+                                    <div class="settings-icon" style="background-color: #ff9500;"><i class="fas fa-layer-group"></i></div>
+                                    <div class="settings-text">一次消息条数</div>
+                                    <div style="display: flex; align-items: center; gap: 6px; color: #8e8e93; font-size: 14px;">
+                                        <span>最少</span>
+                                        <input type="number" id="chat-message-count-min-input" value="2" min="1" max="20" inputmode="numeric" style="width: 42px; border: 1px solid #e5e5ea; border-radius: 8px; padding: 5px 4px; background: #f2f2f7; color: #111; text-align: center; outline: none;">
+                                        <span>最多</span>
+                                        <input type="number" id="chat-message-count-max-input" value="8" min="1" max="20" inputmode="numeric" style="width: 42px; border: 1px solid #e5e5ea; border-radius: 8px; padding: 5px 4px; background: #f2f2f7; color: #111; text-align: center; outline: none;">
+                                    </div>
                                 </div>
                                 <div class="settings-item" style="justify-content: space-between; cursor: default;">
                                     <div class="settings-icon" style="background-color: #32ade6;"><i class="fas fa-clock"></i></div>
@@ -4775,7 +4876,7 @@
                         <div class="wb-centered-modal-title" id="modal-title">提示</div>
                     </div>
                     
-                    <div class="wb-centered-modal-body">
+                    <div class="wb-centered-modal-body" style="overflow-y: auto;">
                         <p id="modal-message" style="text-align: center; margin-bottom: 20px; color: #8e8e93; font-size: 14px; padding: 0 20px; line-height: 1.5;"></p>
                         
                         <div id="modal-confirm-content">
@@ -4783,6 +4884,22 @@
                         </div>
                         
                         <div id="modal-prompt-content" style="display: none;">
+                            <div id="modal-image-composer-group" style="display: none; margin-bottom: 12px; padding: 12px; border-radius: 14px; background: #f2f2f7;">
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <div id="modal-image-composer-preview" style="width: 54px; height: 54px; border-radius: 13px; overflow: hidden; background: #e5e5ea; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #8e8e93;">
+                                        <i class="fas fa-image"></i>
+                                        <img alt="待发送图片" style="width: 100%; height: 100%; object-fit: cover; display: none;">
+                                    </div>
+                                    <div style="min-width: 0; flex: 1;">
+                                        <div style="font-size: 14px; font-weight: 600; color: #1c1c1e;">相册图片</div>
+                                        <div id="modal-image-composer-status" style="font-size: 12px; color: #8e8e93; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">未选择图片时发送虚拟图片</div>
+                                    </div>
+                                    <button type="button" id="modal-image-composer-upload-btn" style="border: none; background: transparent; color: #007aff; font-size: 13px; padding: 8px 2px; white-space: nowrap;">上传</button>
+                                    <button type="button" id="modal-image-composer-remove-btn" aria-label="移除已选图片" style="display: none; border: none; background: transparent; color: #ff3b30; font-size: 14px; padding: 8px 2px;"><i class="fas fa-times"></i></button>
+                                    <input type="file" id="modal-image-composer-input" accept="image/*" style="display: none;">
+                                </div>
+                                <button type="button" id="modal-image-composer-recognize-btn" style="display: none; width: 100%; margin-top: 10px; padding: 9px 12px; border: none; border-radius: 10px; background: #fff; color: #007aff; font-size: 13px; font-weight: 600;">识图生成图片内容</button>
+                            </div>
                             <div class="form-group fully-rounded" id="modal-input-group" style="margin-bottom: 20px;">
                                 <div class="form-item">
                                     <input type="text" id="modal-input" style="text-align: center;" placeholder="请输入">
@@ -4791,6 +4908,43 @@
                             <div id="modal-textarea-group" style="margin-bottom: 20px; display: none;">
                                 <textarea id="modal-textarea" class="global-textarea" placeholder="请输入"></textarea>
                             </div>
+                            <div id="modal-generation-prompt-group" style="display: none; margin: -6px 0 14px;">
+                                <button type="button" id="modal-generation-context-btn" style="width: 100%; padding: 10px 12px; border: none; border-radius: 12px; background: #111; color: #fff; font-size: 13px; font-weight: 650; margin-bottom: 10px;">根据当前剧情生成提示词</button>
+                                <details id="modal-generation-details" style="border-radius: 14px; background: #f2f2f7; overflow: hidden;">
+                                    <summary style="padding: 12px 14px; cursor: pointer; font-size: 14px; font-weight: 650; color: #1c1c1e;">角色与负面提示词</summary>
+                                    <div style="padding: 0 12px 12px; display: flex; flex-direction: column; gap: 9px;">
+                                        <label style="font-size: 12px; color: #8e8e93;">Char 外貌提示词
+                                            <textarea id="modal-generation-char-appearance" class="global-textarea" rows="2" placeholder="仅在画面出现 Char 时应用" style="margin-top: 5px; min-height: 58px;"></textarea>
+                                        </label>
+                                        <label style="font-size: 12px; color: #8e8e93;">User 外貌提示词
+                                            <textarea id="modal-generation-user-appearance" class="global-textarea" rows="2" placeholder="仅在画面出现 User 时应用" style="margin-top: 5px; min-height: 58px;"></textarea>
+                                        </label>
+                                        <label style="font-size: 12px; color: #8e8e93;">画师串
+                                            <textarea id="modal-generation-artist-prompt" class="global-textarea" rows="2" placeholder="画师标签或风格提示词" style="margin-top: 5px; min-height: 58px;"></textarea>
+                                        </label>
+                                        <label style="font-size: 12px; color: #8e8e93;">负面提示词
+                                            <textarea id="modal-generation-negative-prompt" class="global-textarea" rows="2" placeholder="不希望图片中出现的内容" style="margin-top: 5px; min-height: 58px;"></textarea>
+                                        </label>
+                                    </div>
+                                </details>
+                            </div>
+                            <div id="modal-reference-face-group" style="display: none; align-items: center; gap: 12px; margin: -4px 0 12px; padding: 12px 14px; border-radius: 14px; background: #f2f2f7;">
+                                <div id="modal-reference-face-preview" style="width: 42px; height: 42px; border-radius: 13px; overflow: hidden; background: #e5e5ea; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #8e8e93;">
+                                    <i class="fas fa-user"></i>
+                                    <img alt="当前角色参考脸" style="width: 100%; height: 100%; object-fit: cover; display: none;">
+                                </div>
+                                <div style="min-width: 0; flex: 1;">
+                                    <div id="modal-reference-face-title" style="font-size: 14px; font-weight: 600; color: #1c1c1e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">角色参考脸</div>
+                                    <div id="modal-reference-face-status" style="font-size: 12px; color: #8e8e93; margin-top: 2px;">尚未上传</div>
+                                </div>
+                                <button type="button" id="modal-reference-face-upload-btn" style="border: none; background: transparent; color: #007aff; font-size: 13px; padding: 8px 2px; white-space: nowrap;">上传</button>
+                                <button type="button" id="modal-reference-face-delete-btn" aria-label="删除参考脸" style="display: none; border: none; background: transparent; color: #ff3b30; font-size: 14px; padding: 8px 2px;"><i class="fas fa-trash-alt"></i></button>
+                                <input type="file" id="modal-reference-face-input" accept="image/*" style="display: none;">
+                            </div>
+                            <label id="modal-toggle-group" style="display: none; align-items: center; justify-content: space-between; gap: 12px; margin: -4px 0 20px; padding: 12px 14px; border-radius: 14px; background: #f2f2f7; cursor: pointer;">
+                                <span id="modal-toggle-label" style="font-size: 15px; font-weight: 600; color: #1c1c1e;">使用参考脸</span>
+                                <input type="checkbox" id="modal-toggle-input" style="width: 20px; height: 20px; accent-color: #1c1c1e;">
+                            </label>
                         </div>
 
                         <div style="display: flex; gap: 10px;">
@@ -7881,11 +8035,12 @@
     </section>
 </div>
 
-<script src="js/storage/app_storage.js?v=20260715-library-content-store-v1&cot=20260725-single-chat-cot-v1&backup=20260801-atomic-import-v1"></script>
+<script src="js/storage/app_storage.js?v=20260715-library-content-store-v1&cot=20260725-single-chat-cot-v1&backup=20260803-sticker-migration-v2&image-generation=20260803-char-face-reference-v2"></script>
     <script src="js/storage/imessage_storage.js?v=20260710-storage-v8-idb1"></script>
     <script src="storage.js?v=20260710-storage-v7-cache1"></script>
     <script src="js/app_state_bridge.js?v=20260710-bstage-chat-recovery-v1"></script>
-    <script src="js/bootstrap_globals.js?v=20260721-fetch-abort-v1&error-copy=20260801-zh-v1"></script>
+    <script src="js/bootstrap_globals.js?v=20260721-fetch-abort-v1&error-copy=20260801-zh-v1&api=20260803-unified-v1&image-generation=20260803-char-face-reference-v2"></script>
+    <script src="js/image_generation.js?v=20260803-artist-prompt-v6"></script>
     <script src="js/export_file.js?v=20260718-ios-pwa-export-v1"></script>
     <script src="js/about_info_modal.js?v=20260712-login-notice-v1"></script>
     <script src="js/login.js?v=20260801-resume-recovery-v1"></script>
@@ -7894,56 +8049,57 @@
     <script src="js/system_notifications.js?v=20260721-storage-hydration-v1-custom-sound-v1"></script>
     
     <!-- 引入 iMessage 模块分段代码 -->
-    <script src="js/imessage/data_utils.js?v=20260713-offline-memory-v1-sticker-manifest-v2-memory-event-time-v1-offline-handoff-v1"></script>
-    <script src="js/imessage/2_core.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&cotcopy=20260727-v2&observer=20260730-v1&open-performance=20260801-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&group-user-avatar=20260802-v1"></script>
+    <script src="js/imessage/game.js?v=20260803-anonymous-qa-v4-composer-modal"></script>
+    <script src="js/imessage/data_utils.js?v=20260713-offline-memory-v1-sticker-manifest-v2-memory-event-time-v1-offline-handoff-v2&single-chat-info=20260803-v1"></script>
+    <script src="js/imessage/2_core.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&cotcopy=20260727-v2&observer=20260730-v1&open-performance=20260802-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&group-user-avatar=20260802-v1&image-generation=20260803-artist-prompt-v6&single-chat-info=20260803-v1&offline-handoff=20260803-v2&cot-default=20260803-v3&chat-runtime-performance=20260803-v1"></script>
     <script src="js/imessage/3_contacts.js?v=20260718-friend-profile-import-v1&render-cache=20260801-v1"></script>
-    <script src="js/imessage/3_groups.js?v=20260718-group-poll-v4-group-memory-editor-v1&observer=20260730-v1&render-cache=20260801-v1&user-avatar=20260802-v1"></script>
+    <script src="js/imessage/3_groups.js?v=20260718-group-poll-v4-group-memory-editor-v1&observer=20260730-v1&render-cache=20260801-v1&user-avatar=20260802-v1&group-auto-translation=20260803-v1"></script>
     <script src="js/imessage/4_chat_common.js"></script>
     <script src="js/imessage/4_chat_status.js?v=20260716-status-prompt-v2&paging=20260801-button-only-v1"></script>
     <script src="js/imessage/4_chat_payment.js?v=20260725-single-chat-cot-v1"></script>
-    <script src="js/imessage/4_chat_bubbles.js?v=20260725-single-chat-cot-v1-avatar-pill-v1-link-theatre-js-v1&group-user-avatar=20260802-v1"></script>
+    <script src="js/imessage/4_chat_bubbles.js?v=20260725-single-chat-cot-v1-avatar-pill-v1-link-theatre-js-v1&group-user-avatar=20260802-v1&open-performance=20260802-v1"></script>
     <script src="js/imessage/chat_search.js?v=20260718-chat-history-search-v2&keyboard-guard=20260801-v1"></script>
     <script src="js/imessage/chat_favorites.js?v=20260723-chat-favorites-v3"></script>
     <script src="js/imessage/minimax_tts.js"></script>
-    <script src="js/imessage/4_chat_ai.js?v=20260724-single-chat-prompt-v8-single-chat-cot-v1&cot=20260802-single-chat-cot-full-analysis-v2&online=20260801-persona-entries-v1&observer=20260730-v1&performance=20260801-v1&api-stream=20260801-v1&auto-translation=20260801-v1&status-prompt=20260802-v1"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260724-single-chat-prompt-v8-single-chat-cot-v1&cot=20260802-single-chat-cot-full-analysis-v2&online=20260801-persona-entries-v1&observer=20260730-v1&performance=20260801-v1&api=20260803-nonstream-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&single-chat-info=20260803-v1&offline-handoff=20260803-v2&context-dedupe=20260803-v1&nonstream=20260803-v2&group-auto-translation=20260803-v1&chat-runtime-performance=20260803-v1"></script>
     <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
     <script src="js/imessage/offline_reasoning.js?v=20260718-offline-cot-v1"></script>
-    <script src="js/imessage/4_chat_sheet.js?v=20260718-offline-cot-v1-chat-image-send-v1&cotui=20260725-pill-v1"></script>
-    <script src="js/imessage/4_chat_link.js?v=20260726-light-link-theatre-v1"></script>
-    <script src="js/imessage/4_chat_list.js"></script>
-    <script src="js/imessage/4_chat_interface.js?v=20260715-chat-context-menu-offline-retry-v1&observer=20260730-v1&android-keyboard=20260801-v1"></script>
-    <script src="js/imessage/4_chat_voice_call.js?v=20260725-call-keyboard-minimize-v2-minimized-context-v1"></script>
-    <script src="js/imessage/4_chat_main.js?v=20260715-chat-context-menu-offline-retry-v1"></script>
-    <script src="js/imessage/5_settings.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v3&chat-bg=20260729-race-reset-v1&relationship=20260801-static-preview-v3&auto-translation=20260801-v1&status-prompt=20260802-v1"></script>
-    <script src="js/imessage/6_moments.js?v=20260718-moments-target-reply-v1&auto-translation=20260801-v1"></script>
+    <script src="js/imessage/4_chat_sheet.js?v=20260718-offline-cot-v1-chat-image-send-v1&cotui=20260725-pill-v1&api=20260803-nonstream-v1&image-generation=20260803-artist-prompt-v6&chat-runtime-performance=20260803-v1"></script>
+    <script src="js/imessage/4_chat_link.js?v=20260726-light-link-theatre-v1&api=20260803-unified-v1"></script>
+    <script src="js/imessage/4_chat_list.js?chat-runtime-performance=20260803-v1"></script>
+    <script src="js/imessage/4_chat_interface.js?v=20260715-chat-context-menu-offline-retry-v1&observer=20260730-v1&android-keyboard=20260802-v1&open-performance=20260802-v1&chat-runtime-performance=20260803-v1"></script>
+    <script src="js/imessage/4_chat_voice_call.js?v=20260725-call-keyboard-minimize-v2-minimized-context-v1&api=20260803-unified-v1&group-layout=20260803-v1"></script>
+    <script src="js/imessage/4_chat_main.js?v=20260715-chat-context-menu-offline-retry-v1&single-chat-info=20260803-v1"></script>
+    <script src="js/imessage/5_settings.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v3&chat-bg=20260729-race-reset-v1&relationship=20260801-static-preview-v3&auto-translation=20260801-v1&status-prompt=20260802-v1&style-cache=20260802-v1&api=20260803-unified-v1&single-chat-info=20260803-v1"></script>
+    <script src="js/imessage/6_moments.js?v=20260718-moments-target-reply-v1&auto-translation=20260801-v1&api=20260803-unified-v1"></script>
 
     <!-- 引入其他应用模块 -->
     <script src="js/pay.js?v=20260710-storage-ready-v1&open-performance=20260801-v1"></script>
-    <script src="js/bstage.js?v=20260725-android-keyboard-actions-v2&subscribers=20260730-cap-compact-v1&keyboard-guard=20260801-v1"></script>
+    <script src="js/bstage.js?v=20260725-android-keyboard-actions-v2&subscribers=20260730-cap-compact-v1&keyboard-guard=20260801-v1&api=20260803-unified-v1"></script>
     <!-- 引入世界书核心模块脚本 -->
     <script src="js/builtin_worldbook.js?v=20260713-disable-override-limit-v2"></script>
     <script src="https://unpkg.com/mammoth@1.8.0/mammoth.browser.min.js"></script>
     <script src="js/worldbook.js?v=20260801-import-txt-docx-only-v1"></script>
     <!-- 引入核心 UI 管理与设置模块脚本 -->
     <script src="js/ui.js"></script>
-    <script src="js/settings.js?v=20260718-ios-pwa-export-v1-notification-sync-v1-custom-notification-sound-v1-api-presets-accessor-v1&global-font-scale=20260801-v3&theme-source=20260802-status-center-v1&assistive=20260801-drag-settle-v3&home-theme=20260731-widgets-v1&app-icon-alpha=20260731-v1&backup=20260801-atomic-import-v1"></script>
+    <script src="js/settings.js?v=20260718-ios-pwa-export-v1-notification-sync-v1-custom-notification-sound-v1-api-presets-accessor-v1&global-font-scale=20260801-v3&theme-source=20260802-status-center-v1&assistive=20260801-drag-settle-v3&home-theme=20260731-widgets-v1&app-icon-alpha=20260731-v1&backup=20260803-sticker-migration-v2&api=20260803-config-v2-model-search&image-generation=20260803-char-face-reference-v2"></script>
     <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="js/library.js?v=20260715-reader-streaming-v1&open-performance=20260801-v1"></script>
-    <script src="js/loves.js?v=20260719-friend-phone-bilingual-v13-android-focus-scope-v1&open-performance=20260801-v1"></script>
+    <script src="js/loves.js?v=20260719-friend-phone-bilingual-v13-android-focus-scope-v1&open-performance=20260801-v1&api=20260803-unified-v1"></script>
     <script src="js/tiktok/2_core.js?v=20260712-tiktok-feed-cleanup-v1&open-performance=20260801-v1"></script>
-    <script src="js/tiktok/3_home.js?v=20260712-tiktok-feed-cleanup-v1"></script>
-    <script src="js/tiktok/4_chat.js?v=20260712-tiktok-polish-v1"></script>
-    <script src="js/tiktok/5_profile.js?v=20260712-tiktok-polish-v1&performance=20260801-v1"></script>
-    <script src="js/youtube/2_core.js?v=20260717-char-lottery-consistency-v18&worldbook=20260729-global-bound-only-v2"></script>
+    <script src="js/tiktok/3_home.js?v=20260712-tiktok-feed-cleanup-v1&api=20260803-unified-v1"></script>
+    <script src="js/tiktok/4_chat.js?v=20260712-tiktok-polish-v1&api=20260803-unified-v1"></script>
+    <script src="js/tiktok/5_profile.js?v=20260712-tiktok-polish-v1&performance=20260801-v1&api=20260803-unified-v1"></script>
+    <script src="js/youtube/2_core.js?v=20260717-char-lottery-consistency-v18&worldbook=20260729-global-bound-only-v2&api=20260803-unified-v1"></script>
     <script src="js/youtube/3_channel.js?v=20260717-char-lottery-consistency-v18"></script>
     <script src="js/youtube/4_settings.js"></script>
-    <script src="js/youtube/5_player.js?v=20260717-char-lottery-consistency-v18&worldbook=20260729-global-bound-only-v2"></script>
-    <script src="js/youtube/6_community.js?v=20260801-dm-generation-fix-v19&worldbook=20260729-global-bound-only-v2"></script>
-    <script src="js/youtube/7_trending.js?worldbook=20260729-global-bound-only-v2"></script>
-    <script src="js/youtube/8_user_live.js?v=20260717-char-lottery-consistency-v18&worldbook=20260729-global-bound-only-v2"></script>
-    <script src="js/netflix.js?v=20260710-storage-ready-v2&open-performance=20260801-v1"></script>
-    <script src="js/shopping.js?v=20260710-storage-ready-v1&performance=20260801-v2"></script>
-    <script src="js/xapp.js?v=20260710-storage-v7-cache1&worldbook=20260729-global-bound-char-v1"></script>
+    <script src="js/youtube/5_player.js?v=20260717-char-lottery-consistency-v18&worldbook=20260729-global-bound-only-v2&api=20260803-unified-v1"></script>
+    <script src="js/youtube/6_community.js?v=20260801-dm-generation-fix-v19&worldbook=20260729-global-bound-only-v2&api=20260803-unified-v1"></script>
+    <script src="js/youtube/7_trending.js?worldbook=20260729-global-bound-only-v2&api=20260803-unified-v1"></script>
+    <script src="js/youtube/8_user_live.js?v=20260717-char-lottery-consistency-v18&worldbook=20260729-global-bound-only-v2&api=20260803-unified-v1"></script>
+    <script src="js/netflix.js?v=20260710-storage-ready-v2&open-performance=20260801-v1&api=20260803-unified-v1"></script>
+    <script src="js/shopping.js?v=20260710-storage-ready-v1&performance=20260801-v2&api=20260803-unified-v1"></script>
+    <script src="js/xapp.js?v=20260710-storage-v7-cache1&worldbook=20260729-global-bound-char-v1&api=20260803-unified-v1"></script>
     <script src="js/home_desktop.js?v=20260710-storage-ready-v1&theme-widgets=20260731-v1"></script>
     <script src="js/home_widget_panel_enhance.js"></script>
     <!-- 引入主逻辑脚本 -->

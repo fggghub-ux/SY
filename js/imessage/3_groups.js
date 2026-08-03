@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const groupContextEnabledToggle = document.getElementById('group-context-enabled-toggle');
     const groupContextLimitInput = document.getElementById('group-context-limit-input');
     const groupTimeAwareToggle = document.getElementById('group-time-aware-toggle');
+    const groupAutoExpandTranslationToggle = document.getElementById('group-auto-expand-translation-toggle');
     const groupShowUserAvatarToggle = document.getElementById('group-show-user-avatar-toggle');
     const groupManualSummaryBtn = document.getElementById('group-manual-summary-btn');
     const groupMemoryShortTermBtn = document.getElementById('group-memory-shortterm-btn');
@@ -681,6 +682,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (groupTimeAwareToggle) {
             groupTimeAwareToggle.checked = currentViewingGroup.timeAware !== false;
+        }
+        if (groupAutoExpandTranslationToggle) {
+            groupAutoExpandTranslationToggle.checked = currentViewingGroup.autoExpandTranslation === true;
         }
         if (groupShowUserAvatarToggle) {
             groupShowUserAvatarToggle.checked = currentViewingGroup.showGroupUserAvatar === true;
@@ -1733,6 +1737,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const timeAware = groupTimeAwareToggle
                 ? !!groupTimeAwareToggle.checked
                 : currentViewingGroup.timeAware !== false;
+            const autoExpandTranslation = groupAutoExpandTranslationToggle
+                ? !!groupAutoExpandTranslationToggle.checked
+                : currentViewingGroup.autoExpandTranslation === true;
             const showGroupUserAvatar = groupShowUserAvatarToggle?.checked === true;
             let limit = groupContextLimitInput ? Number(groupContextLimitInput.value) : 100;
 
@@ -1752,6 +1759,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 targetGroup.memory.context.enabled = enabled;
                 targetGroup.memory.context.limit = limit;
                 targetGroup.timeAware = timeAware;
+                targetGroup.autoExpandTranslation = autoExpandTranslation;
                 targetGroup.showGroupUserAvatar = showGroupUserAvatar;
             }, { silent: true });
 
