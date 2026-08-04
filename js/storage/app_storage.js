@@ -8,6 +8,7 @@
     const DB_NAME = 'iiso_app_storage';
     const OPTIMIZATION_SHADOW_DB_NAME = 'iiso_app_storage_optimization_shadow_v8';
     const IMPORT_SHADOW_DB_NAME = 'iiso_app_storage_import_shadow_v8';
+    const IMPORT_ROLLBACK_DB_NAME = 'iiso_app_storage_import_rollback_v8';
     const DB_VERSION = 7;
     const STORAGE_SCHEMA_VERSION = 8;
     const BACKUP_APP_NAME = 'u2phone';
@@ -780,11 +781,23 @@
         });
     }
 
+    function sortStoreRowsByKey(storeName, rows = []) {
+        const keyField = BACKUP_STORE_KEY_FIELDS[storeName];
+        return (Array.isArray(rows) ? rows : []).slice().sort((left, right) => {
+            const leftKey = String(left?.[keyField] ?? '');
+            const rightKey = String(right?.[keyField] ?? '');
+            if (leftKey < rightKey) return -1;
+            if (leftKey > rightKey) return 1;
+            return 0;
+        });
+    }
+
     async function buildStoreSignature(storeName, rows) {
-        let checksumRows = rows;
+        const orderedRows = sortStoreRowsByKey(storeName, rows);
+        let checksumRows = orderedRows;
         if (storeName === STORES.assets) {
             checksumRows = [];
-            for (const row of rows) {
+            for (const row of orderedRows) {
                 const blob = row?.blob;
                 checksumRows.push({
                     ...row,
@@ -797,8 +810,8 @@
             }
         }
         return {
-            count: rows.length,
-            bytes: rows.reduce((sum, row) => sum + measureRecordBytes(row), 0),
+            count: orderedRows.length,
+            bytes: orderedRows.reduce((sum, row) => sum + measureRecordBytes(row), 0),
             checksum: createChecksum(checksumRows)
         };
     }
@@ -3523,8 +3536,7 @@
         for (let index = 0; index < BACKUP_STORES.length; index += 1) {
             const storeName = BACKUP_STORES[index];
             const rows = Array.isArray(snapshot.stores?.[storeName]) ? snapshot.stores[storeName] : [];
-            const keyField = BACKUP_STORE_KEY_FIELDS[storeName];
-            const orderedRows = rows.slice().sort((left, right) => String(left?.[keyField] ?? '').localeCompare(String(right?.[keyField] ?? '')));
+            const orderedRows = sortStoreRowsByKey(storeName, rows);
             reportProgress(progressCallback, `校验并写入 ${storeName}...`, 12 + ((index + 1) / BACKUP_STORES.length) * 58);
             await replaceConnectionStore(db, storeName, orderedRows);
             const copiedRows = await getAllFromConnection(db, storeName);
@@ -3539,22 +3551,130 @@
     }
 
     async function promoteImportShadow(shadowDb, importId, progressCallback) {
-        const currentDb = await openDb();
+        let rollbackDb = null;
+        let mainDeleted = false;
+        let rollbackRestored = false;
+        let preserveRollback = false;
+
         try {
-            currentDb.close();
-        } catch (error) {}
-        dbPromise = null;
-        reportProgress(progressCallback, '正在安全切换数据库...', 76);
-        const deleted = await deleteDatabaseSafe(DB_NAME);
-        if (!deleted.deleted) {
-            throw new Error(deleted.reason === 'blocked'
-                ? '数据库正被其他页面占用，请关闭本项目的其他标签页后重试。'
-                : `Current database could not be replaced: ${deleted.reason}`);
+            const currentDb = await openDb();
+            await deleteDatabaseSafe(IMPORT_ROLLBACK_DB_NAME);
+            rollbackDb = await createDbConnection(IMPORT_ROLLBACK_DB_NAME);
+            reportProgress(progressCallback, '正在创建当前数据保护副本...', 76);
+            const rollbackSignatures = await copyDatabaseContents(currentDb, rollbackDb, progressCallback, 76, 2);
+            await setConnectionMeta(rollbackDb, 'import_rollback_ready', {
+                importId,
+                createdAt: Date.now(),
+                signatures: rollbackSignatures
+            });
+
+            try {
+                currentDb.close();
+            } catch (error) {}
+            dbPromise = null;
+            reportProgress(progressCallback, '正在安全切换数据库...', 78);
+            const deleted = await deleteDatabaseSafe(DB_NAME);
+            if (!deleted.deleted) {
+                throw new Error(deleted.reason === 'blocked'
+                    ? '数据库正被其他页面占用，请关闭本项目的其他标签页后重试。'
+                    : `Current database could not be replaced: ${deleted.reason}`);
+            }
+            mainDeleted = true;
+
+            const replacementDb = await openDb();
+            await copyDatabaseContents(shadowDb, replacementDb, progressCallback, 80, 17);
+            await setConnectionMeta(replacementDb, 'import_restore_complete', { importId, restoredAt: Date.now() });
+            try {
+                replacementDb.close();
+            } catch (error) {}
+            dbPromise = null;
+
+            rollbackDb.close();
+            rollbackDb = null;
+            try {
+                await deleteDatabaseSafe(IMPORT_ROLLBACK_DB_NAME);
+            } catch (cleanupError) {}
+            return true;
+        } catch (error) {
+            if (mainDeleted && rollbackDb) {
+                try {
+                    const restoredDb = await openDb();
+                    await copyDatabaseContents(rollbackDb, restoredDb, null);
+                    await setConnectionMeta(restoredDb, 'import_rollback_restored', {
+                        importId,
+                        restoredAt: Date.now()
+                    });
+                    rollbackRestored = true;
+                } catch (rollbackError) {
+                    preserveRollback = true;
+                    console.error('Failed to restore the pre-import database', rollbackError);
+                }
+            }
+
+            if (rollbackRestored) {
+                error.message = `${error.message} 已自动恢复导入前的数据。`;
+            } else if (mainDeleted) {
+                error.message = `${error.message} 导入前的数据保护副本仍保留，重新打开应用会自动恢复。`;
+            }
+            throw error;
+        } finally {
+            try {
+                rollbackDb?.close();
+            } catch (error) {}
+            if (!preserveRollback) {
+                try {
+                    await deleteDatabaseSafe(IMPORT_ROLLBACK_DB_NAME);
+                } catch (cleanupError) {}
+            }
         }
-        const replacementDb = await openDb();
-        await copyDatabaseContents(shadowDb, replacementDb, progressCallback, 78, 19);
-        await setConnectionMeta(replacementDb, 'import_restore_complete', { importId, restoredAt: Date.now() });
-        return true;
+    }
+
+    async function openExistingImportRollbackDatabase() {
+        if (!window.indexedDB) return null;
+        if (typeof window.indexedDB.databases === 'function') {
+            try {
+                const databases = await window.indexedDB.databases();
+                if (!databases.some((item) => item?.name === IMPORT_ROLLBACK_DB_NAME)) return null;
+            } catch (error) {}
+        }
+        const db = await createDbConnection(IMPORT_ROLLBACK_DB_NAME);
+        const marker = await new Promise((resolve, reject) => {
+            const request = db.transaction(STORES.meta, 'readonly').objectStore(STORES.meta).get('import_rollback_ready');
+            request.onsuccess = () => resolve(request.result?.value || null);
+            request.onerror = () => reject(request.error);
+        });
+        if (!marker?.importId) {
+            db.close();
+            await deleteDatabaseSafe(IMPORT_ROLLBACK_DB_NAME);
+            return null;
+        }
+        return { db, marker };
+    }
+
+    async function recoverImportRollbackIfNeeded() {
+        const rollback = await openExistingImportRollbackDatabase();
+        if (!rollback) return false;
+
+        const mainDb = await openDb();
+        const currentMarker = await new Promise((resolve, reject) => {
+            const request = mainDb.transaction(STORES.meta, 'readonly').objectStore(STORES.meta).get('import_restore_complete');
+            request.onsuccess = () => resolve(request.result?.value || null);
+            request.onerror = () => reject(request.error);
+        });
+        const importCompleted = currentMarker?.importId === rollback.marker.importId;
+        if (!importCompleted) {
+            await copyDatabaseContents(rollback.db, mainDb, null);
+            await setConnectionMeta(mainDb, 'import_rollback_restored', {
+                importId: rollback.marker.importId,
+                restoredAt: Date.now(),
+                recoveredAtStartup: true
+            });
+        }
+
+        rollback.db.close();
+        await deleteDatabaseSafe(IMPORT_ROLLBACK_DB_NAME);
+        if (!importCompleted) await deleteDatabaseSafe(IMPORT_SHADOW_DB_NAME);
+        return !importCompleted;
     }
 
     async function openExistingImportShadowDatabase() {
@@ -3763,6 +3883,9 @@
             try {
                 if (shadowDb) shadowDb.close();
             } catch (closeError) {}
+            try {
+                await deleteDatabaseSafe(IMPORT_SHADOW_DB_NAME);
+            } catch (cleanupError) {}
             throw error;
         } finally {
             if (!completed) replacementInProgress = false;
@@ -4421,6 +4544,7 @@
 
     async function initializeUnifiedStorage() {
         storageHealthState.status = 'initializing';
+        await recoverImportRollbackIfNeeded();
         await recoverImportShadowIfNeeded();
         await recoverOptimizationShadowIfNeeded();
         const existingDomains = await getAllRecords(STORES.appDomains);

@@ -227,31 +227,37 @@
         if (!event || typeof event !== 'object') return null;
         const source = { ...event };
         const name = String(source.name || source.title || '未命名行程').trim() || '未命名行程';
-        let rawTime = normalizeLocalDateTime(source.rawTime || source.startAt);
+        const recurrence = String(source.recurrence || source.repeat || '').trim() === 'daily'
+            ? 'daily'
+            : 'once';
+        const eventSource = String(source.source || '').trim() || 'manual';
+        let rawTime = recurrence === 'daily' ? '' : normalizeLocalDateTime(source.rawTime || source.startAt);
         const rawParts = splitLocalDateTime(rawTime);
-        let date = String(source.date || rawParts.date || '').trim();
+        let date = recurrence === 'daily' ? '' : String(source.date || rawParts.date || '').trim();
         let startTime = String(source.startTime || rawParts.time || '').trim().slice(0, 5);
 
-        if (!rawTime && /^\d{4}-\d{2}-\d{2}$/.test(date) && /^\d{2}:\d{2}$/.test(startTime)) {
+        if (recurrence !== 'daily' && !rawTime && /^\d{4}-\d{2}-\d{2}$/.test(date) && /^\d{2}:\d{2}$/.test(startTime)) {
             rawTime = `${date}T${startTime}`;
         }
-        if (!date || !startTime) {
+        if (recurrence !== 'daily' && (!date || !startTime)) {
             const derived = splitLocalDateTime(rawTime);
             date = date || derived.date;
             startTime = startTime || derived.time;
         }
 
         const sourceEndText = String(source.endAt || source.endTime || '').trim();
-        let endAt = normalizeLocalDateTime(sourceEndText);
+        let endAt = recurrence === 'daily' ? '' : normalizeLocalDateTime(sourceEndText);
         let endTime = /^\d{2}:\d{2}$/.test(sourceEndText)
             ? sourceEndText
             : splitLocalDateTime(endAt).time;
-        if (!endAt && date && endTime) endAt = `${date}T${endTime}`;
+        if (recurrence !== 'daily' && !endAt && date && endTime) endAt = `${date}T${endTime}`;
         if (!endTime) endTime = startTime;
 
         const formattedStart = formatLocalDateTime(rawTime);
         const formattedEnd = formatLocalDateTime(endAt);
-        const displayTime = formattedStart
+        const displayTime = recurrence === 'daily' && startTime
+            ? `每天 ${startTime}${endTime && endTime !== startTime ? ` - ${endTime}` : ''}`
+            : formattedStart
             ? (formattedEnd && formattedEnd !== formattedStart ? `${formattedStart} - ${formattedEnd}` : formattedStart)
             : String(source.time || startTime || '').trim();
 
@@ -267,7 +273,8 @@
             rawTime,
             endAt,
             location: String(source.location || source.description || '').trim(),
-            source: String(source.source || '').trim(),
+            source: eventSource,
+            recurrence,
             timestamp: Number(source.timestamp) || Date.now()
         };
     }
@@ -278,6 +285,11 @@
             .map(normalizeScheduleEvent)
             .filter(Boolean)
             .sort((left, right) => {
+                if (left.recurrence === 'daily' && right.recurrence !== 'daily') return -1;
+                if (left.recurrence !== 'daily' && right.recurrence === 'daily') return 1;
+                if (left.recurrence === 'daily' && right.recurrence === 'daily') {
+                    return String(left.startTime || '').localeCompare(String(right.startTime || ''));
+                }
                 const leftTime = new Date(left.rawTime || 0).getTime() || Number(left.timestamp) || 0;
                 const rightTime = new Date(right.rawTime || 0).getTime() || Number(right.timestamp) || 0;
                 return leftTime - rightTime;

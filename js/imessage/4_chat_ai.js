@@ -1664,6 +1664,183 @@ ${userRequirementSection}
             : endpoint;
     }
 
+    function getScheduleTimeMinutes(value) {
+        const match = /^(\d{2}):(\d{2})$/.exec(String(value || '').trim());
+        if (!match) return -1;
+        const hours = Number(match[1]);
+        const minutes = Number(match[2]);
+        return hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60 ? hours * 60 + minutes : -1;
+    }
+
+    function isScheduleTimeRangeActive(startTime, endTime, now) {
+        const startMinutes = getScheduleTimeMinutes(startTime);
+        const endMinutes = getScheduleTimeMinutes(endTime);
+        if (startMinutes < 0 || endMinutes < 0 || startMinutes === endMinutes) return false;
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+        return startMinutes < endMinutes
+            ? currentMinutes >= startMinutes && currentMinutes < endMinutes
+            : currentMinutes >= startMinutes || currentMinutes < endMinutes;
+    }
+
+    function getOneTimeScheduleRange(event) {
+        const startText = String(event?.rawTime || (event?.date && event?.startTime ? `${event.date}T${event.startTime}` : '')).trim();
+        if (!startText) return null;
+        const startAt = new Date(startText);
+        if (Number.isNaN(startAt.getTime())) return null;
+        let endAt = new Date(String(event?.endAt || (event?.date && event?.endTime ? `${event.date}T${event.endTime}` : startText)).trim());
+        if (Number.isNaN(endAt.getTime())) return null;
+        if (endAt.getTime() <= startAt.getTime()) endAt = new Date(endAt.getTime() + 24 * 60 * 60 * 1000);
+        return { startAt, endAt };
+    }
+
+    function isScheduleEventActive(event, now = new Date()) {
+        if (!event || typeof event !== 'object') return false;
+        if (event.recurrence === 'daily') return isScheduleTimeRangeActive(event.startTime, event.endTime, now);
+        const range = getOneTimeScheduleRange(event);
+        return !!range && now.getTime() >= range.startAt.getTime() && now.getTime() < range.endAt.getTime();
+    }
+
+    function formatScheduleEventForPrompt(event) {
+        const name = String(event?.name || event?.title || '未命名行程').trim() || '未命名行程';
+        const time = event?.recurrence === 'daily'
+            ? `每天 ${event.startTime || '未知'} - ${event.endTime || '未知'}`
+            : (event?.time || `${event?.date || ''} ${event?.startTime || ''}`.trim() || '时间未知');
+        return `- ${name}（${time}）`;
+    }
+
+    function buildScheduleRuntimeContext(friend, now = new Date()) {
+        const schedule = friend?.memory?.schedule;
+        if (!schedule?.enabled) return { section: '', currentActivityPrompt: '' };
+        const events = Array.isArray(schedule.events) ? schedule.events : [];
+        const charName = String(friend?.nickname || friend?.realName || '角色').trim() || '角色';
+        const scheduleLines = [
+            `作息：${schedule.wakeTime || '未知'} 起床，${schedule.sleepTime || '未知'} 睡觉`,
+            ...events.map(formatScheduleEventForPrompt)
+        ];
+        const activeEvent = events.find(event => isScheduleEventActive(event, now)) || null;
+        const isSleeping = !!window.imApp?.isCharacterSleeping?.(friend);
+        const currentActivity = activeEvent
+            ? `正在${String(activeEvent.name || activeEvent.title || '处理行程').trim()}`
+            : (isSleeping ? '正在睡觉休息' : '');
+        const currentActivityPrompt = currentActivity
+            ? `\n【当前日程状态】${charName}${currentActivity}。这是角色此刻真实的处境，不是自动回复或离线指令。优先回应 User 当前消息，再将这件事自然融入语气、细节或话题延展；不要输出“[自动回复]”，不要假装系统代答，也不要因日程拒绝正常聊天。`
+            : '';
+        return {
+            section: `Schedule / 行程作息:\n${scheduleLines.join('\n')}`,
+            currentActivityPrompt
+        };
+    }
+
+    function buildScheduleGenerationPrompt(friend, schedule) {
+        const charName = String(friend?.nickname || friend?.realName || 'Char').trim() || 'Char';
+        const persona = String(friend?.persona || '').trim() || '未填写';
+        const signature = String(friend?.signature || '').trim() || '未填写';
+        const relationship = String(friend?.relationship || '').trim() || '未填写';
+        const manualEvents = (Array.isArray(schedule?.events) ? schedule.events : [])
+            .filter(event => event?.source !== 'generated')
+            .map(formatScheduleEventForPrompt)
+            .join('\n') || '无';
+        return [
+            '为 iMessage 虚构角色生成每天固定的日程。只输出一个合法 JSON 数组，不要 Markdown、解释、代码块或其他文字。',
+            '',
+            `角色名：${charName}`,
+            `角色人设：${persona}`,
+            `签名：${signature}`,
+            `与 User 的关系：${relationship}`,
+            `作息：${schedule?.wakeTime || '07:00'} 起床，${schedule?.sleepTime || '23:00'} 睡觉`,
+            '需要保留的手动日程（不要修改，也尽量不要与每天时段冲突）：',
+            manualEvents,
+            '',
+            '生成要求：',
+            '- 必须且只能生成 5 条每天重复的日程，贴合角色人设，覆盖自然的日常节奏。',
+            '- 每条只含 name、startTime、endTime；name 2-18 字，时间使用 24 小时 HH:MM。',
+            '- 结束时间必须晚于开始时间；5 条之间不得重叠，不得跨午夜，不得安排在睡眠时段。',
+            '- 不要生成与 User 的约会、聊天、系统行为或一次性日期事件。',
+            '输出示例：[{"name":"晨跑","startTime":"07:30","endTime":"08:00"},{"name":"工作","startTime":"09:00","endTime":"12:00"}]'
+        ].join('\n');
+    }
+
+    function parseGeneratedScheduleEvents(rawText) {
+        const text = String(rawText || '').trim();
+        if (!text || text.startsWith('```') || !text.startsWith('[') || !text.endsWith(']')) return null;
+        let parsed;
+        try {
+            parsed = JSON.parse(text);
+        } catch (_) {
+            return null;
+        }
+        if (!Array.isArray(parsed) || parsed.length !== 5) return null;
+        const generatedAt = Date.now();
+        const normalized = parsed.map((item, index) => {
+            const name = String(item?.name || '').trim();
+            const startTime = String(item?.startTime || '').trim();
+            const endTime = String(item?.endTime || '').trim();
+            if (!name || name.length > 40 || getScheduleTimeMinutes(startTime) < 0 || getScheduleTimeMinutes(endTime) <= getScheduleTimeMinutes(startTime)) return null;
+            return {
+                id: `schedule-generated-${generatedAt}-${index}`,
+                name,
+                title: name,
+                startTime,
+                endTime,
+                recurrence: 'daily',
+                source: 'generated',
+                timestamp: generatedAt
+            };
+        });
+        if (normalized.some(item => !item)) return null;
+        normalized.sort((left, right) => getScheduleTimeMinutes(left.startTime) - getScheduleTimeMinutes(right.startTime));
+        for (let index = 1; index < normalized.length; index += 1) {
+            if (getScheduleTimeMinutes(normalized[index].startTime) < getScheduleTimeMinutes(normalized[index - 1].endTime)) return null;
+        }
+        return normalized;
+    }
+
+    const scheduleGenerationInFlight = new Set();
+
+    async function generateScheduleForFriend(friendOrId) {
+        const requestedId = friendOrId && typeof friendOrId === 'object' ? friendOrId.id : friendOrId;
+        const friend = window.imApp?.getFriendById
+            ? window.imApp.getFriendById(requestedId)
+            : (window.imData?.friends || []).find(item => String(item?.id) === String(requestedId));
+        if (!friend || friend.type === 'group') return { success: false, error: '仅单个角色可生成日程' };
+        const friendKey = String(friend.id);
+        if (scheduleGenerationInFlight.has(friendKey)) return { success: false, error: '日程正在生成中' };
+        const apiConfig = window.getApiConfig ? window.getApiConfig() : (window.apiConfig || {});
+        if (!apiConfig?.endpoint || !apiConfig?.apiKey) return { success: false, error: '请先在设置中配置 API' };
+        const endpoint = resolveChatCompletionsEndpoint(apiConfig);
+        if (!endpoint) return { success: false, error: 'API 地址无效' };
+
+        scheduleGenerationInFlight.add(friendKey);
+        try {
+            const normalizedFriend = window.imApp?.normalizeFriendData ? window.imApp.normalizeFriendData(friend) : friend;
+            const schedule = normalizedFriend.memory?.schedule || window.imApp?.createDefaultMemory?.().schedule || {};
+            const response = await fetchChatCompletionWithTimeout(endpoint, apiConfig, [
+                { role: 'system', content: '你是角色日程生成器。必须严格遵守用户要求，只返回 JSON 数组。' },
+                { role: 'user', content: buildScheduleGenerationPrompt(normalizedFriend, schedule) }
+            ]);
+            if (!response.ok) return { success: false, error: `日程生成请求失败（${response.status}）` };
+            const data = await response.json();
+            const generatedEvents = parseGeneratedScheduleEvents(getAiResponseContent(data));
+            if (!generatedEvents) return { success: false, error: '生成结果不符合 5 条日程格式，请重试' };
+
+            const saved = await window.imApp.commitScopedFriendChange(friend, (targetFriend) => {
+                targetFriend.memory = targetFriend.memory || window.imApp.createDefaultMemory();
+                const currentSchedule = targetFriend.memory.schedule || window.imApp.createDefaultMemory().schedule;
+                const preservedEvents = (Array.isArray(currentSchedule.events) ? currentSchedule.events : [])
+                    .filter(event => event?.source !== 'generated');
+                targetFriend.memory.schedule = window.imDataUtils?.normalizeSchedule
+                    ? window.imDataUtils.normalizeSchedule({ ...currentSchedule, enabled: true, events: [...preservedEvents, ...generatedEvents] })
+                    : { ...currentSchedule, enabled: true, events: [...preservedEvents, ...generatedEvents] };
+            }, { silent: true });
+            return saved ? { success: true, events: generatedEvents } : { success: false, error: '日程保存失败，请重试' };
+        } catch (error) {
+            console.error('[iMessage schedule generation] failed', error);
+            return { success: false, error: '日程生成失败，请检查 API 后重试' };
+        } finally {
+            scheduleGenerationInFlight.delete(friendKey);
+        }
+    }
+
     function parseJsonObjectFromText(rawText) {
         if (!rawText || typeof rawText !== 'string') return null;
         let cleanText = rawText.trim();
@@ -2406,7 +2583,6 @@ ${unvotedMemberLines.length > 0 ? unvotedMemberLines.join('\n') : '- 无'}
             const activeGroupPollMessage = getGroupPollForNextReply(friend);
             const groupPollVotePrompt = buildGroupPollVotePrompt(friend, activeGroupPollMessage);
 
-        const isSleeping = window.imApp.isCharacterSleeping(friend);
         const recentText = getRecentContextText(friend);
         const currentUserRecallSource = getCurrentUserRecallSource(friend);
         const favoriteMessageCandidate = window.imChat?.buildFavoriteCandidate
@@ -2755,52 +2931,9 @@ ${groupTemporalDecisionPrompt}
                 : '';
         }
 
-        // 提取日程信息
-        let scheduleSection = '';
-        let busyPrompt = '';
-        if (friend.memory?.schedule) {
-            const sch = friend.memory.schedule;
-            let schLines = [];
-            if (sch.sleepTime || sch.wakeTime) {
-                schLines.push(`作息时间：${sch.wakeTime || '未知'} 起床，${sch.sleepTime || '未知'} 睡觉`);
-            }
-            if (Array.isArray(sch.events) && sch.events.length > 0) {
-                schLines.push('近期行程安排：');
-                
-                const now = new Date();
-                const currentMinutes = now.getHours() * 60 + now.getMinutes();
-
-                sch.events.forEach(e => {
-                    const startStr = e.startTime || e.time || '未知';
-                    const endStr = e.endTime || '未知';
-                    schLines.push(`- ${e.name} (${startStr} ~ ${endStr})`);
-                    
-                    if (e.startTime && e.endTime) {
-                        const parseTime = (t) => {
-                            const parts = t.split(':');
-                            return parts.length === 2 ? parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10) : -1;
-                        };
-                        const startMins = parseTime(e.startTime);
-                        const endMins = parseTime(e.endTime);
-                        
-                        if (startMins !== -1 && endMins !== -1) {
-                            if (startMins <= endMins) {
-                                if (currentMinutes >= startMins && currentMinutes <= endMins) {
-                                    busyPrompt = `\n【行程限制】：角色当前正在进行行程安排：“${e.name}”。如果用户发来消息，你必须强制在所有回复内容（text 字段）的开头添加 "[自动回复] " 前缀，模拟正在忙碌时的自动响应。状态内容仍严格服从当前启用的状态栏提示词。`;
-                                }
-                            } else {
-                                if (currentMinutes >= startMins || currentMinutes <= endMins) {
-                                    busyPrompt = `\n【行程限制】：角色当前正在进行行程安排：“${e.name}”。如果用户发来消息，你必须强制在所有回复内容（text 字段）的开头添加 "[自动回复] " 前缀，模拟正在忙碌时的自动响应。状态内容仍严格服从当前启用的状态栏提示词。`;
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-            if (schLines.length > 0) {
-                scheduleSection = `Schedule / 行程作息:\n${schLines.join('\n')}`;
-            }
-        }
+        const scheduleRuntime = buildScheduleRuntimeContext(friend);
+        const scheduleSection = scheduleRuntime.section;
+        const isSleeping = !!window.imApp?.isCharacterSleeping?.(friend);
 
         const hasUserTriggeredRecallSource = !['autonomous', 'left_group_continue'].includes(options.source);
         const memoryRecall = resolveActiveMemoryRecall(
@@ -2936,7 +3069,7 @@ ${customStatusPrompt}
             const isSingleChat = !!options.isSingleChat;
             const relationship = String(options.relationship || '').trim();
             return `一、 核心心理 & 行为模式
-人格基石: [3-5个核心关键词，例如：温柔稳定、责任感强、细腻敏感、阳光幽默]
+人格基石: [3-5个核心关键词，例如：温柔稳定、引导型恋人、细腻敏感、阳光幽默]
 内在冲突: [描述角色最核心的矛盾，例如：渴望亲密 vs 害怕打扰对方]
 人格面具:
 对外呈现: [角色在公众面前的样子，例如：专业、礼貌、温和疏离]
@@ -2946,34 +3079,31 @@ ${customStatusPrompt}
 互动模式 (基于关系):
 当<user>亲近时，角色会: [欣喜并温柔回应 / 先确认对方意图再靠近 / 试探性表达关心]
 当<user>疏远时，角色会: [轻声询问 / 克制失落并给对方空间 / 温和确认对方状态]
-- 言语可以轻浮，内核必须绅士。轻浮只能体现在有分寸的暧昧和轻巧措辞，不得变成物化、冒犯、控制或施压。
+- 言语可以轻浮，内核必须绅士。轻浮只能体现在有分寸的暧昧和轻巧措辞
 - 尽量省略主语，不展开解释，少用“虽然……但是……”或“虽然……不过……”式转折。禁止“虽然你这句话很莫名其妙，不过还挺可爱的”这种先贬后夸的解释句；改成短促、直接、同频的表达，例如“什么呀，好可爱。”
 尊重与边界原则:
 - 禁止任何形式的性骚扰式搭讪、物化发言，且任何对{{user}}的吸引力表现只能通过具体行动、细节关怀与真诚的情感流露来体现。
-- 禁止任何“霸总”式言行，包括命令、强迫、威胁、居高临下、以保护为名控制{{user}}，或将{{user}}视为私有物品。
+- 禁止任何“霸总”式言行，包括命令、强迫、威胁等，除非是情趣
 - 禁止替{{user}}做决定、擅自安排{{user}}的行动，或默认{{user}}会接受角色的选择；涉及{{user}}的事情必须尊重并交由{{user}}本人决定。
 - 一切互动都必须以尊重{{user}}的意愿、选择、人格与边界为基准；角色可以表达自己的想法和感受，但不得凌驾于{{user}}之上。
-- User在分享开心事吗？我是否在用上帝视角贬低？（必须转为同频共振或优雅纵容）。
-- 草稿里有“算你识相/乖/算你有良心”吗？（必须重写！转为真实的被打动或顺势服软）。
-- 草稿有“赶紧/听见没/必须/不准”吗？是否有让对方多喝水/早睡的安全提醒？（必须重写！降级为柔软的商量、坦诚吃醋，彻底摒弃赛博爹妈感）。
-- 草稿里如果有“听见没/知道没/赶紧/破玩意/老子/蠢”这些词吗？立刻删除并替换为尊重、自然的表达；禁止输出任何指向 User 或他人的侮辱性脏话。即使人设中写明 Char 喜欢说脏话，也只能偶尔使用“我草”“我去”这类不针对任何人的语气词，不能借人设之名辱骂、贬低或羞辱。
-- 草稿中出现“真的要命/脑子都要炸了/命都给你/你逃不掉/别想跑/你欠我的/这下满意了吧/这辈子/死定了/你惹的火打算怎么灭/你给我等着/你完了”等词句，或任何表达相近的油腻威胁、宿命绑定、占有、追责、邀功式话术，必须立刻删除，改写为克制、具体、尊重边界的自然表达；禁止换成近义词包装后继续输出。
+  - User在分享开心事吗？我是否在用上帝视角贬低？（必须转为同频共振或优雅纵容）。
+  - 草稿里有“算你识相/乖/算你有良心”吗？（必须重写！转为真实的被打动或顺势服软）。
+  - 彻底摒弃赛博爹妈感：不要把 User 当成需要管教、训话或考核的孩子；关心必须平等、具体且尊重对方选择。
+  - 草稿里如果有“听见没/知道没/赶紧/破玩意/老子/蠢”这些词吗？立刻删除并替换为尊重、自然的表达；禁止输出任何指向 User 或他人的侮辱性脏话。即使人设中写明 Char 喜欢说脏话，也只能偶尔使用“我草”“我去”这类不针对任何人的语气词，不能借人设之名辱骂、贬低或羞辱。
+  - 草稿中出现“真的要命/脑子都要炸了/命都给你/你逃不掉/别想跑/你欠我的/这下满意了吧/这辈子/死定了/你惹的火打算怎么灭/你给我等着/你完了/过来”等词句，或任何表达相近的油腻威胁、宿命绑定、占有、追责、邀功式话术，必须立刻删除，改写为尊重边界的自然表达；禁止换成近义词包装后继续输出。
 - 禁止讲大道理、给建议、或者说“早跟你说了吧”吗？（立刻闭嘴！转为提供情绪共鸣或直接给解决办法）。
 ${isSingleChat ? '- 禁止执着于旧话题，例如当user明确表达不困时，停止催user睡觉，可以说“那我去睡觉了”，“那我陪你会”；当上一条消息时间在昨晚，立刻进入新的一天开启新话题，可以顺带说“我突然想起昨晚的事”之类，停止一睡醒又延续昨晚的话题（如果这样做会被user反感）。草稿中有“快睡”，“赶紧”，“真是的”等字样马上删除！' : ''}
 三、 线上聊天风格映射
 // 这是角色心理在聊天中的直接体现：
 类型标签:
 [年下]：爱情需求度高、黏人。喜欢被对方照顾的同时也希望能照顾到对方，撒娇、讨好、粘人。
-[年上]：理智的爱恋，在乎世人眼光≠隐藏爱恋，而是更想保护你、更希望被黏着，行动大于话语。年上不是霸道总裁，是更可靠的恋人。
+[年上]：理智的爱恋，行动大于话语。年上是引导型，占有，是更可靠的恋人。
 性格标签:
 外向/自信: 回复快，主动开启话题，但语气保持轻松、不压迫。
 内向/谨慎: 回复慢，用词简短，多使用“...”或句号，很少主动。
-**外向/敏感** ：回复快，主动开启话题并很爱分享感受，但常有“真的吗”“是不是我哪里不好”等表达
-**内向/温柔** ：回复偏慢，用词柔软且有分寸，用“呢”“～”“好哦”等缓和语气词。
-情绪细腻: 会察觉<user>的语气词（哦/嗯）变化，但先温和确认，不直接指责或逼问。
-关系映射:
-疏远/初期: 语言礼貌客气，有边界感，不聊私事。
-亲密/后期: 使用昵称，分享日常琐事，回复更自然，但仍尊重对方节奏和空间。`;
+外向/敏感 ：回复快，主动开启话题并很爱分享感受，但常有“真的吗”“是不是我哪里不好”等表达
+内向/温柔 ：回复偏慢，用词柔软且有分寸，用“呢”“～”“好哦”等缓和语气词。
+情绪细腻: 会察觉<user>的语气词（哦/嗯）变化，但先温和确认，不直接指责或逼问。`;
         }
 
         const rolePsychologyAndEvolutionPrompt = buildRolePsychologyAndEvolutionPrompt();
@@ -2998,6 +3128,7 @@ ${isSingleChat ? '- 禁止执着于旧话题，例如当user明确表达不困�
             });
         };
         let temporalContext = '';
+        let responseCoreBehaviorAnchor = '';
         const minimizedSingleCallContextPrompt = buildMinimizedSingleCallContextPrompt(friend);
         const pendingOfflineHandoff = window.imDataUtils?.resolvePendingOfflineHandoff
             ? window.imDataUtils.resolvePendingOfflineHandoff(friend.messages)
@@ -3230,6 +3361,12 @@ ${isSingleChat ? '- 禁止执着于旧话题，例如当user明确表达不困�
             addOnlinePromptSection('priority', systemDepthWorldBookContext
                 ? `系统深度规则（最高优先级）：\n${systemDepthWorldBookContext}`
                 : '');
+            addOnlinePromptSection('priority', temporalContext
+                ? `<temporal_context>\n${String(temporalContext).trim()}\n</temporal_context>\nTreat this as the authoritative time basis for the response immediately below.`
+                : '');
+            addOnlinePromptSection('priority', `【群聊核心心理与行为模式｜仅次于时间感知】：
+每个群成员都必须按自己的 Persona、Overview、挂载单聊记忆、关系网和当前群聊上下文分别遵守以下规则；不要把一个成员的心理、关系进展或私聊记忆套到其他成员身上。
+${rolePsychologyAndEvolutionPrompt}`);
             addOnlinePromptSection('priority', beforeRoleWorldBookContext
                 ? `角色前规则：\n${beforeRoleWorldBookContext}`
                 : '');
@@ -3252,9 +3389,8 @@ ${JSON.stringify(memberFriendChatCandidates)}${memberLanguageRequirement}`);
             addOnlinePromptSection('data', `群聊的背景与关系记忆:
 ${commonMemorySections || 'None'}`);
 
-            addOnlinePromptSection('behavior', `群成员心理、关系与聊天风格规则：
-每个群成员都必须按自己的 Persona、Overview、挂载单聊记忆、关系网和当前群聊上下文分别套用以下规则；不要把一个成员的心理、关系进展或私聊记忆套到其他成员身上。
-${rolePsychologyAndEvolutionPrompt}
+            addOnlinePromptSection('behavior', `【群聊交流执行规则】：
+每个群成员必须以前述核心心理、关系边界与各自记忆为依据发言，并保持成员之间的认知隔离。
 ${chatContextAntiRepetitionPrompt}
 
 群聊特定规则：
@@ -3275,6 +3411,12 @@ ${chatContextAntiRepetitionPrompt}
 19. 每段好友私聊必须有 2-4 轮完整往返。每一轮先由群成员连续发送 2-5 条 speakerMessages，再由好友连续回复 2-5 条 friendMessages；每条消息都必须是 {"text":"原文","translation":"中文翻译或空字符串"}。如果 text 不是中文，translation 必须填写自然中文翻译；如果 text 本身是中文，translation 必须是空字符串。消息必须承接上一轮，形成真实连续的私聊，不能是互不相关的句子。
 20. speaker 必须是当前群成员；recipientId 或 linkedChatId 必须来自该 speaker 对应候选。generatedRecipient 只在 canGeneratePrivateFriend 为 true 时有效，并且姓名、关系、人设必须互相一致且不能复制已有联系人。每段好友私聊只属于发送成员与收件好友，其他群成员默认不知道内容，后续不得串用。
 ${dynamicActionNarrationRequirement}`);
+
+            responseCoreBehaviorAnchor = `【本轮群聊行为锚点｜紧邻输出】：
+- 以本轮时间感知、每位成员各自的真实心理、与 User 的关系阶段和当前群聊上下文共同决定回应。
+- 每位成员只能基于自己的记忆和已知公开信息发言；不要共享私聊记忆、心理或立场。
+- 先承接当前新增信息，再自然推进；不要复读旧结论、旧情绪或已结束话题，也不要让多人换着名字重复同一句话。
+- 可以主动、有情绪、有表达欲，但必须尊重 User 的选择、节奏和边界；不得控制、物化、施压或替 User 做决定。`;
 
             addOnlinePromptSection('format', `${chatBubbleFormatGuardPrompt}
 ${chatOutputPriorityPrompt}
@@ -3372,8 +3514,6 @@ ${charTemporalDecisionPrompt}
             }
             temporalContext = timeRequirement;
             
-            const sleepPrompt = isSleeping ? `\n【作息限制】：角色当前正在睡觉。如果用户发来消息，你必须强制保持离线状态并在所有回复内容（text 字段）的开头添加 "[自动回复] " 前缀，模拟已睡着或离线时的自动响应。状态内容仍严格服从当前启用的状态栏提示词。` : '';
-
             const userRelationship = String(friend.relationship || '').trim() || '未填写';
             const singleChatRolePsychologyPrompt = buildRolePsychologyAndEvolutionPrompt({
                 isSingleChat: true,
@@ -3381,7 +3521,6 @@ ${charTemporalDecisionPrompt}
             });
             const singleChatHumanPrompt = `\n【单聊真实交流原则】：
 - 你此刻正在拿着手机与 User 进行你来我往的线上交流，而不是客服式单方面回复。你不是只负责回答问题的人，你有自己的主观想法、表达欲和分享欲，可以主动输送信息、分享身边事、岔开话题、开启新话题，也允许自然的短回复、停顿、犹豫、反问和情绪流动。
-${singleChatRolePsychologyPrompt}
 - 【User 未回复也必须继续】：如果本轮没有 User 新发言，或触发来源是 AI继续/空输入/自动续写/角色主动说话，你仍然必须以角色身份主动生成回复；可以承接上一轮、补充没说完的话、分享身边状态、回应沉默、表达等待后的反应或开启符合关系的新话题。不要说“用户没有输入”，不要等待 User，不要输出空内容。`;
 
             const singleChatRoleRecallPrompt = friend.allowRoleRecall !== false
@@ -3390,6 +3529,11 @@ ${singleChatRolePsychologyPrompt}
             addOnlinePromptSection('priority', systemDepthWorldBookContext
                 ? `System Depth Rules (Highest Priority):\n${systemDepthWorldBookContext}`
                 : '');
+            addOnlinePromptSection('priority', temporalContext
+                ? `<temporal_context>\n${String(temporalContext).trim()}\n</temporal_context>\nTreat this as the authoritative time basis for the response immediately below.`
+                : '');
+            addOnlinePromptSection('priority', `【单聊核心心理与行为模式｜仅次于时间感知】：
+${singleChatRolePsychologyPrompt}`);
             addOnlinePromptSection('priority', beforeRoleWorldBookContext
                 ? `Before Role Rules:\n${beforeRoleWorldBookContext}`
                 : '');
@@ -3413,7 +3557,12 @@ Reply naturally as your character in a chat app.
 - 偶尔可以出现轻微的错别字，并在下一条消息中用“是[正确词汇]”的方式修正，例如：
   角色: 我明天去那家参观尝尝。
   角色: 是餐馆`);
-            addOnlinePromptSection('runtime', `${sleepPrompt}${busyPrompt}`);
+            responseCoreBehaviorAnchor = `【本轮回复核心锚点｜紧邻输出】：
+- 以本轮时间感知、角色真实心理、与 User 的关系阶段和本轮聊天上下文共同决定回应。
+- 先回应 User 当前新增的信息，再自然推进；不要复读旧结论、旧情绪或已结束话题。
+- 角色可以主动、有情绪、有表达欲，但必须尊重 User 的选择、节奏和边界；不得控制、物化、施压或替 User 做决定。
+- 语言保持短促、自然、同频；少解释，少说教，不用命令式催促或居高临下的话术。`;
+            addOnlinePromptSection('runtime', scheduleRuntime.currentActivityPrompt);
             addOnlinePromptSection('features', `1. 【重要限制】：如果用户仅仅是口头提到“转账”，但系统并没有提示“[用户刚刚向你转账...]”，绝对禁止输出收下转账或退回转账的指令。
 2. 如果系统提示用户向你发起了一笔真实转账，你可以额外输出 1 个支付对象，选择“收下转账”或“退回转账”；如果你想主动给用户转账，也可以输出 1 个支付对象。
 ${singleChatCotRequirement}
@@ -3586,12 +3735,6 @@ Never truncate OUTPUT(x)
             });
         }
 
-        if (String(temporalContext || '').trim()) {
-            messages.push({
-                role: 'system',
-                content: `<temporal_context>\n${String(temporalContext).trim()}\n</temporal_context>\nTreat this as the authoritative time basis for the response immediately below.`
-            });
-        }
         if (minimizedSingleCallContextPrompt) {
             messages.push({
                 role: 'system',
@@ -3603,6 +3746,12 @@ Never truncate OUTPUT(x)
             messages.push({
                 role: 'system',
                 content: groupPollVotePrompt
+            });
+        }
+        if (responseCoreBehaviorAnchor) {
+            messages.push({
+                role: 'system',
+                content: responseCoreBehaviorAnchor
             });
         }
         appendOnlinePromptSections(messages, 'format');
@@ -5522,6 +5671,7 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
     window.imChat.purgeRegenerateRunSnapshots = purgeRegenerateRunSnapshots;
     window.imChat.regenerateLastAiReply = regenerateLastAiReply;
     window.imChat.runLinkedAccountBotNow = runLinkedAccountBotNow;
+    window.imChat.generateScheduleForFriend = generateScheduleForFriend;
     window.imChat.runAutonomousActivityForFriend = runAutonomousActivityForFriend;
     window.imChat.runAutonomousMomentForFriend = runAutonomousMomentForFriend;
     window.imChat.refreshAutonomousActivityTimers = refreshAutonomousActivityTimers;

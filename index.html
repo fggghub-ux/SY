@@ -2361,10 +2361,13 @@
                             </div>
                         </div>
 
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px;">
                             <div style="font-size: 16px; font-weight: 700; color: #111;">行程安排</div>
-                            <div id="chat-memory-schedule-add-btn" style="width: 28px; height: 28px; border-radius: 14px; background: #f2f2f7; display: flex; justify-content: center; align-items: center; color: #007aff; cursor: pointer; font-size: 14px;">
-                                <i class="fas fa-plus"></i>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <button type="button" id="chat-memory-schedule-generate-btn" style="border: 0; border-radius: 14px; background: #e8f2ff; color: #007aff; padding: 6px 10px; cursor: pointer; font-size: 13px; font-weight: 600;">生成日程</button>
+                                <div id="chat-memory-schedule-add-btn" style="width: 28px; height: 28px; border-radius: 14px; background: #f2f2f7; display: flex; justify-content: center; align-items: center; color: #007aff; cursor: pointer; font-size: 14px;">
+                                    <i class="fas fa-plus"></i>
+                                </div>
                             </div>
                         </div>
                         
@@ -2380,13 +2383,31 @@
             <div class="bottom-sheet-overlay detail-sheet-overlay" id="chat-memory-schedule-add-modal" style="z-index: 1350;">
                 <div class="bottom-sheet" style="height: auto; padding-bottom: 30px;">
                     <div class="sheet-handle"></div>
-                    <div class="sheet-title">添加行程</div>
+                    <div class="sheet-title" id="chat-memory-schedule-editor-title">添加行程</div>
                     <div class="detail-sheet-content" style="padding: 0 16px;">
                         <div class="form-group fully-rounded" style="margin-bottom: 20px;">
                             <div class="form-item">
                                 <label style="width: 60px;">名称</label>
                                 <input type="text" id="chat-memory-schedule-add-name" placeholder="输入行程名字">
                             </div>
+                            <div class="form-item">
+                                <label style="width: 60px;">重复</label>
+                                <select id="chat-memory-schedule-add-recurrence" style="border: none; outline: none; text-align: right; background: transparent; font-size: 16px; color: #007aff; flex: 1;">
+                                    <option value="daily">每天</option>
+                                    <option value="once">指定日期</option>
+                                </select>
+                            </div>
+                            <div id="chat-memory-schedule-daily-fields">
+                                <div class="form-item">
+                                    <label style="width: 60px;">开始</label>
+                                    <input type="time" id="chat-memory-schedule-add-daily-start" style="border: none; outline: none; text-align: right; background: transparent; font-size: 16px; color: #007aff; flex: 1;">
+                                </div>
+                                <div class="form-item" style="border-bottom: none;">
+                                    <label style="width: 60px;">结束</label>
+                                    <input type="time" id="chat-memory-schedule-add-daily-end" style="border: none; outline: none; text-align: right; background: transparent; font-size: 16px; color: #007aff; flex: 1;">
+                                </div>
+                            </div>
+                            <div id="chat-memory-schedule-once-fields" hidden>
                             <div class="form-item">
                                 <label style="width: 60px;">开始</label>
                                 <input type="datetime-local" id="chat-memory-schedule-add-start" style="border: none; outline: none; text-align: right; background: transparent; font-size: 16px; color: #007aff; flex: 1;">
@@ -2395,8 +2416,10 @@
                                 <label style="width: 60px;">结束</label>
                                 <input type="datetime-local" id="chat-memory-schedule-add-end" style="border: none; outline: none; text-align: right; background: transparent; font-size: 16px; color: #007aff; flex: 1;">
                             </div>
+                            </div>
                         </div>
                         <div class="sheet-action confirm-action" id="chat-memory-schedule-add-confirm-btn" style="background-color: #007aff; color: #fff;">保存</div>
+                        <div class="sheet-action" id="chat-memory-schedule-delete-btn" style="color: #ff3b30;" hidden>删除行程</div>
                     </div>
                 </div>
             </div>
@@ -8068,7 +8091,7 @@
     </section>
 </div>
 
-<script src="js/storage/app_storage.js?v=20260715-library-content-store-v1&cot=20260725-single-chat-cot-v1&backup=20260803-sticker-migration-v2&image-generation=20260803-char-face-reference-v2&startup-queue=20260804-v1"></script>
+<script src="js/storage/app_storage.js?v=20260715-library-content-store-v1&cot=20260725-single-chat-cot-v1&backup=20260804-import-safety-v1&image-generation=20260803-char-face-reference-v2&startup-queue=20260804-v1"></script>
     <script src="js/storage/imessage_storage.js?v=20260710-storage-v8-idb1"></script>
     <script src="storage.js?v=20260710-storage-v7-cache1"></script>
     <script src="js/lazy_vendor_loader.js?v=20260803-v1"></script>
@@ -8084,8 +8107,8 @@
     
     <!-- 引入 iMessage 模块分段代码 -->
     <script src="js/imessage/game.js?v=20260803-anonymous-qa-v7-context-layout&startup-queue=20260804-v1"></script>
-    <script src="js/imessage/data_utils.js?v=20260713-offline-memory-v1-sticker-manifest-v2-memory-event-time-v1-offline-handoff-v2&single-chat-info=20260803-v1"></script>
-    <script src="js/imessage/2_core.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&cotcopy=20260727-v2&observer=20260730-v1&open-performance=20260802-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&group-user-avatar=20260802-v1&image-generation=20260803-artist-prompt-v6&single-chat-info=20260803-v1&offline-handoff=20260803-v2&cot-default=20260803-v3&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v2&vendor-lazy=20260803-v1&startup-queue=20260804-v1"></script>
+    <script src="js/imessage/data_utils.js?v=20260713-offline-memory-v1-sticker-manifest-v2-memory-event-time-v1-offline-handoff-v2&single-chat-info=20260803-v1&schedule-routine=20260804-v1"></script>
+    <script src="js/imessage/2_core.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&cotcopy=20260727-v2&observer=20260730-v1&open-performance=20260802-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&group-user-avatar=20260802-v1&image-generation=20260803-artist-prompt-v6&single-chat-info=20260803-v1&offline-handoff=20260803-v2&cot-default=20260803-v3&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v2&vendor-lazy=20260803-v1&startup-queue=20260804-v1&schedule-routine=20260804-v1"></script>
     <script src="js/imessage/3_contacts.js?v=20260718-friend-profile-import-v1&render-cache=20260801-v1&vendor-lazy=20260803-v1&startup-queue=20260804-v1"></script>
     <script src="js/imessage/3_groups.js?v=20260718-group-poll-v4-group-memory-editor-v1&observer=20260730-v1&render-cache=20260801-v1&user-avatar=20260802-v1&group-auto-translation=20260803-v1&startup-queue=20260804-v1"></script>
     <script src="js/imessage/4_chat_common.js?v=image-assets-20260803-v1&startup-queue=20260804-v1"></script>
@@ -8095,7 +8118,7 @@
     <script src="js/imessage/chat_search.js?v=20260718-chat-history-search-v2&keyboard-guard=20260801-v1&startup-queue=20260804-v1"></script>
     <script src="js/imessage/chat_favorites.js?v=20260723-chat-favorites-v3&startup-queue=20260804-v1"></script>
     <script src="js/imessage/minimax_tts.js"></script>
-    <script src="js/imessage/4_chat_ai.js?v=20260724-single-chat-prompt-v8-single-chat-cot-v1&cot=20260802-single-chat-cot-full-analysis-v2&online=20260801-persona-entries-v1&observer=20260730-v1&performance=20260801-v1&api=20260803-nonstream-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&single-chat-info=20260803-v1&offline-handoff=20260803-v2&context-dedupe=20260803-v1&nonstream=20260803-v2&group-auto-translation=20260803-v1&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v5&image-assets=20260803-v1&startup-queue=20260804-v1"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260724-single-chat-prompt-v8-single-chat-cot-v1&cot=20260802-single-chat-cot-full-analysis-v2&online=20260801-persona-entries-v1&observer=20260730-v1&performance=20260801-v1&api=20260803-nonstream-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&single-chat-info=20260803-v1&offline-handoff=20260803-v2&context-dedupe=20260803-v1&nonstream=20260803-v2&group-auto-translation=20260803-v1&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v5&image-assets=20260803-v1&startup-queue=20260804-v1&psychology-priority=20260804-v1&schedule-routine=20260804-v1&sleep-status=20260804-v1"></script>
     <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
     <script src="js/imessage/offline_reasoning.js?v=20260718-offline-cot-v1"></script>
     <script src="js/imessage/4_chat_sheet.js?v=20260718-offline-cot-v1-chat-image-send-v1&cotui=20260725-pill-v1&api=20260804-offline-stream-v1&image-generation=20260803-artist-prompt-v6&chat-runtime-performance=20260803-v1&image-assets=20260803-v1&startup-queue=20260804-v1"></script>

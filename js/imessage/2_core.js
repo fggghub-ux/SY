@@ -5485,6 +5485,7 @@ window.addEventListener('pagehide', () => {
     const momentsContent = document.getElementById('moments-content');
     let currentMemoryFriendId = null;
     let currentMemoryLocation = 'iphone';
+    let scheduleEditorEventId = null;
 
     function updateLineNavIndicator(activeItem) {
         if (!activeItem || !lineNavIndicator) return;
@@ -5526,6 +5527,28 @@ window.addEventListener('pagehide', () => {
     }
 
     function renderScheduleModal() {
+        const toMinutes = (value) => {
+            const match = /^(\d{2}):(\d{2})$/.exec(String(value || '').trim());
+            if (!match) return -1;
+            const hours = Number(match[1]);
+            const minutes = Number(match[2]);
+            return hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60 ? hours * 60 + minutes : -1;
+        };
+        const toLocalInputValue = (value, fallback = '') => {
+            const normalized = String(value || '').trim();
+            if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(normalized)) return normalized;
+            return fallback;
+        };
+        const getDefaultOneTimeValues = () => {
+            const start = new Date();
+            start.setMinutes(start.getMinutes() - start.getTimezoneOffset());
+            const end = new Date(Date.now() + 60 * 60 * 1000);
+            end.setMinutes(end.getMinutes() - end.getTimezoneOffset());
+            return {
+                start: start.toISOString().slice(0, 16),
+                end: end.toISOString().slice(0, 16)
+            };
+        };
         const friend = getCurrentMemoryFriend();
         if (!friend) return;
 
@@ -5549,8 +5572,42 @@ window.addEventListener('pagehide', () => {
         const wakePicker = document.getElementById('chat-memory-schedule-wake-picker');
         const timeline = document.getElementById('chat-memory-schedule-timeline');
         const addScheduleBtn = document.getElementById('chat-memory-schedule-add-btn');
+        const generateScheduleBtn = document.getElementById('chat-memory-schedule-generate-btn');
+        const editorTitle = document.getElementById('chat-memory-schedule-editor-title');
+        const eventNameInput = document.getElementById('chat-memory-schedule-add-name');
+        const recurrenceInput = document.getElementById('chat-memory-schedule-add-recurrence');
+        const dailyFields = document.getElementById('chat-memory-schedule-daily-fields');
+        const onceFields = document.getElementById('chat-memory-schedule-once-fields');
+        const dailyStartInput = document.getElementById('chat-memory-schedule-add-daily-start');
+        const dailyEndInput = document.getElementById('chat-memory-schedule-add-daily-end');
+        const onceStartInput = document.getElementById('chat-memory-schedule-add-start');
+        const onceEndInput = document.getElementById('chat-memory-schedule-add-end');
+        const confirmAddBtn = document.getElementById('chat-memory-schedule-add-confirm-btn');
+        const deleteScheduleBtn = document.getElementById('chat-memory-schedule-delete-btn');
 
         const schedule = friend.memory.schedule;
+
+        const applyScheduleEditorRecurrence = (recurrence) => {
+            const isDaily = recurrence !== 'once';
+            if (recurrenceInput) recurrenceInput.value = isDaily ? 'daily' : 'once';
+            if (dailyFields) dailyFields.hidden = !isDaily;
+            if (onceFields) onceFields.hidden = isDaily;
+        };
+
+        const openScheduleEditor = (event = null) => {
+            scheduleEditorEventId = event ? String(event.id) : null;
+            const recurrence = event?.recurrence === 'once' ? 'once' : 'daily';
+            const defaults = getDefaultOneTimeValues();
+            if (editorTitle) editorTitle.textContent = event ? '编辑行程' : '添加行程';
+            if (eventNameInput) eventNameInput.value = event?.name || event?.title || '';
+            applyScheduleEditorRecurrence(recurrence);
+            if (dailyStartInput) dailyStartInput.value = event?.startTime || '09:00';
+            if (dailyEndInput) dailyEndInput.value = event?.endTime || '10:00';
+            if (onceStartInput) onceStartInput.value = toLocalInputValue(event?.rawTime, defaults.start);
+            if (onceEndInput) onceEndInput.value = toLocalInputValue(event?.endAt, defaults.end);
+            if (deleteScheduleBtn) deleteScheduleBtn.hidden = !event;
+            if (scheduleAddModal && window.openView) window.openView(scheduleAddModal);
+        };
 
         if (enabledToggle) {
             enabledToggle.checked = !!schedule.enabled;
@@ -5563,79 +5620,145 @@ window.addEventListener('pagehide', () => {
             };
         }
         
-        if (addScheduleBtn) {
-            addScheduleBtn.onclick = () => {
-                if (scheduleAddModal && window.openView) {
-                    const nameInput = document.getElementById('chat-memory-schedule-add-name');
-                    const startInput = document.getElementById('chat-memory-schedule-add-start');
-                    const endInput = document.getElementById('chat-memory-schedule-add-end');
-                    if (nameInput) nameInput.value = '';
-                    if (startInput) {
-                        const now = new Date();
-                        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-                        startInput.value = now.toISOString().slice(0, 16);
+        if (generateScheduleBtn) {
+            const isDirectCharacter = friend.type !== 'group';
+            generateScheduleBtn.hidden = !isDirectCharacter;
+            generateScheduleBtn.onclick = async () => {
+                if (!isDirectCharacter || !window.imChat?.generateScheduleForFriend) {
+                    if (window.showToast) window.showToast('仅单个角色可生成日程');
+                    return;
+                }
+                const originalText = generateScheduleBtn.textContent;
+                generateScheduleBtn.disabled = true;
+                generateScheduleBtn.textContent = '生成中...';
+                try {
+                    const result = await window.imChat.generateScheduleForFriend(friend);
+                    if (!result?.success && window.showToast) {
+                        window.showToast(result?.error || '日程生成失败，请稍后重试');
                     }
-                    if (endInput) {
-                        const now = new Date();
-                        now.setHours(now.getHours() + 1);
-                        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-                        endInput.value = now.toISOString().slice(0, 16);
-                    }
-                    window.openView(scheduleAddModal);
+                } finally {
+                    generateScheduleBtn.disabled = false;
+                    generateScheduleBtn.textContent = originalText;
+                    renderScheduleModal();
                 }
             };
         }
 
-        const confirmAddBtn = document.getElementById('chat-memory-schedule-add-confirm-btn');
+        recurrenceInput && (recurrenceInput.onchange = () => applyScheduleEditorRecurrence(recurrenceInput.value));
+
+        if (addScheduleBtn) {
+            addScheduleBtn.onclick = () => openScheduleEditor();
+        }
+
         if (confirmAddBtn) {
             confirmAddBtn.onclick = async () => {
-                const nameInput = document.getElementById('chat-memory-schedule-add-name');
-                const startInput = document.getElementById('chat-memory-schedule-add-start');
-                const endInput = document.getElementById('chat-memory-schedule-add-end');
-                
-                const eventName = nameInput ? nameInput.value.trim() : '';
-                const startTime = startInput ? startInput.value : '';
-                const endTime = endInput ? endInput.value : '';
-                
-                if (!eventName || !startTime || !endTime) {
-                    if (window.showToast) window.showToast('请输入完整的行程信息');
+                const eventName = eventNameInput ? eventNameInput.value.trim() : '';
+                const recurrence = recurrenceInput?.value === 'once' ? 'once' : 'daily';
+                const existingEvent = Array.isArray(schedule.events)
+                    ? schedule.events.find(item => String(item.id) === String(scheduleEditorEventId))
+                    : null;
+                if (!eventName) {
+                    if (window.showToast) window.showToast('请输入行程名称');
                     return;
                 }
 
-                if (new Date(startTime) >= new Date(endTime)) {
-                    if (window.showToast) window.showToast('结束时间必须晚于开始时间');
-                    return;
-                }
-
-                await window.imApp.commitScopedFriendChange(friend, (f) => {
-                    if (!f.memory.schedule) f.memory.schedule = {};
-                    if (!Array.isArray(f.memory.schedule.events)) f.memory.schedule.events = [];
-                    
-                    const startDate = new Date(startTime);
-                    const endDate = new Date(endTime);
-                    const eventData = {
-                        id: Date.now(),
+                let eventData;
+                if (recurrence === 'daily') {
+                    const startTime = dailyStartInput?.value || '';
+                    const endTime = dailyEndInput?.value || '';
+                    if (toMinutes(startTime) < 0 || toMinutes(endTime) < 0) {
+                        if (window.showToast) window.showToast('请输入有效的开始和结束时间');
+                        return;
+                    }
+                    if (toMinutes(endTime) <= toMinutes(startTime)) {
+                        if (window.showToast) window.showToast('每天重复的结束时间必须晚于开始时间');
+                        return;
+                    }
+                    eventData = {
+                        id: existingEvent?.id ?? `schedule-${Date.now()}`,
+                        name: eventName,
+                        title: eventName,
+                        startTime,
+                        endTime,
+                        recurrence: 'daily',
+                        source: existingEvent?.source === 'generated' ? 'manual' : (existingEvent?.source || 'manual'),
+                        timestamp: existingEvent?.timestamp || Date.now()
+                    };
+                } else {
+                    const startAt = onceStartInput?.value || '';
+                    const endAt = onceEndInput?.value || '';
+                    if (!startAt || !endAt || new Date(startAt) >= new Date(endAt)) {
+                        if (window.showToast) window.showToast('结束时间必须晚于开始时间');
+                        return;
+                    }
+                    const startDate = new Date(startAt);
+                    const endDate = new Date(endAt);
+                    eventData = {
+                        id: existingEvent?.id ?? `schedule-${Date.now()}`,
                         name: eventName,
                         title: eventName,
                         date: `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`,
                         startTime: `${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}`,
                         endTime: `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`,
-                        rawTime: startTime,
-                        endAt: endTime,
-                        source: 'manual',
-                        timestamp: Date.now()
+                        rawTime: startAt,
+                        endAt,
+                        recurrence: 'once',
+                        source: existingEvent?.source === 'generated' ? 'manual' : (existingEvent?.source || 'manual'),
+                        timestamp: existingEvent?.timestamp || Date.now()
                     };
-                    f.memory.schedule.events.push(window.imDataUtils?.normalizeScheduleEvent
-                        ? window.imDataUtils.normalizeScheduleEvent(eventData, f.memory.schedule.events.length)
-                        : eventData);
-                    
-                    f.memory.schedule.events.sort((a, b) => new Date(a.rawTime) - new Date(b.rawTime));
+                }
+
+                await window.imApp.commitScopedFriendChange(friend, (targetFriend) => {
+                    targetFriend.memory = targetFriend.memory || window.imApp.createDefaultMemory();
+                    const currentSchedule = targetFriend.memory.schedule || window.imApp.createDefaultMemory().schedule;
+                    const events = Array.isArray(currentSchedule.events) ? currentSchedule.events.slice() : [];
+                    const existingIndex = events.findIndex(item => String(item?.id) === String(scheduleEditorEventId));
+                    if (existingIndex >= 0) events.splice(existingIndex, 1, eventData);
+                    else events.push(eventData);
+                    targetFriend.memory.schedule = window.imDataUtils?.normalizeSchedule
+                        ? window.imDataUtils.normalizeSchedule({ ...currentSchedule, events })
+                        : { ...currentSchedule, events };
                 }, { silent: true });
 
-                if (scheduleAddModal && window.closeView) {
-                    window.closeView(scheduleAddModal);
-                }
+                scheduleEditorEventId = null;
+                if (scheduleAddModal && window.closeView) window.closeView(scheduleAddModal);
                 renderScheduleModal();
+            };
+        }
+
+        if (deleteScheduleBtn) {
+            deleteScheduleBtn.onclick = () => {
+                const eventId = scheduleEditorEventId;
+                if (eventId == null) return;
+                const removeEvent = async () => {
+                    await window.imApp.commitScopedFriendChange(friend, (targetFriend) => {
+                        const currentSchedule = targetFriend.memory?.schedule || window.imApp.createDefaultMemory().schedule;
+                        targetFriend.memory = targetFriend.memory || window.imApp.createDefaultMemory();
+                        targetFriend.memory.schedule = window.imDataUtils?.normalizeSchedule
+                            ? window.imDataUtils.normalizeSchedule({
+                                ...currentSchedule,
+                                events: (currentSchedule.events || []).filter(item => String(item?.id) !== String(eventId))
+                            })
+                            : {
+                                ...currentSchedule,
+                                events: (currentSchedule.events || []).filter(item => String(item?.id) !== String(eventId))
+                            };
+                    }, { silent: true });
+                    scheduleEditorEventId = null;
+                    if (scheduleAddModal && window.closeView) window.closeView(scheduleAddModal);
+                    renderScheduleModal();
+                };
+                if (window.imApp.showCustomModal) {
+                    window.imApp.showCustomModal({
+                        title: '删除行程',
+                        message: '确定删除这条行程吗？',
+                        isDestructive: true,
+                        confirmText: '删除',
+                        onConfirm: removeEvent
+                    });
+                } else {
+                    void removeEvent();
+                }
             };
         }
         
@@ -5711,23 +5834,7 @@ window.addEventListener('pagehide', () => {
                 card.addEventListener('click', () => {
                     const eventId = card.getAttribute('data-event-id');
                     const targetEvent = events.find(e => String(e.id) === String(eventId));
-                    if (targetEvent && window.imApp.showCustomModal) {
-                        window.imApp.showCustomModal({
-                            title: '行程详情',
-                            message: `行程：${targetEvent.name || targetEvent.title || '未命名行程'}\n时间：${targetEvent.time || `${targetEvent.date || ''} ${targetEvent.startTime || ''}`.trim()}${targetEvent.location ? `\n地点：${targetEvent.location}` : ''}`,
-                            isDestructive: true,
-                            confirmText: '删除行程',
-                            onConfirm: async () => {
-                                await window.imApp.commitScopedFriendChange(friend, (f) => {
-                                    if (f.memory && f.memory.schedule && Array.isArray(f.memory.schedule.events)) {
-                                        f.memory.schedule.events = f.memory.schedule.events.filter(e => String(e.id) !== String(eventId));
-                                    }
-                                }, { silent: true });
-                                if (window.showToast) window.showToast('行程已删除');
-                                renderScheduleModal();
-                            }
-                        });
-                    }
+                    if (targetEvent) openScheduleEditor(targetEvent);
                 });
             });
         }
