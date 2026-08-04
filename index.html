@@ -34,7 +34,11 @@
         (function () {
             function configureStaticImages() {
                 document.querySelectorAll('img').forEach((image) => {
-                    if (!image.hasAttribute('loading')) image.loading = 'lazy';
+                    if (image.closest('#pages-container, #dock')) {
+                        image.loading = 'eager';
+                    } else if (!image.hasAttribute('loading')) {
+                        image.loading = 'lazy';
+                    }
                     if (!image.hasAttribute('decoding')) image.decoding = 'async';
                 });
             }
@@ -75,6 +79,8 @@
         <div style="width: 160px; height: 4px; background: #f2f2f7; border-radius: 2px; overflow: hidden;">
             <div style="height: 100%; background: #000; border-radius: 2px; animation: splash-progress 3s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;"></div>
         </div>
+        <div id="app-splash-status" role="status" aria-live="polite" hidden style="margin-top: 18px; color: #6e6e73; font: 14px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; text-align: center;"></div>
+        <button type="button" id="app-splash-retry" hidden onclick="window.location.reload()" style="margin-top: 14px; border: 0; border-radius: 10px; background: #111111; color: #ffffff; padding: 10px 16px; font: 600 14px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; cursor: pointer;">重新加载</button>
         <style>
             @keyframes splash-progress { 
                 0% { width: 0%; }
@@ -86,15 +92,25 @@
         </style>
     </div>
     <script>
-        // 开屏层同时等待主界面渲染和登录校验，避免二者之间露出纯白检查层。
+        // 开屏层同时等待主界面首次渲染和登录校验，绝不在应用未接管前露出静态默认界面。
         var splashRemovalRequested = false;
         var authGateSettled = false;
+        var appShellReady = false;
         var splashRemovalStarted = false;
 
-        window.removeSplashScreen = function(options) {
-            var force = options && options.force === true;
+        function showSplashDelayState(message) {
+            var status = document.getElementById('app-splash-status');
+            var retryButton = document.getElementById('app-splash-retry');
+            if (status) {
+                status.textContent = message || '加载较慢，正在继续准备应用…';
+                status.hidden = false;
+            }
+            if (retryButton) retryButton.hidden = false;
+        }
+
+        window.removeSplashScreen = function() {
             splashRemovalRequested = true;
-            if ((!authGateSettled && !force) || splashRemovalStarted) return;
+            if (!authGateSettled || !appShellReady || splashRemovalStarted) return;
 
             var splash = document.getElementById('app-splash-screen');
             if (splash && splash.style.opacity !== '0') {
@@ -111,27 +127,27 @@
             if (splashRemovalRequested) window.removeSplashScreen();
         };
 
-        // 网络异常时：有本地会话就进入应用并由后台静默重试；只有无会话时才显示登录页。
+        window.markAppShellReady = function() {
+            appShellReady = true;
+            if (splashRemovalRequested) window.removeSplashScreen();
+        };
+
+        // 这只是提示加载缓慢，不能再以超时为由强行露出尚未初始化的默认主页。
         setTimeout(function() {
-            if (!authGateSettled) {
-                var loginScreen = document.getElementById('u2-login-screen');
-                var hasSavedSession = false;
-                try { hasSavedSession = !!window.localStorage.getItem('u2_auth_session_v1'); } catch (error) {}
-                if (loginScreen && hasSavedSession) {
-                    loginScreen.classList.remove('is-checking');
-                    loginScreen.classList.add('is-hidden');
-                    loginScreen.inert = true;
-                    loginScreen.setAttribute('aria-hidden', 'true');
-                    document.body.classList.remove('u2-login-locked');
-                } else if (loginScreen) {
-                    loginScreen.classList.remove('is-checking', 'is-hidden');
-                    loginScreen.inert = false;
-                    loginScreen.setAttribute('aria-hidden', 'false');
-                    document.body.classList.add('u2-login-locked');
-                }
-            }
-            window.removeSplashScreen({ force: true });
+            if (authGateSettled && appShellReady) return;
+            var message = !appShellReady
+                ? '加载较慢，正在准备应用资源…'
+                : '正在确认登录状态，请稍候…';
+            showSplashDelayState(message);
         }, 5000);
+
+        // 资源下载或启动脚本失败时保持保护屏，并给用户明确的恢复入口。
+        window.addEventListener('error', function(event) {
+            var target = event && event.target;
+            if (target && String(target.tagName || '').toUpperCase() === 'SCRIPT') {
+                showSplashDelayState('启动资源加载失败，请检查网络后重新加载。');
+            }
+        }, true);
     </script>
     <div id="u2-login-screen" class="u2-login-screen is-checking" aria-hidden="true" inert>
         <div class="u2-login-shell">
@@ -8052,7 +8068,7 @@
     </section>
 </div>
 
-<script src="js/storage/app_storage.js?v=20260715-library-content-store-v1&cot=20260725-single-chat-cot-v1&backup=20260803-sticker-migration-v2&image-generation=20260803-char-face-reference-v2"></script>
+<script src="js/storage/app_storage.js?v=20260715-library-content-store-v1&cot=20260725-single-chat-cot-v1&backup=20260803-sticker-migration-v2&image-generation=20260803-char-face-reference-v2&startup-queue=20260804-v1"></script>
     <script src="js/storage/imessage_storage.js?v=20260710-storage-v8-idb1"></script>
     <script src="storage.js?v=20260710-storage-v7-cache1"></script>
     <script src="js/lazy_vendor_loader.js?v=20260803-v1"></script>
@@ -8067,45 +8083,45 @@
     <script src="js/system_notifications.js?v=20260721-storage-hydration-v1-custom-sound-v1&image-assets=20260803-v1"></script>
     
     <!-- 引入 iMessage 模块分段代码 -->
-    <script src="js/imessage/game.js?v=20260803-anonymous-qa-v7-context-layout"></script>
+    <script src="js/imessage/game.js?v=20260803-anonymous-qa-v7-context-layout&startup-queue=20260804-v1"></script>
     <script src="js/imessage/data_utils.js?v=20260713-offline-memory-v1-sticker-manifest-v2-memory-event-time-v1-offline-handoff-v2&single-chat-info=20260803-v1"></script>
-    <script src="js/imessage/2_core.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&cotcopy=20260727-v2&observer=20260730-v1&open-performance=20260802-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&group-user-avatar=20260802-v1&image-generation=20260803-artist-prompt-v6&single-chat-info=20260803-v1&offline-handoff=20260803-v2&cot-default=20260803-v3&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v2&vendor-lazy=20260803-v1"></script>
-    <script src="js/imessage/3_contacts.js?v=20260718-friend-profile-import-v1&render-cache=20260801-v1&vendor-lazy=20260803-v1"></script>
-    <script src="js/imessage/3_groups.js?v=20260718-group-poll-v4-group-memory-editor-v1&observer=20260730-v1&render-cache=20260801-v1&user-avatar=20260802-v1&group-auto-translation=20260803-v1"></script>
-    <script src="js/imessage/4_chat_common.js?v=image-assets-20260803-v1"></script>
-    <script src="js/imessage/4_chat_status.js?v=20260716-status-prompt-v2&paging=20260801-button-only-v1"></script>
-    <script src="js/imessage/4_chat_payment.js?v=20260725-single-chat-cot-v1"></script>
-    <script src="js/imessage/4_chat_bubbles.js?v=20260725-single-chat-cot-v1-avatar-pill-v1-link-theatre-js-v1&group-user-avatar=20260802-v1&open-performance=20260802-v1&image-assets=20260803-v1"></script>
-    <script src="js/imessage/chat_search.js?v=20260718-chat-history-search-v2&keyboard-guard=20260801-v1"></script>
-    <script src="js/imessage/chat_favorites.js?v=20260723-chat-favorites-v3"></script>
+    <script src="js/imessage/2_core.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&cotcopy=20260727-v2&observer=20260730-v1&open-performance=20260802-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&group-user-avatar=20260802-v1&image-generation=20260803-artist-prompt-v6&single-chat-info=20260803-v1&offline-handoff=20260803-v2&cot-default=20260803-v3&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v2&vendor-lazy=20260803-v1&startup-queue=20260804-v1"></script>
+    <script src="js/imessage/3_contacts.js?v=20260718-friend-profile-import-v1&render-cache=20260801-v1&vendor-lazy=20260803-v1&startup-queue=20260804-v1"></script>
+    <script src="js/imessage/3_groups.js?v=20260718-group-poll-v4-group-memory-editor-v1&observer=20260730-v1&render-cache=20260801-v1&user-avatar=20260802-v1&group-auto-translation=20260803-v1&startup-queue=20260804-v1"></script>
+    <script src="js/imessage/4_chat_common.js?v=image-assets-20260803-v1&startup-queue=20260804-v1"></script>
+    <script src="js/imessage/4_chat_status.js?v=20260716-status-prompt-v2&paging=20260801-button-only-v1&startup-queue=20260804-v1"></script>
+    <script src="js/imessage/4_chat_payment.js?v=20260725-single-chat-cot-v1&startup-queue=20260804-v1"></script>
+    <script src="js/imessage/4_chat_bubbles.js?v=20260725-single-chat-cot-v1-avatar-pill-v1-link-theatre-js-v1&group-user-avatar=20260802-v1&open-performance=20260802-v1&image-assets=20260803-v1&startup-queue=20260804-v1"></script>
+    <script src="js/imessage/chat_search.js?v=20260718-chat-history-search-v2&keyboard-guard=20260801-v1&startup-queue=20260804-v1"></script>
+    <script src="js/imessage/chat_favorites.js?v=20260723-chat-favorites-v3&startup-queue=20260804-v1"></script>
     <script src="js/imessage/minimax_tts.js"></script>
-    <script src="js/imessage/4_chat_ai.js?v=20260724-single-chat-prompt-v8-single-chat-cot-v1&cot=20260802-single-chat-cot-full-analysis-v2&online=20260801-persona-entries-v1&observer=20260730-v1&performance=20260801-v1&api=20260803-nonstream-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&single-chat-info=20260803-v1&offline-handoff=20260803-v2&context-dedupe=20260803-v1&nonstream=20260803-v2&group-auto-translation=20260803-v1&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v5&image-assets=20260803-v1"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260724-single-chat-prompt-v8-single-chat-cot-v1&cot=20260802-single-chat-cot-full-analysis-v2&online=20260801-persona-entries-v1&observer=20260730-v1&performance=20260801-v1&api=20260803-nonstream-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&single-chat-info=20260803-v1&offline-handoff=20260803-v2&context-dedupe=20260803-v1&nonstream=20260803-v2&group-auto-translation=20260803-v1&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v5&image-assets=20260803-v1&startup-queue=20260804-v1"></script>
     <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
     <script src="js/imessage/offline_reasoning.js?v=20260718-offline-cot-v1"></script>
-    <script src="js/imessage/4_chat_sheet.js?v=20260718-offline-cot-v1-chat-image-send-v1&cotui=20260725-pill-v1&api=20260804-offline-stream-v1&image-generation=20260803-artist-prompt-v6&chat-runtime-performance=20260803-v1&image-assets=20260803-v1"></script>
-    <script src="js/imessage/4_chat_link.js?v=20260726-light-link-theatre-v1&api=20260803-unified-v1"></script>
-    <script src="js/imessage/4_chat_list.js?chat-runtime-performance=20260803-v1"></script>
-    <script src="js/imessage/4_chat_interface.js?v=20260715-chat-context-menu-offline-retry-v1&observer=20260730-v1&android-keyboard=20260802-v1&open-performance=20260802-v1&chat-runtime-performance=20260803-v1"></script>
+    <script src="js/imessage/4_chat_sheet.js?v=20260718-offline-cot-v1-chat-image-send-v1&cotui=20260725-pill-v1&api=20260804-offline-stream-v1&image-generation=20260803-artist-prompt-v6&chat-runtime-performance=20260803-v1&image-assets=20260803-v1&startup-queue=20260804-v1"></script>
+    <script src="js/imessage/4_chat_link.js?v=20260726-light-link-theatre-v1&api=20260803-unified-v1&startup-queue=20260804-v1"></script>
+    <script src="js/imessage/4_chat_list.js?chat-runtime-performance=20260803-v1&startup-queue=20260804-v1"></script>
+    <script src="js/imessage/4_chat_interface.js?v=20260715-chat-context-menu-offline-retry-v1&observer=20260730-v1&android-keyboard=20260802-v1&open-performance=20260802-v1&chat-runtime-performance=20260803-v1&startup-queue=20260804-v1"></script>
     <script src="js/imessage/4_chat_voice_call.js?v=20260725-call-keyboard-minimize-v2-minimized-context-v1&api=20260803-unified-v1&group-layout=20260803-v1"></script>
-    <script src="js/imessage/4_chat_main.js?v=20260715-chat-context-menu-offline-retry-v1&single-chat-info=20260803-v1"></script>
-    <script src="js/imessage/5_settings.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v3&chat-bg=20260729-race-reset-v1&relationship=20260801-static-preview-v3&auto-translation=20260801-v1&status-prompt=20260802-v1&style-cache=20260802-v1&api=20260803-unified-v1&single-chat-info=20260803-v1"></script>
-    <script src="js/imessage/6_moments.js?v=20260718-moments-target-reply-v1&auto-translation=20260801-v1&api=20260803-unified-v1"></script>
+    <script src="js/imessage/4_chat_main.js?v=20260715-chat-context-menu-offline-retry-v1&single-chat-info=20260803-v1&startup-queue=20260804-v1"></script>
+    <script src="js/imessage/5_settings.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v3&chat-bg=20260729-race-reset-v1&relationship=20260801-static-preview-v3&auto-translation=20260801-v1&status-prompt=20260802-v1&style-cache=20260802-v1&api=20260803-unified-v1&single-chat-info=20260803-v1&startup-queue=20260804-v1"></script>
+    <script src="js/imessage/6_moments.js?v=20260718-moments-target-reply-v1&auto-translation=20260801-v1&api=20260803-unified-v1&startup-queue=20260804-v1"></script>
 
     <!-- 引入其他应用模块 -->
-    <script src="js/pay.js?v=20260710-storage-ready-v1&open-performance=20260801-v1"></script>
-    <script src="js/bstage.js?v=20260725-android-keyboard-actions-v2&subscribers=20260730-cap-compact-v1&keyboard-guard=20260801-v1&api=20260803-unified-v1&image-assets=20260803-v1"></script>
+    <script src="js/pay.js?v=20260710-storage-ready-v1&open-performance=20260801-v1&startup-queue=20260804-v1"></script>
+    <script src="js/bstage.js?v=20260725-android-keyboard-actions-v2&subscribers=20260730-cap-compact-v1&keyboard-guard=20260801-v1&api=20260803-unified-v1&image-assets=20260803-v1&startup-queue=20260804-v1"></script>
     <!-- 引入世界书核心模块脚本 -->
     <script src="js/builtin_worldbook.js?v=20260713-disable-override-limit-v2"></script>
-    <script src="js/worldbook.js?v=20260801-import-txt-docx-only-v1&vendor-lazy=20260803-v1"></script>
+    <script src="js/worldbook.js?v=20260801-import-txt-docx-only-v1&vendor-lazy=20260803-v1&startup-queue=20260804-v1"></script>
     <!-- 引入核心 UI 管理与设置模块脚本 -->
     <script src="js/ui.js"></script>
-    <script src="js/settings.js?v=20260718-ios-pwa-export-v1-notification-sync-v1-custom-notification-sound-v1-api-presets-accessor-v1&global-font-scale=20260801-v3&theme-source=20260802-status-center-v1&assistive=20260801-drag-settle-v3&home-theme=20260731-widgets-v1&app-icon-alpha=20260731-v1&backup=20260803-sticker-skip-v3&api=20260803-config-v2-model-search&image-generation=20260803-char-face-reference-v2"></script>
-    <script src="js/library.js?v=20260715-reader-streaming-v1&open-performance=20260801-v1&vendor-lazy=20260803-v1"></script>
-    <script src="js/loves.js?v=20260719-friend-phone-bilingual-v13-android-focus-scope-v1&open-performance=20260801-v1&api=20260803-unified-v1&image-assets=20260803-v1"></script>
-    <script src="js/tiktok/2_core.js?v=20260712-tiktok-feed-cleanup-v1&open-performance=20260801-v1"></script>
-    <script src="js/tiktok/3_home.js?v=20260712-tiktok-feed-cleanup-v1&api=20260803-unified-v1"></script>
-    <script src="js/tiktok/4_chat.js?v=20260712-tiktok-polish-v1&api=20260803-unified-v1"></script>
-    <script src="js/tiktok/5_profile.js?v=20260712-tiktok-polish-v1&performance=20260801-v1&api=20260803-unified-v1"></script>
+    <script src="js/settings.js?v=20260718-ios-pwa-export-v1-notification-sync-v1-custom-notification-sound-v1-api-presets-accessor-v1&global-font-scale=20260801-v3&theme-source=20260802-status-center-v1&assistive=20260801-drag-settle-v3&home-theme=20260731-widgets-v1&app-icon-alpha=20260731-v1&backup=20260803-sticker-skip-v3&api=20260803-config-v2-model-search&image-generation=20260803-char-face-reference-v2&startup-queue=20260804-v1"></script>
+    <script src="js/library.js?v=20260715-reader-streaming-v1&open-performance=20260801-v1&vendor-lazy=20260803-v1&startup-queue=20260804-v1"></script>
+    <script src="js/loves.js?v=20260719-friend-phone-bilingual-v13-android-focus-scope-v1&open-performance=20260801-v1&api=20260803-unified-v1&image-assets=20260803-v1&startup-queue=20260804-v1"></script>
+    <script src="js/tiktok/2_core.js?v=20260712-tiktok-feed-cleanup-v1&open-performance=20260801-v1&startup-queue=20260804-v1"></script>
+    <script src="js/tiktok/3_home.js?v=20260712-tiktok-feed-cleanup-v1&api=20260803-unified-v1&startup-queue=20260804-v1"></script>
+    <script src="js/tiktok/4_chat.js?v=20260712-tiktok-polish-v1&api=20260803-unified-v1&startup-queue=20260804-v1"></script>
+    <script src="js/tiktok/5_profile.js?v=20260712-tiktok-polish-v1&performance=20260801-v1&api=20260803-unified-v1&startup-queue=20260804-v1"></script>
     <script src="js/youtube/2_core.js?v=20260717-char-lottery-consistency-v18&worldbook=20260729-global-bound-only-v2&api=20260803-unified-v1"></script>
     <script src="js/youtube/3_channel.js?v=20260717-char-lottery-consistency-v18"></script>
     <script src="js/youtube/4_settings.js"></script>
@@ -8113,10 +8129,10 @@
     <script src="js/youtube/6_community.js?v=20260801-dm-generation-fix-v19&worldbook=20260729-global-bound-only-v2&api=20260803-unified-v1"></script>
     <script src="js/youtube/7_trending.js?worldbook=20260729-global-bound-only-v2&api=20260803-unified-v1"></script>
     <script src="js/youtube/8_user_live.js?v=20260717-char-lottery-consistency-v18&worldbook=20260729-global-bound-only-v2&api=20260803-unified-v1"></script>
-    <script src="js/netflix.js?v=20260710-storage-ready-v2&open-performance=20260801-v1&api=20260803-unified-v1"></script>
-    <script src="js/shopping.js?v=20260710-storage-ready-v1&performance=20260801-v2&api=20260803-unified-v1"></script>
-    <script src="js/xapp.js?v=20260710-storage-v7-cache1&worldbook=20260729-global-bound-char-v1&api=20260803-unified-v1"></script>
-    <script src="js/home_desktop.js?v=20260710-storage-ready-v1&theme-widgets=20260731-v1&image-assets=20260804-v1"></script>
+    <script src="js/netflix.js?v=20260710-storage-ready-v2&open-performance=20260801-v1&api=20260803-unified-v1&startup-queue=20260804-v1"></script>
+    <script src="js/shopping.js?v=20260710-storage-ready-v1&performance=20260801-v2&api=20260803-unified-v1&startup-queue=20260804-v1"></script>
+    <script src="js/xapp.js?v=20260710-storage-v7-cache1&worldbook=20260729-global-bound-char-v1&api=20260803-unified-v1&startup-queue=20260804-v1"></script>
+    <script src="js/home_desktop.js?v=20260710-storage-ready-v1&theme-widgets=20260731-v1&image-assets=20260804-v1&eager-images=20260804-v1&splash-gate=20260804-v1"></script>
     <script src="js/home_widget_panel_enhance.js"></script>
     <!-- 引入主逻辑脚本 -->
     <script src="script.js?v=20260725-modal-owner-v1&home-swipe=20260801-scrollend-v2&performance=20260801-v1"></script>

@@ -1,7 +1,7 @@
 // ==========================================
 // IMESSAGE: 4_chat_status.js
 // ==========================================
-document.addEventListener('DOMContentLoaded', () => {
+(window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(() => {
     window.imChat = window.imChat || {};
 
     function formatProfileStatusLabel(value, isSleeping = false) {

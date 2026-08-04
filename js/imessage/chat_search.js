@@ -240,7 +240,7 @@
     imChat.revealChatMessage = revealChatMessage;
 
     if (typeof document === 'undefined') return;
-    document.addEventListener('DOMContentLoaded', () => {
+    (window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(() => {
         const searchButton = document.getElementById('chat-settings-search-btn');
         const searchView = document.getElementById('chat-history-search-view');
         const backButton = document.getElementById('chat-history-search-back');

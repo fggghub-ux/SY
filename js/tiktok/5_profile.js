@@ -2,7 +2,7 @@
 // TIKTOK: 5. PROFILE TAB
 // ==========================================
 
-document.addEventListener('DOMContentLoaded', () => {
+(window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(() => {
     // UI Elements
     const avatarImg = document.getElementById('tk-profile-avatar-img');
     const avatarIcon = document.getElementById('tk-profile-avatar-icon');

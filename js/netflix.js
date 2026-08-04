@@ -3734,8 +3734,4 @@ function initializeNetflixApp() {
     }
 }
 
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializeNetflixApp);
-} else {
-    initializeNetflixApp();
-}
+(window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(initializeNetflixApp);

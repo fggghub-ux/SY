@@ -64,6 +64,9 @@
     };
     let storageReadyPromise = null;
     let replacementInProgress = false;
+    const storageBootstrapQueue = [];
+    let storageBootstrapQueueScheduled = false;
+    let deferredMaintenanceScheduled = false;
 
     function isTransientIndexedDbError(error) {
         const name = String(error?.name || '');
@@ -4483,7 +4486,18 @@
             });
         }
 
-        storageHealthState.lastCompaction = await compactStorage({ skipReady: true });
+        // A legacy checkpoint is the only case where compaction is part of
+        // startup correctness: it may be the sole copy of a domain or message.
+        // For current stores, compaction can read every chat, asset, and X
+        // record, so defer that maintenance until the shell is already usable.
+        const [legacyAppState, startupCheckpoints] = await Promise.all([
+            getRecord(STORES.settings, 'appState'),
+            getAllRecords(STORES.storageCheckpoints)
+        ]);
+        const needsStartupRecovery = Boolean(legacyAppState) || startupCheckpoints.length > 0;
+        storageHealthState.lastCompaction = needsStartupRecovery
+            ? await compactStorage({ skipReady: true, force: true })
+            : await getMeta('storage_last_compaction');
         storageHealthState.lastCacheCleanup = await getMeta('storage_last_cache_cleanup');
 
         const hydratedDomains = await getAllRecords(STORES.appDomains);
@@ -4503,7 +4517,76 @@
         try {
             window.dispatchEvent(new CustomEvent('u2-storage-ready'));
         } catch (error) {}
+        scheduleDeferredStorageMaintenance();
         return true;
+    }
+
+    function scheduleDeferredStorageMaintenance() {
+        if (deferredMaintenanceScheduled) return;
+        deferredMaintenanceScheduled = true;
+        const runMaintenance = async () => {
+            try {
+                storageHealthState.lastCompaction = await compactStorage({ skipReady: true });
+                notifyStorageSubscribers({ ...storageHealthState, reason: 'startup-maintenance-complete' });
+            } catch (error) {
+                console.warn('[appStorage] Deferred startup maintenance failed', error);
+            }
+        };
+        const scheduleWhenIdle = () => {
+            if (typeof window.requestIdleCallback === 'function') {
+                window.requestIdleCallback(() => { void runMaintenance(); }, { timeout: 10000 });
+            } else {
+                window.setTimeout(() => { void runMaintenance(); }, 0);
+            }
+        };
+        // Leave the initial home render and first interaction a clear window.
+        const maintenanceDelayTimer = window.setTimeout(scheduleWhenIdle, 2500);
+        maintenanceDelayTimer?.unref?.();
+    }
+
+    function drainStorageBootstrapQueue() {
+        storageBootstrapQueueScheduled = false;
+        const next = storageBootstrapQueue.shift();
+        if (!next) return;
+        try {
+            next();
+        } catch (error) {
+            console.error('[appStorage] Deferred startup initializer failed', error);
+        }
+        if (storageBootstrapQueue.length > 0) scheduleStorageBootstrapQueue();
+    }
+
+    function scheduleStorageBootstrapQueue() {
+        if (storageBootstrapQueueScheduled || storageBootstrapQueue.length === 0) return;
+        storageBootstrapQueueScheduled = true;
+        if (typeof window.requestAnimationFrame === 'function') {
+            window.requestAnimationFrame(drainStorageBootstrapQueue);
+        } else {
+            window.setTimeout(drainStorageBootstrapQueue, 0);
+        }
+    }
+
+    function runAfterStorageReady(callback, options = {}) {
+        if (typeof callback !== 'function') return Promise.resolve(false);
+        const queue = options.queue !== false;
+        const start = () => storageReadyPromise.then(() => {
+            if (!queue) {
+                callback();
+                return true;
+            }
+            storageBootstrapQueue.push(callback);
+            scheduleStorageBootstrapQueue();
+            return true;
+        }).catch((error) => {
+            console.warn('[appStorage] Startup initializer skipped because storage is unavailable', error);
+            return false;
+        });
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', start, { once: true });
+        } else {
+            start();
+        }
+        return storageReadyPromise;
     }
 
     const LEGACY_SETTING_KEY_MAP = {
@@ -4708,6 +4791,7 @@
             return storageReadyPromise;
         }
     });
+    window.u2OnStorageReady = runAfterStorageReady;
 
     storageReadyPromise = initializeUnifiedStorage().catch((error) => {
         storageHealthState.status = 'error';
@@ -4724,14 +4808,4 @@
         throw error;
     });
 
-    const nativeDocumentAddEventListener = document.addEventListener.bind(document);
-    document.addEventListener = function(type, listener, options) {
-        if (type !== 'DOMContentLoaded' || typeof listener !== 'function') {
-            return nativeDocumentAddEventListener(type, listener, options);
-        }
-        const wrappedListener = function(event) {
-            storageReadyPromise.then(() => listener.call(this, event)).catch(() => {});
-        };
-        return nativeDocumentAddEventListener(type, wrappedListener, options);
-    };
 })();

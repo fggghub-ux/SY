@@ -2,7 +2,7 @@
 // TIKTOK: 3. HOME TAB & VIDEO FEED
 // ==========================================
 
-document.addEventListener('DOMContentLoaded', () => {
+(window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(() => {
     const feedContainer = document.getElementById('tk-feed-container');
     const apiGenBtn = document.getElementById('tk-api-generate-btn');
     let currentEditingVideoId = null;

@@ -2,7 +2,7 @@
 // IMESSAGE: 3. GROUPS
 // ==========================================
 
-document.addEventListener('DOMContentLoaded', () => {
+(window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(() => {
     const { openView, closeView, showToast } = window;
 
     const createGroupSheet = document.getElementById('create-group-sheet');

@@ -142,7 +142,7 @@
     imChat.showFavoriteSavedNotice = showFavoriteSavedNotice;
 
     if (typeof document === 'undefined') return;
-    document.addEventListener('DOMContentLoaded', () => {
+    (window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(() => {
         const openButton = document.getElementById('chat-settings-favorites-btn');
         const view = document.getElementById('chat-favorites-view');
         const backButton = document.getElementById('chat-favorites-back');

@@ -5952,7 +5952,7 @@ ${chatContext ? `【近期 iMessage 上下文】\n${chatContext}\n\n` : ''}要�
 };
 
 // Initialize when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
+(window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(() => {
     // 延迟初始化以确保 DOM 完全加载
     setTimeout(() => {
         if (window.lovesApp) {

@@ -1765,9 +1765,5 @@
         return window.shoppingDataReadyPromise;
     }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initShoppingAppAfterStorageReady);
-    } else {
-        initShoppingAppAfterStorageReady();
-    }
+    (window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(initShoppingAppAfterStorageReady);
 })();

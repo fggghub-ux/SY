@@ -4057,7 +4057,7 @@ window.addEventListener('pagehide', () => {
     }
 });
 
-document.addEventListener('DOMContentLoaded', () => {
+(window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(() => {
     const { UI, userState, apiConfig, openView, closeView, showToast, syncUIs } = window;
 
     async function readFileAsDataUrl(file) {

@@ -2,7 +2,7 @@
 // TIKTOK: 4. CHAT & FOLLOWING
 // ==========================================
 
-document.addEventListener('DOMContentLoaded', () => {
+(window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(() => {
     const followingBar = document.getElementById('tk-following-bar');
     const addCharBtn = document.getElementById('tk-chat-add-btn');
     const editCharSheet = document.getElementById('tk-edit-char-sheet');

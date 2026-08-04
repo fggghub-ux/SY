@@ -200,7 +200,7 @@ if (window.globalDataReadyPromise && typeof window.globalDataReadyPromise.then =
     window.tkDataReadyPromise = Promise.resolve(true);
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+(window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(() => {
     // UI Elements
     const tkAppBtn = document.getElementById('app-tiktok-btn');
     const tkView = document.getElementById('tiktok-view');

@@ -1,7 +1,7 @@
 // ==========================================
 // IMESSAGE: lightweight AI link theatre
 // ==========================================
-document.addEventListener('DOMContentLoaded', () => {
+(window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(() => {
     window.imChat = window.imChat || {};
     const imChat = window.imChat;
 

@@ -619,7 +619,11 @@
         Object.assign(root.imGame, { open: openGame, openAnonymousQa, openComposer, render: refreshCharacters, generate: runGeneration, deleteEntry });
     }
 
-    if (root?.document) root.document.addEventListener('DOMContentLoaded', initializeBrowserGame);
+    if (root?.document) {
+        const onStorageReady = root.u2OnStorageReady
+            || (callback => root.document.addEventListener('DOMContentLoaded', callback));
+        onStorageReady(initializeBrowserGame);
+    }
 
     return {
         MAX_BATCH_SIZE,

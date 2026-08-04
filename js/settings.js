@@ -179,7 +179,7 @@
     window.u2ThemeState = themeState;
     let themeFontRuntimeReady = false;
     
-    document.addEventListener('DOMContentLoaded', async () => {
+    (window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(async () => {
         // ==========================================
         // Load Saved Data
         // ==========================================

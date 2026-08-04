@@ -2,7 +2,7 @@
 // IMESSAGE: 3. CONTACTS & ADD FRIEND
 // ==========================================
 
-document.addEventListener('DOMContentLoaded', () => {
+(window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(() => {
     const { openView, closeView, showToast } = window;
 
     // Add Friend Modal Buttons from Header

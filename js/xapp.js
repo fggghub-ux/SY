@@ -1,5 +1,5 @@
 (function() {
-    document.addEventListener('DOMContentLoaded', () => {
+    (window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(() => {
         const appButton = document.getElementById('app-x-btn');
         const view = document.getElementById('x-view');
         const mainContent = view ? view.querySelector('.x-main-content') : null;

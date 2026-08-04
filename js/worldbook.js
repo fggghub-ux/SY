@@ -58,7 +58,7 @@ function getAllDisplayGroups() {
 }
 
 // Load data on init
-document.addEventListener('DOMContentLoaded', () => {
+(window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(() => {
     if (window.StorageManager) {
         worldBooks = StorageManager.load('u2_worldBooks', []);
         wbGroups = StorageManager.load('u2_wbGroups', []);

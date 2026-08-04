@@ -1,4 +1,4 @@
-document.addEventListener('DOMContentLoaded', () => {
+(window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(() => {
     // DOM Elements
     const bstageView = document.createElement('div');
     bstageView.className = 'app-view bstage-view';

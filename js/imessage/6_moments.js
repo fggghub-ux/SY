@@ -2,7 +2,7 @@
 // IMESSAGE: 6. MOMENTS (朋友圈)
 // ==========================================
 
-document.addEventListener('DOMContentLoaded', async () => {
+(window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(async () => {
     const { apiConfig, openView, closeView, showToast } = window;
 
     const momentsContent = document.getElementById('moments-content');

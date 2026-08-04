@@ -2757,6 +2757,5 @@ ${xml(fullLyrics)}
         openTogetherListeningPlayer
     };
 
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
-    else init();
+    (window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(init);
 })();

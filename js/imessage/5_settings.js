@@ -2,7 +2,7 @@
 // IMESSAGE: 5. SETTINGS & EDITING
 // ==========================================
 
-document.addEventListener('DOMContentLoaded', () => {
+(window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(() => {
     const { openView, closeView, showToast, showCustomModal, userState } = window;
     
     const chatSettingsSheet = document.getElementById('chat-settings-sheet');

@@ -1,4 +1,4 @@
-document.addEventListener('DOMContentLoaded', () => {
+(window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(() => {
     // --- State Management ---
     let currentCardId = 'bank_1'; // 默认选中第一张卡
     let currentFilter = 'all'; // 'all', 'income', 'expense'

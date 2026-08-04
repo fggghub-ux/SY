@@ -83,6 +83,10 @@
 
     document.addEventListener('DOMContentLoaded', initHomeDesktopEditor);
 
+    function markAppShellReady() {
+        window.markAppShellReady?.();
+    }
+
     function initHomeDesktopEditor() {
         appEl = document.getElementById('app');
         pagesContainer = document.getElementById('pages-container');
@@ -100,14 +104,18 @@
         if (window.globalDataReadyPromise && typeof window.globalDataReadyPromise.then === 'function') {
             window.desktopDataReadyPromise = window.globalDataReadyPromise.then(() => {
                 refreshDesktopStateAfterHydration();
+                markAppShellReady();
                 return true;
             }).catch((error) => {
                 console.warn('[home_desktop] Global data recovery failed.', error);
+                // 首页已经可用；持久化数据恢复失败不应让启动保护屏永久停留。
+                markAppShellReady();
                 return false;
             });
         } else {
             if (shouldSaveNormalizedState) saveDesktopState({ silent: true });
             window.desktopDataReadyPromise = Promise.resolve(true);
+            markAppShellReady();
         }
 
         window.openHomeWidgetEditor = openHomeWidgetEditor;
@@ -1594,6 +1602,7 @@
     function setImage(img, icon, src) {
         const value = isAllowedWidgetImageSrc(src) ? String(src).trim() : '';
         if (img) {
+            img.loading = 'eager';
             img.src = value;
             img.style.display = value ? 'block' : 'none';
             img.closest('.photo-widget')?.classList.toggle('has-image', !!value);

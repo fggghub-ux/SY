@@ -2,7 +2,7 @@
 // IMESSAGE: 4. CHAT INTERFACE & AI
 // ==========================================
 
-document.addEventListener('DOMContentLoaded', () => {
+(window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(() => {
     const { apiConfig, userState, openView, closeView, showToast } = window;
     
     async function commitMainFriendChange(friendOrId, mutator, options = {}) {

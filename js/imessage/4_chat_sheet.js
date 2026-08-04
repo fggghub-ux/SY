@@ -3,7 +3,7 @@
 // ==========================================
 // IMESSAGE: 4_chat_sheet.js
 // ==========================================
-document.addEventListener('DOMContentLoaded', () => {
+(window.u2OnStorageReady || (callback => document.addEventListener('DOMContentLoaded', callback)))(() => {
     const { apiConfig, userState } = window;
     window.imChat = window.imChat || {};
     const imChat = window.imChat;
