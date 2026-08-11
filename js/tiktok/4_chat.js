@@ -76,57 +76,6 @@
         });
     }
 
-    function tkFindLinkedImFriend(char) {
-        if (!char) return null;
-        if (window.resolveYtLinkedImChar) {
-            const linked = window.resolveYtLinkedImChar({
-                id: char.id,
-                imCharId: char.imCharId || char.id,
-                handle: char.handle || char.id,
-                name: char.name
-            });
-            if (linked) return linked;
-        }
-        const friends = typeof window.getImFriends === 'function' ? window.getImFriends() : (window.imData?.friends || []);
-        return (Array.isArray(friends) ? friends : []).find(friend => {
-            return String(friend.id) === String(char.imCharId || char.id)
-                || String(friend.nickname || '') === String(char.name || '')
-                || String(friend.realName || '') === String(char.name || '');
-        }) || null;
-    }
-
-    window.tkSyncSocialAccountToImChar = function(char) {
-        const linkedFriend = tkFindLinkedImFriend(char);
-        if (!linkedFriend || !window.imApp || typeof window.imApp.commitScopedFriendChange !== 'function') return false;
-
-        const cleanHandle = String(char.handle || char.name || char.id || 'tiktok')
-            .replace(/^@/, '')
-            .trim()
-            .replace(/\s+/g, '_') || 'tiktok';
-        const socialAccount = {
-            platform: 'tiktok',
-            label: 'TikTok',
-            handle: `@${cleanHandle}`,
-            url: `tiktok.com/@${cleanHandle}`,
-            tiktokCharId: char.id,
-            updatedAt: new Date().toISOString()
-        };
-
-        window.imApp.commitScopedFriendChange(linkedFriend.id, (targetFriend) => {
-            targetFriend.memory = targetFriend.memory || window.imApp.createDefaultMemory();
-            const existingAccounts = Array.isArray(targetFriend.memory.socialAccounts)
-                ? targetFriend.memory.socialAccounts
-                : [];
-            const nextAccounts = existingAccounts.filter(account => {
-                if (!account || account.platform !== 'tiktok') return true;
-                if (account.tiktokCharId && char.id) return String(account.tiktokCharId) !== String(char.id);
-                return String(account.handle || '') !== String(socialAccount.handle);
-            });
-            targetFriend.memory.socialAccounts = [...nextAccounts, socialAccount];
-        }, { silent: true, metaOnly: true });
-        return true;
-    };
-
     function tkDmProfileIntroHtml(char) {
         const avatarUrl = tkDmResolveAvatar(char);
         const avatar = avatarUrl
@@ -516,13 +465,12 @@ JSON example:
                 item.addEventListener('click', () => {
                     if (alreadyExists) {
                         const existingChar = tkState.chars.find(c => String(c.id) === String(friend.id) || String(c.imCharId || '') === String(friend.id));
-                        if (existingChar && window.tkSyncSocialAccountToImChar) {
+                        if (existingChar) {
                             existingChar.imCharId = existingChar.imCharId || friend.id;
                             existingChar.isFollowed = true;
                             existingChar.isFollower = true;
-                            window.tkSyncSocialAccountToImChar(existingChar);
                             if (window.tkPersistState) window.tkPersistState();
-                            window.showToast('TikTok 账号已同步到 iMessage 记忆');
+                            window.showToast('TikTok 账号已同步');
                         }
                         window.closeView(importSheet);
                         return;
@@ -541,8 +489,6 @@ JSON example:
                             imCharId: friend.id
                     };
                     window.tkSaveChar(charData);
-                    const savedChar = window.tkGetChar(friend.id) || charData;
-                    if (window.tkSyncSocialAccountToImChar) window.tkSyncSocialAccountToImChar(savedChar);
                     window.tkRenderChat();
                     window.closeView(importSheet);
                     window.showToast('导入成功');

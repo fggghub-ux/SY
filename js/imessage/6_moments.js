@@ -474,7 +474,25 @@
     const momentsUserAvatarWrapper = document.getElementById('moments-user-avatar-wrapper');
     const momentsUserAvatarImg = document.getElementById('moments-user-avatar-img');
     const momentsUserAvatarIcon = document.getElementById('moments-user-avatar-icon');
+    const momentsUserAvatarUpload = document.getElementById('moments-user-avatar-upload');
     const mainMomentsSignature = document.getElementById('main-moments-signature');
+
+    function getCurrentMomentsIdentity() {
+        const currentAccountId = typeof window.getCurrentAccountId === 'function'
+            ? window.getCurrentAccountId()
+            : null;
+        const accounts = typeof window.getAccounts === 'function' ? window.getAccounts() : [];
+        const accountList = Array.isArray(accounts) ? accounts : [];
+        const currentAccount = accountList.find(account => String(account?.id) === String(currentAccountId));
+        const user = currentAccount || (window.getUserState ? window.getUserState() : window.userState) || {};
+
+        return {
+            name: user.name || user.realName || user.nickname || 'User',
+            signature: user.signature || '',
+            avatarUrl: user.avatarUrl || user.avatar || null,
+            persona: user.persona || ''
+        };
+    }
 
     function refreshActiveMomentDetailForUserState() {
         if (
@@ -504,9 +522,10 @@
     }
 
     function syncMomentsUser() {
-        if (momentsUserName) momentsUserName.textContent = window.userState ? window.userState.name : 'User';
+        const user = getCurrentMomentsIdentity();
+        if (momentsUserName) momentsUserName.textContent = user.name;
         if (mainMomentsSignature) {
-            const sig = window.userState ? window.userState.signature : '';
+            const sig = user.signature;
             if (sig) {
                 mainMomentsSignature.textContent = sig;
                 mainMomentsSignature.style.display = 'block';
@@ -515,8 +534,7 @@
             }
         }
         if (momentsUserAvatarImg && momentsUserAvatarIcon) {
-            // Get avatar from window.userState (which is synced from the currently active account in settings)
-            const avatarUrl = window.userState ? window.userState.avatarUrl : null;
+            const avatarUrl = user.avatarUrl;
             if (avatarUrl) {
                 momentsUserAvatarImg.src = avatarUrl;
                 momentsUserAvatarImg.style.display = 'block';
@@ -530,6 +548,57 @@
         renderMoments();
         refreshActiveMomentDetailForUserState();
     }
+
+    function openMomentsAvatarPicker() {
+        if (!momentsUserAvatarUpload) return;
+        const currentAccountId = typeof window.getCurrentAccountId === 'function'
+            ? window.getCurrentAccountId()
+            : null;
+        if (currentAccountId == null) {
+            if (showToast) showToast('请先在设置中添加并选择 Apple ID');
+            return;
+        }
+        momentsUserAvatarUpload.click();
+    }
+
+    momentsUserAvatarWrapper?.addEventListener('click', openMomentsAvatarPicker);
+    momentsUserAvatarWrapper?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            openMomentsAvatarPicker();
+        }
+    });
+    momentsUserAvatarUpload?.addEventListener('change', async (event) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+
+        const currentAccountId = typeof window.getCurrentAccountId === 'function'
+            ? window.getCurrentAccountId()
+            : null;
+        if (currentAccountId == null || typeof window.updateAccountById !== 'function') {
+            if (showToast) showToast('当前 Apple ID 不可编辑');
+            return;
+        }
+
+        try {
+            if (typeof window.readImageAsCompressedDataUrl !== 'function') {
+                throw new Error('头像处理服务未就绪');
+            }
+            const avatarUrl = await window.readImageAsCompressedDataUrl(file, {
+                maxWidth: 256,
+                maxHeight: 256,
+                quality: 0.72
+            });
+            const updated = window.updateAccountById(currentAccountId, { avatarUrl });
+            if (!updated) throw new Error('当前 Apple ID 不可编辑');
+            syncMomentsUser();
+            if (showToast) showToast('头像已更新');
+        } catch (error) {
+            console.error('Failed to update moments avatar', error);
+            if (showToast) showToast(error?.message || '头像处理失败');
+        }
+    });
 
     setTimeout(syncMomentsUser, 0);
 
@@ -570,10 +639,9 @@
         let currentAvatar = m.avatar;
         let currentName = m.name;
         if (m.userId === 'me' || m.userId === 'self') {
-            if (window.userState) {
-                currentAvatar = window.userState.avatarUrl;
-                currentName = window.userState.name;
-            }
+            const user = getCurrentMomentsIdentity();
+            currentAvatar = user.avatarUrl;
+            currentName = user.name;
         } else {
             const friend = window.imData.friends ? window.imData.friends.find(f => f.id == m.userId || f.id === m.userId) : null;
             if (friend) {
@@ -760,6 +828,7 @@
                             content: content,
                             timestamp: Date.now()
                         };
+                        window.imApp.captureGroupUserIdentity?.(friend, msgData);
 
                         const saved = window.imApp.appendFriendMessage
                             ? await window.imApp.appendFriendMessage(friend.id, msgData, { silent: true })
@@ -883,6 +952,14 @@
     const publishMomentAddImg = document.getElementById('publish-moment-add-img');
     const publishMomentUpload = document.getElementById('publish-moment-upload');
     const publishMomentImages = document.getElementById('publish-moment-images');
+    const publishMomentVisibilityBtn = document.getElementById('publish-moment-visibility-btn');
+    const publishMomentVisibilitySummary = document.getElementById('publish-moment-visibility-summary');
+    const publishMomentVisibilitySheet = document.getElementById('publish-moment-visibility-sheet');
+    const publishMomentVisibilityList = document.getElementById('publish-moment-visibility-list');
+    const publishMomentVisibilityEmpty = document.getElementById('publish-moment-visibility-empty');
+    const publishMomentVisibilitySelectAll = document.getElementById('publish-moment-visibility-select-all');
+    const publishMomentVisibilityCancel = document.getElementById('publish-moment-visibility-cancel');
+    const publishMomentVisibilityConfirm = document.getElementById('publish-moment-visibility-confirm');
 
     const publishMomentDescModal = document.getElementById('publish-moment-desc-modal');
     const publishMomentImgDesc = document.getElementById('publish-moment-img-desc');
@@ -891,12 +968,166 @@
     let pendingImages = [];
     let isPublishing = false;
     let currentEditImageIndex = -1;
+    let publishMomentVisibleCharIds = new Set();
+    let publishMomentVisibilityDraftIds = null;
+
+    function getMomentVisibilityChars() {
+        const friends = Array.isArray(window.imData?.friends) ? window.imData.friends : [];
+        return friends.filter((friend) => friend && friend.type === 'char' && friend.id != null);
+    }
+
+    function normalizeMomentVisibleCharIds(ids) {
+        const validIds = new Set(getMomentVisibilityChars().map((friend) => String(friend.id)));
+        const normalizedIds = [];
+        const seenIds = new Set();
+        (ids instanceof Set ? Array.from(ids) : (Array.isArray(ids) ? ids : [])).forEach((id) => {
+            const normalizedId = String(id ?? '').trim();
+            if (!normalizedId || !validIds.has(normalizedId) || seenIds.has(normalizedId)) return;
+            seenIds.add(normalizedId);
+            normalizedIds.push(normalizedId);
+        });
+        return normalizedIds;
+    }
+
+    function getPublishMomentVisibleCharIds() {
+        return normalizeMomentVisibleCharIds(publishMomentVisibleCharIds);
+    }
+
+    function updatePublishMomentVisibilitySummary() {
+        if (!publishMomentVisibilitySummary) return;
+        const chars = getMomentVisibilityChars();
+        const selectedIds = new Set(getPublishMomentVisibleCharIds());
+        const selectedCount = chars.filter((friend) => selectedIds.has(String(friend.id))).length;
+        const label = selectedCount === 0
+            ? '仅自己可见'
+            : (selectedCount === chars.length ? '全部 Char 可见' : `仅 ${selectedCount} 位 Char 可见`);
+        publishMomentVisibilitySummary.textContent = label;
+        const arrow = document.createElement('i');
+        arrow.className = 'fas fa-chevron-right';
+        arrow.style.color = '#ccc';
+        arrow.style.fontSize = '14px';
+        publishMomentVisibilitySummary.appendChild(arrow);
+    }
+
+    function resetPublishMomentVisibility() {
+        publishMomentVisibleCharIds = new Set(getMomentVisibilityChars().map((friend) => String(friend.id)));
+        publishMomentVisibilityDraftIds = null;
+        updatePublishMomentVisibilitySummary();
+    }
+
+    function closePublishMomentVisibilitySheet() {
+        if (!publishMomentVisibilitySheet) return;
+        publishMomentVisibilitySheet.classList.remove('active');
+        publishMomentVisibilitySheet.setAttribute('aria-hidden', 'true');
+        setTimeout(() => {
+            if (!publishMomentVisibilitySheet.classList.contains('active')) {
+                publishMomentVisibilitySheet.style.display = 'none';
+            }
+        }, 300);
+    }
+
+    function renderPublishMomentVisibilityList() {
+        if (!publishMomentVisibilityList) return;
+        const chars = getMomentVisibilityChars();
+        const selectedIds = publishMomentVisibilityDraftIds || new Set();
+        publishMomentVisibilityList.innerHTML = '';
+        publishMomentVisibilityList.style.display = chars.length > 0 ? 'block' : 'none';
+        if (publishMomentVisibilityEmpty) {
+            publishMomentVisibilityEmpty.style.display = chars.length > 0 ? 'none' : 'block';
+        }
+
+        chars.forEach((friend) => {
+            const friendId = String(friend.id);
+            const isSelected = selectedIds.has(friendId);
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = `publish-moment-visibility-person${isSelected ? ' is-selected' : ''}`;
+            item.setAttribute('aria-pressed', String(isSelected));
+
+            const avatar = document.createElement('span');
+            avatar.className = 'publish-moment-visibility-avatar';
+            if (friend.avatarUrl) {
+                const image = document.createElement('img');
+                image.src = friend.avatarUrl;
+                image.alt = '';
+                avatar.appendChild(image);
+            } else {
+                const icon = document.createElement('i');
+                icon.className = 'fas fa-user';
+                avatar.appendChild(icon);
+            }
+
+            const name = document.createElement('span');
+            name.className = 'publish-moment-visibility-name';
+            name.textContent = getDisplayNameForMomentSpeaker(friend);
+
+            const check = document.createElement('span');
+            check.className = 'publish-moment-visibility-check';
+            check.innerHTML = '<i class="fas fa-check"></i>';
+
+            item.append(avatar, name, check);
+            item.addEventListener('click', () => {
+                if (selectedIds.has(friendId)) selectedIds.delete(friendId);
+                else selectedIds.add(friendId);
+                renderPublishMomentVisibilityList();
+            });
+            publishMomentVisibilityList.appendChild(item);
+        });
+
+        if (publishMomentVisibilitySelectAll) {
+            const hasEveryChar = chars.length > 0 && chars.every((friend) => selectedIds.has(String(friend.id)));
+            publishMomentVisibilitySelectAll.textContent = hasEveryChar ? '取消全选' : '全选';
+        }
+    }
+
+    function openPublishMomentVisibilitySheet() {
+        if (!publishMomentVisibilitySheet) return;
+        publishMomentVisibilityDraftIds = new Set(getPublishMomentVisibleCharIds());
+        renderPublishMomentVisibilityList();
+        publishMomentVisibilitySheet.style.display = 'flex';
+        void publishMomentVisibilitySheet.offsetWidth;
+        publishMomentVisibilitySheet.classList.add('active');
+        publishMomentVisibilitySheet.setAttribute('aria-hidden', 'false');
+    }
+
+    publishMomentVisibilityBtn?.addEventListener('click', openPublishMomentVisibilitySheet);
+    publishMomentVisibilityBtn?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            openPublishMomentVisibilitySheet();
+        }
+    });
+    publishMomentVisibilitySelectAll?.addEventListener('click', () => {
+        const chars = getMomentVisibilityChars();
+        const selectedIds = publishMomentVisibilityDraftIds || new Set();
+        const hasEveryChar = chars.length > 0 && chars.every((friend) => selectedIds.has(String(friend.id)));
+        publishMomentVisibilityDraftIds = hasEveryChar
+            ? new Set()
+            : new Set(chars.map((friend) => String(friend.id)));
+        renderPublishMomentVisibilityList();
+    });
+    publishMomentVisibilityCancel?.addEventListener('click', () => {
+        publishMomentVisibilityDraftIds = null;
+        closePublishMomentVisibilitySheet();
+    });
+    publishMomentVisibilityConfirm?.addEventListener('click', () => {
+        publishMomentVisibleCharIds = new Set(normalizeMomentVisibleCharIds(publishMomentVisibilityDraftIds));
+        publishMomentVisibilityDraftIds = null;
+        updatePublishMomentVisibilitySummary();
+        closePublishMomentVisibilitySheet();
+    });
+    publishMomentVisibilitySheet?.addEventListener('click', (event) => {
+        if (event.target !== publishMomentVisibilitySheet) return;
+        publishMomentVisibilityDraftIds = null;
+        closePublishMomentVisibilitySheet();
+    });
 
     if (momentsCameraBtn) {
         momentsCameraBtn.addEventListener('click', () => {
             pendingImages = [];
             if (publishMomentText) publishMomentText.value = '';
             isPublishing = false;
+            resetPublishMomentVisibility();
             renderPendingImages();
             checkPublishState();
 
@@ -912,6 +1143,9 @@
         publishMomentCancel.addEventListener('click', () => {
             publishMomentView.classList.remove('active');
             setTimeout(() => publishMomentView.style.display = 'none', 300);
+            publishMomentVisibleCharIds = new Set();
+            publishMomentVisibilityDraftIds = null;
+            closePublishMomentVisibilitySheet();
         });
     }
 
@@ -1061,13 +1295,14 @@
             const newMoment = {
                 id: Date.now(),
                 userId: 'me',
-                name: window.userState ? window.userState.name : 'Me',
+                name: getCurrentMomentsIdentity().name || 'Me',
                 avatar: null,
                 text: text,
                 images: imgs,
                 time: Date.now(),
                 likes: [],
                 comments: [],
+                visibleToCharIds: getPublishMomentVisibleCharIds(),
                 isPinned: false
             };
 
@@ -1092,6 +1327,8 @@
             isPublishing = false;
             pendingImages = [];
             if (publishMomentText) publishMomentText.value = '';
+            publishMomentVisibleCharIds = new Set();
+            publishMomentVisibilityDraftIds = null;
 
             showToast('发表成功');
             await triggerAutoCommentsForMyMoment(newMoment.id);
@@ -1304,14 +1541,14 @@
     }
 
     function isUserMomentComment(comment) {
-        const userName = window.userState?.name || 'Me';
+        const userName = getCurrentMomentsIdentity().name || 'Me';
         return String(comment?.userId || '') === 'me' ||
             String(comment?.userId || '') === 'self' ||
             String(comment?.name || '') === String(userName);
     }
 
     function isUserMoment(moment) {
-        const userName = window.userState?.name || 'Me';
+        const userName = getCurrentMomentsIdentity().name || 'Me';
         return String(moment?.userId || '') === 'me' ||
             String(moment?.userId || '') === 'self' ||
             String(moment?.name || moment?.userName || '') === String(userName);
@@ -1344,7 +1581,7 @@
     function isUserLikeName(value) {
         const text = String(value || '').trim();
         if (!text) return false;
-        const userName = String(window.userState?.name || 'Me').trim();
+        const userName = String(getCurrentMomentsIdentity().name || 'Me').trim();
         const lowered = text.toLowerCase();
         return lowered === 'me' ||
             lowered === 'self' ||
@@ -1466,10 +1703,10 @@
         const imageDescriptions = getMomentImageDescriptions(moment);
         const authorFriend = findFriendForMomentAuthor(moment);
         const momentAuthorName = isUserMoment(moment)
-            ? (window.userState?.name || moment.name || moment.userName || 'User')
+            ? (getCurrentMomentsIdentity().name || moment.name || moment.userName || 'User')
             : (moment.name || moment.userName || getDisplayNameForMomentSpeaker(authorFriend));
         const momentAuthorPersona = isUserMoment(moment)
-            ? (window.userState?.persona || 'ordinary user')
+            ? (getCurrentMomentsIdentity().persona || 'ordinary user')
             : (authorFriend?.persona || 'ordinary user');
         const worldBookContextText = [
             moment.text || '',
@@ -1494,7 +1731,7 @@
             : (window.userState?.persona || '');
         const contextMessages = window.imApp.buildApiContextMessages
             ? window.imApp.buildApiContextMessages(replyFriend, {
-                userName: window.userState?.name || 'User'
+                userName: getCurrentMomentsIdentity().name || 'User'
             })
             : [];
 
@@ -1683,7 +1920,7 @@ Do not output markdown, code fences, explanations, chain-of-thought, [Comment] t
 
                 const userComment = {
                     id: `moment-comment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-                    name: window.userState?.name || 'Me',
+                    name: getCurrentMomentsIdentity().name || 'Me',
                     userId: 'me',
                     content: replyText,
                     replyToName: targetComment.name,
@@ -1862,10 +2099,9 @@ Do not output markdown, code fences, explanations, chain-of-thought, [Comment] t
         let currentAvatar = m.avatar;
         let currentName = m.name;
         if (m.userId === 'me' || m.userId === 'self') {
-            if (window.userState) {
-                currentAvatar = window.userState.avatarUrl;
-                currentName = window.userState.name;
-            }
+            const user = getCurrentMomentsIdentity();
+            currentAvatar = user.avatarUrl;
+            currentName = user.name;
         } else {
             const friend = window.imData.friends ? window.imData.friends.find(f => f.id == m.userId || f.id === m.userId) : null;
             if (friend) {
@@ -1916,7 +2152,7 @@ Do not output markdown, code fences, explanations, chain-of-thought, [Comment] t
             `;
         }
 
-        const currentMyName = window.userState ? window.userState.name : 'Me';
+        const currentMyName = getCurrentMomentsIdentity().name || 'Me';
         const hasLiked = m.likes && m.likes.includes(currentMyName);
         const likeText = hasLiked ? '取消' : '赞';
 
@@ -2022,7 +2258,7 @@ Do not output markdown, code fences, explanations, chain-of-thought, [Comment] t
 
                         const newComment = {
                             id: `moment-comment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-                            name: window.userState ? window.userState.name : 'Me',
+                            name: getCurrentMomentsIdentity().name || 'Me',
                             userId: 'me',
                             content: text.trim()
                         };
@@ -2132,6 +2368,7 @@ Do not output markdown, code fences, explanations, chain-of-thought, [Comment] t
                         content: content,
                         timestamp: Date.now()
                     };
+                    window.imApp.captureGroupUserIdentity?.(friend, msgData);
 
                     const saved = window.imApp.appendFriendMessage
                         ? await window.imApp.appendFriendMessage(friend.id, msgData, { silent: true })
@@ -2318,17 +2555,28 @@ Do not output markdown, code fences, explanations, chain-of-thought, [Comment] t
         return picked;
     }
 
-    function getEligibleAutoMomentFriends() {
+    function getEligibleAutoMomentFriends(moment = null) {
         const allFriends = Array.isArray(window.imData.friends) ? window.imData.friends : [];
-        return allFriends.filter((friend) => {
+        const eligibleFriends = allFriends.filter((friend) => {
             if (!friend) return false;
             if (friend.type === 'group' || friend.type === 'official') return false;
             return true;
         });
+
+        // Legacy user moments had no recipient list and remain public. New user
+        // moments store an explicit Char-only audience snapshot.
+        if (!moment || !isUserMoment(moment) || !Array.isArray(moment.visibleToCharIds)) {
+            return eligibleFriends;
+        }
+
+        const visibleCharIds = new Set(moment.visibleToCharIds.map((id) => String(id ?? '').trim()).filter(Boolean));
+        return eligibleFriends.filter((friend) => {
+            return friend.type === 'char' && visibleCharIds.has(String(friend.id));
+        });
     }
 
-    function getAutoCommentCandidates() {
-        const eligibleChars = getEligibleAutoMomentFriends();
+    function getAutoCommentCandidates(moment = null) {
+        const eligibleChars = getEligibleAutoMomentFriends(moment);
         if (eligibleChars.length === 0) return [];
 
         const twelveHoursMs = 12 * 60 * 60 * 1000;
@@ -2566,10 +2814,10 @@ If you chatted with the user recently, the public comment and private replies ca
         const baseMoment = findMomentById(momentId);
         if (!baseMoment || !hasCurrentMomentApiConfig()) return;
 
-        const eligibleFriends = getEligibleAutoMomentFriends();
+        const eligibleFriends = getEligibleAutoMomentFriends(baseMoment);
         if (!Array.isArray(eligibleFriends) || eligibleFriends.length === 0) return;
 
-        const candidates = getAutoCommentCandidates();
+        const candidates = getAutoCommentCandidates(baseMoment);
         const commentCandidateIds = new Set(candidates.map((friend) => String(friend.id)));
         const generatedInteractions = [];
         const nonCommentThoughts = new Map();
@@ -2700,6 +2948,38 @@ If you chatted with the user recently, the public comment and private replies ca
         refreshViewsForMomentUser(latestMoment);
     }
 
+    function getMomentRelationshipEngagementSpeakers(author) {
+        if (!author) return [];
+        const authorId = String(author.id ?? '').trim();
+        const friendsById = new Map(
+            (Array.isArray(window.imData?.friends) ? window.imData.friends : [])
+                .filter(Boolean)
+                .map((friend) => [String(friend.id ?? '').trim(), friend])
+        );
+        const seenIds = new Set();
+        const relationships = Array.isArray(author.memory?.relationships) ? author.memory.relationships : [];
+
+        return relationships.reduce((speakers, relationship) => {
+            const targetId = String(relationship?.targetId || relationship?.npcId || '').trim();
+            const relation = String(relationship?.relation || '').trim();
+            if (!targetId || !relation || targetId === authorId || seenIds.has(targetId)) return speakers;
+
+            const target = friendsById.get(targetId);
+            if (!target || (target.type !== 'char' && target.type !== 'npc')) return speakers;
+
+            seenIds.add(targetId);
+            speakers.push({
+                id: targetId,
+                name: getDisplayNameForMomentSpeaker(target),
+                language: normalizeMomentLanguage(target.language || 'zh'),
+                type: target.type,
+                relation,
+                persona: String(target.persona || target.signature || '').trim()
+            });
+            return speakers;
+        }, []);
+    }
+
     async function generateAndPublishMoment(friend, options = {}) {
         const normalizedOptions = typeof options === 'boolean' ? { silent: options } : options;
         const silent = normalizedOptions.silent === true;
@@ -2718,13 +2998,9 @@ If you chatted with the user recently, the public comment and private replies ca
             }
             const liveFriend = (window.imData.friends || []).find((item) => String(item.id) === String(friend.id)) || friend;
             const targetLanguage = normalizeMomentLanguage(liveFriend.language || 'zh');
-            const allowedFriends = (window.imData.friends || [])
-                .filter((candidate) => candidate && candidate.id !== liveFriend.id && candidate.type !== 'group' && candidate.type !== 'official')
-                .map((candidate) => ({
-                    id: String(candidate.id),
-                    name: candidate.nickname || candidate.realName || String(candidate.id),
-                    language: normalizeMomentLanguage(candidate.language || 'zh')
-                }));
+            const allowedFriends = includeEngagement
+                ? getMomentRelationshipEngagementSpeakers(liveFriend)
+                : [];
             const allowedById = new Map(allowedFriends.map((candidate) => [candidate.id, candidate]));
             const contextText = [liveFriend.persona, liveFriend.memory?.overview, liveFriend.signature].filter(Boolean).join('\n');
             const getWorldBook = (position) => window.imApp?.getWorldBookContextForFriendByPosition
@@ -2736,9 +3012,11 @@ If you chatted with the user recently, the public comment and private replies ca
             const contextMessages = window.imApp.buildApiContextMessages
                 ? window.imApp.buildApiContextMessages(liveFriend, { userName: window.userState?.name || 'User' })
                 : [];
-            const engagementContract = includeEngagement
-                ? `Allowed engagement speakers (use speakerId exactly): ${JSON.stringify(allowedFriends)}\nGenerate 1-2 comments and a few likes only from this list. Each comment must follow its speaker's language and include a Chinese translation when non-Chinese.`
-                : 'Do not generate comments or likes; return empty arrays for both.';
+            const engagementContract = !includeEngagement
+                ? 'Do not generate comments or likes; return empty arrays for both.'
+                : (allowedFriends.length > 0
+                    ? `Allowed engagement speakers are only the character's direct relationship-network contacts (use speakerId exactly): ${JSON.stringify(allowedFriends)}\nGenerate 1-2 comments and a few likes only from this list. Each comment must follow its speaker's language and include a Chinese translation when non-Chinese.`
+                    : 'This character has no valid direct relationship-network contacts. Do not generate comments or likes; return empty arrays for both.');
             const imageContract = allowImages
                 ? 'You may include zero or more concrete image descriptions in images. Every images[].description must be written only in natural Simplified Chinese, regardless of the character default language.'
                 : 'Do not generate images; return an empty images array.';

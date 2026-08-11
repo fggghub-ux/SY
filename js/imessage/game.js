@@ -188,10 +188,10 @@
 
     function createViewMarkup() {
         return `
-            <section class="app-view im-game-view" id="im-game-view" aria-label="Game">
+            <section class="app-view im-game-view" id="im-game-view" aria-label="Game" data-u2-i18n-aria-label="game.title">
                 <header class="im-game-header">
                     <button type="button" class="im-game-back" id="im-game-back" aria-label="返回 iMessage"><i class="fas fa-chevron-left"></i></button>
-                    <div class="im-game-header-title">Game</div>
+                    <div class="im-game-header-title" data-u2-i18n="game.title">Game</div>
                     <div class="im-game-header-spacer" aria-hidden="true"></div>
                 </header>
                 <main class="im-game-hub">

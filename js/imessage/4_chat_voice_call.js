@@ -115,15 +115,32 @@
         };
         const originalBottomPadding = bottomControls?.style.paddingBottom || '';
         const originalDisplays = collapseElements.map((element) => element.style.display);
-        let restingHeight = Math.max(window.innerHeight || 0, viewport?.height || 0);
-        let restingLayoutHeight = Math.round(window.innerHeight || restingHeight);
-        let keyboardWasOpen = false;
-
-        const captureRestingViewport = () => {
+        const getViewportState = () => {
             const layoutHeight = Math.round(window.innerHeight || viewport?.height || 0);
             const visualHeight = Math.round(viewport?.height || layoutHeight);
-            restingHeight = Math.max(restingHeight, layoutHeight, visualHeight);
-            restingLayoutHeight = Math.max(restingLayoutHeight, layoutHeight);
+            const viewportOffsetTop = Math.round(viewport?.offsetTop || 0);
+            const documentScrollTop = Math.round(
+                window.scrollY || document.documentElement?.scrollTop || document.body?.scrollTop || 0
+            );
+            return {
+                layoutHeight,
+                visualHeight,
+                origin: Math.max(0, documentScrollTop + viewportOffsetTop)
+            };
+        };
+        const initialViewport = getViewportState();
+        let restingHeight = Math.max(initialViewport.layoutHeight, initialViewport.visualHeight);
+        let restingLayoutHeight = initialViewport.layoutHeight;
+        let restingViewportOrigin = initialViewport.origin;
+        let keyboardWasOpen = false;
+
+        const captureRestingViewport = (options = {}) => {
+            const metrics = getViewportState();
+            restingHeight = Math.max(restingHeight, metrics.layoutHeight, metrics.visualHeight);
+            restingLayoutHeight = Math.max(restingLayoutHeight, metrics.layoutHeight);
+            if (options.refreshOrigin !== false && !keyboardWasOpen) {
+                restingViewportOrigin = metrics.origin;
+            }
         };
 
         const restoreLayout = (scrollToLatest = false) => {
@@ -145,23 +162,29 @@
         };
 
         const applyViewport = () => {
-            const layoutHeight = Math.round(window.innerHeight || viewport?.height || 0);
-            const visualHeight = Math.round(viewport?.height || layoutHeight);
-            const layoutAlreadyResized = restingLayoutHeight - layoutHeight > 100;
+            const metrics = getViewportState();
+            const layoutAlreadyResized = restingLayoutHeight - metrics.layoutHeight > 100;
             // Some Android WebViews resize the layout viewport and then report an
             // already-reduced visual viewport again. Following visualViewport in
             // that mode applies the keyboard height twice. If the layout itself
             // has moved, it is already the authoritative visible height; otherwise
             // visualViewport handles overlay-style keyboards.
-            const viewportHeight = layoutAlreadyResized ? layoutHeight : visualHeight;
-            const viewportTop = layoutAlreadyResized ? 0 : Math.round(viewport?.offsetTop || 0);
+            const viewportHeight = layoutAlreadyResized ? metrics.layoutHeight : metrics.visualHeight;
+            const viewportOrigin = metrics.origin;
             if (viewportHeight <= 0) return;
 
             const focused = document.activeElement === input;
-            const keyboardOpen = focused && restingHeight - viewportHeight > 100;
+            const heightReduced = restingHeight - viewportHeight > 100;
+            // OPPO Edge can pan the page to reveal the composer while reporting
+            // little or no visualViewport height change. Treat that origin shift
+            // as the same keyboard-open state and pin the call view to it.
+            const originMoved = Math.abs(viewportOrigin - restingViewportOrigin) > 72;
+            const keyboardOpen = focused && (heightReduced || originMoved);
 
             if (!keyboardOpen) {
-                const keyboardStillRetreating = keyboardWasOpen && !focused && restingHeight - viewportHeight > 72;
+                const keyboardStillRetreating = keyboardWasOpen
+                    && !focused
+                    && (restingHeight - viewportHeight > 72 || Math.abs(viewportOrigin - restingViewportOrigin) > 48);
                 if (keyboardStillRetreating) return;
                 const shouldScroll = keyboardWasOpen;
                 keyboardWasOpen = false;
@@ -172,7 +195,7 @@
 
             keyboardWasOpen = true;
             root.style.height = `${viewportHeight}px`;
-            root.style.top = `${viewportTop}px`;
+            root.style.top = `${viewportOrigin}px`;
             root.style.bottom = 'auto';
             root.classList.add('im-call-keyboard-open');
 
@@ -194,12 +217,16 @@
             viewport.addEventListener('scroll', applyViewport, { passive: true });
         }
         const handleFocus = () => {
-            captureRestingViewport();
+            // Pointer/touch capture records the pre-keyboard origin. Do not
+            // overwrite it if this browser pans before firing focus.
+            captureRestingViewport({ refreshOrigin: false });
             applyViewport();
         };
         const handleBlur = () => {
-            const visibleHeight = Math.round(viewport?.height || window.innerHeight || 0);
-            if (keyboardWasOpen && restingHeight - visibleHeight > 72) return;
+            const metrics = getViewportState();
+            const visibleStateStillShifted = restingHeight - metrics.visualHeight > 72
+                || Math.abs(metrics.origin - restingViewportOrigin) > 48;
+            if (keyboardWasOpen && visibleStateStillShifted) return;
             const shouldScroll = keyboardWasOpen;
             keyboardWasOpen = false;
             restoreLayout(shouldScroll);
@@ -240,7 +267,8 @@
                 onSend: sendAndMaybeDismiss,
                 blurAfterSend: false,
                 enterKeyHint: 'send',
-                restoreWindowScroll: false
+                restoreWindowScroll: false,
+                managesOwnViewport: true
             });
             const viewportCleanup = bindCallVisualViewport(input, options.root, options);
             return () => {
@@ -293,6 +321,10 @@
             return message.senderName;
         }
         if (message?.isSelf) {
+            const group = friend?.type === 'group' ? friend : groupCallTarget;
+            if (group?.type === 'group' && window.imApp?.getGroupUserIdentity) {
+                return window.imApp.getGroupUserIdentity(group).name;
+            }
             return window.userState?.name || window.userState?.realName || 'User';
         }
         if (friend?.type === 'group' && message?.senderId) {
@@ -1099,8 +1131,11 @@ ${recentMessages}`;
         if (!text && !actionText) return null;
 
         let isSelf = (senderId === '__user__' || senderId == null);
-        let senderName = isSelf ? (window.userState?.name || 'User') : 'Member';
-        let senderAvatar = '';
+        const groupUserIdentity = groupCallTarget?.type === 'group' && window.imApp?.getGroupUserIdentity
+            ? window.imApp.getGroupUserIdentity(groupCallTarget)
+            : null;
+        let senderName = isSelf ? (groupUserIdentity?.name || window.userState?.name || 'User') : 'Member';
+        let senderAvatar = isSelf ? (groupUserIdentity?.avatarUrl || '') : '';
         let senderFriend = null;
         
         if (!isSelf && groupCallTarget) {
@@ -1262,7 +1297,10 @@ ${recentMessages}`;
             }
             
             if (p.isUser) {
-                const userAvatar = window.userState?.avatarUrl || window.userState?.avatar;
+                const groupUserIdentity = groupCallTarget?.type === 'group' && window.imApp?.getGroupUserIdentity
+                    ? window.imApp.getGroupUserIdentity(groupCallTarget)
+                    : null;
+                const userAvatar = groupUserIdentity?.avatarUrl || window.userState?.avatarUrl || window.userState?.avatar;
                 if (userAvatar) {
                     avatar.innerHTML = `<img src="${userAvatar}" style="width:100%;height:100%;object-fit:cover;">`;
                 } else {
@@ -1283,7 +1321,10 @@ ${recentMessages}`;
             name.style.overflow = 'hidden';
             name.style.textOverflow = 'ellipsis';
             name.style.whiteSpace = 'nowrap';
-            name.innerText = p.isUser ? (window.userState?.name || 'User') : p.nickname;
+            const groupUserIdentity = groupCallTarget?.type === 'group' && window.imApp?.getGroupUserIdentity
+                ? window.imApp.getGroupUserIdentity(groupCallTarget)
+                : null;
+            name.innerText = p.isUser ? (groupUserIdentity?.name || window.userState?.name || 'User') : p.nickname;
 
             wrap.appendChild(avatar);
             wrap.appendChild(name);
@@ -1536,7 +1577,13 @@ ${previousReply}`;
                     const customGroupPrompt = groupCallTarget.memory?.context?.prompt || '';
                     const regeneratePrompt = buildGroupCallRegeneratePrompt(regenerateContext?.previousReply || '');
                     
-                    const effectiveUserPersona = window.imApp?.getEffectivePersonaForFriend ? window.imApp.getEffectivePersonaForFriend(groupCallTarget) : (userState?.persona || '普通用户');
+                    const groupUserIdentity = window.imApp?.getGroupUserIdentity
+                        ? window.imApp.getGroupUserIdentity(groupCallTarget)
+                        : null;
+                    const effectiveUserPersona = groupUserIdentity?.persona
+                        || (window.imApp?.getEffectivePersonaForFriend
+                            ? window.imApp.getEffectivePersonaForFriend(groupCallTarget)
+                            : (userState?.persona || '普通用户'));
                     
                     const recentMsgs = groupCallMessages.slice(-20).map(m => {
                         const parts = [];
@@ -1555,7 +1602,7 @@ ${previousReply}`;
 【群聊成员设定】:
 ${membersInfo}
 
-The user is ${userState?.name || 'User'}, whose persona is: ${effectiveUserPersona}.
+The user is ${groupUserIdentity?.name || userState?.name || 'User'}, whose persona is: ${effectiveUserPersona}.
 
 【当前的语音通话记录】:
 ${recentMsgs || '无'}
@@ -1777,7 +1824,10 @@ systemPrompt += `\n【!!!重要指示!!!】:
     }
 
     function parseCallMessagesFromEdit(rawText, previousMessages = [], friend = null) {
-        const userNames = [window.userState?.name, window.userState?.realName, 'User', '我']
+        const groupUserIdentity = friend?.type === 'group' && window.imApp?.getGroupUserIdentity
+            ? window.imApp.getGroupUserIdentity(friend)
+            : null;
+        const userNames = [groupUserIdentity?.name, window.userState?.name, window.userState?.realName, 'User', '我']
             .filter(Boolean)
             .map(name => String(name).trim());
         const charNames = [friend?.nickname, friend?.realName, 'Char', '对方']

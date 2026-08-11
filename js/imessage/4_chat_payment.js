@@ -164,6 +164,19 @@ function getAvailableGroupRecipients(group) {
     }
 
 function getCurrentUserPacketMember(group) {
+        if (window.imApp?.getGroupUserIdentity) {
+            const identity = window.imApp.getGroupUserIdentity(group);
+            return {
+                id: '__user__',
+                accountId: identity.accountId || null,
+                nickname: identity.name,
+                realName: identity.name,
+                avatarUrl: identity.avatarUrl,
+                persona: identity.persona,
+                signature: identity.signature,
+                type: 'user'
+            };
+        }
         const currentAccountId = typeof window.getCurrentAccountId === 'function' ? window.getCurrentAccountId() : null;
         const accounts = typeof window.getAccounts === 'function' ? window.getAccounts() : [];
         const currentAccount = accounts.find(acc => String(acc.id) === String(currentAccountId)) || null;
@@ -1070,6 +1083,7 @@ async function claimIncomingTransfer(friend, msg, options = {}) {
             }
         }
 
+        window.imApp.captureGroupUserIdentity?.(friend, receiveMsg);
         let saved = false;
 
         if (window.imApp.updateFriendMessage && window.imApp.appendFriendMessage) {
@@ -1287,6 +1301,7 @@ async function claimIncomingTransfer(friend, msg, options = {}) {
             }
         }
 
+        window.imApp.captureGroupUserIdentity?.(friend, rejectMsg);
         let saved = false;
 
         if (window.imApp.updateFriendMessage && window.imApp.appendFriendMessage) {

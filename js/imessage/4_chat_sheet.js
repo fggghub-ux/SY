@@ -9,8 +9,8 @@
     const imChat = window.imChat;
     const offlineRegexEngine = window.imOfflineRegex;
     const offlineReasoning = window.imOfflineReasoning;
-    const imageGenerationRuns = new Set();
     const OFFLINE_MAX_RESPONSE_TOKENS = 30000;
+    const OFFLINE_STREAM_RENDER_INTERVAL = 80;
     const OFFLINE_COT_PROMPT_IDS = new Set([
         'cot_before',
         'cot_scene_planning',
@@ -2565,12 +2565,56 @@ function createAttachmentSheet(page) {
             return panel;
         };
 
+        const isOfflineTavernNearBottom = (contentArea, threshold = 96) => {
+            if (!contentArea) return false;
+            return contentArea.scrollHeight - contentArea.scrollTop - contentArea.clientHeight <= threshold;
+        };
+
+        const scrollOfflineTavernToBottom = (contentArea) => {
+            if (contentArea) contentArea.scrollTop = contentArea.scrollHeight;
+        };
+
+        const getOfflineTavernActionButtonsHtml = (isUser, actionsDisabled = false) => {
+            if (actionsDisabled) return '';
+            return `
+                <div class="offline-tavern-bubble-actions">
+                    <button type="button" class="offline-tavern-action-btn" data-offline-action="edit" title="编辑" aria-label="编辑"><i class="fas fa-pen"></i></button>
+                    ${!isUser ? '<button type="button" class="offline-tavern-action-btn" data-offline-action="reroll" title="重回" aria-label="重回"><i class="fas fa-redo"></i></button>' : ''}
+                    <button type="button" class="offline-tavern-action-btn danger" data-offline-action="delete" title="删除" aria-label="删除"><i class="fas fa-trash"></i></button>
+                </div>
+            `;
+        };
+
+        const bindOfflineTavernBubbleActions = (bubbleDiv, message) => {
+            if (!bubbleDiv || !message?.id) return;
+            bubbleDiv.querySelectorAll('[data-offline-action]').forEach((button) => {
+                if (button.dataset.bound === 'true') return;
+                button.dataset.bound = 'true';
+                button.addEventListener('click', async (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const action = button.getAttribute('data-offline-action');
+                    if (action === 'edit') await openOfflineMessageEditor(message.id);
+                    if (action === 'delete') await deleteOfflineMessage(message.id);
+                    if (action === 'reroll') await rerollOfflineAssistantMessage(message.id, button);
+                });
+            });
+        };
+
+        const enableOfflineTavernBubbleActions = (bubbleDiv, message) => {
+            const footer = bubbleDiv?.querySelector?.('.offline-tavern-bubble-footer');
+            if (!footer || !message?.id) return;
+            footer.querySelector('.offline-tavern-bubble-actions')?.remove();
+            footer.insertAdjacentHTML('beforeend', getOfflineTavernActionButtonsHtml(message.role === 'user'));
+            bindOfflineTavernBubbleActions(bubbleDiv, message);
+        };
+
         const renderOfflineTavernBubble = (messageOrText, isUser = true, options = {}) => {
             const contentArea = document.getElementById('offline-tavern-content');
             if (!contentArea) return null;
 
             const friend = window.imData.currentActiveFriend;
-            applyOfflineTavernTheme(friend);
+            if (!options.skipTheme) applyOfflineTavernTheme(friend);
             const rawMessage = messageOrText && typeof messageOrText === 'object'
                 ? messageOrText
                 : { role: isUser ? 'user' : 'assistant', content: String(messageOrText || ''), timestamp: Date.now() };
@@ -2617,13 +2661,7 @@ function createAttachmentSheet(page) {
             const displayText = applyOfflineRegexText(friend, parsedMessage.content, message.role, depth, 'display');
             const displayThinking = rawThinking ? buildOfflineThinkingHtml(rawThinking, false) : '';
 
-            const actionButtonsHtml = actionsDisabled ? '' : `
-                <div class="offline-tavern-bubble-actions">
-                    <button type="button" class="offline-tavern-action-btn" data-offline-action="edit" title="编辑" aria-label="编辑"><i class="fas fa-pen"></i></button>
-                    ${!isUser ? '<button type="button" class="offline-tavern-action-btn" data-offline-action="reroll" title="重回" aria-label="重回"><i class="fas fa-redo"></i></button>' : ''}
-                    <button type="button" class="offline-tavern-action-btn danger" data-offline-action="delete" title="删除" aria-label="删除"><i class="fas fa-trash"></i></button>
-                </div>
-            `;
+            const actionButtonsHtml = getOfflineTavernActionButtonsHtml(isUser, actionsDisabled);
 
             bubbleDiv.innerHTML = `
                 <div class="offline-tavern-bubble-header">
@@ -2650,22 +2688,12 @@ function createAttachmentSheet(page) {
             `;
 
             bindOfflineThinkingToggle(bubbleDiv);
-
-            bubbleDiv.querySelectorAll('[data-offline-action]').forEach((button) => {
-                button.addEventListener('click', async (event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    const action = button.getAttribute('data-offline-action');
-                    if (action === 'edit') await openOfflineMessageEditor(message.id);
-                    if (action === 'delete') await deleteOfflineMessage(message.id);
-                    if (action === 'reroll') await rerollOfflineAssistantMessage(message.id, button);
-                });
-            });
-
+            bindOfflineTavernBubbleActions(bubbleDiv, message);
             bindOfflineTavernTextControls(bubbleDiv, { ...message, content: displayText, reasoning: rawThinking || undefined }, friend, floor);
 
-            contentArea.appendChild(bubbleDiv);
-            contentArea.scrollTop = contentArea.scrollHeight;
+            const container = options.container || contentArea;
+            container.appendChild(bubbleDiv);
+            if (options.scroll !== false && container === contentArea) scrollOfflineTavernToBottom(contentArea);
             return bubbleDiv;
         };
 
@@ -2688,8 +2716,22 @@ function createAttachmentSheet(page) {
             let currentNativeReasoning = String(options.reasoning || '');
             let lastVisibleReasoning = String(options.reasoning || '').trim();
             let generationFinished = false;
+            let renderFrameId = null;
+            let renderTimerId = null;
+            let lastRenderAt = 0;
+
+            const cancelPendingRender = () => {
+                if (renderFrameId !== null && typeof window.cancelAnimationFrame === 'function') {
+                    window.cancelAnimationFrame(renderFrameId);
+                }
+                if (renderTimerId !== null) clearTimeout(renderTimerId);
+                renderFrameId = null;
+                renderTimerId = null;
+            };
 
             const renderStreamingState = () => {
+                const contentArea = document.getElementById('offline-tavern-content');
+                const shouldFollowBottom = isOfflineTavernNearBottom(contentArea);
                 const currentParsed = offlineReasoning
                     ? offlineReasoning.normalizeResponse(currentContent, currentNativeReasoning, { streaming: !generationFinished })
                     : { content: currentContent, reasoning: currentNativeReasoning, incomplete: false };
@@ -2701,46 +2743,74 @@ function createAttachmentSheet(page) {
                     : currentParsed;
                 const activeFriend = window.imData.currentActiveFriend;
                 const depth = Number.isInteger(Number(options.depth)) ? Number(options.depth) : 0;
-                const displayText = applyOfflineStreamingRegexText(activeFriend, parsed.content, message.role, depth);
+                const displayText = generationFinished
+                    ? applyOfflineStreamingRegexText(activeFriend, parsed.content, message.role, depth)
+                    : String(parsed.content || '');
                 renderOfflineThinkingState(bubbleDiv, parsed.reasoning, { expanded: !generationFinished });
                 const textEl = bubbleDiv.querySelector('.offline-tavern-bubble-text');
                 if (textEl) {
                     if (displayText) {
                         textEl.style.display = '';
-                        textEl.innerHTML = buildOfflineTavernTextHtml(displayText, {
-                            messageId: message.id,
-                            enableVoice: !isUser,
-                            enableBarrage: !isUser && isOfflineBarragePromptEnabled(activeFriend),
-                            enableChoices: !isUser && isOfflineChoicesPromptEnabled(activeFriend),
-                            language: activeFriend?.language || 'zh'
-                        });
-                        bindOfflineTavernTextControls(bubbleDiv, { ...message, content: parsed.content, reasoning: parsed.reasoning }, activeFriend, Number(options.floor) || 1);
+                        textEl.classList.toggle('is-streaming', !generationFinished);
+                        if (generationFinished) {
+                            textEl.innerHTML = buildOfflineTavernTextHtml(displayText, {
+                                messageId: message.id,
+                                enableVoice: !isUser,
+                                enableBarrage: !isUser && isOfflineBarragePromptEnabled(activeFriend),
+                                enableChoices: !isUser && isOfflineChoicesPromptEnabled(activeFriend),
+                                language: activeFriend?.language || 'zh'
+                            });
+                            bindOfflineTavernTextControls(bubbleDiv, { ...message, content: parsed.content, reasoning: parsed.reasoning }, activeFriend, Number(options.floor) || 1);
+                        } else {
+                            textEl.textContent = displayText;
+                        }
                     } else {
                         textEl.innerHTML = '';
                         textEl.style.display = 'none';
                     }
                 }
 
-                const contentArea = document.getElementById('offline-tavern-content');
-                if (contentArea) contentArea.scrollTop = contentArea.scrollHeight;
+                if (shouldFollowBottom) scrollOfflineTavernToBottom(contentArea);
                 return parsed;
+            };
+
+            const scheduleStreamingRender = () => {
+                if (renderFrameId !== null || renderTimerId !== null) return;
+                const queueFrame = () => {
+                    renderTimerId = null;
+                    const render = () => {
+                        renderFrameId = null;
+                        renderTimerId = null;
+                        lastRenderAt = Date.now();
+                        renderStreamingState();
+                    };
+                    if (typeof window.requestAnimationFrame === 'function') {
+                        renderFrameId = window.requestAnimationFrame(render);
+                    } else {
+                        renderTimerId = setTimeout(render, 0);
+                    }
+                };
+                const delay = Math.max(0, OFFLINE_STREAM_RENDER_INTERVAL - (Date.now() - lastRenderAt));
+                if (delay > 0) renderTimerId = setTimeout(queueFrame, delay);
+                else queueFrame();
             };
 
             return {
                 appendContentChunk: (chunk) => {
                     currentContent += String(chunk || '');
-                    renderStreamingState();
+                    scheduleStreamingRender();
                 },
                 appendReasoningChunk: (chunk) => {
                     currentNativeReasoning += String(chunk || '');
-                    renderStreamingState();
+                    scheduleStreamingRender();
                 },
                 appendChunk: (chunk) => {
                     currentContent += String(chunk || '');
-                    renderStreamingState();
+                    scheduleStreamingRender();
                 },
                 finish: () => {
                     generationFinished = true;
+                    cancelPendingRender();
                     const parsed = renderStreamingState();
                     return lastVisibleReasoning && !String(parsed.reasoning || '').trim()
                         ? { ...parsed, reasoning: lastVisibleReasoning }
@@ -2753,6 +2823,7 @@ function createAttachmentSheet(page) {
                         metaEl.textContent = `#${Number(options.floor) || 1} · ${safeTokens || estimateOfflineTextTokens(currentContent)} tokens · ${formatOfflineBubbleTime(message.timestamp)}`;
                     }
                 },
+                enableActions: (finalMessage) => enableOfflineTavernBubbleActions(bubbleDiv, finalMessage || message),
                 getResult: () => {
                     const parsed = offlineReasoning
                         ? offlineReasoning.normalizeResponse(currentContent, currentNativeReasoning)
@@ -2767,6 +2838,7 @@ function createAttachmentSheet(page) {
                     currentNativeReasoning = '';
                     lastVisibleReasoning = '';
                     generationFinished = false;
+                    cancelPendingRender();
                     renderStreamingState();
                 }
             };
@@ -2823,19 +2895,24 @@ function createAttachmentSheet(page) {
             contentArea.appendChild(button);
         };
 
-        function renderOfflineCurrentMessages(activeFriend) {
+        function renderOfflineCurrentMessages(activeFriend, options = {}) {
             const contentArea = document.getElementById('offline-tavern-content');
             if (!contentArea || !activeFriend) return;
             contentArea.innerHTML = '';
             const titleEl = document.querySelector('#offline-tavern-view .offline-tavern-title');
             if (titleEl) titleEl.textContent = '线下';
-            renderOfflineHistoryButton(contentArea, activeFriend);
+            applyOfflineTavernTheme(activeFriend);
+            const fragment = document.createDocumentFragment();
+            renderOfflineHistoryButton(fragment, activeFriend);
 
             const messages = normalizeOfflineMessagesForFriend(activeFriend);
             messages.forEach((message, index) => {
                 renderOfflineTavernBubble(message, message.role === 'user', {
                     floor: index + 1,
-                    depth: messages.length - 1 - index
+                    depth: messages.length - 1 - index,
+                    container: fragment,
+                    scroll: false,
+                    skipTheme: true
                 });
             });
 
@@ -2843,9 +2920,10 @@ function createAttachmentSheet(page) {
                 const placeholder = document.createElement('div');
                 placeholder.className = 'offline-tavern-placeholder';
                 placeholder.textContent = '开始一次线下见面';
-                contentArea.appendChild(placeholder);
+                fragment.appendChild(placeholder);
             }
-            contentArea.scrollTop = contentArea.scrollHeight;
+            contentArea.appendChild(fragment);
+            if (options.scroll !== false) scrollOfflineTavernToBottom(contentArea);
         }
 
         function renderOfflineHistoryList(activeFriend) {
@@ -6307,10 +6385,13 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                         return;
                     }
                     const text = inputField.value.trim();
-                    if (!text) return;
-                    
                     const activeFriend = window.imData.currentActiveFriend;
                     if (!activeFriend) return;
+                    if (!text) {
+                        const currentMessages = normalizeOfflineMessagesForFriend(activeFriend);
+                        const lastCurrentMessage = currentMessages[currentMessages.length - 1];
+                        if (lastCurrentMessage?.role !== 'user') return;
+                    }
 
                     // 获取当前 API Config
                     const currentApiConfig = window.getApiConfig ? window.getApiConfig() : (window.apiConfig || {});
@@ -6332,18 +6413,29 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                         sendBtn.innerHTML = '<i class="fas fa-pause"></i>';
                         sendBtn.title = '暂停生成';
                         let pendingAiMessage = null;
+                        let streamingBubble = null;
 
                         try {
                             await ensureOfflineMeetingState(activeFriend);
                             const previousMessages = normalizeOfflineMessagesForFriend(activeFriend);
-                            const userMsg = {
-                                id: createOfflineTavernId('offline-user'),
-                                role: 'user',
-                                content: text,
-                                timestamp: Date.now()
-                            };
-                            const messagesWithUser = await persistOfflineMessages(activeFriend, previousMessages.concat(userMsg));
-                            renderOfflineCurrentMessages(activeFriend);
+                            const lastPreviousMessage = previousMessages[previousMessages.length - 1];
+                            const resumeTrailingUser = !text && lastPreviousMessage?.role === 'user';
+                            if (!text && !resumeTrailingUser) return;
+                            let messagesWithUser = previousMessages;
+                            if (text) {
+                                const userMsg = {
+                                    id: createOfflineTavernId('offline-user'),
+                                    role: 'user',
+                                    content: text,
+                                    timestamp: Date.now()
+                                };
+                                messagesWithUser = await persistOfflineMessages(activeFriend, previousMessages.concat(userMsg));
+                                const persistedUserMsg = messagesWithUser.find(message => String(message.id) === String(userMsg.id)) || userMsg;
+                                renderOfflineTavernBubble(persistedUserMsg, true, {
+                                    floor: messagesWithUser.length,
+                                    depth: 0
+                                });
+                            }
 
                             const aiTimestamp = Date.now();
                             const aiMessageId = createOfflineTavernId('offline-ai');
@@ -6354,7 +6446,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                                 timestamp: aiTimestamp,
                                 tokens: 0
                             };
-                            const streamingBubble = createStreamingBubble('', false, {
+                            streamingBubble = createStreamingBubble('', false, {
                                 id: aiMessageId,
                                 floor: messagesWithUser.length + 1,
                                 timestamp: aiTimestamp,
@@ -6377,11 +6469,12 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                                 reasoning: finalReplyReasoning || undefined,
                                 tokens: Math.max(0, Number(tokens) || 0)
                             };
-                            await persistOfflineMessages(activeFriend, latestMessages.concat(aiMsgObj));
-                            const latestFriendAfterSave = window.imApp?.getFriendById?.(activeFriend.id)
-                                || window.imData?.currentActiveFriend
-                                || activeFriend;
-                            renderOfflineCurrentMessages(latestFriendAfterSave);
+                            if (!String(finalReplyContent || '').trim()) {
+                                renderOfflineCurrentMessages(activeFriend);
+                            } else {
+                                await persistOfflineMessages(activeFriend, latestMessages.concat(aiMsgObj));
+                                streamingBubble.enableActions(aiMsgObj);
+                            }
 
                             if (aborted && window.showToast) {
                                 window.showToast(finalReplyContent ? '已暂停生成' : '已暂停生成，可重回空白楼层');
@@ -6395,19 +6488,25 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                                     const latestMessages = normalizeOfflineMessagesForFriend(activeFriend);
                                     const alreadyPersisted = latestMessages.some(message => String(message.id) === String(pendingAiMessage.id));
                                     if (!alreadyPersisted) {
-                                        const failedMessage = {
-                                            ...pendingAiMessage,
-                                            generationState: 'failed',
-                                            generationError: error?.code === 'reasoning_config_unsupported'
-                                                ? 'reasoning_unsupported'
-                                                : (error?.code === 'reasoning_tokens_exhausted'
-                                                    ? 'reasoning_tokens_exhausted'
-                                                    : (error?.code === 'empty_response' || /empty content/i.test(String(error?.message || ''))
-                                                        ? 'empty_response'
-                                                        : 'request_failed'))
-                                        };
-                                        await persistOfflineMessages(activeFriend, latestMessages.concat(failedMessage));
-                                        renderOfflineCurrentMessages(activeFriend);
+                                        const failedResult = streamingBubble?.getResult?.() || {};
+                                        const failedContent = String(failedResult.content || '');
+                                        if (!failedContent.trim()) {
+                                            renderOfflineCurrentMessages(activeFriend);
+                                        } else {
+                                            const failedMessage = {
+                                                ...pendingAiMessage,
+                                                content: failedContent,
+                                                reasoning: String(failedResult.reasoning || '').trim() || undefined,
+                                                generationState: 'failed',
+                                                generationError: error?.code === 'reasoning_config_unsupported'
+                                                    ? 'reasoning_unsupported'
+                                                    : (error?.code === 'reasoning_tokens_exhausted'
+                                                        ? 'reasoning_tokens_exhausted'
+                                                        : 'request_failed')
+                                            };
+                                            await persistOfflineMessages(activeFriend, latestMessages.concat(failedMessage));
+                                            renderOfflineCurrentMessages(activeFriend);
+                                        }
                                     }
                                 } catch (persistError) {
                                     console.error('Failed to persist offline failure floor:', persistError);
@@ -6432,7 +6531,13 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                             sendBtn.classList.remove('is-generating', 'is-stopping');
                             sendBtn.innerHTML = sendOriginalBtnContent;
                             sendBtn.title = sendOriginalTitle;
-                            setTimeout(() => inputField.focus(), 50);
+                            setTimeout(() => {
+                                try {
+                                    inputField.focus({ preventScroll: true });
+                                } catch (error) {
+                                    inputField.focus();
+                                }
+                            }, 50);
                         }
                     }
                     return;
@@ -6631,6 +6736,8 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                         timestamp: now
                     }, activeFriend);
 
+                    window.imApp.captureGroupUserIdentity?.(activeFriend, packetMsg);
+
                     const saved = window.imApp.appendFriendMessage
                         ? await window.imApp.appendFriendMessage(activeFriend.id, packetMsg, { silent: true })
                         : await commitSheetFriendChange(activeFriend, (targetFriend) => {
@@ -6673,7 +6780,10 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             let targetName = activeFriend.type === 'group'
                 ? (activeFriend.nickname || '群聊')
                 : (activeFriend.nickname || activeFriend.realName || '对方');
-            const senderName = userState?.name || userState?.realName || userState?.nickname || 'User';
+            const groupUserIdentity = isGroupChat && window.imApp?.getGroupUserIdentity
+                ? window.imApp.getGroupUserIdentity(activeFriend)
+                : null;
+            const senderName = groupUserIdentity?.name || userState?.name || userState?.realName || userState?.nickname || 'User';
 
             if (isGroupChat) {
                 const selectedMember = window.imChat.getAvailableGroupRecipients(activeFriend).find(member => String(member.id) === String(selectedRecipientId));
@@ -6713,6 +6823,8 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     content: `[用户转账] ${description} ¥${amount.toFixed(2)}`,
                     timestamp: now
                 };
+
+                window.imApp.captureGroupUserIdentity?.(activeFriend, payMsg);
 
                 const saved = window.imApp.appendFriendMessage
                     ? await window.imApp.appendFriendMessage(activeFriend.id, payMsg, { silent: true })
@@ -7025,19 +7137,13 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                 window.showToast?.('当前聊天状态已失效，请重新进入聊天');
                 return false;
             }
-            if (imageGenerationRuns.has(runKey)) {
+            if (window.imChat.isChatImageGenerationRunning?.(runKey)) {
                 window.showToast?.('这段聊天已有图片正在生成');
                 return false;
             }
-            if (!window.u2ImageGeneration?.generate) {
-                window.showToast?.('生图功能尚未加载，请刷新后重试');
-                return false;
-            }
-
-            imageGenerationRuns.add(runKey);
             window.showToast?.('正在生成图片…');
             try {
-                const result = await window.u2ImageGeneration.generate(prompt, {
+                const result = await window.imChat.generateChatImage(prompt, targetFriend, {
                     referenceImage,
                     charAppearance: promptConfig.charAppearance || '',
                     userAppearance: promptConfig.userAppearance || '',
@@ -7062,8 +7168,6 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                 console.error('Failed to generate chat image', error);
                 window.showToast?.(error?.message || '图片生成失败，请稍后重试');
                 return false;
-            } finally {
-                imageGenerationRuns.delete(runKey);
             }
         }
 
@@ -7138,7 +7242,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                 return;
             }
             const runKey = String(targetFriend.id ?? '');
-            if (imageGenerationRuns.has(runKey)) {
+            if (window.imChat.isChatImageGenerationRunning?.(runKey)) {
                 window.showToast?.('这段聊天已有图片正在生成');
                 return;
             }
@@ -7157,6 +7261,19 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             }
             const supportsCharacterReference = latestTargetFriend.type !== 'group';
             const savedPromptConfig = latestTargetFriend.imagePromptConfig || {};
+            const buildPromptConfig = (modalState = {}, previous = savedPromptConfig) => ({
+                ...(previous && typeof previous === 'object' ? previous : {}),
+                charAppearance: String(modalState.charAppearance || '').trim(),
+                userAppearance: String(modalState.userAppearance || '').trim(),
+                artistPrompt: String(modalState.artistPrompt || '').trim(),
+                negativePrompt: String(modalState.negativePrompt || '').trim(),
+                lastPrompt: String(modalState.promptValue || '').trim(),
+                activePresetId: String(modalState.activePresetId || '').trim(),
+                autoGenerate: modalState.autoGenerate === true,
+                presets: Array.isArray(modalState.presets)
+                    ? modalState.presets
+                    : (Array.isArray(previous?.presets) ? previous.presets : [])
+            });
             showModal({
                 type: 'prompt',
                 title: '生成图片',
@@ -7171,6 +7288,9 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     userAppearance: savedPromptConfig.userAppearance || '',
                     artistPrompt: savedPromptConfig.artistPrompt || '',
                     negativePrompt: savedPromptConfig.negativePrompt || '',
+                    presets: Array.isArray(savedPromptConfig.presets) ? savedPromptConfig.presets : [],
+                    activePresetId: savedPromptConfig.activePresetId || '',
+                    autoGenerate: savedPromptConfig.autoGenerate === true,
                     onGenerateFromContext: () => generateImagePromptFromChatContext(latestTargetFriend)
                 },
                 referenceFace: supportsCharacterReference ? {
@@ -7228,13 +7348,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     }
                 } : null,
                 onCancel: (modalState = {}) => {
-                    const promptConfig = {
-                        charAppearance: String(modalState.charAppearance || '').trim(),
-                        userAppearance: String(modalState.userAppearance || '').trim(),
-                        artistPrompt: String(modalState.artistPrompt || '').trim(),
-                        negativePrompt: String(modalState.negativePrompt || '').trim(),
-                        lastPrompt: String(modalState.promptValue || '').trim()
-                    };
+                    const promptConfig = buildPromptConfig(modalState);
                     commitSheetFriendChange(targetFriend, (friend) => {
                         friend.imagePromptConfig = promptConfig;
                     }, { metaOnly: true, silent: true });
@@ -7245,13 +7359,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                         window.showToast?.('请输入生图提示词');
                         return false;
                     }
-                    const promptConfig = {
-                        charAppearance: String(modalState.charAppearance || '').trim(),
-                        userAppearance: String(modalState.userAppearance || '').trim(),
-                        artistPrompt: String(modalState.artistPrompt || '').trim(),
-                        negativePrompt: String(modalState.negativePrompt || '').trim(),
-                        lastPrompt: prompt
-                    };
+                    const promptConfig = buildPromptConfig({ ...modalState, promptValue: prompt });
                     (async () => {
                         const saved = await commitSheetFriendChange(targetFriend, (friend) => {
                             friend.imagePromptConfig = promptConfig;
@@ -7268,6 +7376,22 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                         );
                     })();
                     return true;
+                },
+                onSavePreset: async ({ presets, activePresetId, preset }) => {
+                    const promptConfig = {
+                        ...savedPromptConfig,
+                        charAppearance: preset.charAppearance,
+                        userAppearance: preset.userAppearance,
+                        artistPrompt: preset.artistPrompt,
+                        negativePrompt: preset.negativePrompt,
+                        lastPrompt: preset.prompt,
+                        presets,
+                        activePresetId
+                    };
+                    const saved = await commitSheetFriendChange(targetFriend, (friend) => {
+                        friend.imagePromptConfig = promptConfig;
+                    }, { metaOnly: true, silent: true });
+                    if (!saved) throw new Error('提示词预设保存失败，请重试');
                 }
             });
         });
@@ -7319,6 +7443,8 @@ async function sendImageMessage(imgUrl, description, options = {}) {
             senderAvatarAssetId: options.senderAvatarAssetId || '',
             timestamp: now
         };
+
+        window.imApp.captureGroupUserIdentity?.(friend, msgObj);
 
         const saved = window.imApp.appendFriendMessage
             ? await window.imApp.appendFriendMessage(friend.id, msgObj, { silent: true })
@@ -7372,6 +7498,8 @@ async function sendStickerMessage(sticker) {
             timestamp: now
         };
 
+        window.imApp.captureGroupUserIdentity?.(friend, msgObj);
+
         const saved = window.imApp.appendFriendMessage
             ? await window.imApp.appendFriendMessage(friend.id, msgObj, { silent: true })
             : await commitSheetFriendChange(friend, (targetFriend) => {
@@ -7416,6 +7544,8 @@ async function sendVoiceMessage(transcript) {
             duration,
             timestamp: now
         };
+
+        window.imApp.captureGroupUserIdentity?.(friend, msgObj);
 
         const saved = window.imApp.appendFriendMessage
             ? await window.imApp.appendFriendMessage(friend.id, msgObj, { silent: true })

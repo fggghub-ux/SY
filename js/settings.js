@@ -71,6 +71,8 @@
             accounts: clonePlainData(accounts),
             currentAccountId,
             apiConfig: clonePlainData(apiConfig),
+            vectorMemoryConfig: clonePlainData(vectorMemoryConfig),
+            visionConfig: clonePlainData(visionConfig),
             imageGenerationConfig: clonePlainData(imageGenerationConfig),
             minimaxConfig: clonePlainData(minimaxConfig),
             apiPresets: clonePlainData(apiPresets),
@@ -89,14 +91,21 @@
     // API Configuration State
     // ==========================================
     let apiConfig = {
+        provider: 'openai-compatible',
         endpoint: '',
         apiKey: '',
         model: '',
         temperature: 0.7,
     };
+    let vectorMemoryConfig = window.getVectorMemoryConfig
+        ? window.getVectorMemoryConfig()
+        : (window.vectorMemoryConfig || {});
     let imageGenerationConfig = window.u2ImageGeneration
         ? window.u2ImageGeneration.normalizeConfig(window.imageGenerationConfig)
         : (window.imageGenerationConfig || { activeProvider: 'gemini', providers: {} });
+    let visionConfig = window.u2ImageUnderstanding
+        ? window.u2ImageUnderstanding.normalizeConfig(window.visionConfig)
+        : (window.getVisionConfig ? window.getVisionConfig() : (window.visionConfig || { activeProvider: 'gemini', providers: {} }));
     let minimaxConfig = {
         region: 'cn',
         customEndpointEnabled: false,
@@ -132,7 +141,7 @@
     // Theme Configuration State
     // ==========================================
     const DEFAULT_SYSTEM_THEME_FONT_FAMILY = 'system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
-    const IMESSAGE_CSS_THEME_TYPES = ['bubble', 'chat', 'status'];
+    const IMESSAGE_CSS_THEME_TYPES = ['bubble', 'chat', 'group', 'status'];
     const BUILTIN_THEME_FONTS = [
         {
             key: 'system-default',
@@ -145,6 +154,7 @@
 
     let themeState = {
         bgUrl: null,
+        uiChineseEnabled: false,
         apps: [
             { id: 'app-icon-1', name: 'Pay', icon: null },
             { id: 'app-icon-2', name: 'TikTok', icon: null },
@@ -171,10 +181,13 @@
         imessageCssPresets: {
             bubble: [],
             chat: [],
+            group: [],
             status: []
         },
         imessageChatCssEnabled: false,
-        imessageChatCss: ''
+        imessageChatCss: '',
+        imessageGroupCssEnabled: false,
+        imessageGroupCss: ''
     };
     window.u2ThemeState = themeState;
     let themeFontRuntimeReady = false;
@@ -199,14 +212,20 @@
             apiConfig = window.u2Api.sanitizeApiConfig(apiConfig);
             if (apiConfig.endpoint) {
                 try {
-                    apiConfig.endpoint = window.u2Api.resolveChatCompletionsEndpoint(apiConfig.endpoint);
+                    apiConfig.endpoint = window.u2Api.normalizeApiEndpoint(apiConfig.endpoint, apiConfig.provider);
                 } catch (error) {
                     console.warn('Saved API endpoint is invalid:', error);
                 }
             }
+            vectorMemoryConfig = window.u2Api?.normalizeVectorMemoryConfig
+                ? window.u2Api.normalizeVectorMemoryConfig(savedSettings.vectorMemoryConfig || vectorMemoryConfig)
+                : { ...vectorMemoryConfig, ...(savedSettings.vectorMemoryConfig || {}) };
             imageGenerationConfig = window.u2ImageGeneration
                 ? window.u2ImageGeneration.normalizeConfig(savedSettings.imageGenerationConfig || imageGenerationConfig)
                 : (savedSettings.imageGenerationConfig || imageGenerationConfig);
+            visionConfig = window.u2ImageUnderstanding
+                ? window.u2ImageUnderstanding.normalizeConfig(savedSettings.visionConfig || visionConfig)
+                : (savedSettings.visionConfig || visionConfig);
             minimaxConfig = { ...minimaxConfig, ...(savedSettings.minimaxConfig || {}) };
             apiPresets = Array.isArray(savedSettings.apiPresets) ? savedSettings.apiPresets : [];
             fetchedModels = Array.isArray(savedSettings.fetchedModels) ? savedSettings.fetchedModels : [];
@@ -250,6 +269,7 @@
                 }
                 themeState = { ...themeState, ...savedThemeState };
             }
+            themeState.uiChineseEnabled = themeState.uiChineseEnabled === true;
             themeState.imessageCssPresets = normalizeImessageCssPresets(themeState.imessageCssPresets);
 
             // Move the old generic-key presets into the durable settings domain once.
@@ -268,11 +288,17 @@
             applySavedTheme();
         }
 
+        themeState.uiChineseEnabled = themeState.uiChineseEnabled === true;
+        window.u2ThemeState = themeState;
+        window.u2UiTranslation?.setEnabled(themeState.uiChineseEnabled);
+
         if (migratedImessageCssPresets) {
             await persistSettingsData();
         }
         // Expose globally for other modules if needed
         window.apiConfig = apiConfig;
+        window.vectorMemoryConfig = vectorMemoryConfig;
+        window.visionConfig = visionConfig;
         window.imageGenerationConfig = imageGenerationConfig;
         if (window.u2MinimaxTts && typeof window.u2MinimaxTts.setConfig === 'function') {
             minimaxConfig = window.u2MinimaxTts.setConfig({ ...(window.u2MinimaxTts.DEFAULT_CONFIG || {}), ...minimaxConfig });
@@ -281,6 +307,9 @@
         }
         window.userState = userState;
         exposeAccountGlobals();
+        // Modules such as Moments may initialize before Settings in the storage queue.
+        // Notify them after the durable Apple ID profile has been restored.
+        notifyUserStateUpdated({ avatarChanged: true, source: 'settings-hydration' });
 
         // ==========================================
         // UI DOM Elements Mapping
@@ -303,6 +332,8 @@
             detailAvatarIcon: document.querySelector('#user-detail-avatar-wrapper .fa-user'),
             
             // API Config Inputs
+            apiProvider: document.getElementById('api-provider-select'),
+            apiProviderHint: document.getElementById('api-provider-hint'),
             apiEndpoint: document.getElementById('api-endpoint-input'),
             apiKey: document.getElementById('api-key-input'),
             apiModel: document.getElementById('api-model-select'),
@@ -311,11 +342,27 @@
             apiModelSearch: document.getElementById('api-model-search-input'),
             apiModelList: document.getElementById('api-model-list'),
             apiTemp: document.getElementById('api-temp-input'),
+            vectorMemoryEnabled: document.getElementById('vector-memory-enabled-toggle'),
+            vectorMemoryProvider: document.getElementById('vector-memory-provider-select'),
+            vectorMemoryEndpoint: document.getElementById('vector-memory-endpoint-input'),
+            vectorMemoryApiKey: document.getElementById('vector-memory-api-key-input'),
+            vectorMemoryModel: document.getElementById('vector-memory-model-select'),
+            vectorMemoryCustomModel: document.getElementById('vector-memory-custom-model-input'),
+            vectorMemoryCustomModelRow: document.getElementById('vector-memory-custom-model-row'),
+            vectorMemoryCustomEndpointRow: document.getElementById('vector-memory-custom-endpoint-row'),
+            vectorMemoryIndexStatus: document.getElementById('vector-memory-index-status'),
+            visionProvider: document.getElementById('vision-provider-select'),
+            visionEndpoint: document.getElementById('vision-endpoint-input'),
+            visionApiKey: document.getElementById('vision-key-input'),
+            visionModel: document.getElementById('vision-model-input'),
+            visionModelSelect: document.getElementById('vision-model-select'),
+            visionKeyLabel: document.getElementById('vision-key-label'),
+            visionEndpointHint: document.getElementById('vision-endpoint-hint'),
             imageProvider: document.getElementById('image-generation-provider-select'),
             imageEndpoint: document.getElementById('image-generation-endpoint-input'),
             imageApiKey: document.getElementById('image-generation-key-input'),
             imageModel: document.getElementById('image-generation-model-input'),
-            imageModelOptions: document.getElementById('image-generation-model-options'),
+            imageModelSelect: document.getElementById('image-generation-model-select'),
             imageSize: document.getElementById('image-generation-size-select'),
             imageKeyLabel: document.getElementById('image-generation-key-label'),
             imageEndpointHint: document.getElementById('image-generation-endpoint-hint'),
@@ -342,6 +389,8 @@
         UI.lists.presets = document.getElementById('preset-list');
         
         UI.overlays.apiConfig = document.getElementById('api-config-sheet');
+        UI.overlays.vectorMemoryConfig = document.getElementById('vector-memory-config-sheet');
+        UI.overlays.visionConfig = document.getElementById('vision-config-sheet');
         UI.overlays.imageGenerationConfig = document.getElementById('image-generation-config-sheet');
         UI.overlays.minimaxConfig = document.getElementById('minimax-config-sheet');
         UI.overlays.savePreset = document.getElementById('save-preset-name-sheet');
@@ -367,11 +416,33 @@
             closeView(UI.overlays.apiConfig);
         }
 
+        function closeVectorMemoryConfigSheet() {
+            closeView(UI.overlays.vectorMemoryConfig);
+        }
+
         if (UI.overlays.apiConfig) {
             UI.overlays.apiConfig.addEventListener('click', (event) => {
                 if (event.target === UI.overlays.apiConfig) {
                     event.stopPropagation();
                     closeApiConfigSheet();
+                }
+            });
+        }
+
+        if (UI.overlays.vectorMemoryConfig) {
+            UI.overlays.vectorMemoryConfig.addEventListener('click', (event) => {
+                if (event.target === UI.overlays.vectorMemoryConfig) {
+                    event.stopPropagation();
+                    closeVectorMemoryConfigSheet();
+                }
+            });
+        }
+
+        if (UI.overlays.visionConfig) {
+            UI.overlays.visionConfig.addEventListener('click', (event) => {
+                if (event.target === UI.overlays.visionConfig) {
+                    event.stopPropagation();
+                    closeView(UI.overlays.visionConfig);
                 }
             });
         }
@@ -793,7 +864,7 @@
                 UI.inputs.detailAvatarImg.src = '';
             }
         }
-        
+
         // Make syncUIs globally aware of the loaded userState
         const originalSyncUIs = window.syncUIs;
         window.syncUIs = function() {
@@ -904,6 +975,33 @@
         const themeConfigBackBtn = document.getElementById('theme-config-back-btn');
         const themeCurrentApplyBtn = document.getElementById('theme-current-apply-btn');
         const desktopThemeConfigSheet = document.getElementById('desktop-theme-config-sheet');
+        const globalUiTranslationToggle = document.getElementById('global-ui-translation-toggle');
+
+        function syncGlobalUiTranslationToggle() {
+            if (globalUiTranslationToggle) globalUiTranslationToggle.checked = themeState.uiChineseEnabled === true;
+        }
+
+        async function setGlobalUiTranslationEnabled(nextEnabled, { persist = true } = {}) {
+            themeState.uiChineseEnabled = nextEnabled === true;
+            window.u2ThemeState = themeState;
+            window.u2UiTranslation?.setEnabled(themeState.uiChineseEnabled);
+            applyThemeAppIcons(themeState);
+            renderThemeAppList();
+            syncGlobalUiTranslationToggle();
+            return persist ? saveGlobalData() : true;
+        }
+
+        syncGlobalUiTranslationToggle();
+
+        if (globalUiTranslationToggle) {
+            globalUiTranslationToggle.addEventListener('change', async () => {
+                const enabled = globalUiTranslationToggle.checked;
+                const persisted = await setGlobalUiTranslationEnabled(enabled);
+                showToast(persisted
+                    ? (enabled ? '全局 UI 已切换为中文' : '全局 UI 已恢复英文')
+                    : '全局翻译保存失败，当前效果未持久化');
+            });
+        }
 
         async function applySavedTheme() {
             window.u2ThemeState = themeState;
@@ -911,6 +1009,9 @@
             applyThemeAppIcons(themeState);
             if (window.imApp && window.imApp.applyGlobalChatCss) {
                 window.imApp.applyGlobalChatCss(themeState);
+            }
+            if (window.imApp && window.imApp.applyGlobalGroupCss) {
+                window.imApp.applyGlobalGroupCss(themeState);
             }
             if (themeFontRuntimeReady) await applyThemeFont(themeState);
         }
@@ -933,6 +1034,9 @@
             const chatCssInput = document.getElementById('theme-chat-css-input');
             if (chatCssInput) chatCssInput.value = themeState.imessageChatCss || '';
 
+            const groupCssInput = document.getElementById('theme-group-css-input');
+            if (groupCssInput) groupCssInput.value = themeState.imessageGroupCss || '';
+
             const statusCssInput = document.getElementById('theme-status-css-input');
             if (statusCssInput) statusCssInput.value = window.imData?.currentSettingsFriend?.statusCss || '';
 
@@ -944,8 +1048,21 @@
             const activeTab = document.querySelector('.im-theme-tabs .theme-tab.active');
             const targetId = activeTab?.getAttribute('data-target') || 'theme-tab-bubble';
             if (targetId === 'theme-tab-chat') return 'chat';
+            if (targetId === 'theme-tab-group') return 'group';
             if (targetId === 'theme-tab-status') return 'status';
             return 'bubble';
+        }
+
+        if (themeConfigSheet && window.mobileInputCompat?.registerFocusScope) {
+            window.mobileInputCompat.registerFocusScope({
+                selector: '#theme-config-sheet',
+                preferFocusScope: true,
+                resolveScrollContainer: (target, root) => root.querySelector('.im-theme-content'),
+                scrollBehavior: 'focus',
+                viewportClassName: 'u2-android-theme-viewport-sized',
+                viewportHeightCssVariable: '--u2-android-theme-viewport-height',
+                viewportTopCssVariable: '--u2-android-theme-viewport-top'
+            });
         }
 
         async function applyCurrentThemeCss() {
@@ -963,6 +1080,21 @@
                 showToast(persisted
                     ? (nextChatCss.trim() ? 'Chat CSS 已应用' : 'Chat CSS 已清空')
                     : 'Chat CSS 保存失败，当前效果未持久化');
+                return;
+            }
+
+            if (activeType === 'group') {
+                const nextGroupCss = themeGroupCssInput ? themeGroupCssInput.value : '';
+                themeState.imessageGroupCss = nextGroupCss;
+                themeState.imessageGroupCssEnabled = !!nextGroupCss.trim();
+                window.u2ThemeState = themeState;
+                if (window.imApp && window.imApp.applyGlobalGroupCss) {
+                    window.imApp.applyGlobalGroupCss(themeState);
+                }
+                const persisted = await saveGlobalData();
+                showToast(persisted
+                    ? (nextGroupCss.trim() ? 'Group CSS 已应用' : 'Group CSS 已清空')
+                    : 'Group CSS 保存失败，当前效果未持久化');
                 return;
             }
 
@@ -1079,17 +1211,87 @@
         
         const themeChatCssInput = document.getElementById('theme-chat-css-input');
         const themeChatClearBtn = document.getElementById('theme-chat-clear-btn');
+        const themeGroupCssInput = document.getElementById('theme-group-css-input');
+        const themeGroupClearBtn = document.getElementById('theme-group-clear-btn');
+        const themeGroupCopyBtn = document.getElementById('theme-group-copy-btn');
         const themeChatSaveBtn = document.getElementById('theme-chat-save-btn');
         const themeChatPresetName = document.getElementById('theme-chat-preset-name');
         const themeChatPresetList = document.getElementById('theme-chat-preset-list');
+        const themeGroupSaveBtn = document.getElementById('theme-group-save-btn');
+        const themeGroupPresetName = document.getElementById('theme-group-preset-name');
+        const themeGroupPresetList = document.getElementById('theme-group-preset-list');
         
         const themeStatusCssInput = document.getElementById('theme-status-css-input');
         const themeStatusClearBtn = document.getElementById('theme-status-clear-btn');
         const themeStatusSaveBtn = document.getElementById('theme-status-save-btn');
         const themeStatusPresetName = document.getElementById('theme-status-preset-name');
         const themeStatusPresetList = document.getElementById('theme-status-preset-list');
+        const themeCssImportInput = document.getElementById('theme-css-import-input');
+        const themeCssImportButtons = document.querySelectorAll('[data-theme-import-type]');
+        let pendingThemeCssImportType = '';
         
         const themeBubblePresetList = document.getElementById('theme-bubble-preset-list');
+
+        function getThemeCssInput(type = getActiveThemeType()) {
+            if (type === 'chat') return themeChatCssInput;
+            if (type === 'group') return themeGroupCssInput;
+            if (type === 'status') return themeStatusCssInput;
+            return themeBubbleCssInput;
+        }
+
+        async function readThemeCssImportFile(file) {
+            const lowerName = String(file?.name || '').toLowerCase();
+            if (!lowerName.endsWith('.txt') && !lowerName.endsWith('.docx')) {
+                throw new Error('仅支持 TXT 和 DOCX 文件');
+            }
+
+            let text = '';
+            if (lowerName.endsWith('.docx')) {
+                await window.u2LoadVendorLibrary?.('mammoth');
+                if (!window.mammoth?.extractRawText) {
+                    throw new Error('DOCX 解析组件未加载，请检查网络后重试');
+                }
+                const result = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+                text = String(result?.value || '');
+            } else {
+                text = String(await file.text());
+            }
+
+            const normalized = text.replace(/\r\n?/g, '\n').replace(/\u0000/g, '');
+            if (!normalized.trim()) throw new Error('文件内容为空');
+            return normalized;
+        }
+
+        if (themeCssImportInput && themeCssImportButtons.length) {
+            themeCssImportButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    pendingThemeCssImportType = button.getAttribute('data-theme-import-type') || getActiveThemeType();
+                    themeCssImportInput.click();
+                });
+            });
+
+            themeCssImportInput.addEventListener('change', async () => {
+                const file = themeCssImportInput.files?.[0];
+                const targetType = pendingThemeCssImportType || getActiveThemeType();
+                pendingThemeCssImportType = '';
+                themeCssImportInput.value = '';
+                if (!file) return;
+
+                try {
+                    const importedCss = await readThemeCssImportFile(file);
+                    const cssInput = getThemeCssInput(targetType);
+                    if (!cssInput) throw new Error('未找到 CSS 编辑器');
+                    if (cssInput.value.trim() && !window.confirm('导入内容会替换当前未应用的 CSS，确定继续吗？')) return;
+
+                    cssInput.value = importedCss;
+                    cssInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    showToast('CSS 已导入，请确认后点击应用');
+                } catch (error) {
+                    console.error('Failed to import Theme CSS', error);
+                    showToast(error?.message || 'CSS 导入失败');
+                }
+            });
+        }
         
         // --- 新增的“主题美化”模块变量 ---
         const chatThemeBeautifyToggle = document.getElementById('chat-theme-beautify-toggle');
@@ -1159,6 +1361,20 @@
                 }
                 const persisted = await saveGlobalData();
                 showToast(persisted ? 'Chat CSS cleared' : 'Chat CSS 保存失败，当前效果未持久化');
+            });
+        }
+
+        if (themeGroupClearBtn) {
+            themeGroupClearBtn.addEventListener('click', async () => {
+                themeState.imessageGroupCss = '';
+                themeState.imessageGroupCssEnabled = false;
+                window.u2ThemeState = themeState;
+                if (themeGroupCssInput) themeGroupCssInput.value = '';
+                if (window.imApp && window.imApp.applyGlobalGroupCss) {
+                    window.imApp.applyGlobalGroupCss(themeState);
+                }
+                const persisted = await saveGlobalData();
+                showToast(persisted ? 'Group CSS cleared' : 'Group CSS 保存失败，当前效果未持久化');
             });
         }
 
@@ -2184,6 +2400,75 @@
             });
         }
 
+        if (themeGroupCopyBtn) {
+            themeGroupCopyBtn.addEventListener('click', () => {
+                const groupTemplate = `/* iMessage Group CSS source
+   Runtime root: .active-chat-interface.im-chat-group
+   In this editor, :scope represents that group-chat root only. */
+
+:scope {
+  --group-chat-bg: #ffffff;
+  --group-chat-header-bg: #ffffff;
+  --group-chat-input-bg: #ffffff;
+  --group-chat-accent: #007aff;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--group-chat-bg);
+}
+
+:scope .chat-sticky-container.is-group {
+  background: var(--group-chat-header-bg);
+  border-bottom: 1px solid #e5e5ea;
+  z-index: 20;
+}
+
+:scope .im-chat-group-title-wrap { color: #111; }
+:scope .group-header-right-avatar { border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.16); }
+:scope .ins-chat-messages { flex: 1; min-height: 0; background: transparent; }
+:scope .ins-chat-input-container { background: var(--group-chat-input-bg); border-top: 1px solid #e5e5ea; }
+
+:scope .group-ai-bubble-wrap { display: flex; align-items: flex-end; gap: 8px; }
+:scope .group-ai-speaker-name { color: #6d6d72; font-size: 12px; }
+:scope .group-ai-bubble-row { align-items: flex-end; }
+:scope .group-ai-avatar-slot { width: 34px; height: 34px; }
+:scope .group-ai-avatar-placeholder { background: #e5e5ea; color: #6d6d72; }
+
+:scope .group-poll-card { width: min(232px, 64vw); border: 1px solid #e5e5ea; background: #fff; }
+:scope .group-poll-card-head { padding: 13px 14px 8px; }
+:scope .group-poll-card-kicker { color: var(--group-chat-accent); }
+:scope .group-poll-card-title { color: #111; }
+:scope .group-poll-card-options { padding: 0 10px; }
+:scope .group-poll-card-option { border-color: #e5e5ea; }
+:scope .group-poll-card-option.is-user-selected { border-color: var(--group-chat-accent); }
+:scope .group-poll-radio { border-color: #8e8e93; }
+:scope .group-poll-card-option.is-user-selected .group-poll-radio { border-color: var(--group-chat-accent); }
+:scope .group-poll-voters, :scope .group-poll-voter { color: #6d6d72; }
+:scope .group-poll-card-footer { color: #8e8e93; }
+
+:scope .group-red-packet-card, :scope .group-red-packet-bubble { background: #fa9d3b; color: #fff; }
+:scope .group-red-packet-card .group-red-packet-amount { color: #fff7dd; }
+:scope .group-red-packet-card .group-red-packet-footer { color: rgba(255,255,255,.72); }
+
+:scope .chat-system-row .system-notice-card,
+:scope .group-system-notice-card,
+:scope .system-notice-group_join,
+:scope .system-notice-group_left,
+:scope .system-notice-red_packet_claim { background: rgba(142,142,147,.14); color: #6d6d72; }
+:scope .group-private-chat-view-link { color: var(--group-chat-accent); }
+`;
+                navigator.clipboard.writeText(groupTemplate).then(() => {
+                    if (window.showToast) window.showToast('已复制 Group CSS 源码');
+                }).catch(err => {
+                    console.error('Copy failed', err);
+                    if (window.showToast) window.showToast('复制失败');
+                });
+            });
+        }
+
         if (themeStatusCopyBtn) {
             themeStatusCopyBtn.addEventListener('click', () => {
                 const statusTemplate = `/* iMessage 真实状态栏/资料卡源码
@@ -2586,6 +2871,7 @@
         }
 
         function getCurrentFriendThemeCss(friend, type) {
+            if (type === 'group') return themeState.imessageGroupCssEnabled ? (themeState.imessageGroupCss || '') : '';
             if (!friend) return '';
             if (type === 'bubble') return friend.customCssEnabled ? (friend.customCss || '') : '';
             if (type === 'chat') return friend.chatCssEnabled ? (friend.chatCss || '') : '';
@@ -2670,6 +2956,7 @@
             updatePresetSelect('status', chatThemeStatusSelect, getCurrentFriendThemeCss(friend, 'status'));
             renderThemePresetList('bubble', themeBubblePresetList, chatThemeBubbleSelect, themeBubbleCssInput);
             renderThemePresetList('chat', themeChatPresetList, chatThemeChatSelect, themeChatCssInput);
+            renderThemePresetList('group', themeGroupPresetList, null, themeGroupCssInput);
             renderThemePresetList('status', themeStatusPresetList, chatThemeStatusSelect, themeStatusCssInput);
         }
 
@@ -2679,6 +2966,7 @@
                     let cssInput;
                     if (type === 'bubble') cssInput = themeBubbleCssInput;
                     else if (type === 'chat') cssInput = themeChatCssInput;
+                    else if (type === 'group') cssInput = themeGroupCssInput;
                     else if (type === 'status') cssInput = themeStatusCssInput;
 
                     const name = nameInput ? nameInput.value.trim() : '';
@@ -2720,6 +3008,7 @@
 
         setupPresetLogic('bubble', themeBubbleSaveBtn, themeBubblePresetName, chatThemeBubbleSelect, themeBubblePresetList, themeBubbleCssInput);
         setupPresetLogic('chat', themeChatSaveBtn, themeChatPresetName, chatThemeChatSelect, themeChatPresetList, themeChatCssInput);
+        setupPresetLogic('group', themeGroupSaveBtn, themeGroupPresetName, null, themeGroupPresetList, themeGroupCssInput);
         setupPresetLogic('status', themeStatusSaveBtn, themeStatusPresetName, chatThemeStatusSelect, themeStatusPresetList, themeStatusCssInput);
         window.imApp = window.imApp || {};
         window.imApp.refreshChatThemePresetUi = refreshThemePresetUi;
@@ -3014,6 +3303,9 @@
         
             themeState.apps.forEach((app, index) => {
                 const item = document.createElement('div');
+                const appDisplayName = window.u2UiTranslation?.getAppName
+                    ? window.u2UiTranslation.getAppName(app)
+                    : app.name;
                 item.className = 'form-item';
                 item.style.padding = '8px 16px';
                 item.style.height = '60px';
@@ -3032,7 +3324,7 @@
                 item.innerHTML = `
                     <div style="display: flex; align-items: center; flex: 1;">
                         ${iconHtml}
-                        <div style="margin-left: 12px; font-size: 16px; font-weight: 500; color: #000;">${app.name}</div>
+                        <div style="margin-left: 12px; font-size: 16px; font-weight: 500; color: #000;">${appDisplayName}</div>
                     </div>
                     <div style="display: flex; gap: 8px;">
                         <div class="reset-single-app-btn" style="width: 32px; height: 32px; border-radius: 50%; background: #ffebee; color: #ff3b30; display: flex; justify-content: center; align-items: center; cursor: pointer;">
@@ -3083,7 +3375,11 @@
             const nameEl = appItem ? appItem.querySelector('.app-name') : el.querySelector('.app-name');
         
             if (nameEl && app.name) {
-                nameEl.textContent = app.name;
+                if (window.u2UiTranslation?.applyAppName) {
+                    window.u2UiTranslation.applyAppName(nameEl, app);
+                } else {
+                    nameEl.textContent = app.name;
+                }
             }
         
             if (!iconDiv) return;
@@ -3229,6 +3525,7 @@
             '.fa-brands',
             '#theme-bubble-css-input',
             '#theme-chat-css-input',
+            '#theme-group-css-input',
             '#theme-status-css-input',
             '#bubble-css-input',
             '#status-css-input',
@@ -3722,7 +4019,7 @@
             body :where(i, .fa, .fas, .far, .fab, .fal, .fa-solid, .fa-regular, .fa-brands)::before {
                 font-family: "Font Awesome 6 Free", "Font Awesome 6 Brands" !important;
             }
-            body :where(#theme-bubble-css-input, #theme-chat-css-input, #theme-status-css-input, #bubble-css-input, #status-css-input, textarea[placeholder*="CSS"], textarea[placeholder*="css"]) {
+            body :where(#theme-bubble-css-input, #theme-chat-css-input, #theme-group-css-input, #theme-status-css-input, #bubble-css-input, #status-css-input, textarea[placeholder*="CSS"], textarea[placeholder*="css"]) {
                 font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace !important;
                 font-size: 13px !important;
             }`.trim();
@@ -4124,6 +4421,107 @@
             return persistSettingsData();
         }
 
+        function normalizeVectorMemoryConfig(value) {
+            if (window.u2Api?.normalizeVectorMemoryConfig) {
+                return window.u2Api.normalizeVectorMemoryConfig(value);
+            }
+            const source = value && typeof value === 'object' ? value : {};
+            return {
+                enabled: source.enabled === true,
+                provider: String(source.provider || 'siliconflow').trim(),
+                endpoint: String(source.endpoint || '').trim(),
+                apiKey: String(source.apiKey || '').trim(),
+                model: String(source.model || '').trim()
+            };
+        }
+
+        function getVectorMemoryProviders() {
+            return window.u2Api?.VECTOR_MEMORY_PROVIDERS || window.imVectorMemory?.PROVIDERS || {};
+        }
+
+        function getVectorMemoryProviderMeta(provider) {
+            const providers = getVectorMemoryProviders();
+            return providers[provider] || providers.siliconflow || { defaultModel: '', models: [] };
+        }
+
+        function getSelectedVectorMemoryModel() {
+            const selected = String(UI.inputs.vectorMemoryModel?.value || '').trim();
+            return selected === '__custom__'
+                ? String(UI.inputs.vectorMemoryCustomModel?.value || '').trim()
+                : selected;
+        }
+
+        function getVectorMemoryConfigDraft() {
+            return normalizeVectorMemoryConfig({
+                enabled: !!UI.inputs.vectorMemoryEnabled?.checked,
+                provider: String(UI.inputs.vectorMemoryProvider?.value || 'siliconflow').trim(),
+                endpoint: String(UI.inputs.vectorMemoryEndpoint?.value || '').trim(),
+                apiKey: String(UI.inputs.vectorMemoryApiKey?.value || '').trim(),
+                model: getSelectedVectorMemoryModel()
+            });
+        }
+
+        function renderVectorMemoryModelOptions(selectedConfig = vectorMemoryConfig, preferredModel = '') {
+            const select = UI.inputs.vectorMemoryModel;
+            if (!select) return;
+            const provider = String(selectedConfig?.provider || UI.inputs.vectorMemoryProvider?.value || 'siliconflow');
+            const providerMeta = getVectorMemoryProviderMeta(provider);
+            const selectedModel = String(preferredModel || selectedConfig?.model || providerMeta.defaultModel || '').trim();
+            const models = Array.isArray(providerMeta.models) ? providerMeta.models.map(String).filter(Boolean) : [];
+            select.replaceChildren();
+
+            models.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                select.append(option);
+            });
+
+            const customOption = document.createElement('option');
+            customOption.value = '__custom__';
+            customOption.textContent = '自定义模型';
+            select.append(customOption);
+
+            const usesCustomModel = !models.includes(selectedModel);
+            select.value = usesCustomModel ? '__custom__' : selectedModel;
+            if (UI.inputs.vectorMemoryCustomModel) {
+                UI.inputs.vectorMemoryCustomModel.value = usesCustomModel ? selectedModel : '';
+            }
+            if (UI.inputs.vectorMemoryCustomModelRow) {
+                UI.inputs.vectorMemoryCustomModelRow.hidden = !usesCustomModel;
+            }
+        }
+
+        function syncVectorMemoryConfigInputs() {
+            const config = normalizeVectorMemoryConfig(vectorMemoryConfig);
+            if (UI.inputs.vectorMemoryEnabled) UI.inputs.vectorMemoryEnabled.checked = config.enabled;
+            if (UI.inputs.vectorMemoryProvider) UI.inputs.vectorMemoryProvider.value = config.provider;
+            if (UI.inputs.vectorMemoryEndpoint) UI.inputs.vectorMemoryEndpoint.value = config.endpoint;
+            if (UI.inputs.vectorMemoryApiKey) UI.inputs.vectorMemoryApiKey.value = config.apiKey;
+            if (UI.inputs.vectorMemoryCustomEndpointRow) {
+                UI.inputs.vectorMemoryCustomEndpointRow.hidden = config.provider !== 'openai-compatible';
+            }
+            renderVectorMemoryModelOptions(config);
+            refreshVectorMemoryConfigStatus();
+        }
+
+        function refreshVectorMemoryConfigStatus() {
+            const status = document.getElementById('vector-memory-config-status');
+            const config = normalizeVectorMemoryConfig(vectorMemoryConfig);
+            if (status) {
+                status.textContent = config.enabled
+                    ? (config.apiKey && config.model && (config.provider !== 'openai-compatible' || config.endpoint) ? '已启用' : '待配置')
+                    : '关闭';
+            }
+            const runtimeStatus = window.imVectorMemory?.getStatus?.();
+            if (UI.inputs.vectorMemoryIndexStatus) {
+                UI.inputs.vectorMemoryIndexStatus.textContent = runtimeStatus?.message
+                    || (config.enabled ? '保存后将自动同步全部记忆' : '未启用');
+            }
+        }
+
+        refreshVectorMemoryConfigStatus();
+
         function getBackgroundActivitySettings() {
             if (window.u2BackgroundActivity && typeof window.u2BackgroundActivity.getSettings === 'function') {
                 return window.u2BackgroundActivity.getSettings();
@@ -4319,6 +4717,7 @@
         function getCurrentApiPresetId() {
             if (!Array.isArray(apiPresets)) return '';
             const match = apiPresets.find(preset =>
+                (preset.provider || 'openai-compatible') === (apiConfig.provider || 'openai-compatible') &&
                 (preset.endpoint || '') === (apiConfig.endpoint || '') &&
                 (preset.apiKey || '') === (apiConfig.apiKey || '') &&
                 (preset.model || '') === (apiConfig.model || '') &&
@@ -4754,6 +5153,7 @@
             }
 
             apiConfig = {
+                provider: preset.provider || 'openai-compatible',
                 endpoint: preset.endpoint || '',
                 apiKey: preset.apiKey || '',
                 model: preset.model || '',
@@ -4762,6 +5162,8 @@
             tempApiConfig = { ...apiConfig };
             window.apiConfig = apiConfig;
 
+            if (UI.inputs.apiProvider) UI.inputs.apiProvider.value = apiConfig.provider;
+            syncApiProviderPresentation({ provider: apiConfig.provider });
             if (UI.inputs.apiEndpoint) UI.inputs.apiEndpoint.value = apiConfig.endpoint;
             if (UI.inputs.apiKey) UI.inputs.apiKey.value = apiConfig.apiKey;
             if (UI.inputs.apiModel) syncSelectValue(UI.inputs.apiModel, apiConfig.model || '');
@@ -4883,12 +5285,39 @@
 
         setAssistiveBallEnabled(assistiveBallSettings.enabled);
 
-        function renderNativeModelSelect(searchText = UI.inputs.apiModelSearch?.value || '') {
+        const API_MODEL_RENDER_LIMIT = 80;
+        const API_MODEL_SEARCH_DEBOUNCE_MS = 80;
+        let apiModelListRevision = 0;
+        let apiModelRenderKey = '';
+        let apiModelSearchTimer = null;
+
+        function invalidateNativeModelSelect() {
+            apiModelListRevision += 1;
+            apiModelRenderKey = '';
+            if (apiModelSearchTimer) {
+                clearTimeout(apiModelSearchTimer);
+                apiModelSearchTimer = null;
+            }
+        }
+
+        function renderNativeModelSelect(searchText = UI.inputs.apiModelSearch?.value || '', options = {}) {
             if (!UI.inputs.apiModelList) return;
+            if (!options.force && UI.inputs.apiModelPicker?.hidden) return;
             const query = String(searchText || '').trim().toLocaleLowerCase();
             const models = (Array.isArray(fetchedModels) ? fetchedModels : [])
                 .filter(model => !query || String(model).toLocaleLowerCase().includes(query));
-            UI.inputs.apiModelList.replaceChildren();
+            const selectedModel = String(UI.inputs.apiModel?.value || '').trim();
+            const renderKey = `${apiModelListRevision}|${query}|${selectedModel}`;
+            if (apiModelRenderKey === renderKey) return;
+            apiModelRenderKey = renderKey;
+
+            const visibleModels = models.slice(0, API_MODEL_RENDER_LIMIT);
+            if (!query && selectedModel && !visibleModels.includes(selectedModel) && models.includes(selectedModel)) {
+                visibleModels.pop();
+                visibleModels.unshift(selectedModel);
+            }
+
+            const fragment = document.createDocumentFragment();
 
             if (!models.length) {
                 const empty = document.createElement('div');
@@ -4896,12 +5325,12 @@
                 empty.textContent = fetchedModels.length
                     ? '没有匹配的模型'
                     : '暂无模型列表，可先获取模型或直接填写名称';
-                UI.inputs.apiModelList.appendChild(empty);
+                fragment.appendChild(empty);
+                UI.inputs.apiModelList.replaceChildren(fragment);
                 return;
             }
 
-            const selectedModel = String(UI.inputs.apiModel?.value || '').trim();
-            models.forEach(model => {
+            visibleModels.forEach(model => {
                 const option = document.createElement('button');
                 option.type = 'button';
                 option.className = 'api-model-option';
@@ -4914,8 +5343,25 @@
                     tempApiConfig.model = model;
                     setApiModelPickerOpen(false);
                 });
-                UI.inputs.apiModelList.appendChild(option);
+                fragment.appendChild(option);
             });
+
+            if (models.length > visibleModels.length) {
+                const hint = document.createElement('div');
+                hint.className = 'api-model-limit-hint';
+                hint.textContent = `已显示前 ${API_MODEL_RENDER_LIMIT} 个模型，请继续搜索`;
+                fragment.appendChild(hint);
+            }
+
+            UI.inputs.apiModelList.replaceChildren(fragment);
+        }
+
+        function scheduleNativeModelSelectRender(searchText) {
+            if (apiModelSearchTimer) clearTimeout(apiModelSearchTimer);
+            apiModelSearchTimer = setTimeout(() => {
+                apiModelSearchTimer = null;
+                renderNativeModelSelect(searchText);
+            }, API_MODEL_SEARCH_DEBOUNCE_MS);
         }
 
         function setApiModelPickerOpen(open) {
@@ -4923,9 +5369,15 @@
             const shouldOpen = !!open;
             UI.inputs.apiModelPicker.hidden = !shouldOpen;
             UI.inputs.apiModelPickerToggle.setAttribute('aria-expanded', String(shouldOpen));
-            if (!shouldOpen) return;
+            if (!shouldOpen) {
+                if (apiModelSearchTimer) {
+                    clearTimeout(apiModelSearchTimer);
+                    apiModelSearchTimer = null;
+                }
+                return;
+            }
             if (UI.inputs.apiModelSearch) UI.inputs.apiModelSearch.value = '';
-            renderNativeModelSelect('');
+            renderNativeModelSelect('', { force: true });
             setTimeout(() => UI.inputs.apiModelSearch?.focus({ preventScroll: true }), 0);
         }
 
@@ -4934,14 +5386,79 @@
             selectEl.value = value;
         }
 
+        const API_PROVIDER_META = Object.freeze({
+            openai: {
+                endpoint: 'https://api.openai.com/v1',
+                model: 'gpt-4o-mini',
+                hint: '使用 OpenAI 官方 Chat Completions 接口。'
+            },
+            deepseek: {
+                endpoint: 'https://api.deepseek.com/v1',
+                model: 'deepseek-chat',
+                hint: '使用 DeepSeek 的 OpenAI 兼容接口。'
+            },
+            siliconflow: {
+                endpoint: 'https://api.siliconflow.cn/v1',
+                model: 'deepseek-ai/DeepSeek-V3',
+                hint: '使用硅基流动的 OpenAI 兼容接口。'
+            },
+            gemini: {
+                endpoint: 'https://generativelanguage.googleapis.com/v1beta',
+                model: 'gemini-2.5-flash',
+                hint: '使用 Gemini 官方协议与 x-goog-api-key；不要填写 OpenAI 的 /chat/completions 路径。'
+            },
+            anthropic: {
+                endpoint: 'https://api.anthropic.com/v1',
+                model: 'claude-sonnet-4-20250514',
+                hint: '使用 Claude 官方 Messages API 与 x-api-key。'
+            },
+            'openai-compatible': {
+                endpoint: '',
+                model: '',
+                hint: '填写任意 OpenAI 兼容服务的地址、密钥和模型。'
+            }
+        });
+
+        function getApiProviderMeta(provider) {
+            const normalized = window.u2Api.normalizeApiProvider(provider);
+            return API_PROVIDER_META[normalized] || API_PROVIDER_META['openai-compatible'];
+        }
+
+        function syncApiProviderPresentation(options = {}) {
+            const provider = window.u2Api.normalizeApiProvider(
+                options.provider || UI.inputs.apiProvider?.value || tempApiConfig.provider || apiConfig.provider
+            );
+            const meta = getApiProviderMeta(provider);
+            if (UI.inputs.apiProvider) UI.inputs.apiProvider.value = provider;
+            if (UI.inputs.apiProviderHint) UI.inputs.apiProviderHint.textContent = meta.hint;
+
+            if (options.applyPreset && meta.endpoint && UI.inputs.apiEndpoint) {
+                UI.inputs.apiEndpoint.value = meta.endpoint;
+            }
+            if (options.applyPreset && meta.model && UI.inputs.apiModel) {
+                const previousMeta = getApiProviderMeta(options.previousProvider);
+                const currentModel = String(UI.inputs.apiModel.value || '').trim();
+                if (!currentModel || currentModel === previousMeta.model) {
+                    syncSelectValue(UI.inputs.apiModel, meta.model);
+                }
+            }
+            if (options.applyPreset && provider !== window.u2Api.normalizeApiProvider(options.previousProvider)) {
+                fetchedModels = [];
+                invalidateNativeModelSelect();
+            }
+            tempApiConfig.provider = provider;
+            return provider;
+        }
+
         function getApiConfigDraft(requireModel = true) {
             const config = window.u2Api.validateApiConfig({
+                provider: UI.inputs.apiProvider?.value,
                 endpoint: UI.inputs.apiEndpoint?.value,
                 apiKey: UI.inputs.apiKey?.value,
                 model: UI.inputs.apiModel?.value,
                 temperature: UI.inputs.apiTemp?.value
             }, { requireModel });
-            config.endpoint = window.u2Api.resolveChatCompletionsEndpoint(config.endpoint);
+            config.endpoint = window.u2Api.normalizeApiEndpoint(config.endpoint, config.provider);
             return config;
         }
 
@@ -4957,16 +5474,17 @@
             apiConfigBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 
-                renderNativeModelSelect();
                 setApiModelPickerOpen(false);
 
                 tempApiConfig = {
+                    provider: apiConfig.provider || 'openai-compatible',
                     endpoint: apiConfig.endpoint || '',
                     apiKey: apiConfig.apiKey || '',
                     model: apiConfig.model || '',
                     temperature: apiConfig.temperature ?? 0.7
                 };
 
+                syncApiProviderPresentation({ provider: tempApiConfig.provider });
                 UI.inputs.apiEndpoint.value = tempApiConfig.endpoint || '';
                 UI.inputs.apiKey.value = tempApiConfig.apiKey || '';
                 syncSelectValue(UI.inputs.apiModel, tempApiConfig.model || '');
@@ -4975,6 +5493,229 @@
                 syncSystemNotificationControls();
 
                 openApiConfigSheet();
+            });
+        }
+
+        if (UI.inputs.apiProvider) {
+            UI.inputs.apiProvider.addEventListener('change', () => {
+                const previousProvider = tempApiConfig.provider || apiConfig.provider || 'openai-compatible';
+                syncApiProviderPresentation({
+                    provider: UI.inputs.apiProvider.value,
+                    previousProvider,
+                    applyPreset: true
+                });
+            });
+        }
+
+        const vectorMemoryConfigBtn = document.getElementById('vector-memory-config-btn');
+        if (vectorMemoryConfigBtn && UI.overlays.vectorMemoryConfig) {
+            vectorMemoryConfigBtn.addEventListener('click', (event) => {
+                event.stopPropagation();
+                syncVectorMemoryConfigInputs();
+                openView(UI.overlays.vectorMemoryConfig);
+            });
+        }
+
+        const VISION_PROVIDER_COPY = {
+            openai: {
+                name: 'OpenAI',
+                keyLabel: 'OpenAI API Key',
+                endpointHint: '使用支持图片输入的 OpenAI 模型；接口可填写完整 chat/completions 地址或 /v1 基础地址。'
+            },
+            gemini: {
+                name: 'Gemini',
+                keyLabel: 'Gemini API Key',
+                endpointHint: '使用 Gemini Interactions API；请填写支持图片理解的 Gemini 模型。'
+            },
+            claude: {
+                name: 'Claude',
+                keyLabel: 'Anthropic API Key',
+                endpointHint: '使用 Anthropic Messages API；远程图片地址需要浏览器可读取。'
+            },
+            grok: {
+                name: 'Grok',
+                keyLabel: 'xAI API Key',
+                endpointHint: '使用支持图片输入的 Grok 模型。'
+            },
+            qwen: {
+                name: 'Qwen / DashScope',
+                keyLabel: 'DashScope API Key',
+                endpointHint: '使用百炼 OpenAI 兼容接口；请选择支持视觉输入的 Qwen-VL 或多模态模型。'
+            },
+            zhipu: {
+                name: '智谱 GLM',
+                keyLabel: '智谱 API Key',
+                endpointHint: '使用智谱 OpenAI 兼容接口；请选择支持视觉输入的 GLM 模型。'
+            },
+            'openai-compatible': {
+                name: 'OpenAI 兼容',
+                keyLabel: 'API 密钥',
+                endpointHint: '可接入支持 OpenAI Chat Completions 图像输入的中转站或兼容服务。'
+            }
+        };
+        let tempVisionConfig = window.u2ImageUnderstanding
+            ? window.u2ImageUnderstanding.normalizeConfig(visionConfig)
+            : clonePlainData(visionConfig);
+
+        function commitVisionInputsToDraft() {
+            const provider = tempVisionConfig.activeProvider;
+            if (!provider || !tempVisionConfig.providers?.[provider]) return;
+            tempVisionConfig.providers[provider] = {
+                endpoint: String(UI.inputs.visionEndpoint?.value || '').trim(),
+                apiKey: String(UI.inputs.visionApiKey?.value || '').trim(),
+                model: String(UI.inputs.visionModel?.value || '').trim(),
+                models: Array.isArray(tempVisionConfig.providers[provider].models)
+                    ? tempVisionConfig.providers[provider].models.slice()
+                    : []
+            };
+        }
+
+        function renderVisionModelSelect(config) {
+            const select = UI.inputs.visionModelSelect;
+            if (!select) return;
+            const models = Array.isArray(config?.models) ? config.models : [];
+            select.replaceChildren();
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = models.length ? '选择已获取模型' : '暂无已获取模型';
+            select.appendChild(placeholder);
+            models.forEach((model) => {
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                select.appendChild(option);
+            });
+            select.value = models.includes(String(config?.model || '').trim())
+                ? String(config.model).trim()
+                : '';
+            select.disabled = models.length === 0;
+        }
+
+        function renderVisionInputs() {
+            const provider = tempVisionConfig.activeProvider || 'gemini';
+            const config = tempVisionConfig.providers?.[provider] || {};
+            const copy = VISION_PROVIDER_COPY[provider] || VISION_PROVIDER_COPY['openai-compatible'];
+            if (UI.inputs.visionProvider) UI.inputs.visionProvider.value = provider;
+            if (UI.inputs.visionEndpoint) UI.inputs.visionEndpoint.value = config.endpoint || '';
+            if (UI.inputs.visionApiKey) {
+                UI.inputs.visionApiKey.value = config.apiKey || '';
+                UI.inputs.visionApiKey.placeholder = provider === 'gemini' ? 'AIza...' : 'sk-...';
+            }
+            if (UI.inputs.visionModel) {
+                UI.inputs.visionModel.value = config.model || '';
+                UI.inputs.visionModel.placeholder = '填写支持视觉输入的模型';
+            }
+            renderVisionModelSelect(config);
+            if (UI.inputs.visionKeyLabel) UI.inputs.visionKeyLabel.textContent = copy.keyLabel;
+            if (UI.inputs.visionEndpointHint) UI.inputs.visionEndpointHint.textContent = copy.endpointHint;
+        }
+
+        const visionConfigBtn = document.getElementById('vision-config-btn');
+        if (visionConfigBtn && UI.overlays.visionConfig) {
+            visionConfigBtn.addEventListener('click', (event) => {
+                event.stopPropagation();
+                if (!window.u2ImageUnderstanding) {
+                    showToast('识图模块尚未加载，请刷新后重试');
+                    return;
+                }
+                tempVisionConfig = window.u2ImageUnderstanding.normalizeConfig(visionConfig);
+                renderVisionInputs();
+                openView(UI.overlays.visionConfig);
+            });
+        }
+
+        UI.inputs.visionProvider?.addEventListener('change', () => {
+            commitVisionInputsToDraft();
+            tempVisionConfig.activeProvider = UI.inputs.visionProvider.value;
+            renderVisionInputs();
+        });
+
+        [UI.inputs.visionEndpoint, UI.inputs.visionApiKey].forEach((input) => {
+            input?.addEventListener('input', commitVisionInputsToDraft);
+            input?.addEventListener('change', commitVisionInputsToDraft);
+        });
+
+        UI.inputs.visionModel?.addEventListener('input', () => {
+            commitVisionInputsToDraft();
+            const provider = tempVisionConfig.activeProvider;
+            const models = tempVisionConfig.providers?.[provider]?.models || [];
+            if (UI.inputs.visionModelSelect) {
+                UI.inputs.visionModelSelect.value = models.includes(String(UI.inputs.visionModel.value || '').trim())
+                    ? String(UI.inputs.visionModel.value).trim()
+                    : '';
+            }
+        });
+        UI.inputs.visionModel?.addEventListener('change', commitVisionInputsToDraft);
+
+        UI.inputs.visionModelSelect?.addEventListener('change', () => {
+            const selectedModel = String(UI.inputs.visionModelSelect.value || '').trim();
+            if (!selectedModel || !UI.inputs.visionModel) return;
+            UI.inputs.visionModel.value = selectedModel;
+            commitVisionInputsToDraft();
+        });
+
+        const fetchVisionModelsBtn = document.getElementById('fetch-vision-models-btn');
+        if (fetchVisionModelsBtn) {
+            fetchVisionModelsBtn.addEventListener('click', async () => {
+                const originalHtml = fetchVisionModelsBtn.innerHTML;
+                try {
+                    if (!window.u2ImageUnderstanding) throw new Error('识图模块尚未加载，请刷新后重试');
+                    commitVisionInputsToDraft();
+                    const provider = tempVisionConfig.activeProvider;
+                    const activeConfig = tempVisionConfig.providers?.[provider] || {};
+                    fetchVisionModelsBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><div class="settings-text" style="color:var(--blue-color);">正在获取模型…</div>';
+                    fetchVisionModelsBtn.style.pointerEvents = 'none';
+                    const models = await window.u2ImageUnderstanding.fetchModels({ provider, ...activeConfig });
+                    if (!models.length) throw new Error('接口返回成功，但没有找到可用模型');
+                    tempVisionConfig.providers[provider].models = models.slice();
+                    renderVisionModelSelect(tempVisionConfig.providers[provider]);
+                    if (UI.inputs.visionModel && !UI.inputs.visionModel.value.trim()) {
+                        UI.inputs.visionModel.value = models[0];
+                        commitVisionInputsToDraft();
+                    }
+                    if (UI.inputs.visionModelSelect) UI.inputs.visionModelSelect.value = UI.inputs.visionModel.value;
+                    UI.inputs.visionModel?.focus({ preventScroll: true });
+                    showToast(`成功获取 ${models.length} 个模型`);
+                } catch (error) {
+                    console.error('Fetch Vision Models Error:', error);
+                    showToast(error?.message || '获取识图模型失败');
+                } finally {
+                    fetchVisionModelsBtn.innerHTML = originalHtml;
+                    fetchVisionModelsBtn.style.pointerEvents = '';
+                }
+            });
+        }
+
+        const confirmVisionConfigBtn = document.getElementById('confirm-vision-config-btn');
+        if (confirmVisionConfigBtn) {
+            confirmVisionConfigBtn.addEventListener('click', async () => {
+                const previousConfig = visionConfig;
+                try {
+                    if (!window.u2ImageUnderstanding) throw new Error('识图模块尚未加载，请刷新后重试');
+                    commitVisionInputsToDraft();
+                    const provider = tempVisionConfig.activeProvider;
+                    const activeConfig = tempVisionConfig.providers?.[provider] || {};
+                    window.u2ImageUnderstanding.validateActiveConfig({ provider, ...activeConfig });
+                    confirmVisionConfigBtn.classList.add('is-busy');
+                    confirmVisionConfigBtn.style.pointerEvents = 'none';
+
+                    visionConfig = window.u2ImageUnderstanding.normalizeConfig(tempVisionConfig);
+                    window.visionConfig = visionConfig;
+                    const persisted = await saveGlobalData();
+                    if (!persisted) throw new Error('识图配置未能写入本地存储，请重试');
+
+                    closeView(UI.overlays.visionConfig);
+                    const providerName = VISION_PROVIDER_COPY[provider]?.name || '识图服务';
+                    showToast(`已启用 ${providerName}`);
+                } catch (error) {
+                    visionConfig = previousConfig;
+                    window.visionConfig = previousConfig;
+                    console.error('Save Vision Config Error:', error);
+                    showToast(error?.message || '识图配置保存失败');
+                } finally {
+                    confirmVisionConfigBtn.classList.remove('is-busy');
+                    confirmVisionConfigBtn.style.pointerEvents = '';
+                }
             });
         }
 
@@ -5016,8 +5757,32 @@
                 endpoint: String(UI.inputs.imageEndpoint?.value || '').trim(),
                 apiKey: String(UI.inputs.imageApiKey?.value || '').trim(),
                 model: String(UI.inputs.imageModel?.value || '').trim(),
-                size: UI.inputs.imageSize?.value || '1024x1024'
+                size: UI.inputs.imageSize?.value || '1024x1024',
+                models: Array.isArray(tempImageGenerationConfig.providers[provider].models)
+                    ? tempImageGenerationConfig.providers[provider].models.slice()
+                    : []
             };
+        }
+
+        function renderImageGenerationModelSelect(config) {
+            const select = UI.inputs.imageModelSelect;
+            if (!select) return;
+            const models = Array.isArray(config?.models) ? config.models : [];
+            select.replaceChildren();
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = models.length ? '选择已获取模型' : '暂无已获取模型';
+            select.appendChild(placeholder);
+            models.forEach((model) => {
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                select.appendChild(option);
+            });
+            select.value = models.includes(String(config?.model || '').trim())
+                ? String(config.model).trim()
+                : '';
+            select.disabled = models.length === 0;
         }
 
         function renderImageGenerationInputs() {
@@ -5037,7 +5802,7 @@
                     : provider === 'relay' ? '填写中转站图片模型' : '填写图片模型';
             }
             if (UI.inputs.imageSize) UI.inputs.imageSize.value = config.size || '1024x1024';
-            if (UI.inputs.imageModelOptions) UI.inputs.imageModelOptions.replaceChildren();
+            renderImageGenerationModelSelect(config);
             if (UI.inputs.imageKeyLabel) UI.inputs.imageKeyLabel.textContent = copy.keyLabel;
             if (UI.inputs.imageEndpointHint) UI.inputs.imageEndpointHint.textContent = copy.endpointHint;
         }
@@ -5062,9 +5827,30 @@
             });
         }
 
-        [UI.inputs.imageEndpoint, UI.inputs.imageApiKey, UI.inputs.imageModel, UI.inputs.imageSize].forEach((input) => {
+        [UI.inputs.imageEndpoint, UI.inputs.imageApiKey, UI.inputs.imageSize].forEach((input) => {
             input?.addEventListener('input', commitImageGenerationInputsToDraft);
             input?.addEventListener('change', commitImageGenerationInputsToDraft);
+        });
+
+        [UI.inputs.imageModel].forEach((input) => {
+            input?.addEventListener('input', () => {
+                commitImageGenerationInputsToDraft();
+                const provider = tempImageGenerationConfig.activeProvider;
+                const models = tempImageGenerationConfig.providers?.[provider]?.models || [];
+                if (UI.inputs.imageModelSelect) {
+                    UI.inputs.imageModelSelect.value = models.includes(String(input.value || '').trim())
+                        ? String(input.value).trim()
+                        : '';
+                }
+            });
+            input?.addEventListener('change', commitImageGenerationInputsToDraft);
+        });
+
+        UI.inputs.imageModelSelect?.addEventListener('change', () => {
+            const selectedModel = String(UI.inputs.imageModelSelect.value || '').trim();
+            if (!selectedModel || !UI.inputs.imageModel) return;
+            UI.inputs.imageModel.value = selectedModel;
+            commitImageGenerationInputsToDraft();
         });
 
         const fetchImageGenerationModelsBtn = document.getElementById('fetch-image-generation-models-btn');
@@ -5079,17 +5865,13 @@
                     fetchImageGenerationModelsBtn.style.pointerEvents = 'none';
                     const models = await window.u2ImageGeneration.fetchModels({ provider, ...activeConfig });
                     if (!models.length) throw new Error('接口返回成功，但没有找到可用模型');
-                    if (UI.inputs.imageModelOptions) {
-                        UI.inputs.imageModelOptions.replaceChildren(...models.map((model) => {
-                            const option = document.createElement('option');
-                            option.value = model;
-                            return option;
-                        }));
-                    }
+                    tempImageGenerationConfig.providers[provider].models = models.slice();
+                    renderImageGenerationModelSelect(tempImageGenerationConfig.providers[provider]);
                     if (UI.inputs.imageModel && !UI.inputs.imageModel.value.trim()) {
                         UI.inputs.imageModel.value = models[0];
                         commitImageGenerationInputsToDraft();
                     }
+                    if (UI.inputs.imageModelSelect) UI.inputs.imageModelSelect.value = UI.inputs.imageModel.value;
                     UI.inputs.imageModel?.focus({ preventScroll: true });
                     showToast(`成功获取 ${models.length} 个模型`);
                 } catch (error) {
@@ -5190,6 +5972,129 @@
             });
         }
 
+        const vectorMemoryTestBtn = document.getElementById('test-vector-memory-connection-btn');
+        if (vectorMemoryTestBtn) {
+            vectorMemoryTestBtn.addEventListener('click', async () => {
+                const originalHtml = vectorMemoryTestBtn.innerHTML;
+                vectorMemoryTestBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><div class="settings-text" style="color:var(--blue-color);">正在测试服务…</div>';
+                vectorMemoryTestBtn.style.pointerEvents = 'none';
+                try {
+                    const draft = { ...getVectorMemoryConfigDraft(), enabled: true };
+                    const result = await window.imVectorMemory?.testConnection?.(draft);
+                    if (!result?.ok) throw new Error(result?.error || '嵌入服务连接失败');
+                    showToast('嵌入服务连接成功');
+                } catch (error) {
+                    console.error('Test Vector Memory Connection Error:', error);
+                    showToast(error?.message || '嵌入服务连接失败');
+                } finally {
+                    vectorMemoryTestBtn.innerHTML = originalHtml;
+                    vectorMemoryTestBtn.style.pointerEvents = '';
+                }
+            });
+        }
+
+        const rebuildVectorMemoryIndexBtn = document.getElementById('rebuild-vector-memory-index-btn');
+        if (rebuildVectorMemoryIndexBtn) {
+            rebuildVectorMemoryIndexBtn.addEventListener('click', async () => {
+                const originalHtml = rebuildVectorMemoryIndexBtn.innerHTML;
+                rebuildVectorMemoryIndexBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><div class="settings-text" style="color:var(--blue-color);">正在构建索引…</div>';
+                rebuildVectorMemoryIndexBtn.style.pointerEvents = 'none';
+                try {
+                    const result = await window.imVectorMemory?.rebuildAllMemoryIndexes?.();
+                    if (!result?.ok) throw new Error(result?.error || '索引构建失败');
+                    showToast(`已同步 ${result.count || 0} 条记忆`);
+                } catch (error) {
+                    console.error('Rebuild Vector Memory Index Error:', error);
+                    showToast(error?.message || '索引构建失败');
+                } finally {
+                    rebuildVectorMemoryIndexBtn.innerHTML = originalHtml;
+                    rebuildVectorMemoryIndexBtn.style.pointerEvents = '';
+                    refreshVectorMemoryConfigStatus();
+                }
+            });
+        }
+
+        if (UI.inputs.vectorMemoryProvider) {
+            UI.inputs.vectorMemoryProvider.addEventListener('change', () => {
+                const provider = String(UI.inputs.vectorMemoryProvider.value || 'siliconflow');
+                const providerMeta = getVectorMemoryProviderMeta(provider);
+                if (UI.inputs.vectorMemoryCustomEndpointRow) {
+                    UI.inputs.vectorMemoryCustomEndpointRow.hidden = provider !== 'openai-compatible';
+                }
+                renderVectorMemoryModelOptions({
+                    ...getVectorMemoryConfigDraft(),
+                    provider,
+                    model: providerMeta.defaultModel || ''
+                });
+            });
+        }
+
+        if (UI.inputs.vectorMemoryModel) {
+            UI.inputs.vectorMemoryModel.addEventListener('change', () => {
+                const usesCustomModel = UI.inputs.vectorMemoryModel.value === '__custom__';
+                if (UI.inputs.vectorMemoryCustomModelRow) {
+                    UI.inputs.vectorMemoryCustomModelRow.hidden = !usesCustomModel;
+                }
+                if (usesCustomModel) UI.inputs.vectorMemoryCustomModel?.focus();
+            });
+        }
+
+        window.addEventListener('u2:vector-memory-status', refreshVectorMemoryConfigStatus);
+
+        const closeVectorMemoryConfigBtn = document.getElementById('close-vector-memory-config-btn');
+        if (closeVectorMemoryConfigBtn) {
+            closeVectorMemoryConfigBtn.addEventListener('click', closeVectorMemoryConfigSheet);
+        }
+
+        const confirmVectorMemoryConfigBtn = document.getElementById('confirm-vector-memory-config-btn');
+        if (confirmVectorMemoryConfigBtn) {
+            confirmVectorMemoryConfigBtn.addEventListener('click', async () => {
+                const previousVectorMemoryConfig = vectorMemoryConfig;
+                let vectorMemoryConfigPersisted = false;
+                try {
+                    const nextVectorMemoryConfig = getVectorMemoryConfigDraft();
+                    if (nextVectorMemoryConfig.enabled && !nextVectorMemoryConfig.apiKey) {
+                        throw new Error('启用向量记忆前请填写 API 密钥');
+                    }
+                    if (nextVectorMemoryConfig.enabled && !nextVectorMemoryConfig.model) {
+                        throw new Error('启用向量记忆前请选择嵌入模型');
+                    }
+                    if (nextVectorMemoryConfig.enabled
+                        && nextVectorMemoryConfig.provider === 'openai-compatible'
+                        && !nextVectorMemoryConfig.endpoint) {
+                        throw new Error('请填写兼容服务的嵌入接口地址');
+                    }
+                    confirmVectorMemoryConfigBtn.classList.add('is-busy');
+                    confirmVectorMemoryConfigBtn.style.pointerEvents = 'none';
+                    vectorMemoryConfig = nextVectorMemoryConfig;
+                    window.vectorMemoryConfig = vectorMemoryConfig;
+
+                    const persisted = await saveGlobalData();
+                    if (!persisted) throw new Error('向量记忆设置未能写入本地存储，请重试');
+                    vectorMemoryConfigPersisted = true;
+                    refreshVectorMemoryConfigStatus();
+                    if (nextVectorMemoryConfig.enabled) {
+                        const rebuilt = await window.imVectorMemory?.rebuildAllMemoryIndexes?.();
+                        if (!rebuilt?.ok) {
+                            throw new Error(rebuilt?.error || '设置已保存，但索引同步失败');
+                        }
+                    }
+                    closeVectorMemoryConfigSheet();
+                    showToast(nextVectorMemoryConfig.enabled ? '向量记忆已同步' : '向量记忆设置已保存');
+                } catch (error) {
+                    if (!vectorMemoryConfigPersisted) {
+                        vectorMemoryConfig = previousVectorMemoryConfig;
+                        window.vectorMemoryConfig = vectorMemoryConfig;
+                    }
+                    console.error('Save Vector Memory Config Error:', error);
+                    showToast(error?.message || '向量记忆设置保存失败');
+                } finally {
+                    confirmVectorMemoryConfigBtn.classList.remove('is-busy');
+                    confirmVectorMemoryConfigBtn.style.pointerEvents = '';
+                }
+            });
+        }
+
         const confirmApiBtn = document.getElementById('confirm-api-btn');
         if (confirmApiBtn) {
             confirmApiBtn.addEventListener('click', async () => {
@@ -5249,8 +6154,16 @@
                         : Array.isArray(data?.models)
                             ? data.models
                             : Array.isArray(data) ? data : [];
-                    fetchedModels = Array.from(new Set(modelRows
+                    const usableModelRows = draft.provider === 'gemini'
+                        ? modelRows.filter((item) => {
+                            if (typeof item === 'string') return true;
+                            const methods = item?.supportedGenerationMethods;
+                            return !Array.isArray(methods) || methods.includes('generateContent');
+                        })
+                        : modelRows;
+                    fetchedModels = Array.from(new Set(usableModelRows
                         .map(item => typeof item === 'string' ? item : (item?.id || item?.name || ''))
+                        .map(item => draft.provider === 'gemini' ? String(item || '').replace(/^models\//i, '') : item)
                         .map(item => String(item || '').trim())
                         .filter(Boolean)))
                         .sort((a, b) => a.localeCompare(b));
@@ -5258,6 +6171,7 @@
                     if (fetchedModels.length) {
                         const currentModel = UI.inputs.apiModel?.value || tempApiConfig.model || '';
                         await saveGlobalData();
+                        invalidateNativeModelSelect();
                         renderNativeModelSelect();
                         syncSelectValue(UI.inputs.apiModel, currentModel);
                         showToast(`成功获取 ${fetchedModels.length} 个模型`);
@@ -5331,7 +6245,7 @@
 
         if (UI.inputs.apiModelSearch) {
             UI.inputs.apiModelSearch.addEventListener('input', () => {
-                renderNativeModelSelect(UI.inputs.apiModelSearch.value);
+                scheduleNativeModelSelectRender(UI.inputs.apiModelSearch.value);
             });
         }
 
@@ -5359,6 +6273,7 @@
                 apiPresets.push({
                     id: Date.now(),
                     name: presetName || '未命名预设',
+                    provider: window.u2Api.normalizeApiProvider(UI.inputs.apiProvider?.value),
                     endpoint,
                     apiKey,
                     model,
@@ -5418,6 +6333,10 @@
                     content.addEventListener('click', (e) => {
                         if (e.target.classList.contains('delete-icon') || e.target.closest('.delete-icon')) return;
 
+                        const provider = window.u2Api.normalizeApiProvider(preset.provider);
+                        if (UI.inputs.apiProvider) UI.inputs.apiProvider.value = provider;
+                        tempApiConfig.provider = provider;
+                        syncApiProviderPresentation({ provider });
                         if (UI.inputs.apiEndpoint) UI.inputs.apiEndpoint.value = preset.endpoint || '';
                         if (UI.inputs.apiKey) UI.inputs.apiKey.value = preset.apiKey || '';
                         if (UI.inputs.apiModel) {

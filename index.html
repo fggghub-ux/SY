@@ -53,7 +53,7 @@
     <link rel="stylesheet" href="css/login.css?v=20260731-login-gate-focus-v2">
     <link rel="stylesheet" href="css/home.css?v=20260731-ios-swipe-icon-flicker-v1&layout=20260801-fixed-grid-v1&performance=20260801-v1">
     <link rel="stylesheet" href="css/worldbook.css?no-glass=20260803-v1">
-    <link rel="stylesheet" href="css/imessage.css?v=20260721-status-prompt-v3-group-poll-v3&cot=20260725-single-chat-cot-v1&status=20260802-three-line-thought-v1&cotui=20260725-pill-v1&link=20260726-light-link-theatre-v1&relationship=20260801-static-preview-v3&android-keyboard=20260801-v1&group-user-avatar=20260802-v1&game=20260803-anonymous-qa-v7-context-layout&image-assets=20260803-v1">
+    <link rel="stylesheet" href="css/imessage.css?v=20260721-status-prompt-v3-group-poll-v3&cot=20260725-single-chat-cot-v1&status=20260802-three-line-thought-v1&cotui=20260725-pill-v1&link=20260726-light-link-theatre-v1&relationship=20260801-static-preview-v3&android-keyboard=20260801-v1&group-user-avatar=20260802-v1&game=20260803-anonymous-qa-v7-context-layout&image-assets=20260803-v1&offline-stream-performance=20260805-v1&vector-memory=20260807-local-v1&theme-import-android-v1&moment-visibility=20260811-v1">
     <link rel="stylesheet" href="css/pay.css?v=20260714-ios-neutral-v1">
     <link rel="stylesheet" href="css/bstage.css?v=20260721-mobile-input-layout-v1-android-focus-scope-v1&no-glass=20260803-v1">
     <link rel="stylesheet" href="css/tiktok.css?v=20260721-mobile-input-layout-v1">
@@ -63,10 +63,10 @@
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
-    <link rel="stylesheet" href="css/loves.css?v=20260719-friend-phone-bilingual-v8&no-glass=20260803-v1">
+    <link rel="stylesheet" href="css/loves.css?v=20260719-friend-phone-bilingual-v8&no-glass=20260803-v1&moment-language=20260806-v1">
     <link rel="stylesheet" href="css/library.css?v=20260715-reader-streaming-v1">
     <!-- App Styles -->
-    <link rel="stylesheet" href="css/settings.css?v=20260721-mobile-input-layout-v1-notification-sound-v1&performance=20260801-v2&api-model-picker=20260803-v1">
+    <link rel="stylesheet" href="css/settings.css?v=20260721-mobile-input-layout-v1-notification-sound-v1&performance=20260801-v2&api-model-picker=20260803-v1&api-open-performance=20260805-v1&about-modal-focus=20260807-v1">
     <link rel="stylesheet" href="css/youtube.css?v=20260717-char-lottery-consistency-v18&no-glass=20260803-v1">
     <link rel="stylesheet" href="css/netflix.css">
 </head>
@@ -251,11 +251,11 @@
                     <!-- Apps and Pet Widget (Bottom) -->
                     <div class="app-item" id="app-pay-btn" style="cursor: pointer;" onclick="document.getElementById('pay-view').classList.add('active'); document.getElementById('pay-view').style.display='flex';">
                         <div class="app-icon icon-placeholder" id="app-icon-1" style="background: #ffffff; color: #1c1c1e; border: 1px solid #e5e5ea; display: flex; justify-content: center; align-items: center; font-size: 28px;"><i class="fas fa-wallet"></i></div>
-                        <span class="app-name">Pay</span>
+                        <span class="app-name" data-u2-i18n="home.app.pay">Pay</span>
                     </div>
                     <div class="app-item tiktok-app" id="app-tiktok-btn" style="cursor: pointer;">
                         <div class="app-icon icon-placeholder" id="app-icon-2" style="background: #ffffff; color: #1c1c1e; border: 1px solid #e5e5ea; display: flex; justify-content: center; align-items: center; font-size: 30px;"><i class="fab fa-tiktok"></i></div>
-                        <span class="app-name">TikTok</span>
+                        <span class="app-name" data-u2-i18n="home.app.tiktok">TikTok</span>
                     </div>
                     
                     <!-- Pet Widget (2x2 = 4 slots) -->
@@ -276,13 +276,13 @@
                         <div class="app-icon icon-placeholder" id="app-icon-3" style="background: #ffffff; color: #1c1c1e; border: 1px solid #e5e5ea; display: flex; justify-content: center; align-items: center; font-size: 26px;">
                             <i class="fas fa-layer-group"></i>
                         </div>
-                        <span class="app-name">b.stage</span>
+                        <span class="app-name" data-u2-i18n="home.app.bstage">b.stage</span>
                     </div>
                     <div class="app-item x-app" id="app-x-btn" style="cursor: pointer;">
                         <div class="app-icon icon-placeholder" id="app-icon-4" style="background: #ffffff; color: #1c1c1e; border: 1px solid #e5e5ea; display: flex; justify-content: center; align-items: center; font-size: 26px;">
                             <i class="fa-brands fa-x-twitter"></i>
                         </div>
-                        <span class="app-name">X</span>
+                        <span class="app-name" data-u2-i18n="home.app.x">X</span>
                     </div>
                     <!-- Notification Widget (1x4 = 4 slots) -->
                     <div class="notification-widget" id="notification-widget-desktop-1">
@@ -355,11 +355,11 @@
                         <div class="app-icon icon-placeholder shopping-home-icon" id="app-icon-5">
                             <i class="fas fa-shopping-bag"></i>
                         </div>
-                        <span class="app-name">Shop</span>
+                        <span class="app-name" data-u2-i18n="home.app.shop">Shop</span>
                     </div>
                     <div class="app-item library-app-item" id="app-phone-btn" style="cursor: pointer;">
                         <div class="app-icon icon-placeholder library-home-icon" id="app-icon-6"><i class="fas fa-book-open"></i></div>
-                        <span class="app-name">Library</span>
+                        <span class="app-name" data-u2-i18n="home.app.library">Library</span>
                     </div>
 
                     <!-- Couple Widget (Right side, Row 3-4, 2x2 = 4 slots) -->
@@ -386,13 +386,13 @@
                         <div class="app-icon icon-placeholder" id="app-icon-7" style="background: #ffffff; color: #1c1c1e; border: 1px solid #e5e5ea; display: flex; justify-content: center; align-items: center; font-size: 32px; font-weight: 900; font-family: Arial, sans-serif; letter-spacing: -1px;" onclick="event.stopPropagation(); if(window.netflixApp && typeof window.netflixApp.open === 'function') window.netflixApp.open(); else { const v = document.getElementById('netflix-view'); if(v) { v.style.display='flex'; v.classList.add('active'); } }">
                             N
                         </div>
-                        <span class="app-name">Netflix</span>
+                        <span class="app-name" data-u2-i18n="home.app.netflix">Netflix</span>
                     </div>
                     <div class="app-item loves-app" id="app-loves-btn" style="cursor: pointer;" onclick="if(window.lovesApp && typeof window.lovesApp.open === 'function') window.lovesApp.open(); else { const v = document.getElementById('loves-view'); if(v) { v.style.display='flex'; v.classList.add('active'); } }">
                         <div class="app-icon icon-placeholder" id="app-icon-8" style="background: #ffffff; color: #1c1c1e; border: 1px solid #e5e5ea; display: flex; justify-content: center; align-items: center; font-size: 28px;" onclick="event.stopPropagation(); if(window.lovesApp && typeof window.lovesApp.open === 'function') window.lovesApp.open(); else { const v = document.getElementById('loves-view'); if(v) { v.style.display='flex'; v.classList.add('active'); } }">
                             <i class="fas fa-heart"></i>
                         </div>
-                        <span class="app-name">Loves</span>
+                        <span class="app-name" data-u2-i18n="home.app.loves">Loves</span>
                     </div>
 
                     <!-- Photo Widget (Row 5 & 6, 4x2 = 8 slots) -->
@@ -426,7 +426,7 @@
         <!-- Home Screen Search Pill -->
         <div class="home-search-pill">
             <i class="fas fa-search"></i>
-            <span>Search</span>
+            <span data-u2-i18n="home.search">Search</span>
         </div>
 
         <!-- Floating Dock -->
@@ -448,7 +448,7 @@
                     <div class="app-icon" style="background: #ffffff; color: #1c1c1e; font-size: 38px; border: 1px solid #e5e5ea; display: flex; justify-content: center; align-items: center;">
                         <i class="fab fa-youtube"></i>
                     </div>
-                    <span class="app-name">YouTube</span>
+                        <span class="app-name" data-u2-i18n="home.app.youtube">YouTube</span>
                 </div>
             </div>
         </div>
@@ -456,7 +456,7 @@
         <div class="bottom-sheet-overlay detail-sheet-overlay home-widget-sheet" id="home-widget-sheet" style="z-index: 720;">
             <div class="bottom-sheet home-widget-bottom-sheet">
                 <div class="sheet-handle"></div>
-                <div class="sheet-title" id="home-widget-sheet-title">Add Widget</div>
+                <div class="sheet-title" id="home-widget-sheet-title" data-u2-i18n="home.widget.add">Add Widget</div>
                 <div class="detail-sheet-content home-widget-form">
                     <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; background: #fff; border-radius: 14px; margin-bottom: 12px; font-weight: 600;">
                         <span>开启毛玻璃特效</span>
@@ -1883,21 +1883,21 @@
 
                     <!-- Services Section -->
                     <div class="line-section">
-                        <h3 class="line-section-title">Services</h3>
+                        <h3 class="line-section-title" data-u2-i18n="imessage.services">Services</h3>
                         <div class="line-services-grid">
-                            <div class="line-service-item">
+                            <div class="line-service-item" data-imessage-service="stickers" data-u2-i18n="imessage.stickers" data-u2-i18n-target="span">
                                 <div class="line-service-icon"><i class="far fa-smile"></i></div>
                                 <span>Stickers</span>
                             </div>
-                              <div class="line-service-item" id="imessage-themes-btn">
+                              <div class="line-service-item" id="imessage-themes-btn" data-u2-i18n="imessage.themes" data-u2-i18n-target="span">
                                   <div class="line-service-icon"><i class="fas fa-paint-roller"></i></div>
                                   <span>Themes</span>
                               </div>
-                                <div class="line-service-item" >
+                                <div class="line-service-item" data-u2-i18n="imessage.official-accounts" data-u2-i18n-target="span">
                                 <div class="line-service-icon"><i class="fas fa-bullhorn"></i></div>
                                 <span>Official Accounts</span>
                             </div>
-                            <div class="line-service-item" id="imessage-game-btn">
+                            <div class="line-service-item" id="imessage-game-btn" data-u2-i18n="imessage.game" data-u2-i18n-target="span">
                                 <div class="line-service-icon"><i class="fas fa-gamepad"></i></div>
                                 <span>Game</span>
                             </div>
@@ -2025,9 +2025,10 @@
                             <!-- User Info Overlap -->
                             <div style="position: absolute; bottom: -20px; right: 16px; display: flex; align-items: flex-start; gap: 15px;">
                                 <div class="moments-user-name" id="moments-user-name" style="color: #fff; font-size: 18px; font-weight: 700; text-shadow: 0 1px 2px rgba(0,0,0,0.5); margin-top: 10px;">User Name</div>
-                                <div class="moments-user-avatar" id="moments-user-avatar-wrapper" style="width: 70px; height: 70px; border-radius: 8px; border: 2px solid #fff; background-color: #f2f2f7; overflow: hidden; cursor: pointer; flex-shrink: 0; ">
+                                <div class="moments-user-avatar" id="moments-user-avatar-wrapper" role="button" tabindex="0" aria-label="更换当前 Apple ID 头像" title="更换头像" style="width: 70px; height: 70px; border-radius: 8px; border: 2px solid #fff; background-color: #f2f2f7; overflow: hidden; cursor: pointer; flex-shrink: 0; ">
                                     <img src="" id="moments-user-avatar-img" style="width: 100%; height: 100%; object-fit: cover; display: none;">
                                     <i class="fas fa-user" id="moments-user-avatar-icon" style="font-size: 30px; color: #ccc; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center;"></i>
+                                    <input type="file" id="moments-user-avatar-upload" accept="image/*" style="display:none;">
                                 </div>
                             </div>
                         </div>
@@ -2045,6 +2046,25 @@
                         <!-- Moments List -->
                         <div class="moments-list" id="moments-list" style="padding: 20px 0;">
                             <!-- Items injected via JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bottom-sheet-overlay detail-sheet-overlay" id="publish-moment-visibility-sheet" style="z-index: 510;" aria-hidden="true">
+                    <div class="bottom-sheet publish-moment-visibility-sheet">
+                        <div class="sheet-handle"></div>
+                        <div class="publish-moment-visibility-header">
+                            <div>
+                                <div class="sheet-title">谁可以看</div>
+                                <div class="publish-moment-visibility-hint">仅已勾选的 Char 会看到并互动这条动态</div>
+                            </div>
+                            <button type="button" id="publish-moment-visibility-select-all" class="publish-moment-visibility-select-all">全选</button>
+                        </div>
+                        <div id="publish-moment-visibility-list" class="publish-moment-visibility-list"></div>
+                        <div id="publish-moment-visibility-empty" class="publish-moment-visibility-empty" style="display:none;">暂无可选择的 Char</div>
+                        <div class="publish-moment-visibility-actions">
+                            <button type="button" id="publish-moment-visibility-cancel" class="publish-moment-visibility-cancel">取消</button>
+                            <button type="button" id="publish-moment-visibility-confirm" class="publish-moment-visibility-confirm">确定</button>
                         </div>
                     </div>
                 </div>
@@ -2090,12 +2110,12 @@
                                 </div>
                                 <i class="fas fa-chevron-right" style="color: #ccc; font-size: 14px;"></i>
                             </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px 0; border-bottom: 1px solid #f0f0f0;">
+                            <div id="publish-moment-visibility-btn" class="publish-moment-option-row" role="button" tabindex="0">
                                 <div style="display: flex; align-items: center; gap: 10px; color: #333; font-size: 15px;">
                                     <i class="far fa-user" style="width: 20px; text-align: center;"></i> 谁可以看
                                 </div>
-                                <div style="display: flex; align-items: center; gap: 5px; color: #333; font-size: 15px;">
-                                    公开 <i class="fas fa-chevron-right" style="color: #ccc; font-size: 14px;"></i>
+                                <div id="publish-moment-visibility-summary" style="display: flex; align-items: center; gap: 5px; color: #333; font-size: 15px;">
+                                    全部 Char 可见 <i class="fas fa-chevron-right" style="color: #ccc; font-size: 14px;"></i>
                                 </div>
                             </div>
                             <div id="publish-moment-ai-all-friends" style="display: flex; justify-content: space-between; align-items: center; padding: 15px 0; border-bottom: 1px solid #f0f0f0; cursor: pointer;">
@@ -2246,11 +2266,11 @@
                         <div class="line-nav-indicator" id="line-nav-indicator"></div>
                         <div class="line-nav-item active" id="nav-home-btn">
                             <i class="fas fa-home"></i>
-                            <span>Home</span>
+                            <span data-u2-i18n="imessage.home">Home</span>
                         </div>
                         <div class="line-nav-item" id="nav-chats-btn">
                             <i class="fas fa-comment"></i>
-                            <span>Chats</span>
+                            <span data-u2-i18n="imessage.chats">Chats</span>
                         </div>
                         <div class="line-nav-item" id="nav-moments-btn">
                             <i class="far fa-compass"></i>
@@ -2321,6 +2341,7 @@
                             <button type="button" id="memory-entry-editor-save">保存</button>
                         </div>
                     </div>
+
                 </div>
             </div>
 
@@ -2427,7 +2448,7 @@
         <!-- Settings View (Hidden by default) -->
         <div class="settings-view" id="settings-view">
             <div class="big-header" id="settings-title-back-btn" style="cursor: pointer;">
-                <h1 class="big-title">Settings</h1>
+                <h1 class="big-title" data-u2-i18n="settings.title">Settings</h1>
             </div>
             
             <div class="settings-content no-top-padding">
@@ -2461,6 +2482,17 @@
                         <div class="settings-text">API 配置</div>
                         <i class="fas fa-chevron-right arrow"></i>
                     </div>
+                    <div class="settings-item" id="vector-memory-config-btn">
+                        <div class="settings-icon" style="background-color: #5856d6;"><i class="fas fa-brain"></i></div>
+                        <div class="settings-text">向量记忆</div>
+                        <span id="vector-memory-config-status" style="margin-left:auto; color:#8e8e93; font-size:14px;">关闭</span>
+                        <i class="fas fa-chevron-right arrow"></i>
+                    </div>
+                    <div class="settings-item" id="vision-config-btn">
+                        <div class="settings-icon" style="background-color: #34aadc;"><i class="fas fa-eye"></i></div>
+                        <div class="settings-text">识图配置</div>
+                        <i class="fas fa-chevron-right arrow"></i>
+                    </div>
                     <div class="settings-item" id="image-generation-config-btn">
                         <div class="settings-icon" style="background-color: #af52de;"><i class="fas fa-wand-magic-sparkles"></i></div>
                         <div class="settings-text">生图配置</div>
@@ -2480,6 +2512,16 @@
 
                 <!-- Theme Config Group (Separate) -->
                 <div class="settings-group fully-rounded">
+                    <div class="settings-item" style="justify-content: space-between; cursor: default;">
+                        <div style="display: flex; align-items: center; min-width: 0;">
+                            <div class="settings-icon" style="background-color: #34c759;"><i class="fas fa-language"></i></div>
+                            <div class="settings-text">全局翻译</div>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="global-ui-translation-toggle" aria-label="全局翻译">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
                     <div class="settings-item" id="theme-config-btn">
                         <div class="settings-icon" style="background-color: #ff2d55;"><i class="fas fa-paint-brush"></i></div>
                         <div class="settings-text">主题美化</div>
@@ -2881,14 +2923,27 @@
                 <div class="detail-sheet-content" style="padding-bottom: 20px;">
                     <div class="form-group fully-rounded" style="margin-bottom: 20px;">
                         <div class="form-item">
-                            <label style="width: 100px; white-space: nowrap;">接口地址</label>
-                            <input type="text" id="api-endpoint-input" placeholder="https://api.example.com">
+                            <label for="api-provider-select" style="width: 100px; white-space: nowrap;">服务商</label>
+                            <select id="api-provider-select" name="api-provider" autocomplete="off" style="flex: 1; border: none; text-align: right; direction: rtl; appearance: none; background: transparent; color: var(--blue-color); outline: none; font-size: 16px; min-width: 0;">
+                                <option value="openai">OpenAI 官方</option>
+                                <option value="deepseek">DeepSeek</option>
+                                <option value="siliconflow">硅基流动</option>
+                                <option value="gemini">Gemini 官方</option>
+                                <option value="anthropic">Claude 官方</option>
+                                <option value="openai-compatible">自定义 OpenAI 兼容</option>
+                            </select>
+                            <i class="fas fa-chevron-right arrow" style="margin-left: 5px; color: #c7c7cc; pointer-events: none;"></i>
                         </div>
                         <div class="form-item">
-                            <label style="width: 100px; white-space: nowrap;">API 密钥</label>
-                            <input type="password" id="api-key-input" placeholder="sk-...">
+                            <label for="api-endpoint-input" style="width: 100px; white-space: nowrap;">接口地址</label>
+                            <input type="url" id="api-endpoint-input" name="api-endpoint" inputmode="url" autocomplete="off" placeholder="https://api.example.com">
+                        </div>
+                        <div class="form-item">
+                            <label for="api-key-input" style="width: 100px; white-space: nowrap;">API 密钥</label>
+                            <input type="password" id="api-key-input" name="api-key" autocomplete="off" placeholder="sk-...">
                         </div>
                     </div>
+                    <div id="api-provider-hint" aria-live="polite" style="margin: -12px 14px 18px; color: #8e8e93; font-size: 13px; line-height: 1.4;"></div>
 
                     <!-- Fetch Models Button (Grouped) -->
                     <div class="form-group fully-rounded" style="margin-bottom: 20px;">
@@ -2905,8 +2960,8 @@
                     <!-- Grouped Model & Temperature -->
                     <div class="form-group fully-rounded" style="margin-bottom: 20px;">
                         <div class="form-item">
-                            <label style="width: 100px; white-space: nowrap;">模型</label>
-                            <input type="text" id="api-model-select" placeholder="填写或选择模型" autocomplete="off" style="text-align: right; padding-right: 5px; color: var(--blue-color);">
+                            <label for="api-model-select" style="width: 100px; white-space: nowrap;">模型</label>
+                            <input type="text" id="api-model-select" name="api-model" placeholder="填写或选择模型" autocomplete="off" style="text-align: right; padding-right: 5px; color: var(--blue-color);">
                             <button type="button" class="api-model-picker-toggle" id="api-model-picker-toggle" aria-label="打开模型列表" aria-expanded="false">
                                 <i class="fas fa-chevron-down" aria-hidden="true"></i>
                             </button>
@@ -2919,8 +2974,8 @@
                             <div class="api-model-list" id="api-model-list" role="listbox" aria-label="模型列表"></div>
                         </div>
                         <div class="form-item">
-                            <label style="width: 100px; white-space: nowrap;">温度</label>
-                            <input type="number" id="api-temp-input" value="0.7" step="0.1" min="0" max="2" style="text-align: right; padding-right: 5px;">
+                            <label for="api-temp-input" style="width: 100px; white-space: nowrap;">温度</label>
+                            <input type="number" id="api-temp-input" name="api-temperature" autocomplete="off" value="0.7" step="0.1" min="0" max="2" style="text-align: right; padding-right: 5px;">
                         </div>
                     </div>
 
@@ -2979,6 +3034,121 @@
             </div>
         </div>
 
+        <!-- Vector Memory Config Bottom Sheet -->
+        <div class="bottom-sheet-overlay detail-sheet-overlay" id="vector-memory-config-sheet" style="z-index: 505;">
+            <div class="bottom-sheet vector-memory-config-sheet">
+                <div class="sheet-handle"></div>
+                <div class="sheet-title">向量记忆</div>
+                <div class="detail-sheet-content vector-memory-config-content">
+                    <div class="form-group fully-rounded vector-memory-api-config">
+                        <div class="form-item" style="justify-content: space-between;">
+                            <label style="width: auto; white-space: nowrap; flex: 1; margin-right: 10px; color: #000; font-size: 16px;">启用向量记忆</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="vector-memory-enabled-toggle">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="form-item">
+                            <label style="width: 100px; white-space: nowrap;">服务商</label>
+                            <select id="vector-memory-provider-select" class="vector-memory-select">
+                                <option value="siliconflow">硅基流动</option>
+                                <option value="openai">OpenAI</option>
+                                <option value="dashscope">阿里云百炼</option>
+                                <option value="zhipu">智谱 AI</option>
+                                <option value="openai-compatible">自定义 OpenAI 兼容</option>
+                            </select>
+                            <i class="fas fa-chevron-right arrow vector-memory-select-arrow"></i>
+                        </div>
+                        <div class="form-item">
+                            <label style="width: 100px; white-space: nowrap;">嵌入模型</label>
+                            <select id="vector-memory-model-select" class="vector-memory-select"></select>
+                            <i class="fas fa-chevron-right arrow vector-memory-select-arrow"></i>
+                        </div>
+                        <div class="form-item vector-memory-custom-row" id="vector-memory-custom-model-row" hidden>
+                            <label style="width: 100px; white-space: nowrap;">自定义模型</label>
+                            <input type="text" id="vector-memory-custom-model-input" autocomplete="off" placeholder="输入嵌入模型名称">
+                        </div>
+                        <div class="form-item vector-memory-custom-row" id="vector-memory-custom-endpoint-row" hidden>
+                            <label style="width: 100px; white-space: nowrap;">服务地址</label>
+                            <input type="url" id="vector-memory-endpoint-input" inputmode="url" autocomplete="off" placeholder="https://example.com/v1/embeddings">
+                        </div>
+                        <div class="form-item">
+                            <label style="width: 100px; white-space: nowrap;">API 密钥</label>
+                            <input type="password" id="vector-memory-api-key-input" autocomplete="off" placeholder="必填">
+                        </div>
+                        <div class="vector-memory-index-status" id="vector-memory-index-status" role="status">未启用</div>
+                        <div class="settings-item vector-memory-action" id="test-vector-memory-connection-btn" style="justify-content: flex-start;">
+                            <div class="settings-icon action-icon-blue"><i class="fas fa-plug-circle-check"></i></div>
+                            <div class="settings-text" style="color: var(--blue-color); font-weight: 500; text-align: left;">测试服务</div>
+                        </div>
+                        <div class="settings-item vector-memory-action" id="rebuild-vector-memory-index-btn" style="justify-content: flex-start; border-bottom: none;">
+                            <div class="settings-icon action-icon-blue"><i class="fas fa-rotate"></i></div>
+                            <div class="settings-text" style="color: var(--blue-color); font-weight: 500; text-align: left;">重新构建索引</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="sheet-action confirm-action vector-memory-config-save" id="confirm-vector-memory-config-btn">保存</div>
+                <div class="sheet-action vector-memory-config-close" id="close-vector-memory-config-btn">取消</div>
+            </div>
+        </div>
+
+        <!-- Image Understanding Config Bottom Sheet -->
+        <div class="bottom-sheet-overlay detail-sheet-overlay" id="vision-config-sheet" style="z-index: 505;">
+            <div class="bottom-sheet" style="max-height: 85%;">
+                <div class="sheet-handle"></div>
+                <div class="sheet-title">识图配置</div>
+                <div class="detail-sheet-content" style="padding-bottom: 20px;">
+                    <div class="form-group fully-rounded" style="margin-bottom: 20px;">
+                        <div class="form-item">
+                            <label style="width: 112px; white-space: nowrap;">服务商</label>
+                            <select id="vision-provider-select" style="flex: 1; border: none; text-align: right; direction: rtl; appearance: none; background: transparent; color: var(--blue-color); outline: none; font-size: 16px; min-width: 0;">
+                                <option value="openai">OpenAI</option>
+                                <option value="gemini">Gemini</option>
+                                <option value="claude">Claude</option>
+                                <option value="grok">Grok</option>
+                                <option value="qwen">Qwen / DashScope</option>
+                                <option value="zhipu">智谱 GLM</option>
+                                <option value="openai-compatible">OpenAI 兼容</option>
+                            </select>
+                            <i class="fas fa-chevron-right arrow" style="margin-left: 5px; color: #c7c7cc; pointer-events: none;"></i>
+                        </div>
+                    </div>
+
+                    <div class="form-group fully-rounded" style="margin-bottom: 12px;">
+                        <div class="form-item">
+                            <label style="width: 112px; white-space: nowrap;">接口地址</label>
+                            <input type="url" id="vision-endpoint-input" inputmode="url" placeholder="https://api.example.com">
+                        </div>
+                        <div class="form-item">
+                            <label id="vision-key-label" style="width: 112px; white-space: nowrap;">API 密钥</label>
+                            <input type="password" id="vision-key-input" autocomplete="off" placeholder="sk-...">
+                        </div>
+                        <div class="form-item">
+                            <label style="width: 112px; white-space: nowrap;">已获取模型</label>
+                            <select id="vision-model-select" aria-label="选择已获取模型" style="flex: 1; border: none; text-align: right; direction: rtl; appearance: none; background: transparent; color: var(--blue-color); outline: none; font-size: 16px; min-width: 0;">
+                                <option value="">暂无已获取模型</option>
+                            </select>
+                            <i class="fas fa-chevron-right arrow" style="margin-left: 5px; color: #c7c7cc; pointer-events: none;"></i>
+                        </div>
+                        <div class="form-item">
+                            <label style="width: 112px; white-space: nowrap;">模型</label>
+                            <input type="text" id="vision-model-input" autocomplete="off" placeholder="填写支持视觉输入的模型">
+                        </div>
+                    </div>
+                    <div id="vision-endpoint-hint" style="margin: 0 26px 20px; color: #8e8e93; font-size: 12px; line-height: 1.5;"></div>
+
+                    <div class="form-group fully-rounded" style="margin-bottom: 20px;">
+                        <div class="settings-item fully-rounded-item" id="fetch-vision-models-btn" style="justify-content: flex-start; border-bottom: none;">
+                            <div class="settings-icon action-icon-blue"><i class="fas fa-cloud-download-alt"></i></div>
+                            <div class="settings-text" style="color: var(--blue-color); font-weight: 500; text-align: left;">获取模型列表</div>
+                        </div>
+                    </div>
+
+                    <div class="sheet-action confirm-action" id="confirm-vision-config-btn" style="margin-top: 20px; background-color: #1c1c1e; color: #fff;">保存设置</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Image Generation Config Bottom Sheet -->
         <div class="bottom-sheet-overlay detail-sheet-overlay" id="image-generation-config-sheet" style="z-index: 505;">
             <div class="bottom-sheet" style="max-height: 85%;">
@@ -3009,9 +3179,15 @@
                             <input type="password" id="image-generation-key-input" autocomplete="off" placeholder="sk-...">
                         </div>
                         <div class="form-item">
+                            <label style="width: 112px; white-space: nowrap;">已获取模型</label>
+                            <select id="image-generation-model-select" aria-label="选择已获取模型" style="flex: 1; border: none; text-align: right; direction: rtl; appearance: none; background: transparent; color: var(--blue-color); outline: none; font-size: 16px; min-width: 0;">
+                                <option value="">暂无已获取模型</option>
+                            </select>
+                            <i class="fas fa-chevron-right arrow" style="margin-left: 5px; color: #c7c7cc; pointer-events: none;"></i>
+                        </div>
+                        <div class="form-item">
                             <label style="width: 112px; white-space: nowrap;">模型</label>
-                            <input type="text" id="image-generation-model-input" list="image-generation-model-options" autocomplete="off" placeholder="填写图片模型">
-                            <datalist id="image-generation-model-options"></datalist>
+                            <input type="text" id="image-generation-model-input" autocomplete="off" placeholder="填写图片模型">
                         </div>
                         <div class="form-item">
                             <label style="width: 112px; white-space: nowrap;">分辨率</label>
@@ -3231,6 +3407,7 @@
             <div class="im-theme-tabs" role="tablist" aria-label="主题配置类型">
                 <button class="theme-tab active" data-target="theme-tab-bubble" type="button" role="tab" aria-selected="true">气泡 CSS</button>
                 <button class="theme-tab" data-target="theme-tab-chat" type="button" role="tab" aria-selected="false">Chat CSS</button>
+                <button class="theme-tab" data-target="theme-tab-group" type="button" role="tab" aria-selected="false">Group CSS</button>
                 <button class="theme-tab" data-target="theme-tab-status" type="button" role="tab" aria-selected="false">状态栏 CSS</button>
             </div>
 
@@ -3246,6 +3423,7 @@
                             <textarea id="theme-bubble-css-input" class="global-textarea im-theme-code-input" placeholder="/* 示例：修改自己气泡颜色 */&#10;.user-bubble {&#10;  background: #000;&#10;  color: #fff;&#10;}"></textarea>
                             <div class="im-theme-actions">
                                 <button class="sheet-action im-theme-danger-action" id="theme-bubble-clear-btn" type="button">清空</button>
+                                <button class="sheet-action im-theme-secondary-action im-theme-import-action" id="theme-bubble-import-btn" data-theme-import-type="bubble" type="button" title="导入 TXT / DOCX"><i class="fas fa-file-import" aria-hidden="true"></i>导入</button>
                                 <button class="sheet-action im-theme-secondary-action" id="theme-bubble-copy-btn" type="button">复制源码</button>
                             </div>
                             <div class="im-theme-save-row">
@@ -3274,6 +3452,7 @@
                             <textarea id="theme-chat-css-input" class="global-textarea im-theme-code-input" placeholder="/* 输入 Chat 相关界面的 CSS 代码 */"></textarea>
                             <div class="im-theme-actions">
                                 <button class="sheet-action im-theme-danger-action" id="theme-chat-clear-btn" type="button">清空</button>
+                                <button class="sheet-action im-theme-secondary-action im-theme-import-action" id="theme-chat-import-btn" data-theme-import-type="chat" type="button" title="导入 TXT / DOCX"><i class="fas fa-file-import" aria-hidden="true"></i>导入</button>
                                 <button class="sheet-action im-theme-secondary-action" id="theme-chat-copy-btn" type="button">复制源码</button>
                             </div>
                             <div class="im-theme-save-row">
@@ -3291,6 +3470,34 @@
                     </div>
                 </section>
 
+                <section id="theme-tab-group" class="theme-tab-content im-theme-panel" data-theme-type="group" hidden>
+                    <div class="im-theme-layout">
+                        <div class="im-theme-editor-panel">
+                            <div class="im-theme-panel-heading">
+                                <strong>Group CSS</strong>
+                                <span>All group chats</span>
+                            </div>
+                            <textarea id="theme-group-css-input" class="global-textarea im-theme-code-input" placeholder="/* CSS for all group conversation pages */"></textarea>
+                            <div class="im-theme-actions">
+                                <button class="sheet-action im-theme-danger-action" id="theme-group-clear-btn" type="button">清空</button>
+                                <button class="sheet-action im-theme-secondary-action im-theme-import-action" id="theme-group-import-btn" data-theme-import-type="group" type="button" title="导入 TXT / DOCX"><i class="fas fa-file-import" aria-hidden="true"></i>导入</button>
+                                <button class="sheet-action im-theme-secondary-action" id="theme-group-copy-btn" type="button">复制源码</button>
+                            </div>
+                            <div class="im-theme-save-row">
+                                <input type="text" id="theme-group-preset-name" placeholder="输入预设名字">
+                                <button class="sheet-action im-theme-save-action" id="theme-group-save-btn" type="button">存为预设</button>
+                            </div>
+                        </div>
+                        <aside class="im-theme-preset-panel">
+                            <div class="im-theme-panel-heading">
+                                <strong>我的预设</strong>
+                                <span>点击填入编辑器</span>
+                            </div>
+                            <div id="theme-group-preset-list" class="account-list im-theme-preset-list"></div>
+                        </aside>
+                    </div>
+                </section>
+
                 <!-- 状态栏 CSS Tab -->
                 <section id="theme-tab-status" class="theme-tab-content im-theme-panel" data-theme-type="status" hidden>
                     <div class="im-theme-layout">
@@ -3302,6 +3509,7 @@
                             <textarea id="theme-status-css-input" class="global-textarea im-theme-code-input" placeholder="/* 输入状态栏相关界面的 CSS 代码 */"></textarea>
                             <div class="im-theme-actions">
                                 <button class="sheet-action im-theme-danger-action" id="theme-status-clear-btn" type="button">清空</button>
+                                <button class="sheet-action im-theme-secondary-action im-theme-import-action" id="theme-status-import-btn" data-theme-import-type="status" type="button" title="导入 TXT / DOCX"><i class="fas fa-file-import" aria-hidden="true"></i>导入</button>
                                 <button class="sheet-action im-theme-secondary-action" id="theme-status-copy-btn" type="button">复制源码</button>
                             </div>
                             <div class="im-theme-save-row">
@@ -3319,6 +3527,7 @@
                     </div>
                 </section>
             </main>
+            <input type="file" id="theme-css-import-input" accept=".txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
         </div>
 
         <!-- Font Setting Bottom Sheet -->
@@ -3802,15 +4011,15 @@
                     <!-- Menu Options (iMessage style) -->
                     <div id="msg-context-actions" style="background: #fff; border-radius: 14px; display: flex; flex-direction: column; overflow: hidden;  min-width: 200px;">
                         <div class="msg-menu-item" data-action="reply">
-                            <span>Reply</span>
+                            <span data-u2-i18n="imessage.reply">Reply</span>
                             <i class="fas fa-reply" style="font-size: 16px; color: #8e8e93;"></i>
                         </div>
                         <div class="msg-menu-item" data-action="copy">
-                            <span>Copy</span>
+                            <span data-u2-i18n="imessage.copy">Copy</span>
                             <i class="far fa-copy" style="font-size: 16px; color: #8e8e93;"></i>
                         </div>
                         <div class="msg-menu-item" data-action="translate">
-                            <span>Translate</span>
+                            <span data-u2-i18n="imessage.translate">Translate</span>
                             <i class="fas fa-language" style="font-size: 16px; color: #8e8e93;"></i>
                         </div>
                         <div class="msg-menu-item" data-action="speak">
@@ -3826,7 +4035,7 @@
                     <!-- More Actions (hidden by default) -->
                     <div id="msg-context-more-actions" style="display: none; background: #fff; border-radius: 14px; flex-direction: column; overflow: hidden;  min-width: 200px;">
                         <div class="msg-menu-item" data-action="edit">
-                            <span>Edit</span>
+                            <span data-u2-i18n="imessage.edit">Edit</span>
                             <i class="far fa-edit" style="font-size: 16px; color: #8e8e93;"></i>
                         </div>
                         <div class="msg-menu-item" data-action="recall">
@@ -3834,15 +4043,15 @@
                             <i class="fas fa-rotate-left" style="font-size: 16px; color: #8e8e93;"></i>
                         </div>
                         <div class="msg-menu-item" data-action="forward">
-                            <span>Forward</span>
+                            <span data-u2-i18n="imessage.forward">Forward</span>
                             <i class="fas fa-share" style="font-size: 16px; color: #8e8e93;"></i>
                         </div>
                         <div class="msg-menu-item destructive" data-action="delete">
-                            <span>Delete</span>
+                            <span data-u2-i18n="imessage.delete">Delete</span>
                             <i class="far fa-trash-alt" style="font-size: 16px;"></i>
                         </div>
                         <div class="msg-menu-item" data-action="select" style="border-bottom: none;">
-                            <span>Select</span>
+                            <span data-u2-i18n="imessage.select">Select</span>
                             <i class="far fa-check-circle" style="font-size: 16px; color: #8e8e93;"></i>
                         </div>
                     </div>
@@ -3853,9 +4062,9 @@
                 <div class="bottom-sheet" style="height: 90%; display: flex; flex-direction: column; background: #ffffff;">
                     <div class="sheet-handle"></div>
                     <div class="sheet-title" style="position: relative;">
-                        <div id="cancel-create-group-btn" style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #007aff; font-size: 17px; font-weight: normal; cursor: pointer;">Cancel</div>
-                        New Group
-                        <div id="confirm-create-group-btn" style="position: absolute; right: 16px; top: 50%; transform: translateY(-50%); color: #007aff; font-size: 17px; font-weight: 600; cursor: pointer; opacity: 0.5; pointer-events: none;">Create</div>
+                        <div id="cancel-create-group-btn" data-u2-i18n="group.cancel" style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #007aff; font-size: 17px; font-weight: normal; cursor: pointer;">Cancel</div>
+                        <span data-u2-i18n="group.new">New Group</span>
+                        <div id="confirm-create-group-btn" data-u2-i18n="group.create" style="position: absolute; right: 16px; top: 50%; transform: translateY(-50%); color: #007aff; font-size: 17px; font-weight: 600; cursor: pointer; opacity: 0.5; pointer-events: none;">Create</div>
                     </div>
                     
                     <div class="detail-sheet-content" style="flex: 1; overflow-y: auto; padding: 0; background: #ffffff; padding-bottom: max(40px, env(safe-area-inset-bottom));">
@@ -3968,7 +4177,7 @@
                         <div onclick="window.closeView(document.getElementById('group-details-sheet'))" class="im-group-settings-back">
                             <i class="fas fa-chevron-left"></i> 返回
                         </div>
-                        <div class="im-group-settings-title">Group Settings</div>
+                        <div class="im-group-settings-title" data-u2-i18n="group.settings">Group Settings</div>
                     </div>
 
                     <div class="detail-sheet-content im-group-settings-content">
@@ -3990,7 +4199,7 @@
                         <div id="group-details-count" style="font-size: 15px; color: #8e8e93; margin-bottom: 8px; text-align: center;">1 member</div>
                         
                         <!-- Edit Button -->
-                        <div id="group-details-edit-btn" style="padding: 6px 20px; border-radius: 16px; background: #fff; color: #000; font-weight: 600; font-size: 15px; cursor: pointer;  margin-bottom: 24px; border: 1px solid #e5e5ea; align-self: center;">Edit</div>
+                        <div id="group-details-edit-btn" data-u2-i18n="group.edit" style="padding: 6px 20px; border-radius: 16px; background: #fff; color: #000; font-weight: 600; font-size: 15px; cursor: pointer;  margin-bottom: 24px; border: 1px solid #e5e5ea; align-self: center;">Edit</div>
 
                         <!-- Action Buttons -->
                         <div style="display: flex; gap: 12px; width: 100%; margin-bottom: 20px; justify-content: center;">
@@ -4000,15 +4209,15 @@
                             </div>
                             <div class="group-action-btn" style="flex: 1; max-width: 80px; background: #fff; border-radius: 14px; padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; ">
                                 <i class="fas fa-bell-slash" style="color: #007aff; font-size: 20px;"></i>
-                                <span style="font-size: 11px; color: #007aff; font-weight: 500;">Mute</span>
+                                <span data-u2-i18n="group.mute" style="font-size: 11px; color: #007aff; font-weight: 500;">Mute</span>
                             </div>
                             <div class="group-action-btn" style="flex: 1; max-width: 80px; background: #fff; border-radius: 14px; padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; ">
                                 <i class="fas fa-search" style="color: #007aff; font-size: 20px;"></i>
-                                <span style="font-size: 11px; color: #007aff; font-weight: 500;">Search</span>
+                                <span data-u2-i18n="group.search" style="font-size: 11px; color: #007aff; font-weight: 500;">Search</span>
                             </div>
                             <div class="group-action-btn" id="group-details-more-btn" style="flex: 1; max-width: 80px; background: #fff; border-radius: 14px; padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; ">
                                 <i class="fas fa-ellipsis-h" style="color: #007aff; font-size: 20px;"></i>
-                                <span style="font-size: 11px; color: #007aff; font-weight: 500;">More</span>
+                                <span data-u2-i18n="group.more" style="font-size: 11px; color: #007aff; font-weight: 500;">More</span>
                             </div>
                         </div>
 
@@ -4206,7 +4415,7 @@
                             <div class="form-item" style="justify-content: space-between; border-bottom: 1px solid var(--separator-color);">
                                 <label style="width: auto; font-size: 17px; color: #000; padding-left: 0;">上下文</label>
                                 <div style="display: flex; align-items: center; gap: 10px;">
-                                    <input type="number" id="group-context-limit-input" style="width: 56px; text-align: center; border: 1px solid #e5e5ea; border-radius: 8px; padding: 4px; font-size: 15px;" value="80" min="1">
+                                    <input type="number" id="group-context-limit-input" style="width: 56px; text-align: center; border: 1px solid #e5e5ea; border-radius: 8px; padding: 4px; font-size: 15px;" value="100" min="1">
                                     <label class="toggle-switch">
                                         <input type="checkbox" id="group-context-enabled-toggle" checked="">
                                         <span class="slider"></span>
@@ -4537,7 +4746,7 @@
                         <div onclick="window.closeView(document.getElementById('chat-settings-sheet'))" style="position: absolute; left: 16px; font-size: 16px; color: #007aff; cursor: pointer; display: flex; align-items: center;">
                             <i class="fas fa-chevron-left" style="margin-right: 4px;"></i> 返回
                         </div>
-                        <div style="font-size: 17px; font-weight: 600; color: #111;">Chat Settings</div>
+                        <div style="font-size: 17px; font-weight: 600; color: #111;" data-u2-i18n="chat.settings">Chat Settings</div>
                     </div>
                     
                     <div class="detail-sheet-content" style="flex: 1; overflow-y: auto; padding: 0;">
@@ -4807,10 +5016,10 @@
                                     <span id="chat-memory-longterm-count" style="margin-left:auto; color:#8e8e93; font-size:14px;"></span>
                                     <i class="fas fa-chevron-right arrow"></i>
                                 </div>
-                                <div class="settings-item" id="chat-memory-social-btn" style="border-bottom: 1px solid var(--separator-color); cursor: pointer;">
-                                    <div class="settings-icon" style="background-color: #ff2d55;"><i class="fas fa-user-circle"></i></div>
-                                    <div class="settings-text">社交账号</div>
-                                    <span id="chat-memory-social-count" style="margin-left:auto; color:#8e8e93; font-size:14px;"></span>
+                                <div class="settings-item" id="chat-memory-x-dm-context-btn" style="border-bottom: 1px solid var(--separator-color); cursor: pointer;">
+                                    <div class="settings-icon" style="background-color: #111111;"><i class="fab fa-x-twitter"></i></div>
+                                    <div class="settings-text">社交帐号</div>
+                                    <span id="chat-memory-x-dm-context-count" style="margin-left:auto; color:#8e8e93; font-size:14px;"></span>
                                     <i class="fas fa-chevron-right arrow"></i>
                                 </div>
                                 <div class="settings-item" id="chat-memory-schedule-entry-btn" style="border-bottom: none; cursor: pointer;">
@@ -4966,6 +5175,12 @@
                             </div>
                             <div id="modal-generation-prompt-group" style="display: none; margin: -6px 0 14px;">
                                 <button type="button" id="modal-generation-context-btn" style="width: 100%; padding: 10px 12px; border: none; border-radius: 12px; background: #111; color: #fff; font-size: 13px; font-weight: 650; margin-bottom: 10px;">根据当前剧情生成提示词</button>
+                                <div id="modal-generation-preset-group" style="display: flex; gap: 8px; margin-bottom: 10px;">
+                                    <select id="modal-generation-preset-select" aria-label="选择生图提示词预设" style="flex: 1; min-width: 0; border: none; border-radius: 12px; padding: 10px 12px; background: #f2f2f7; color: #1c1c1e; font-size: 13px; outline: none;">
+                                        <option value="">当前编辑内容</option>
+                                    </select>
+                                    <button type="button" id="modal-generation-save-preset-btn" style="border: none; border-radius: 12px; padding: 0 12px; background: #e5e5ea; color: #1c1c1e; font-size: 13px; font-weight: 600; white-space: nowrap;">存为预设</button>
+                                </div>
                                 <details id="modal-generation-details" style="border-radius: 14px; background: #f2f2f7; overflow: hidden;">
                                     <summary style="padding: 12px 14px; cursor: pointer; font-size: 14px; font-weight: 650; color: #1c1c1e;">角色与负面提示词</summary>
                                     <div style="padding: 0 12px 12px; display: flex; flex-direction: column; gap: 9px;">
@@ -4983,6 +5198,10 @@
                                         </label>
                                     </div>
                                 </details>
+                                <label id="modal-auto-image-generation-group" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; padding: 12px 14px; border-radius: 14px; background: #f2f2f7; cursor: pointer;">
+                                    <span style="font-size: 14px; font-weight: 600; color: #1c1c1e;">自动生图</span>
+                                    <input type="checkbox" id="modal-auto-image-generation-toggle" style="width: 20px; height: 20px; accent-color: #1c1c1e;">
+                                </label>
                             </div>
                             <div id="modal-reference-face-group" style="display: none; align-items: center; gap: 12px; margin: -4px 0 12px; padding: 12px 14px; border-radius: 14px; background: #f2f2f7;">
                                 <div id="modal-reference-face-preview" style="width: 42px; height: 42px; border-radius: 13px; overflow: hidden; background: #e5e5ea; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #8e8e93;">
@@ -5443,9 +5662,9 @@
                     <div class="bottom-sheet x-create-topic-sheet">
                         <div class="sheet-handle"></div>
                         <div class="x-edit-sheet-header">
-                            <button class="x-edit-sheet-text-btn" id="x-create-topic-cancel-btn" type="button">Cancel</button>
+                            <button class="x-edit-sheet-text-btn" id="x-create-topic-cancel-btn" data-u2-i18n="x.cancel" type="button">Cancel</button>
                             <strong>添加超话</strong>
-                            <button class="x-edit-sheet-save" id="x-create-topic-save-btn" type="button">Save</button>
+                            <button class="x-edit-sheet-save" id="x-create-topic-save-btn" data-u2-i18n="x.save" type="button">Save</button>
                         </div>
                         <div class="x-topic-editor-body">
                             <div class="x-topic-editor-hero">
@@ -5499,9 +5718,9 @@
                     <div class="bottom-sheet x-edit-profile-sheet">
                         <div class="sheet-handle"></div>
                         <div class="x-edit-sheet-header">
-                            <button class="x-edit-sheet-text-btn" id="x-edit-cancel-btn" type="button">Cancel</button>
-                            <strong>Edit profile</strong>
-                            <button class="x-edit-sheet-save" id="x-edit-save-btn" type="button">Save</button>
+                            <button class="x-edit-sheet-text-btn" id="x-edit-cancel-btn" data-u2-i18n="x.cancel" type="button">Cancel</button>
+                            <strong data-u2-i18n="x.edit-profile">Edit profile</strong>
+                            <button class="x-edit-sheet-save" id="x-edit-save-btn" data-u2-i18n="x.save" type="button">Save</button>
                         </div>
                         <div class="x-edit-profile-body">
                             <div class="x-edit-avatar-row">
@@ -5548,8 +5767,8 @@
                     <div class="bottom-sheet x-settings-sheet">
                         <div class="sheet-handle"></div>
                         <div class="x-edit-sheet-header">
-                            <button class="x-edit-sheet-text-btn" id="x-settings-close-btn" type="button">Close</button>
-                            <strong>X Settings</strong>
+                            <button class="x-edit-sheet-text-btn" id="x-settings-close-btn" data-u2-i18n="x.close" type="button">Close</button>
+                            <strong data-u2-i18n="x.settings">X Settings</strong>
                             <span class="x-settings-spacer"></span>
                         </div>
                         <div class="x-settings-body">
@@ -5617,23 +5836,23 @@
                         <div class="x-nav-indicator" id="x-nav-indicator"></div>
                         <button class="x-nav-item active" type="button" data-target="x-home-tab" data-index="0">
                             <i class="fas fa-house"></i>
-                            <span>Home</span>
+                            <span data-u2-i18n="x.home">Home</span>
                         </button>
                         <button class="x-nav-item" type="button" data-target="x-super-tab" data-index="1">
                             <i class="fas fa-hashtag"></i>
-                            <span>Super</span>
+                            <span data-u2-i18n="x.super">Super</span>
                         </button>
                         <button class="x-nav-item" type="button" data-target="x-discover-tab" data-index="2">
                             <i class="fas fa-compass"></i>
-                            <span>Discover</span>
+                            <span data-u2-i18n="x.discover">Discover</span>
                         </button>
                         <button class="x-nav-item" type="button" data-target="x-messages-tab" data-index="3">
                             <i class="far fa-envelope"></i>
-                            <span>Messages</span>
+                            <span data-u2-i18n="x.messages">Messages</span>
                         </button>
                         <button class="x-nav-item" type="button" data-target="x-me-tab" data-index="4">
                             <i class="far fa-user"></i>
-                            <span>Me</span>
+                            <span data-u2-i18n="x.me">Me</span>
                         </button>
                     </div>
                 </nav>
@@ -6402,11 +6621,11 @@
             <!-- ========================================== -->
             <div class="app-view shopping-view" id="shopping-view" style="display: none;">
                 <div class="shopping-topbar">
-                    <button type="button" class="shopping-brand" id="shopping-close-btn">Shop</button>
+                    <button type="button" class="shopping-brand" id="shopping-close-btn" data-u2-i18n="shopping.shop">Shop</button>
                     <div class="shopping-top-actions">
-                        <button type="button" class="shopping-icon-btn" id="shopping-search-btn" aria-label="Search"><i class="fas fa-search"></i></button>
-                        <button type="button" class="shopping-icon-btn" id="shopping-settings-btn" aria-label="Settings"><i class="fas fa-cog"></i></button>
-                        <button type="button" class="shopping-icon-btn" aria-label="Bag"><i class="fas fa-bag-shopping"></i></button>
+                        <button type="button" class="shopping-icon-btn" id="shopping-search-btn" aria-label="Search" data-u2-i18n-aria-label="shopping.search"><i class="fas fa-search"></i></button>
+                        <button type="button" class="shopping-icon-btn" id="shopping-settings-btn" aria-label="Settings" data-u2-i18n-aria-label="shopping.settings"><i class="fas fa-cog"></i></button>
+                        <button type="button" class="shopping-icon-btn" aria-label="Bag" data-u2-i18n-aria-label="shopping.bag"><i class="fas fa-bag-shopping"></i></button>
                     </div>
                 </div>
 
@@ -8058,6 +8277,7 @@
 <div class="about-info-modal-overlay" id="about-info-modal" hidden aria-hidden="true">
     <section class="about-info-modal-card" role="dialog" aria-modal="true" aria-labelledby="about-info-modal-title">
         <header class="about-info-modal-header">
+            <button type="button" class="about-info-modal-back" id="about-info-modal-back" aria-label="返回更新日志列表" title="返回更新日志列表" hidden><i class="fas fa-chevron-left" aria-hidden="true"></i></button>
             <h2 id="about-info-modal-title">免责声明</h2>
             <button type="button" class="about-info-modal-close" id="about-info-modal-close" aria-label="关闭"><i class="fas fa-times"></i></button>
         </header>
@@ -8080,9 +8300,15 @@
                     </ol>
                 </section>
             </div>
-            <div id="about-changelog-content" class="about-info-panel about-changelog-empty" hidden>
-                <i class="fas fa-clock-rotate-left" aria-hidden="true"></i>
-                <strong>暂无更新日志</strong>
+            <div id="about-changelog-content" class="about-info-panel" hidden>
+                <div id="about-changelog-list-view">
+                    <p class="about-changelog-intro">选择日期查看本次更新内容</p>
+                    <div id="about-changelog-list" class="about-changelog-list" aria-label="更新日期列表"></div>
+                </div>
+                <article id="about-changelog-detail-view" class="about-changelog-detail" hidden aria-live="polite" tabindex="-1">
+                    <p id="about-changelog-detail-date" class="about-changelog-detail-date"></p>
+                    <div id="about-changelog-detail-content"></div>
+                </article>
             </div>
         </div>
         <footer class="about-info-modal-footer">
@@ -8091,56 +8317,59 @@
     </section>
 </div>
 
-<script src="js/storage/app_storage.js?v=20260715-library-content-store-v1&cot=20260725-single-chat-cot-v1&backup=20260804-import-safety-v1&image-generation=20260803-char-face-reference-v2&startup-queue=20260804-v1"></script>
+<script src="js/storage/app_storage.js?v=20260715-library-content-store-v1&cot=20260725-single-chat-cot-v1&backup=20260804-import-safety-v1&provider=20260807-v1&image-generation=20260803-char-face-reference-v2&startup-queue=20260804-v1&vector-memory-index=20260807-v1&group-identity-css-v1"></script>
     <script src="js/storage/imessage_storage.js?v=20260710-storage-v8-idb1"></script>
     <script src="storage.js?v=20260710-storage-v7-cache1"></script>
     <script src="js/lazy_vendor_loader.js?v=20260803-v1"></script>
     <script src="js/app_state_bridge.js?v=20260710-bstage-chat-recovery-v1"></script>
-    <script src="js/bootstrap_globals.js?v=20260721-fetch-abort-v1&error-copy=20260801-zh-v1&api=20260803-unified-v1&image-generation=20260803-char-face-reference-v2"></script>
-    <script src="js/image_generation.js?v=20260803-artist-prompt-v6"></script>
+    <script src="js/bootstrap_globals.js?v=20260721-fetch-abort-v1&error-copy=20260801-zh-v1&api=20260803-unified-v1&provider-adapters=20260807-v1&image-generation=20260807-model-cache-v1&image-understanding=20260811-v1&vector-memory=20260807-local-v1"></script>
+    <script src="js/image_generation.js?v=20260807-model-cache-v1"></script>
+    <script src="js/image_understanding.js?v=20260811-v1"></script>
     <script src="js/export_file.js?v=20260718-ios-pwa-export-v1"></script>
-    <script src="js/about_info_modal.js?v=20260712-login-notice-v1"></script>
-    <script src="js/login.js?v=20260801-resume-recovery-v1"></script>
-    <script src="js/mobile_input_compat.js?v=20260713-bstage-enter-v1-android-focus-scope-v1&guard=20260801-v3"></script>
+    <script src="js/about_info_modal.js?v=20260811-latest-changelog-notice-v1"></script>
+    <script src="js/login.js?v=20260801-resume-recovery-v1&changelog-notice=20260811-v1"></script>
+<script src="js/mobile_input_compat.js?v=20260713-bstage-enter-v1-android-focus-scope-v1&guard=20260801-v3&theme-import-android-v1&enter-blur=20260807-v1&global-scope=20260807-v1&call-viewport-owner=20260811-v1&bottom-sheet-y=20260811-v1"></script>
     <script src="js/background_activity.js"></script>
     <script src="js/system_notifications.js?v=20260721-storage-hydration-v1-custom-sound-v1&image-assets=20260803-v1"></script>
     
     <!-- 引入 iMessage 模块分段代码 -->
     <script src="js/imessage/game.js?v=20260803-anonymous-qa-v7-context-layout&startup-queue=20260804-v1"></script>
     <script src="js/imessage/data_utils.js?v=20260713-offline-memory-v1-sticker-manifest-v2-memory-event-time-v1-offline-handoff-v2&single-chat-info=20260803-v1&schedule-routine=20260804-v1"></script>
-    <script src="js/imessage/2_core.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&cotcopy=20260727-v2&observer=20260730-v1&open-performance=20260802-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&group-user-avatar=20260802-v1&image-generation=20260803-artist-prompt-v6&single-chat-info=20260803-v1&offline-handoff=20260803-v2&cot-default=20260803-v3&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v2&vendor-lazy=20260803-v1&startup-queue=20260804-v1&schedule-routine=20260804-v1"></script>
+    <script src="js/imessage/2_core.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&cotcopy=20260727-v2&observer=20260730-v1&open-performance=20260802-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&group-user-avatar=20260802-v1&image-generation=20260803-artist-prompt-v6&single-chat-info=20260803-v1&offline-handoff=20260803-v2&cot-default=20260803-v3&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v2&vendor-lazy=20260803-v1&startup-queue=20260804-v1&schedule-routine=20260804-v1&context-window=20260804-v1&local-vector-memory=20260807-v1&group-identity-css-v1&service-id-v1&friend-commit=20260808-v1&x-dm-context=20260811-v2"></script>
+    <script src="js/imessage/vector_memory.js?v=20260807-local-vector-memory-v1"></script>
     <script src="js/imessage/3_contacts.js?v=20260718-friend-profile-import-v1&render-cache=20260801-v1&vendor-lazy=20260803-v1&startup-queue=20260804-v1"></script>
-    <script src="js/imessage/3_groups.js?v=20260718-group-poll-v4-group-memory-editor-v1&observer=20260730-v1&render-cache=20260801-v1&user-avatar=20260802-v1&group-auto-translation=20260803-v1&startup-queue=20260804-v1"></script>
-    <script src="js/imessage/4_chat_common.js?v=image-assets-20260803-v1&startup-queue=20260804-v1"></script>
+    <script src="js/imessage/3_groups.js?v=20260718-group-poll-v4-group-memory-editor-v1&observer=20260730-v1&render-cache=20260801-v1&user-avatar=20260802-v1&group-auto-translation=20260803-v1&startup-queue=20260804-v1&context-limit=20260804-v1&group-identity-css-v1"></script>
+    <script src="js/imessage/4_chat_common.js?v=image-assets-20260803-v1&auto-image=20260807-v1&startup-queue=20260804-v1"></script>
     <script src="js/imessage/4_chat_status.js?v=20260716-status-prompt-v2&paging=20260801-button-only-v1&startup-queue=20260804-v1"></script>
-    <script src="js/imessage/4_chat_payment.js?v=20260725-single-chat-cot-v1&startup-queue=20260804-v1"></script>
-    <script src="js/imessage/4_chat_bubbles.js?v=20260725-single-chat-cot-v1-avatar-pill-v1-link-theatre-js-v1&group-user-avatar=20260802-v1&open-performance=20260802-v1&image-assets=20260803-v1&startup-queue=20260804-v1"></script>
+    <script src="js/imessage/4_chat_payment.js?v=20260725-single-chat-cot-v1&startup-queue=20260804-v1&group-identity-css-v1"></script>
+    <script src="js/imessage/4_chat_bubbles.js?v=20260725-single-chat-cot-v1-avatar-pill-v1-link-theatre-js-v1&group-user-avatar=20260802-v1&open-performance=20260802-v1&image-assets=20260803-v1&startup-queue=20260804-v1&group-identity-css-v1"></script>
     <script src="js/imessage/chat_search.js?v=20260718-chat-history-search-v2&keyboard-guard=20260801-v1&startup-queue=20260804-v1"></script>
     <script src="js/imessage/chat_favorites.js?v=20260723-chat-favorites-v3&startup-queue=20260804-v1"></script>
-    <script src="js/imessage/minimax_tts.js"></script>
-    <script src="js/imessage/4_chat_ai.js?v=20260724-single-chat-prompt-v8-single-chat-cot-v1&cot=20260802-single-chat-cot-full-analysis-v2&online=20260801-persona-entries-v1&observer=20260730-v1&performance=20260801-v1&api=20260803-nonstream-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&single-chat-info=20260803-v1&offline-handoff=20260803-v2&context-dedupe=20260803-v1&nonstream=20260803-v2&group-auto-translation=20260803-v1&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v5&image-assets=20260803-v1&startup-queue=20260804-v1&psychology-priority=20260804-v1&schedule-routine=20260804-v1&sleep-status=20260804-v1"></script>
+    <script src="js/imessage/minimax_tts.js?v=20260810-language-boost-v1"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260724-single-chat-prompt-v8-single-chat-cot-v1&cot=20260802-single-chat-cot-full-analysis-v2&online=20260801-persona-entries-v1&observer=20260730-v1&performance=20260801-v1&api=20260803-nonstream-v1&auto-image=20260807-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&single-chat-info=20260803-v1&offline-handoff=20260803-v2&context-dedupe=20260803-v1&nonstream=20260803-v2&group-auto-translation=20260803-v1&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v5&image-assets=20260803-v1&startup-queue=20260804-v1&psychology-priority=20260804-v1&schedule-routine=20260804-v1&sleep-status=20260804-v1&system-merge=20260804-v1&context-trace=20260804-v1&message-count-hard-limit=20260807-v1&x-dm-context=20260811-v1"></script>
     <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
     <script src="js/imessage/offline_reasoning.js?v=20260718-offline-cot-v1"></script>
-    <script src="js/imessage/4_chat_sheet.js?v=20260718-offline-cot-v1-chat-image-send-v1&cotui=20260725-pill-v1&api=20260804-offline-stream-v1&image-generation=20260803-artist-prompt-v6&chat-runtime-performance=20260803-v1&image-assets=20260803-v1&startup-queue=20260804-v1"></script>
-    <script src="js/imessage/4_chat_link.js?v=20260726-light-link-theatre-v1&api=20260803-unified-v1&startup-queue=20260804-v1"></script>
+    <script src="js/imessage/4_chat_sheet.js?v=20260718-offline-cot-v1-chat-image-send-v1&cotui=20260725-pill-v1&api=20260804-offline-stream-v1&image-generation=20260807-presets-v1&chat-runtime-performance=20260803-v1&image-assets=20260803-v1&startup-queue=20260804-v1&offline-stream-performance=20260805-v2&group-identity-css-v1"></script>
+    <script src="js/imessage/4_chat_link.js?v=20260726-light-link-theatre-v1&api=20260803-unified-v1&startup-queue=20260804-v1&group-identity-css-v1"></script>
     <script src="js/imessage/4_chat_list.js?chat-runtime-performance=20260803-v1&startup-queue=20260804-v1"></script>
     <script src="js/imessage/4_chat_interface.js?v=20260715-chat-context-menu-offline-retry-v1&observer=20260730-v1&android-keyboard=20260802-v1&open-performance=20260802-v1&chat-runtime-performance=20260803-v1&startup-queue=20260804-v1"></script>
-    <script src="js/imessage/4_chat_voice_call.js?v=20260725-call-keyboard-minimize-v2-minimized-context-v1&api=20260803-unified-v1&group-layout=20260803-v1"></script>
+    <script src="js/imessage/4_chat_voice_call.js?v=20260725-call-keyboard-minimize-v2-minimized-context-v1&api=20260803-unified-v1&group-layout=20260803-v1&group-identity-css-v1&oppo-edge-anchor=20260811-v1"></script>
     <script src="js/imessage/4_chat_main.js?v=20260715-chat-context-menu-offline-retry-v1&single-chat-info=20260803-v1&startup-queue=20260804-v1"></script>
-    <script src="js/imessage/5_settings.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v3&chat-bg=20260729-race-reset-v1&relationship=20260801-static-preview-v3&auto-translation=20260801-v1&status-prompt=20260802-v1&style-cache=20260802-v1&api=20260803-unified-v1&single-chat-info=20260803-v1&startup-queue=20260804-v1"></script>
-    <script src="js/imessage/6_moments.js?v=20260718-moments-target-reply-v1&auto-translation=20260801-v1&api=20260803-unified-v1&startup-queue=20260804-v1"></script>
+    <script src="js/imessage/5_settings.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v3&chat-bg=20260729-race-reset-v1&relationship=20260801-static-preview-v3&auto-translation=20260801-v1&status-prompt=20260802-v1&style-cache=20260802-v1&api=20260803-unified-v1&single-chat-info=20260803-v1&startup-queue=20260804-v1&context-persistence=20260804-v1&local-vector-memory=20260807-v1&x-dm-context=20260811-v2"></script>
+    <script src="js/imessage/6_moments.js?v=20260718-moments-target-reply-v1&auto-translation=20260801-v1&api=20260803-unified-v1&startup-queue=20260804-v1&group-identity-css-v1&current-account-avatar-v1&moment-visibility=20260811-v1&relationship-engagement=20260811-v1"></script>
 
     <!-- 引入其他应用模块 -->
     <script src="js/pay.js?v=20260710-storage-ready-v1&open-performance=20260801-v1&startup-queue=20260804-v1"></script>
-    <script src="js/bstage.js?v=20260725-android-keyboard-actions-v2&subscribers=20260730-cap-compact-v1&keyboard-guard=20260801-v1&api=20260803-unified-v1&image-assets=20260803-v1&startup-queue=20260804-v1"></script>
+    <script src="js/bstage.js?v=20260725-android-keyboard-actions-v2&subscribers=20260730-cap-compact-v1&keyboard-guard=20260801-v1&api=20260803-unified-v1&provider=20260807-v1&image-assets=20260803-v1&startup-queue=20260804-v1"></script>
     <!-- 引入世界书核心模块脚本 -->
     <script src="js/builtin_worldbook.js?v=20260713-disable-override-limit-v2"></script>
-    <script src="js/worldbook.js?v=20260801-import-txt-docx-only-v1&vendor-lazy=20260803-v1&startup-queue=20260804-v1"></script>
+    <script src="js/worldbook.js?v=20260801-import-txt-docx-only-v1&vendor-lazy=20260803-v1&startup-queue=20260804-v1&lazy-render=20260805-v1"></script>
     <!-- 引入核心 UI 管理与设置模块脚本 -->
     <script src="js/ui.js"></script>
-    <script src="js/settings.js?v=20260718-ios-pwa-export-v1-notification-sync-v1-custom-notification-sound-v1-api-presets-accessor-v1&global-font-scale=20260801-v3&theme-source=20260802-status-center-v1&assistive=20260801-drag-settle-v3&home-theme=20260731-widgets-v1&app-icon-alpha=20260731-v1&backup=20260803-sticker-skip-v3&api=20260803-config-v2-model-search&image-generation=20260803-char-face-reference-v2&startup-queue=20260804-v1"></script>
+    <script src="js/ui_translation.js?v=20260807-global-ui-zh-v1"></script>
+    <script src="js/settings.js?v=20260718-ios-pwa-export-v1-notification-sync-v1-custom-notification-sound-v1-api-presets-accessor-v1&global-font-scale=20260801-v3&theme-source=20260802-status-center-v1&assistive=20260801-drag-settle-v3&home-theme=20260731-widgets-v1&app-icon-alpha=20260731-v1&backup=20260803-sticker-skip-v3&api=20260803-config-v2-model-search&provider-picker=20260807-v1&image-generation=20260807-model-select-v1&image-understanding=20260811-v1&startup-queue=20260804-v1&api-open-performance=20260805-v1&vector-memory=20260807-local-v1&group-identity-css-v1&theme-import-android-v1&moments-account-hydration=20260806-v1&global-ui-zh-v1"></script>
     <script src="js/library.js?v=20260715-reader-streaming-v1&open-performance=20260801-v1&vendor-lazy=20260803-v1&startup-queue=20260804-v1"></script>
-    <script src="js/loves.js?v=20260719-friend-phone-bilingual-v13-android-focus-scope-v1&open-performance=20260801-v1&api=20260803-unified-v1&image-assets=20260803-v1&startup-queue=20260804-v1"></script>
+    <script src="js/loves.js?v=20260719-friend-phone-bilingual-v13-android-focus-scope-v1&open-performance=20260801-v1&api=20260803-unified-v1&image-assets=20260803-v1&startup-queue=20260804-v1&moment-language=20260806-v1&android-comment-focus=20260807-v1"></script>
     <script src="js/tiktok/2_core.js?v=20260712-tiktok-feed-cleanup-v1&open-performance=20260801-v1&startup-queue=20260804-v1"></script>
     <script src="js/tiktok/3_home.js?v=20260712-tiktok-feed-cleanup-v1&api=20260803-unified-v1&startup-queue=20260804-v1"></script>
     <script src="js/tiktok/4_chat.js?v=20260712-tiktok-polish-v1&api=20260803-unified-v1&startup-queue=20260804-v1"></script>
@@ -8149,12 +8378,12 @@
     <script src="js/youtube/3_channel.js?v=20260717-char-lottery-consistency-v18"></script>
     <script src="js/youtube/4_settings.js"></script>
     <script src="js/youtube/5_player.js?v=20260717-char-lottery-consistency-v18&worldbook=20260729-global-bound-only-v2&api=20260803-unified-v1"></script>
-    <script src="js/youtube/6_community.js?v=20260801-dm-generation-fix-v19&worldbook=20260729-global-bound-only-v2&api=20260803-unified-v1"></script>
+    <script src="js/youtube/6_community.js?v=20260801-dm-generation-fix-v19&worldbook=20260729-global-bound-only-v2&api=20260803-unified-v1&composer-focus=20260811-v1"></script>
     <script src="js/youtube/7_trending.js?worldbook=20260729-global-bound-only-v2&api=20260803-unified-v1"></script>
     <script src="js/youtube/8_user_live.js?v=20260717-char-lottery-consistency-v18&worldbook=20260729-global-bound-only-v2&api=20260803-unified-v1"></script>
     <script src="js/netflix.js?v=20260710-storage-ready-v2&open-performance=20260801-v1&api=20260803-unified-v1&startup-queue=20260804-v1"></script>
     <script src="js/shopping.js?v=20260710-storage-ready-v1&performance=20260801-v2&api=20260803-unified-v1&startup-queue=20260804-v1"></script>
-    <script src="js/xapp.js?v=20260710-storage-v7-cache1&worldbook=20260729-global-bound-char-v1&api=20260803-unified-v1&startup-queue=20260804-v1"></script>
+    <script src="js/xapp.js?v=20260710-storage-v7-cache1&worldbook=20260729-global-bound-char-v1&api=20260803-unified-v1&image-understanding=20260811-v1&startup-queue=20260804-v1"></script>
     <script src="js/home_desktop.js?v=20260710-storage-ready-v1&theme-widgets=20260731-v1&image-assets=20260804-v1&eager-images=20260804-v1&splash-gate=20260804-v1"></script>
     <script src="js/home_widget_panel_enhance.js"></script>
     <!-- 引入主逻辑脚本 -->

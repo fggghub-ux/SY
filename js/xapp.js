@@ -231,6 +231,7 @@
         let currentActionPostId = null;
         let currentComposeSuperId = null;
         let composeImageDraft = '';
+        const postVisionRuns = new Set();
         let xChromeInitialized = false;
         let xEventsInitialized = false;
         const xHomeFeedInitialLimit = 20;
@@ -531,7 +532,8 @@ X is a global app. Non-User authors may write in the language that naturally fit
                 ? rawImages.map((image, imageIndex) => ({
                     id: String(image.id || `${id}-image-${imageIndex}`),
                     text: safeText(image.text || image.prompt || image.description || image.alt || imageText),
-                    url: safeText(image.url || image.src || image.imageUrl)
+                    url: safeText(image.url || image.src || image.imageUrl),
+                    vision: image?.vision && typeof image.vision === 'object' ? { ...image.vision } : undefined
                 }))
                 : (imageText || raw.mediaType === 'image'
                     ? [{ id: `${id}-image-0`, text: imageText, url: '' }]
@@ -1748,6 +1750,11 @@ X is a global app. Non-User authors may write in the language that naturally fit
                 images: composeImageDraft ? [{ id: `${id}-image-0`, text: '用户上传图片', url: composeImageDraft }] : [],
                 createdAt: Date.now()
             };
+            const publishImageSources = rawPost.images.map((image) => ({
+                id: String(image.id || ''),
+                url: String(image.url || ''),
+                mimeType: String(image.mimeType || '')
+            }));
             const added = appendGeneratedPosts([rawPost]);
             if (superTopic && added.length) updateSuperHomeCard(superTopic);
             closeComposer();
@@ -1762,7 +1769,7 @@ X is a global app. Non-User authors may write in the language that naturally fit
                     return;
                 }
                 if (typeof window.showToast === 'function') window.showToast('Post published; generating engagement');
-                generatePostPublishInteractions(added[0].id);
+                generatePostPublishInteractions(added[0].id, { imageSources: publishImageSources });
             }
         }
 
@@ -4874,9 +4881,67 @@ ${worldbook || 'None'}`;
         }
 
         function getPostForInteraction(postId, state = getXState()) {
-            return postData[postId]
-                || (state.xGeneratedPosts || []).find((post) => String(post.id) === String(postId))
+            return (state.xGeneratedPosts || []).find((post) => String(post.id) === String(postId))
+                || postData[postId]
                 || {};
+        }
+
+        function savePostImageVision(postId, imageId, vision) {
+            updateXState((draft) => {
+                draft.xGeneratedPosts = (draft.xGeneratedPosts || []).map((post) => {
+                    if (String(post?.id) !== String(postId)) return post;
+                    return {
+                        ...post,
+                        images: (Array.isArray(post.images) ? post.images : []).map((image) => (
+                            String(image?.id) === String(imageId)
+                                ? { ...image, vision: { ...vision } }
+                                : image
+                        ))
+                    };
+                });
+            });
+        }
+
+        function visionContextForImage(vision) {
+            if (!vision || typeof vision !== 'object') return null;
+            if (vision.status !== 'ready') return { status: String(vision.status || 'unknown') };
+            return {
+                status: 'ready',
+                summary: safeText(vision.summary),
+                visibleText: Array.isArray(vision.visibleText) ? vision.visibleText.map((item) => safeText(item)).filter(Boolean) : [],
+                subjects: Array.isArray(vision.subjects) ? vision.subjects.map((item) => safeText(item)).filter(Boolean) : [],
+                scene: safeText(vision.scene),
+                mood: safeText(vision.mood),
+                notableDetails: Array.isArray(vision.notableDetails) ? vision.notableDetails.map((item) => safeText(item)).filter(Boolean) : []
+            };
+        }
+
+        async function enrichPublishedPostImages(postId, imageSources = []) {
+            const source = (Array.isArray(imageSources) ? imageSources : []).find((image) => image?.id && image?.url);
+            if (!source) return;
+            const visionApi = window.u2ImageUnderstanding;
+            if (!visionApi?.isConfigured?.()) {
+                savePostImageVision(postId, source.id, {
+                    status: 'skipped',
+                    reason: 'not-configured',
+                    analyzedAt: Date.now()
+                });
+                await flushXStateNow('x-post-image-vision-skipped');
+                return;
+            }
+            try {
+                const vision = await visionApi.analyze({ url: source.url, mimeType: source.mimeType });
+                savePostImageVision(postId, source.id, vision);
+                await flushXStateNow('x-post-image-vision');
+            } catch (error) {
+                console.warn('[X] Post image understanding failed', error);
+                savePostImageVision(postId, source.id, {
+                    status: 'failed',
+                    reason: 'analysis-failed',
+                    analyzedAt: Date.now()
+                });
+                await flushXStateNow('x-post-image-vision-failed');
+            }
         }
 
         function buildPostInteractionContext(postId) {
@@ -4893,7 +4958,7 @@ ${worldbook || 'None'}`;
             }));
             const images = getPostImages(post).map((image) => ({
                 text: image.text || image.description || '',
-                url: image.url || ''
+                vision: visionContextForImage(image.vision)
             }));
             return {
                 user: {
@@ -4932,6 +4997,7 @@ Generate engagement for this exact X post.
 Minimum requirements:
 - comments plus nested replies combined MUST contain at least 10 generated comment objects.
 - Comments and replies must react to concrete details from the post, image descriptions, topic, existing comments, User persona, or Worldbook.
+- When an image includes a ready vision object, use it as the only visual evidence. Do not invent visual details that are absent from that object.
 ${includePrivateMessages ? '- privateMessages MUST contain at least 2 new stranger private-message conversations.\n- Each privateMessages[].messages MUST contain 2 to 5 incoming message objects, and every message is authored by that stranger.\n- Private messages must be prompted by this specific User post and must not reuse existing DM contacts.' : '- Do not include privateMessages or any private-message content.'}
 - Never generate content authored by the current User. The User is context only.
 - Every generated author must be a non-User identity.
@@ -5011,8 +5077,16 @@ ${worldbook || 'None'}`;
             return normalized.length;
         }
 
-        async function generatePostPublishInteractions(postId) {
+        async function generatePostPublishInteractions(postId, options = {}) {
+            const runKey = String(postId || '');
+            if (!runKey || postVisionRuns.has(runKey)) return;
+            postVisionRuns.add(runKey);
             try {
+                try {
+                    await enrichPublishedPostImages(postId, options.imageSources);
+                } catch (error) {
+                    console.warn('[X] Post image understanding persistence failed', error);
+                }
                 const result = await requestPostInteractionsWithRetry(postId, {
                     includePrivateMessages: true,
                     minCommentItems: 10,
@@ -5027,6 +5101,8 @@ ${worldbook || 'None'}`;
             } catch (error) {
                 console.error('[X] Post publish interaction generation failed', error);
                 if (typeof window.showToast === 'function') window.showToast('Post published, but API engagement generation failed');
+            } finally {
+                postVisionRuns.delete(runKey);
             }
         }
 

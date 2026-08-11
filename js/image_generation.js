@@ -9,27 +9,31 @@
                 endpoint: 'https://api.openai.com/v1/images/generations',
                 apiKey: '',
                 model: 'gpt-image-1.5',
-                size: '1024x1024'
+                size: '1024x1024',
+                models: []
             }),
             gemini: Object.freeze({
                 endpoint: 'https://generativelanguage.googleapis.com/v1beta/interactions',
                 apiKey: '',
                 model: 'gemini-3.1-flash-image',
-                size: '1024x1024'
+                size: '1024x1024',
+                models: []
             }),
             novelai: Object.freeze({
                 endpoint: 'https://image.novelai.net/ai/generate-image',
                 apiKey: '',
                 model: '',
-                size: '1024x1024'
+                size: '1024x1024',
+                models: []
             }),
             grok: Object.freeze({
                 endpoint: 'https://api.x.ai/v1/images/generations',
                 apiKey: '',
                 model: 'grok-imagine-image',
-                size: '1024x1024'
+                size: '1024x1024',
+                models: []
             }),
-            relay: Object.freeze({ endpoint: '', apiKey: '', model: '', size: '1024x1024' })
+            relay: Object.freeze({ endpoint: '', apiKey: '', model: '', size: '1024x1024', models: [] })
         })
     });
 
@@ -39,6 +43,13 @@
             ? source.providers
             : {};
         const providers = {};
+        const normalizeModels = (models) => {
+            const seen = new Set();
+            return (Array.isArray(models) ? models : [])
+                .map((model) => String(model || '').trim().slice(0, 256))
+                .filter((model) => model && !seen.has(model) && (seen.add(model) || true))
+                .slice(0, 100);
+        };
         PROVIDERS.forEach((provider) => {
             const defaults = DEFAULTS.providers[provider];
             const saved = savedProviders[provider] && typeof savedProviders[provider] === 'object'
@@ -50,7 +61,8 @@
                 model: String(saved.model ?? defaults.model).trim(),
                 size: ['1024x1024', '1024x1536', '1536x1024'].includes(saved.size)
                     ? saved.size
-                    : defaults.size
+                    : defaults.size,
+                models: normalizeModels(saved.models)
             };
         });
         return {

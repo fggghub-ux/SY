@@ -899,7 +899,10 @@
     window.openYtUserPostComposer = function() {
         resetYtUserPostComposer();
         if (userPostComposeSheet) userPostComposeSheet.classList.add('active');
-        setTimeout(() => userPostContentInput?.focus(), 120);
+        setTimeout(() => {
+            if (!userPostComposeSheet?.classList.contains('active')) return;
+            userPostContentInput?.focus({ preventScroll: true });
+        }, 120);
     };
 
     window.openYtUserCommunityPost = function(post) {

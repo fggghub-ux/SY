@@ -769,6 +769,7 @@
                 fakeLinkData,
                 timestamp: now
             };
+            window.imApp.captureGroupUserIdentity?.(friend, msgObj);
             const saved = window.imApp.appendFriendMessage
                 ? await window.imApp.appendFriendMessage(friend.id, msgObj, { silent: true })
                 : false;

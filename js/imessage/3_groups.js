@@ -485,6 +485,16 @@
     window.imApp.deleteGroupSummary = deleteGroupSummary;
 
     function getGroupUserDisplayMeta(group) {
+        if (window.imApp?.getGroupUserIdentity) {
+            const identity = window.imApp.getGroupUserIdentity(group);
+            return {
+                id: identity.accountId || '__user__',
+                name: identity.name,
+                avatarUrl: identity.avatarUrl,
+                persona: identity.persona,
+                signature: identity.signature
+            };
+        }
         const currentAccountId = typeof window.getCurrentAccountId === 'function' ? window.getCurrentAccountId() : null;
         const accounts = getAvailableGroupAccounts();
         const currentAccount = accounts.find(acc => String(acc.id) === String(currentAccountId)) || null;
@@ -660,7 +670,7 @@
 
     function openGroupContextSettingsSheet() {
         if (!currentViewingGroup || !groupContextSettingsSheet) return;
-        resolveLatestGroup(currentViewingGroup);
+        currentViewingGroup = resolveLatestGroup(currentViewingGroup) || currentViewingGroup;
 
         currentViewingGroup.memory = currentViewingGroup.memory || window.imApp.createDefaultMemory();
         currentViewingGroup.memory.context = currentViewingGroup.memory.context || {};
@@ -857,7 +867,12 @@
         const listContainer = document.getElementById('group-account-switch-list');
         if (!sheet || !listContainer || !group) return;
 
+        const latestGroup = resolveLatestGroup(group) || group;
+        const selectedAccountId = String(getGroupUserDisplayMeta(latestGroup).id || '');
+
         listContainer.innerHTML = '';
+        listContainer.setAttribute('role', 'radiogroup');
+        listContainer.setAttribute('aria-label', '选择群内身份');
 
         const accounts = getAvailableGroupAccounts();
         if (accounts.length === 0) {
@@ -867,8 +882,13 @@
         }
 
         accounts.forEach(acc => {
+            const isSelected = String(acc.id || '') === selectedAccountId;
+            let isSaving = false;
             const item = document.createElement('div');
-            item.className = 'group-detail-member-item';
+            item.className = `group-detail-member-item${isSelected ? ' is-selected' : ''}`;
+            item.setAttribute('role', 'radio');
+            item.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+            item.tabIndex = 0;
             item.style.cssText = 'padding: 12px 16px; background: #fff; border-radius: 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer;  margin-bottom: 10px;';
 
             const accountAvatarUrl = acc.avatarUrl || acc.avatar || '';
@@ -886,10 +906,19 @@
                         <div style="font-size: 12px; color: #8e8e93;">${acc.signature || acc.persona || 'No Signature'}</div>
                     </div>
                 </div>
+                <i class="fas fa-check" aria-hidden="true" style="color:#007aff;visibility:${isSelected ? 'visible' : 'hidden'};"></i>
             `;
 
             item.addEventListener('click', async () => {
-                const saved = await commitContactsFriendChange(group, (targetGroup) => {
+                if (isSelected) {
+                    window.closeView(sheet);
+                    return;
+                }
+                if (isSaving) return;
+                isSaving = true;
+                item.style.pointerEvents = 'none';
+
+                const saved = await commitContactsFriendChange(latestGroup, (targetGroup) => {
                     targetGroup.memory = targetGroup.memory || window.imApp.createDefaultMemory();
                     targetGroup.memory.userOverride = {
                         id: acc.id,
@@ -901,16 +930,35 @@
                 }, { silent: true });
 
                 if (!saved) {
+                    isSaving = false;
+                    item.style.removeProperty('pointer-events');
                     if (window.showToast) window.showToast('群身份切换保存失败');
                     return;
                 }
 
+                const updatedGroup = resolveLatestGroup(latestGroup) || latestGroup;
+                currentViewingGroup = updatedGroup;
                 if (window.imApp.openGroupDetails) {
-                    window.imApp.openGroupDetails(group);
+                    window.imApp.openGroupDetails(updatedGroup);
+                }
+                if (window.imData.currentActiveFriend && String(window.imData.currentActiveFriend.id) === String(updatedGroup.id)) {
+                    window.imData.currentActiveFriend = updatedGroup;
+                    const page = document.getElementById(`chat-interface-${updatedGroup.id}`);
+                    const container = page?.querySelector('.ins-chat-messages');
+                    if (container && window.imChat?.rerenderChatContainer) {
+                        window.imChat.rerenderChatContainer(updatedGroup, container, { scroll: true });
+                    }
                 }
 
                 window.closeView(sheet);
                 if (window.showToast) window.showToast(`已将您的发言身份切换为: ${acc.name}`);
+            });
+
+            item.addEventListener('keydown', event => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    item.click();
+                }
             });
 
             listContainer.appendChild(item);
@@ -1397,15 +1445,19 @@
         });
     };
     window.imChat.selectGroupPollOption = async function(groupId, messageId, optionId) {
+        const group = resolveLatestGroup(groupId);
         const message = getGroupPollMessage(groupId, messageId);
-        if (!message || !(message.pollOptions || []).some(option => String(option.id) === String(optionId))) return false;
-        const userName = window.userState?.name || 'User';
+        if (!group || !message || !(message.pollOptions || []).some(option => String(option.id) === String(optionId))) return false;
+        const userIdentity = window.imApp?.getGroupUserIdentity
+            ? window.imApp.getGroupUserIdentity(group)
+            : getGroupUserDisplayMeta(group);
         return updateGroupPollMessage(groupId, messageId, targetMessage => {
             const memberVotes = (Array.isArray(targetMessage.pollVotes) ? targetMessage.pollVotes : [])
                 .filter(vote => vote?.voterType === 'member');
             targetMessage.pollVotes = [{
                 voterId: '__user__',
-                voterName: userName,
+                voterName: userIdentity.name,
+                voterAvatarUrl: userIdentity.avatarUrl,
                 optionId: String(optionId),
                 voterType: 'user'
             }, ...memberVotes];
@@ -1776,6 +1828,28 @@
             }
             closeView(groupContextSettingsSheet);
             if (window.showToast) window.showToast('设置已保存');
+        });
+    }
+
+    if (groupContextLimitInput) {
+        groupContextLimitInput.addEventListener('change', async () => {
+            if (!currentViewingGroup) return;
+            let limit = Number(groupContextLimitInput.value);
+            if (!Number.isFinite(limit) || limit <= 0) {
+                limit = Number(currentViewingGroup.memory?.context?.limit) || 100;
+            }
+            limit = Math.max(1, Math.floor(limit));
+
+            const saved = await commitCurrentGroupChange((targetGroup) => {
+                targetGroup.memory = window.imApp.normalizeFriendData(targetGroup).memory;
+                targetGroup.memory.context.limit = limit;
+            }, { silent: true });
+
+            const latestGroup = resolveLatestGroup(currentViewingGroup) || currentViewingGroup;
+            groupContextLimitInput.value = Number(latestGroup.memory?.context?.limit) > 0
+                ? Number(latestGroup.memory.context.limit)
+                : 100;
+            if (!saved && window.showToast) window.showToast('群上下文条数保存失败');
         });
     }
 

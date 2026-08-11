@@ -3769,6 +3769,7 @@ ${generationIntent}
                 const preset = globalPresets.find(p => String(p.id) === String(member.autoActivityPresetId));
                 if (preset) {
                     resolvedApiConfig = {
+                        provider: preset.provider || 'openai-compatible',
                         endpoint: preset.endpoint,
                         apiKey: preset.apiKey,
                         model: preset.model,

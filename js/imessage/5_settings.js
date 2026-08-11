@@ -914,7 +914,9 @@
             ...(Array.isArray(memory.longTermEntries) ? memory.longTermEntries : []),
             ...(Array.isArray(memory.cherishedEntries) ? memory.cherishedEntries : [])
         ];
-        const socialAccounts = Array.isArray(memory.socialAccounts) ? memory.socialAccounts : [];
+        const xDirectMessageMount = window.imApp.normalizeXDirectMessageMount
+            ? window.imApp.normalizeXDirectMessageMount(memory.xDirectMessageMount)
+            : { enabled: true, limit: 10, dmId: '' };
         const schedule = memory.schedule || {};
             
         // Re-calculate tokenCount realistically
@@ -995,7 +997,15 @@
         setCountText('chat-memory-shortterm-count', shortTermEntries.length);
         setCountText('chat-memory-group-context-count', groupContextCandidates.length);
         setCountText('chat-memory-longterm-count', longTermEntries.length);
-        setCountText('chat-memory-social-count', socialAccounts.length);
+        const xDmContextStatus = document.getElementById('chat-memory-x-dm-context-count');
+        if (xDmContextStatus) {
+            const hasMatchingXDirectMessage = xDirectMessageMount.dmId || Boolean(
+                window.imApp.getXDirectMessageMountCandidates?.(normalizedFriend)?.length
+            );
+            xDmContextStatus.textContent = hasMatchingXDirectMessage
+                ? (xDirectMessageMount.enabled ? `${xDirectMessageMount.limit}条` : '关闭')
+                : '';
+        }
 
         const scheduleStatus = document.getElementById('chat-memory-schedule-status');
         if (scheduleStatus) {
@@ -1491,7 +1501,7 @@
 
         bindMemoryLocationButton('chat-memory-shortterm-btn', 'iphone');
         bindMemoryLocationButton('chat-memory-longterm-library-btn', 'downloads');
-        bindMemoryLocationButton('chat-memory-social-btn', 'social');
+        bindMemoryLocationButton('chat-memory-x-dm-context-btn', 'x-dm');
 
         const groupContextBtn = document.getElementById('chat-memory-group-context-btn');
         if (groupContextBtn && groupContextBtn.dataset.memoryPanelBound !== 'true') {
@@ -2146,6 +2156,7 @@
                     return;
                 }
 
+                if (window.invalidateWorldBookLocalBindings) window.invalidateWorldBookLocalBindings();
                 if (window.renderWorldBooks) window.renderWorldBooks();
                 showToast('世界书绑定已更新');
             });
@@ -2164,6 +2175,7 @@
                     return;
                 }
 
+                if (window.invalidateWorldBookLocalBindings) window.invalidateWorldBookLocalBindings();
                 if (window.renderWorldBooks) window.renderWorldBooks();
                 showToast('世界书绑定已更新');
             }
@@ -2701,6 +2713,10 @@
                     }, { silent: true, syncActive: true, syncSettings: true });
 
                     if (saved) {
+                        void window.imVectorMemory?.deleteMemoryEntries?.(friend, [{
+                            kind: 'cherished',
+                            entryId: String(entryId)
+                        }]).catch(error => console.warn('[iMessage] external memory delete failed', error));
                         if (window.showToast) window.showToast('已删除长期记忆');
                         hideCherishedMemoryDetail();
                         const latestFriend = window.imApp.getFriendById
@@ -2780,6 +2796,7 @@
 
     async function saveChatSettingsMemory(friend, options = {}) {
         if (!friend) return false;
+        friend = window.imApp.getFriendById?.(friend) || friend;
         const shouldToast = !!options.showToast;
 
         const chatMemoryOverviewInput = document.getElementById('chat-memory-overview-input');
@@ -2845,10 +2862,15 @@
         }
 
         if (shouldToast) showToast('记忆设置已保存');
+        const latestFriend = window.imApp.getFriendById?.(friend) || friend;
+        if (window.imData.currentSettingsFriend
+            && String(window.imData.currentSettingsFriend.id) === String(latestFriend.id)) {
+            window.imData.currentSettingsFriend = latestFriend;
+        }
         return true;
     }
 
-    function bindChatSettingsMemoryPersistence(friend) {
+    function bindChatSettingsMemoryPersistence() {
         const ids = [
             'chat-memory-overview-input',
             'chat-memory-context-enabled-toggle',
@@ -2867,24 +2889,24 @@
             }
 
             const schedulePersist = async () => {
-                if (window.imData.currentSettingsFriend && String(window.imData.currentSettingsFriend.id) === String(friend.id)) {
-                    await saveChatSettingsMemory(friend, {
-                        showToast: false,
-                        silent: true,
-                        immediate: false,
-                        delay: 900
-                    });
-                }
+                const currentFriend = window.imData.currentSettingsFriend;
+                if (!currentFriend) return;
+                await saveChatSettingsMemory(currentFriend, {
+                    showToast: false,
+                    silent: true,
+                    immediate: false,
+                    delay: 900
+                });
             };
 
             const flushPersist = async () => {
-                if (window.imData.currentSettingsFriend && String(window.imData.currentSettingsFriend.id) === String(friend.id)) {
-                    await saveChatSettingsMemory(friend, {
-                        showToast: false,
-                        silent: true,
-                        immediate: true
-                    });
-                }
+                const currentFriend = window.imData.currentSettingsFriend;
+                if (!currentFriend) return;
+                await saveChatSettingsMemory(currentFriend, {
+                    showToast: false,
+                    silent: true,
+                    immediate: true
+                });
             };
 
             if (el.tagName === 'TEXTAREA' || el.type === 'number' || el.type === 'text') {
@@ -3548,6 +3570,15 @@
                 window.dispatchEvent(new CustomEvent('u2:group-summary-updated', {
                     detail: { groupId: friendId }
                 }));
+            } else {
+                window.dispatchEvent(new CustomEvent('u2:memory-entries-updated', {
+                    detail: {
+                        friendId,
+                        action: 'upsert',
+                        collection: 'shortTermEntries',
+                        entryId: String(summary.id || '')
+                    }
+                }));
             }
             showToast(options.auto
                 ? `已自动总结 ${summary.sourceRoundCount || roundLimit} 轮${isGroupSummary ? '群聊' : '对话'}`
@@ -3737,6 +3768,7 @@
 
     function initChatSettingsForFriend(friend) {
         if (!friend) return null;
+        friend = window.imApp.getFriendById?.(friend) || friend;
         window.imData.currentSettingsFriend = friend;
         friend.memory = window.imApp.normalizeFriendData(friend).memory;
         isRelationshipPickerVisible = false;
@@ -3769,7 +3801,7 @@
         if (chatMemoryScheduleSleep) chatMemoryScheduleSleep.value = friend.memory.schedule ? (friend.memory.schedule.sleepTime || '23:00') : '23:00';
         if (chatMemoryScheduleWake) chatMemoryScheduleWake.value = friend.memory.schedule ? (friend.memory.schedule.wakeTime || '07:00') : '07:00';
 
-        bindChatSettingsMemoryPersistence(friend);
+        bindChatSettingsMemoryPersistence();
         updateAutonomousActivityControls(friend);
         updateChatBindIdLabel(friend);
 

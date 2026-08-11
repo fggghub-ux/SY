@@ -442,36 +442,6 @@
         }
     }
 
-    async function syncYtSocialAccountToImChar(channelData) {
-        if (!selectedImCharId || !channelData) return false;
-        if (!window.imApp || typeof window.imApp.commitScopedFriendChange !== 'function') return false;
-
-        const cleanHandle = String(channelData.handle || channelData.name || 'channel').replace(/^@/, '').trim();
-        const socialAccount = {
-            platform: 'youtube',
-            label: 'YouTube',
-            handle: `@${cleanHandle}`,
-            url: `youtube.com/@${cleanHandle}`,
-            ytChannelId: channelData.id,
-            updatedAt: new Date().toISOString()
-        };
-
-        return window.imApp.commitScopedFriendChange(selectedImCharId, (targetFriend) => {
-            targetFriend.memory = targetFriend.memory || window.imApp.createDefaultMemory();
-            const existingAccounts = Array.isArray(targetFriend.memory.socialAccounts)
-                ? targetFriend.memory.socialAccounts
-                : [];
-            const nextAccounts = existingAccounts.filter(account => {
-                if (!account || account.platform !== 'youtube') return true;
-                if (account.ytChannelId && channelData.id) {
-                    return String(account.ytChannelId) !== String(channelData.id);
-                }
-                return false;
-            });
-            targetFriend.memory.socialAccounts = [...nextAccounts, socialAccount];
-        }, { silent: true, metaOnly: true });
-    }
-
     function renderImCharPicker() {
         if (!imCharPickerSection || !imCharPickerList) return;
 
@@ -685,7 +655,6 @@
                 bannerUrl = currentSubChannelData.banner;
             }
 
-            let savedChannelData = null;
             if (isEditingChar && currentSubChannelData) {
                 // Update
                 currentSubChannelData.name = name;
@@ -704,7 +673,6 @@
 
                 renderSubscriptions();
                 openSubChannelView(currentSubChannelData);
-                savedChannelData = currentSubChannelData;
                 if (window.showToast) window.showToast('角色信息已更新！');
                 
             } else {
@@ -715,7 +683,6 @@
                 if (existingUnsubscribedChannel && existingUnsubscribedChannel.isSubscribed !== false) {
                     renderSubscriptions();
                     openSubChannelView(existingUnsubscribedChannel);
-                    savedChannelData = existingUnsubscribedChannel;
                     if (window.showToast) window.showToast('该 Char 已有 YouTube 频道');
                 } else if (existingUnsubscribedChannel && existingUnsubscribedChannel.isSubscribed === false) {
                     existingUnsubscribedChannel.name = name;
@@ -730,7 +697,6 @@
                     hasSubscriptions = true;
                     renderSubscriptions();
                     openSubChannelView(existingUnsubscribedChannel);
-                    savedChannelData = existingUnsubscribedChannel;
                     if (window.showToast) window.showToast('已恢复该 Char 的 YouTube 频道！');
                 } else {
                     // Create
@@ -757,13 +723,8 @@
 
                     renderSubscriptions();
                     openSubChannelView(newCharData);
-                    savedChannelData = newCharData;
                     if (window.showToast) window.showToast('频道已生成，默认已订阅！');
                 }
-            }
-            const savedSocialAccount = await syncYtSocialAccountToImChar(savedChannelData);
-            if (selectedImCharId && !savedSocialAccount && window.showToast) {
-                window.showToast('YouTube 频道已保存，但 iMessage 社交帐号同步失败');
             }
             saveYoutubeData();
             if(addYtCharSheet) addYtCharSheet.classList.remove('active');

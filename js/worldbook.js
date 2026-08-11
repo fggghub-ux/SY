@@ -7,6 +7,18 @@ let editingBookId = null;
 let activeEntryId = null;
 let tempEntries = [];
 let activeWbGroupName = null;
+let activeWbTab = 'all';
+const wbRenderedTabs = new Set();
+const wbBookTokenCache = new Map();
+
+function invalidateWorldBookRenderCache() {
+    wbRenderedTabs.clear();
+    wbBookTokenCache.clear();
+}
+
+function invalidateWorldBookLocalBindings() {
+    wbRenderedTabs.delete('local');
+}
 
 function getWbElement(id) {
     return document.getElementById(id);
@@ -63,10 +75,12 @@ function getAllDisplayGroups() {
         worldBooks = StorageManager.load('u2_worldBooks', []);
         wbGroups = StorageManager.load('u2_wbGroups', []);
         normalizeGroups();
+        invalidateWorldBookRenderCache();
     }
 });
 
 function saveWorldBooksData() {
+    invalidateWorldBookRenderCache();
     if (window.StorageManager) {
         StorageManager.save('u2_worldBooks', worldBooks);
         StorageManager.save('u2_wbGroups', wbGroups);
@@ -107,10 +121,12 @@ wbSegmentBtns.forEach(btn => {
         // Add active to clicked
         btn.classList.add('active');
         const targetTab = btn.getAttribute('data-tab');
+        activeWbTab = ['all', 'global', 'local'].includes(targetTab) ? targetTab : 'all';
         const targetContent = document.getElementById(`wb-tab-${targetTab}`);
         if (targetContent) {
             targetContent.style.display = 'block';
         }
+        renderWorldBookTab(activeWbTab);
     });
 });
 
@@ -808,9 +824,18 @@ function calculateTokens(entries) {
 }
 window.calculateTokens = calculateTokens; // Export for imessage.js
 
+function getBookTokenCount(book) {
+    if (!book || book.id == null) return calculateTokens(book?.entries);
+    const cacheKey = String(book.id);
+    if (wbBookTokenCache.has(cacheKey)) return wbBookTokenCache.get(cacheKey);
+    const tokens = calculateTokens(book.entries);
+    wbBookTokenCache.set(cacheKey, tokens);
+    return tokens;
+}
+
 function createBookHtml(book, type) {
     let rightElementHtml = '';
-    const tokens = calculateTokens(book.entries);
+    const tokens = getBookTokenCount(book);
     const bookId = escapeAttr(book.id);
     const bookName = escapeHtml(book.name || '未命名世界书');
 
@@ -846,8 +871,19 @@ function createBookHtml(book, type) {
     `;
 }
 
-function getBooksInGroup(groupName) {
-    return worldBooks.filter(b => normalizeGroupName(b.group) === normalizeGroupName(groupName));
+function getBooksByGroup() {
+    const booksByGroup = new Map();
+    worldBooks.forEach(book => {
+        const group = normalizeGroupName(book?.group);
+        if (!booksByGroup.has(group)) booksByGroup.set(group, []);
+        booksByGroup.get(group).push(book);
+    });
+    return booksByGroup;
+}
+
+function getBooksInGroup(groupName, booksByGroup = null) {
+    const group = normalizeGroupName(groupName);
+    return booksByGroup ? (booksByGroup.get(group) || []) : worldBooks.filter(b => normalizeGroupName(b.group) === group);
 }
 
 function createBookListItemElement(book, type = 'all') {
@@ -855,11 +891,6 @@ function createBookListItemElement(book, type = 'all') {
     wrapper.innerHTML = createBookHtml(book, type).trim();
     const item = wrapper.firstElementChild;
     if (!item) return document.createElement('div');
-
-    item.addEventListener('click', (event) => {
-        if (event.target.closest('.toggle-switch') || event.target.closest('.wb-global-toggle')) return;
-        openBookModal(book);
-    });
 
     return item;
 }
@@ -889,7 +920,7 @@ function deleteGroupByName(groupName, returnToMain = false) {
     });
 }
 
-function renderGroupBookList(groupName) {
+function renderGroupBookList(groupName, booksByGroup = null) {
     const groupTitle = document.getElementById('wb-group-page-title');
     const largeTitle = document.getElementById('wb-group-large-title');
     const list = document.getElementById('wb-group-book-list');
@@ -897,20 +928,20 @@ function renderGroupBookList(groupName) {
     if (!list) return;
 
     const normalized = normalizeGroupName(groupName);
-    const booksInGroup = getBooksInGroup(normalized);
+    const booksInGroup = getBooksInGroup(normalized, booksByGroup);
     if (groupTitle) groupTitle.textContent = normalized;
     if (largeTitle) largeTitle.textContent = normalized;
     if (deleteBtn) deleteBtn.style.display = normalized === '未分组' ? 'none' : 'inline-flex';
 
-    list.innerHTML = '';
+    list.replaceChildren();
     if (!booksInGroup.length) {
         list.innerHTML = '<div class="wb-files-empty-state"><i class="fas fa-folder-open"></i><span>这个分组还没有世界书</span></div>';
         return;
     }
 
-    booksInGroup.forEach(book => {
-        list.appendChild(createBookListItemElement(book, 'all'));
-    });
+    const fragment = document.createDocumentFragment();
+    booksInGroup.forEach(book => fragment.appendChild(createBookListItemElement(book, 'all')));
+    list.appendChild(fragment);
 }
 
 function showWbMainPage() {
@@ -930,9 +961,9 @@ function openWbGroupPage(groupName) {
     renderGroupBookList(activeWbGroupName);
 }
 
-function createGroupFolderElement(groupName) {
+function createGroupFolderElement(groupName, booksByGroup = null) {
     const normalized = normalizeGroupName(groupName);
-    const booksInGroup = getBooksInGroup(normalized);
+    const booksInGroup = getBooksInGroup(normalized, booksByGroup);
     const groupDiv = document.createElement('div');
     groupDiv.className = 'wb-group-container';
     groupDiv.setAttribute('role', 'button');
@@ -977,67 +1008,112 @@ function createGroupFolderElement(groupName) {
     return groupDiv;
 }
 
-function renderWorldBooks() {
-    normalizeGroups();
+function getActiveWorldBookTab() {
+    const selectedTab = document.querySelector('.wb-segment-btn.active')?.getAttribute('data-tab');
+    if (['all', 'global', 'local'].includes(selectedTab)) activeWbTab = selectedTab;
+    return activeWbTab;
+}
+
+function renderWorldBookAllTab(options = {}) {
     const allList = document.getElementById('wb-all-list');
     if (!allList) return;
-    allList.innerHTML = '';
+    if (!options.force && wbRenderedTabs.has('all')) return;
 
+    const booksByGroup = getBooksByGroup();
+    const fragment = document.createDocumentFragment();
     getAllDisplayGroups().forEach(groupName => {
-        allList.appendChild(createGroupFolderElement(groupName));
+        fragment.appendChild(createGroupFolderElement(groupName, booksByGroup));
     });
+    allList.replaceChildren(fragment);
+    wbRenderedTabs.add('all');
 
-    if (activeWbGroupName) {
-        renderGroupBookList(activeWbGroupName);
-    }
+    if (activeWbGroupName) renderGroupBookList(activeWbGroupName, booksByGroup);
+}
 
-    // Render Global Tab
+function renderWorldBookGlobalTab(options = {}) {
     const globalList = document.getElementById('wb-global-list');
-    if (globalList) {
-        const globalBooks = worldBooks.filter(b => b.isGlobal);
-        globalList.innerHTML = '';
-        if (globalBooks.length) {
-            const wrapper = document.createElement('div');
-            wrapper.className = 'wb-flat-book-list';
-            globalBooks.forEach(book => wrapper.appendChild(createBookListItemElement(book, 'global')));
-            globalList.appendChild(wrapper);
-        } else {
-            globalList.innerHTML = `<div class="wb-empty-state">暂无全局世界书</div>`;
-        }
-    }
+    if (!globalList || (!options.force && wbRenderedTabs.has('global'))) return;
 
-    // Render Local Tab
-    const localList = document.getElementById('wb-local-list');
-    if (localList) {
-        localList.innerHTML = '';
-
-        const friends = window.getImFriends ? window.getImFriends() : [];
+    const globalBooks = worldBooks.filter(book => book.isGlobal);
+    if (!globalBooks.length) {
+        globalList.innerHTML = '<div class="wb-empty-state">暂无全局世界书</div>';
+    } else {
         const wrapper = document.createElement('div');
         wrapper.className = 'wb-flat-book-list';
-
-        worldBooks.forEach(book => {
-            const boundFriends = friends.filter(f => Array.isArray(f.boundBooks) && f.boundBooks.map(String).includes(String(book.id)));
-
-            boundFriends.forEach(friend => {
-                const item = createBookListItemElement(book, 'local');
-                const avatarSrc = friend.avatarUrl || '';
-                const avatar = item.querySelector('.wb-char-avatar');
-                if (avatar) {
-                    avatar.innerHTML = avatarSrc ? `<img src="${escapeAttr(avatarSrc)}">` : `<i class="fas fa-user"></i>`;
-                }
-                wrapper.appendChild(item);
-            });
-        });
-
-        if (wrapper.children.length === 0) {
-            localList.innerHTML = `<div class="wb-empty-state">暂无绑定</div>`;
-        } else {
-            localList.appendChild(wrapper);
-        }
+        const fragment = document.createDocumentFragment();
+        globalBooks.forEach(book => fragment.appendChild(createBookListItemElement(book, 'global')));
+        wrapper.appendChild(fragment);
+        globalList.replaceChildren(wrapper);
     }
+    wbRenderedTabs.add('global');
+}
+
+function getWorldBookBindingIndex() {
+    const bindings = new Map();
+    const friends = window.getImFriends ? window.getImFriends() : [];
+
+    friends.forEach(friend => {
+        const bookIds = new Set((Array.isArray(friend?.boundBooks) ? friend.boundBooks : []).map(String));
+        bookIds.forEach(bookId => {
+            if (!bindings.has(bookId)) bindings.set(bookId, []);
+            bindings.get(bookId).push(friend);
+        });
+    });
+
+    return bindings;
+}
+
+function renderWorldBookLocalTab(options = {}) {
+    const localList = document.getElementById('wb-local-list');
+    if (!localList || (!options.force && wbRenderedTabs.has('local'))) return;
+
+    const bindings = getWorldBookBindingIndex();
+    const wrapper = document.createElement('div');
+    wrapper.className = 'wb-flat-book-list';
+    const fragment = document.createDocumentFragment();
+
+    worldBooks.forEach(book => {
+        const boundFriends = bindings.get(String(book.id)) || [];
+        boundFriends.forEach(friend => {
+            const item = createBookListItemElement(book, 'local');
+            const avatarSrc = friend.avatarUrl || '';
+            const avatar = item.querySelector('.wb-char-avatar');
+            if (avatar) {
+                avatar.innerHTML = avatarSrc ? `<img src="${escapeAttr(avatarSrc)}">` : '<i class="fas fa-user"></i>';
+            }
+            fragment.appendChild(item);
+        });
+    });
+
+    if (!fragment.childNodes.length) {
+        localList.innerHTML = '<div class="wb-empty-state">暂无绑定</div>';
+    } else {
+        wrapper.appendChild(fragment);
+        localList.replaceChildren(wrapper);
+    }
+    wbRenderedTabs.add('local');
+}
+
+function renderWorldBookTab(tab = getActiveWorldBookTab(), options = {}) {
+    normalizeGroups();
+    if (tab === 'global') {
+        renderWorldBookGlobalTab(options);
+        return;
+    }
+    if (tab === 'local') {
+        renderWorldBookLocalTab(options);
+        return;
+    }
+    renderWorldBookAllTab(options);
+}
+
+function renderWorldBooks(options = {}) {
+    if (options.invalidateLocal) invalidateWorldBookLocalBindings();
+    renderWorldBookTab(getActiveWorldBookTab(), options);
 }
 
 window.renderWorldBooks = renderWorldBooks; // Export for update
+window.invalidateWorldBookLocalBindings = invalidateWorldBookLocalBindings;
 window.getWorldBooks = function() {
     return Array.isArray(worldBooks) ? worldBooks : [];
 };
@@ -1132,7 +1208,7 @@ window.renderWorldBookSelector = function(selectedIds = [], onConfirm) {
         bookSelect.innerHTML = [
             '<option value="">选择要挂载的世界书</option>',
             ...booksInGroup.map(book => {
-                const tokens = calculateTokens(book.entries);
+                const tokens = getBookTokenCount(book);
                 const name = book.name || '未命名世界书';
                 return `<option value="${escapeAttr(book.id)}">${escapeHtml(name)} · +${tokens} Tokens</option>`;
             })
@@ -1154,7 +1230,7 @@ window.renderWorldBookSelector = function(selectedIds = [], onConfirm) {
             const book = getBookById(id);
             if (!book) return '';
             const group = normalizeGroupName(book.group);
-            const tokens = calculateTokens(book.entries);
+            const tokens = getBookTokenCount(book);
 
             return `
                 <div class="wb-selector-mounted-card" data-id="${escapeAttr(id)}">
@@ -1351,44 +1427,8 @@ document.addEventListener('change', (e) => {
         if (book) {
             book.isGlobal = e.target.checked;
             saveWorldBooksData();
-            
-            // Sync UI: update all switches for this book
-            document.querySelectorAll('.wb-global-toggle').forEach(s => {
-                if (String(s.getAttribute('data-id')) === String(bookId)) {
-                    s.checked = book.isGlobal;
-                }
-            });
-
-            // If in Global tab and unchecking, remove item with animation
-            if (!book.isGlobal) {
-                const globalList = document.getElementById('wb-global-list');
-                // Check if the event came from inside global list
-                if (globalList && globalList.contains(e.target)) {
-                    const row = e.target.closest('.wb-book-item');
-                    if (row) {
-                        row.classList.add('removing');
-                        setTimeout(() => {
-                            row.remove();
-                        }, 300);
-                    }
-                } else {
-                    // Unchecked from All tab, just refresh global list silently
-                    if (globalList) {
-                        const globalBooks = worldBooks.filter(b => b.isGlobal);
-                        globalList.innerHTML = globalBooks.length
-                            ? `<div class="wb-flat-book-list">${globalBooks.map(b => createBookHtml(b, 'global')).join('')}</div>`
-                            : `<div class="wb-empty-state">暂无全局世界书</div>`;
-                    }
-                }
-            } else {
-                // Checked from All tab, add to global list
-                const globalList = document.getElementById('wb-global-list');
-                if (globalList) {
-                    const globalBooks = worldBooks.filter(b => b.isGlobal);
-                    globalList.innerHTML = globalBooks.length
-                        ? `<div class="wb-flat-book-list">${globalBooks.map(b => createBookHtml(b, 'global')).join('')}</div>`
-                        : `<div class="wb-empty-state">暂无全局世界书</div>`;
-                }
+            if (getActiveWorldBookTab() === 'global') {
+                renderWorldBookGlobalTab({ force: true });
             }
         }
     }

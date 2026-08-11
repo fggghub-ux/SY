@@ -120,6 +120,65 @@ window.lovesApp = {
         return ({ zh: 'Chinese', en: 'English', ja: 'Japanese', ko: 'Korean', fr: 'French' })[this.normalizeFriendPhoneLanguage(value)] || String(value || 'Chinese');
     },
 
+    resolveLovesMomentLanguage: function(friend = this.currentFriend) {
+        return this.normalizeFriendPhoneLanguage(friend?.language || 'zh');
+    },
+
+    buildLovesMomentLocalizationContract: function(friend = this.currentFriend, subject = 'content') {
+        const language = this.resolveLovesMomentLanguage(friend);
+        if (window.imDataUtils?.buildLocalizedJsonContract) {
+            return window.imDataUtils.buildLocalizedJsonContract(language, subject);
+        }
+        const languageName = this.getFriendPhoneLanguageName(language);
+        return language === 'zh'
+            ? `${subject}.text must be natural Simplified Chinese and ${subject}.translation must be an empty string.`
+            : `${subject}.text must be written only in ${languageName}; ${subject}.translation is mandatory and must be a natural accurate Simplified Chinese translation of that text.`;
+    },
+
+    normalizeLovesMomentLocalizedContent: function(value, friend = this.currentFriend) {
+        const language = this.resolveLovesMomentLanguage(friend);
+        if (window.imDataUtils?.normalizeLocalizedContent) {
+            return window.imDataUtils.normalizeLocalizedContent(value, language);
+        }
+        const source = value && typeof value === 'object' ? value : { text: value };
+        const text = String(source.text ?? source.content ?? '').trim();
+        let translation = String(source.translation ?? source.translationZh ?? '').trim();
+        if (!text) return null;
+        if (language === 'zh') translation = '';
+        if (language !== 'zh' && !translation) return null;
+        return { text, translation, language };
+    },
+
+    getLovesMomentTranslation: function(record) {
+        if (!record || typeof record !== 'object') return '';
+        return String(record.translation ?? record.translationZh ?? record.textTranslationZh ?? record.textTranslation ?? '').trim();
+    },
+
+    renderLovesMomentTranslation: function(translation, targetId) {
+        const text = String(translation || '').trim();
+        if (!text) return '';
+        const safeTargetId = this.escapeHTML(targetId);
+        return `<button type="button" class="loves-moment-translate-toggle" aria-expanded="false" aria-controls="${safeTargetId}" data-loves-translation-target="${safeTargetId}">翻译</button><div class="loves-moment-translation" id="${safeTargetId}" hidden>${this.escapeHTML(text).replace(/\n/g, '<br>')}</div>`;
+    },
+
+    bindLovesMomentTranslationControls: function(container) {
+        if (!container) return;
+        container.querySelectorAll('.loves-moment-translate-toggle').forEach(control => {
+            const toggle = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const targetId = control.getAttribute('data-loves-translation-target');
+                const translation = targetId ? document.getElementById(targetId) : null;
+                if (!translation) return;
+                const expanded = control.getAttribute('aria-expanded') === 'true';
+                control.setAttribute('aria-expanded', String(!expanded));
+                control.textContent = expanded ? '翻译' : '收起';
+                translation.hidden = expanded;
+            };
+            control.addEventListener('click', toggle);
+        });
+    },
+
     formatFriendPhoneGeneratedAt: function(value, nowValue = Date.now()) {
         const timestamp = Number(value);
         if (!Number.isFinite(timestamp) || timestamp <= 0) return '';
@@ -1142,6 +1201,9 @@ window.lovesApp = {
             const safeMomentText = this.escapeHTML(m.text);
             const safeDisplayAvatar = this.escapeHTML(displayAvatar || '');
             const safeUserAvatar = this.escapeHTML(userAvatar || '');
+            const momentTranslationHtml = m.isChar
+                ? this.renderLovesMomentTranslation(this.getLovesMomentTranslation(m), `loves-moment-post-translation-${idx}`)
+                : '';
 
             let imagesHtml = '';
             if (m.images && m.images.length > 0) {
@@ -1160,9 +1222,12 @@ window.lovesApp = {
                     const cAuthor = c.isChar ? (this.currentFriend.nickname || this.currentFriend.realname || 'TA') : userName;
                     const safeAuthor = this.escapeHTML(cAuthor);
                     const safeCommentText = this.escapeHTML(c.text);
+                    const commentTranslationHtml = c.isChar
+                        ? this.renderLovesMomentTranslation(this.getLovesMomentTranslation(c), `loves-moment-comment-translation-${idx}-${cIdx}`)
+                        : '';
                     commentsHtml += `
                         <div class="loves-moment-comment ${c.isChar ? 'is-char' : ''}">
-                            <div class="loves-moment-comment-copy" onclick="window.lovesApp.replyToComment(${idx}, ${cIdx})"><span class="loves-moment-comment-author">${safeAuthor}</span>：${safeCommentText}</div>
+                            <div class="loves-moment-comment-copy" onclick="window.lovesApp.replyToComment(${idx}, ${cIdx})"><div><span class="loves-moment-comment-author">${safeAuthor}</span>：${safeCommentText}</div>${commentTranslationHtml}</div>
                             <button type="button" class="loves-moment-comment-delete" onclick="window.lovesApp.deleteComment(${idx}, ${cIdx})">删除</button>
                         </div>
                     `;
@@ -1191,7 +1256,7 @@ window.lovesApp = {
                     </div>
                 </div>
                 
-                ${m.text ? `<div class="loves-moment-body">${safeMomentText}</div>` : ''}
+                ${m.text ? `<div class="loves-moment-body">${safeMomentText}</div>${momentTranslationHtml}` : ''}
                 ${imagesHtml}
                 
                 <div class="loves-moment-toolbar">
@@ -1204,7 +1269,7 @@ window.lovesApp = {
                     <div class="loves-moment-composer-avatar">
                         ${userAvatar ? `<img src="${safeUserAvatar}" alt="${safeUserName}">` : `<i class="fas fa-user"></i>`}
                     </div>
-                    <input type="text" class="loves-moment-comment-input" data-moment-idx="${idx}" placeholder="${m.isChar ? '评论 TA 的动态...' : '添加评论...'}">
+                    <input type="text" class="loves-moment-comment-input" data-moment-idx="${idx}" inputmode="text" enterkeyhint="send" autocomplete="off" placeholder="${m.isChar ? '评论 TA 的动态...' : '添加评论...'}">
                     <button type="button" class="loves-moment-comment-send" data-moment-idx="${idx}">发送</button>
                 </div>
             </article>
@@ -1212,19 +1277,25 @@ window.lovesApp = {
         });
         
         list.innerHTML = html;
+        this.bindLovesMomentTranslationControls(list);
         list.querySelectorAll('.loves-moment-comment-send').forEach(btn => {
             btn.addEventListener('click', () => {
                 const idx = parseInt(btn.dataset.momentIdx, 10);
                 const input = list.querySelector(`.loves-moment-comment-input[data-moment-idx="${idx}"]`);
-                this.addMomentComment(idx, input ? input.value : '');
+                this.addMomentComment(idx, input ? input.value : '', {
+                    restoreComposerFocus: document.activeElement === input
+                });
             });
         });
         list.querySelectorAll('.loves-moment-comment-input').forEach(input => {
             input.addEventListener('keydown', (e) => {
-                if (e.key !== 'Enter') return;
+                const isSendEnter = window.mobileInputCompat?.isSendEnter
+                    ? window.mobileInputCompat.isSendEnter(e)
+                    : e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && !e.isComposing && e.keyCode !== 229;
+                if (!isSendEnter) return;
                 e.preventDefault();
                 const idx = parseInt(input.dataset.momentIdx, 10);
-                this.addMomentComment(idx, input.value);
+                this.addMomentComment(idx, input.value, { restoreComposerFocus: true });
             });
         });
         
@@ -1283,7 +1354,7 @@ window.lovesApp = {
         });
     },
 
-    addMomentComment: function(mIdx, presetText = '') {
+    addMomentComment: function(mIdx, presetText = '', options = {}) {
         if (!this.currentFriend || !this.currentFriend.lovesData || !this.currentFriend.lovesData.moments) return;
         const m = this.currentFriend.lovesData.moments[mIdx];
         if (!m) return;
@@ -1305,6 +1376,18 @@ window.lovesApp = {
 
         this.persistFriendState();
         this.renderLovesMoments();
+
+        if (options.restoreComposerFocus) {
+            requestAnimationFrame(() => {
+                const nextInput = document.querySelector(`.loves-moment-comment-input[data-moment-idx="${mIdx}"]`);
+                if (!nextInput) return;
+                try {
+                    nextInput.focus({ preventScroll: true });
+                } catch (error) {
+                    nextInput.focus();
+                }
+            });
+        }
 
         if (m.isChar === true) {
             this.requestCharComment(mIdx, {
@@ -1415,6 +1498,8 @@ window.lovesApp = {
             const momentContent = moment.text || '[只有图片]';
             const imageCount = Array.isArray(moment.images) ? moment.images.length : 0;
             const isCharMoment = moment.isChar === true;
+            const charLanguage = this.resolveLovesMomentLanguage(friend);
+            const charLanguageName = this.getFriendPhoneLanguageName(charLanguage);
             const momentAuthor = isCharMoment ? '角色(Char)' : '用户(User)';
             let momentDesc = `${momentAuthor}发布了一条动态：\n文字内容：${momentContent}\n附带图片数量：${imageCount} 张`;
             if (options.targetCommentText) {
@@ -1436,9 +1521,10 @@ window.lovesApp = {
             prompt += `\n【动态与评论现场】：\n${momentDesc}\n`;
             prompt += `\n要求：
 1. 内容必须符合人设、世界观和近期关系氛围。
-2. 只返回纯 JSON 对象，格式为 {"comments":["公开回复"],"messages":["私聊消息"]}，不要返回 Markdown。
-3. comments ${options.reason === 'user_comment' ? '必须包含2-5条 Char 对 User 的连续直接回复' : (isCharMoment ? '包含1-3条' : '包含1-2条')}；messages ${options.reason === 'user_comment' ? '包含0-2条，可以为空数组' : '包含1-3条'}。
-4. 每个数组元素只写一条自然消息，不要带 Char/User 标签，不要把多条回复合并在一个字符串里。`;
+2. Char 在 iMessage 中配置的默认语言是 ${charLanguageName}。comments 和 messages 中每一条都必须遵守以下语言规则：${this.buildLovesMomentLocalizationContract(friend, 'each item')}。
+3. 只返回纯 JSON 对象，格式为 {"comments":[{"text":"公开回复","translation":"中文翻译或空字符串"}],"messages":[{"text":"私聊消息","translation":"中文翻译或空字符串"}]}，不要返回 Markdown。
+4. comments ${options.reason === 'user_comment' ? '必须包含2-5条 Char 对 User 的连续直接回复' : (isCharMoment ? '包含1-3条' : '包含1-2条')}；messages ${options.reason === 'user_comment' ? '包含0-2条，可以为空数组' : '包含1-3条'}。
+5. 每个数组元素只写一条自然消息，不要带 Char/User 标签，不要把多条回复合并在一个字符串里。`;
 
             const endpoint = window.u2Api.resolveChatCompletionsEndpoint(apiConfig.endpoint);
 
@@ -1465,11 +1551,20 @@ window.lovesApp = {
             const match = jsonStr.match(/\{[\s\S]*\}/);
             if (match) jsonStr = match[0];
             const parsed = JSON.parse(jsonStr);
-            const normalizeTextList = (list, limit) => Array.isArray(list)
-                ? list.map(item => typeof item === 'string' ? item.trim() : String(item?.text || '').trim()).filter(Boolean).slice(0, limit)
-                : [];
-            const comments = normalizeTextList(parsed.comments, options.reason === 'user_comment' ? 5 : (isCharMoment ? 3 : 2));
-            const privateMessages = normalizeTextList(parsed.messages, options.reason === 'user_comment' ? 2 : 3);
+            const normalizeLocalizedList = (list, limit) => {
+                if (!Array.isArray(list)) return [];
+                const source = list.slice(0, limit);
+                return source.map(item => {
+                    const localized = this.normalizeLovesMomentLocalizedContent(item, friend);
+                    if (localized) return localized;
+
+                    // Keep a usable Char reply when a provider omits only its translation field.
+                    const text = String(item && typeof item === 'object' ? (item.text ?? item.content ?? '') : item ?? '').trim();
+                    return text ? { text, translation: '', language: charLanguage } : null;
+                }).filter(Boolean);
+            };
+            const comments = normalizeLocalizedList(parsed.comments, options.reason === 'user_comment' ? 5 : (isCharMoment ? 3 : 2));
+            const privateMessages = normalizeLocalizedList(parsed.messages, options.reason === 'user_comment' ? 2 : 3);
             if (options.reason === 'user_comment' && comments.length < 2) {
                 throw new Error('API must return 2-5 public replies');
             }
@@ -1482,24 +1577,28 @@ window.lovesApp = {
             if (!friend || !moment) return false;
             if (!Array.isArray(moment.comments)) moment.comments = [];
             const baseTime = Date.now();
-            comments.forEach((text, index) => {
+            comments.forEach((comment, index) => {
                 moment.comments.push({
                     id: `lmc_${baseTime}_${index}`,
-                    text,
+                    text: comment.text,
+                    translation: comment.translation,
+                    language: comment.language,
                     isChar: true,
                     timestamp: baseTime + index
                 });
             });
 
             for (let index = 0; index < privateMessages.length; index += 1) {
-                const msgText = privateMessages[index];
+                const message = privateMessages[index];
                 const timestamp = baseTime + (index + 1) * 1000;
                 const msgObj = {
                     id: window.imChat?.createMessageId ? window.imChat.createMessageId('msg') : `msg_${timestamp}_${index}`,
                     sender: friend.id,
                     role: 'assistant',
-                    text: msgText,
-                    content: msgText,
+                    text: message.text,
+                    content: message.text,
+                    translation: message.translation,
+                    language: message.language,
                     timestamp,
                     time: new Date(timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }),
                     type: 'text'
@@ -1523,7 +1622,7 @@ window.lovesApp = {
             console.error('Comment API Error:', error);
             if (window.showToast) {
                 window.showToast(error instanceof SyntaxError || /2-5 public replies/.test(String(error?.message || ''))
-                    ? 'AI 生成格式错误，请重试'
+                    ? 'AI 生成内容格式错误'
                     : 'API 请求失败，无法评论');
             }
             return false;

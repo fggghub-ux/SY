@@ -10,6 +10,27 @@
         return (window.imData.friends || []).find((item) => String(item.id) === String(friendId)) || null;
     }
 
+    function shouldAutoGenerateChatImage(friend) {
+        return !!friend
+            && friend.type === 'char'
+            && friend.imagePromptConfig?.autoGenerate === true;
+    }
+
+    function buildAutoImagePrompt(currentItem, promptConfig, recentContext) {
+        const sceneParts = [
+            currentItem?.description || currentItem?.text,
+            currentItem?.offlineScene,
+            currentItem?.offlineAction
+        ].map((value) => String(value || '').trim()).filter(Boolean);
+        const context = String(recentContext || '').trim().slice(-2400);
+        const basePrompt = String(promptConfig?.lastPrompt || '').trim();
+        return [
+            sceneParts.join('\n'),
+            context ? `最近对话上下文（用于保持剧情连续）：\n${context}` : '',
+            basePrompt ? `当前单聊生图预设基础提示词：\n${basePrompt}` : ''
+        ].filter(Boolean).join('\n\n').trim();
+    }
+
     const aiReplyInFlight = new Set();
     const aiReplyControllers = new Map();
     const conversationEpochs = new Map();
@@ -17,10 +38,24 @@
     const autonomousMomentInFlight = new Set();
     const regenerateRunSnapshots = new Map();
     const MAX_REGENERATE_RUN_SNAPSHOTS = 80;
+    const lastRequestContextTraces = new Map();
+    const MAX_REQUEST_CONTEXT_TRACES = 80;
 
     function getFriendKey(friendOrId) {
         const rawId = friendOrId && typeof friendOrId === 'object' ? friendOrId.id : friendOrId;
         return rawId == null ? '' : String(rawId);
+    }
+
+    function recordRequestContextTrace(friendOrId, trace) {
+        const friendKey = getFriendKey(friendOrId);
+        if (!friendKey || !trace) return;
+        lastRequestContextTraces.delete(friendKey);
+        lastRequestContextTraces.set(friendKey, Object.freeze({ ...trace }));
+        while (lastRequestContextTraces.size > MAX_REQUEST_CONTEXT_TRACES) {
+            const oldestKey = lastRequestContextTraces.keys().next().value;
+            if (!oldestKey) break;
+            lastRequestContextTraces.delete(oldestKey);
+        }
     }
 
     function getConversationEpoch(friendOrId) {
@@ -322,10 +357,21 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
     }
 
     function isMemoryEntryTriggered(entry, recentText) {
+        return getMemoryEntryRecallScore(entry, recentText) > 0;
+    }
+
+    function getMemoryEntryRecallScore(entry, recentText) {
         const context = String(recentText || '').toLocaleLowerCase();
-        if (!entry || !context) return false;
-        return getMemoryEntryTriggerKeywords(entry)
-            .some(keyword => context.includes(keyword.toLocaleLowerCase()));
+        if (!entry || !context) return 0;
+        const matchedKeywords = getMemoryEntryTriggerKeywords(entry)
+            .filter(keyword => context.includes(keyword.toLocaleLowerCase()));
+        if (matchedKeywords.length === 0) return 0;
+
+        const degree = String(entry.degree || '').trim();
+        const degreeBoost = degree === '高' ? 18 : (degree === '中' ? 9 : (degree === '低' ? 3 : 0));
+        return matchedKeywords.reduce((score, keyword) => score + Math.min(24, String(keyword).length * 2), 0)
+            + matchedKeywords.length * 10
+            + degreeBoost;
     }
 
     function resolveActiveMemoryRecall(friend, recentText = null) {
@@ -334,8 +380,15 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
         const contextText = recentText == null ? getCurrentUserRecallSource(normalizedFriend).text : String(recentText || '');
         const pickTriggered = (entries) => (Array.isArray(entries) ? entries : [])
             .filter(entry => entry && (entry.title || entry.event || entry.content || entry.memoryPoints || entry.memoryTags || entry.detail))
-            .filter(entry => isMemoryEntryTriggered(entry, contextText))
-            .slice(-8);
+            .map(entry => ({
+                entry,
+                score: getMemoryEntryRecallScore(entry, contextText),
+                activatedAt: String(entry.lastActivatedAt || entry.time || entry.createdAt || '')
+            }))
+            .filter(item => item.score > 0)
+            .sort((a, b) => b.score - a.score || b.activatedAt.localeCompare(a.activatedAt))
+            .slice(0, 8)
+            .map(item => item.entry);
         const shortTermEntries = pickTriggered(memory.shortTermEntries);
         const isGroupChat = normalizedFriend.type === 'group';
         const groupLongTermEntries = Array.isArray(memory.longTermEntries)
@@ -361,7 +414,57 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
     imChat.normalizeMemoryTriggerKeywords = normalizeMemoryTriggerKeywords;
     imChat.getMemoryEntryTriggerKeywords = getMemoryEntryTriggerKeywords;
     imChat.getShortTermMemoryTags = getShortTermMemoryTags;
+    imChat.getMemoryEntryRecallScore = getMemoryEntryRecallScore;
     imChat.resolveActiveMemoryRecall = resolveActiveMemoryRecall;
+
+    async function resolveMemoryRecallWithExternal(friend, recentText = null) {
+        const keywordRecall = resolveActiveMemoryRecall(friend, recentText);
+        const queryText = String(recentText || '').trim();
+        if (!queryText || !window.imVectorMemory?.searchFriendMemory || !window.imVectorMemory?.resolveSearchResults) {
+            return keywordRecall;
+        }
+
+        try {
+            const search = await window.imVectorMemory.searchFriendMemory(friend, queryText);
+            if (!search?.results?.length) return keywordRecall;
+            const semanticEntries = window.imVectorMemory.resolveSearchResults(friend, search.results);
+            if (!semanticEntries.length) return keywordRecall;
+
+            const mergeEntries = (type, existing) => {
+                const seen = new Set();
+                const merged = [];
+                const append = entry => {
+                    const key = String(entry?.id || '');
+                    if (!key || seen.has(key)) return;
+                    seen.add(key);
+                    merged.push(entry);
+                };
+                semanticEntries.filter(item => item.type === type).forEach(item => append(item.entry));
+                existing.forEach(append);
+                return merged.slice(0, 8);
+            };
+
+            const shortTermEntries = mergeEntries('short', keywordRecall.shortTermEntries);
+            const longTermEntries = mergeEntries('long', keywordRecall.longTermEntries);
+            const cherishedEntries = keywordRecall.isGroupChat
+                ? []
+                : mergeEntries('cherished', keywordRecall.cherishedEntries);
+            return {
+                ...keywordRecall,
+                shortTermEntries,
+                longTermEntries,
+                cherishedEntries,
+                entries: [
+                    ...shortTermEntries.map(entry => ({ type: 'short', entry })),
+                    ...longTermEntries.map(entry => ({ type: 'long', entry })),
+                    ...cherishedEntries.map(entry => ({ type: 'cherished', entry }))
+                ]
+            };
+        } catch (error) {
+            console.warn('[iMessage] external semantic recall failed; using keyword recall', error);
+            return keywordRecall;
+        }
+    }
 
     function getMessageRecallText(message) {
         if (message && message.type === 'fake_link') {
@@ -700,7 +803,8 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
             replyToMessageId
         };
 
-        window.imChat.renderUserBubble(text, container, now, replyToText, null, false, msgObj.id, liveFriend);
+        window.imApp.captureGroupUserIdentity?.(liveFriend, msgObj);
+        window.imChat.renderUserBubble(text, container, now, replyToText, null, false, msgObj.id, liveFriend, msgObj);
         inputEl.value = '';
 
         const saved = window.imApp.appendFriendMessage
@@ -2936,7 +3040,7 @@ ${groupTemporalDecisionPrompt}
         const isSleeping = !!window.imApp?.isCharacterSleeping?.(friend);
 
         const hasUserTriggeredRecallSource = !['autonomous', 'left_group_continue'].includes(options.source);
-        const memoryRecall = resolveActiveMemoryRecall(
+        const memoryRecall = await resolveMemoryRecallWithExternal(
             friend,
             hasUserTriggeredRecallSource ? currentUserRecallSource.text : ''
         );
@@ -2955,6 +3059,9 @@ ${groupTemporalDecisionPrompt}
             `<relationship_network>\n${relationshipText}\n</relationship_network>`,
             window.imApp.buildLinkedAccountMemoryContext
                 ? window.imApp.buildLinkedAccountMemoryContext(friend)
+                : '',
+            window.imApp.buildXDirectMessageMemoryContext
+                ? window.imApp.buildXDirectMessageMemoryContext(friend)
                 : '',
             (() => {
                 const stickerText = buildMountedStickerContext(friend);
@@ -3006,7 +3113,7 @@ ${groupTemporalDecisionPrompt}
         const singleChatCotRequirement = buildSingleChatCotRequirement(friend);
         const chatBubbleFormatGuardPrompt = `\n【聊天气泡格式｜最高优先级】：
 当前聊天以多气泡独立渲染。<chat_json> JSON 数组中的每一个对象只对应一条原子消息：一句独立发言、一个动作、一个反应，或一次明确的语义切换；一个 text/voice/image 等对象绝不能承载多条消息。严禁把多条气泡合并进同一个 text 字段。
-只要回复包含两句及以上彼此独立的话、动作、反应、追问、转折或话题切换，就必须拆成两个及以上独立对象，按真实发送顺序排列；例如连续说三句不同的话，就输出三个 text 对象。只有“嗯”“好”“知道了”这类极短、单一的回应才允许只输出一个气泡。
+只要回复包含两句及以上彼此独立的话、动作、反应、追问、转折或话题切换，就必须拆成两个及以上独立对象，按真实发送顺序排列；例如连续说三句不同的话，就输出三个 text 对象。单聊的气泡数量必须继续服从“单聊消息条数”规则；不得以回复过短为由减少气泡。
 严禁把多条消息用换行、斜杠、序号、分号、连续长段落或引号塞进同一个 text 字段来伪装多气泡；宁可缩短每条消息，也必须保持每个对象只是一条自然、可单独发送的聊天气泡。严禁输出 JSON 数组以外的正文、解释、Markdown 或分隔符。`;
         const chatContextAntiRepetitionPrompt = `\n【基于已注入聊天上下文的表达去重】：
 - 输出前先完整阅读本轮实际可见的聊天记录，特别确认 Char/当前群成员已经表达过的结论、情绪、承诺、解释、追问、计划和正在进行的话题。
@@ -3017,7 +3124,7 @@ ${groupTemporalDecisionPrompt}
 - 群聊中，每位成员优先与自己已说过的内容保持连续且不复读；不同成员可以回应同一事件，但必须提供各自不同的视角、信息或反应，禁止多人换着名字复述同一句话。`;
         const chatOutputPriorityPrompt = `\n【严格输出顺序｜聊天气泡最高优先级】：
 1. 回复的第一个非空白字符必须是 <chat_json> 的“<”；禁止在 <chat_json> 前输出状态、解释、思考、Markdown 或任何其他标签。
-2. 必须先完整输出并闭合 <chat_json>...</chat_json>，其中至少包含 1 条有效聊天气泡，然后才能输出任何附加标签。
+2. 必须先完整输出并闭合 <chat_json>...</chat_json>，然后才能输出任何附加标签。
 3. 单聊的 ${singleChatCotEnabled ? '<cot_summary>、' : ''}<profile_panel>、<avatar_update>、<loves_moment>、<loves_schedule>、<message_favorite>，以及群聊的 <group_poll_votes>、<group_private_messages>、<group_friend_private_chats>，全部只能放在 </chat_json> 之后。${singleChatCotEnabled ? '单聊 <cot_summary> 必须紧跟在 </chat_json> 后、位于其他附加标签之前。' : ''}
 4. <chat_json> 标签内部必须是一个可以被 JSON.parse 直接解析的完整 JSON 数组；禁止代码块、注释、单引号、尾逗号、未转义的双引号、缺失括号或任何 JSON 之外的文字。
 5. 输出前必须在内部逐项检查：开标签与闭标签是否成对、数组的 [ ] 是否闭合、每个对象的 { } 是否闭合、键与字符串是否使用双引号、对象之间是否用逗号分隔且最后一个对象后没有逗号。
@@ -3122,9 +3229,9 @@ ${isSingleChat ? '- 禁止执着于旧话题，例如当user明确表达不困�
             if (!normalized || !Array.isArray(onlinePromptSections[sectionName])) return;
             onlinePromptSections[sectionName].push(normalized);
         };
-        const appendOnlinePromptSections = (messages, sectionName) => {
+        const appendOnlinePromptSections = (instructionBlocks, sectionName) => {
             (onlinePromptSections[sectionName] || []).forEach(content => {
-                messages.push({ role: 'system', content });
+                instructionBlocks.push(content);
             });
         };
         let temporalContext = '';
@@ -3164,10 +3271,14 @@ ${isSingleChat ? '- 禁止执着于旧话题，例如当user明确表达不困�
 - 上一条动描：${previousDynamicActionText || '无（本轮从当前上下文自然起笔）'}
 - text 只写旁白正文，不要写“旁白：”或“动描：”，不要超过 35 字。`
             : '';
-        const effectiveUserPersona = window.imApp?.getEffectivePersonaForFriend
-            ? window.imApp.getEffectivePersonaForFriend(friend)
-            : (currentUserState.persona || '');
-        const currentUserPromptName = currentUserState.name || 'User';
+        const groupUserIdentity = friend.type === 'group' && window.imApp?.getGroupUserIdentity
+            ? window.imApp.getGroupUserIdentity(friend)
+            : null;
+        const effectiveUserPersona = groupUserIdentity?.persona
+            || (window.imApp?.getEffectivePersonaForFriend
+                ? window.imApp.getEffectivePersonaForFriend(friend)
+                : (currentUserState.persona || ''));
+        const currentUserPromptName = groupUserIdentity?.name || currentUserState.name || 'User';
         const userPersonaPromptEntry = `【User 人设】：${effectiveUserPersona || '一个普通用户'}`;
 
         let worldBookContextText = '';
@@ -3232,8 +3343,8 @@ ${isSingleChat ? '- 禁止执着于旧话题，例如当user明确表达不困�
                     ? snapshot.map(item => `${item.nickname || item.realName || item.id}(${item.id})`).join('、')
                     : (allowedSpeakerNames.length > 0 ? allowedSpeakerNames.join('、') : 'None');
                 const absenceDescription = isObserverGroup
-                    ? `${currentUserState.name || 'User'} 从创建时起就不在这个群聊中，只在界面外旁观，不能发言，群成员也不知道 User 正在旁观。`
-                    : `${currentUserState.name || 'User'} 已在 ${leftAtText || '刚刚'} 退出这个群聊，现在不能发言，也不会看到接下来的群聊内容。`;
+                    ? `${currentUserPromptName} 从创建时起就不在这个群聊中，只在界面外旁观，不能发言，群成员也不知道 User 正在旁观。`
+                    : `${currentUserPromptName} 已在 ${leftAtText || '刚刚'} 退出这个群聊，现在不能发言，也不会看到接下来的群聊内容。`;
                 groupExitPrompt = `\n【当前群状态｜User 不在群聊】\n- ${absenceDescription}\n- 当前群成员快照：${memberSnapshotText}。\n- 接下来的回复必须表现为群成员之间继续聊天，不要对 User 说话、不要等待 User 回复、不要让 User 发送消息。\n- 已挂载的单聊记忆仍然只属于对应成员本人：某个成员可以基于自己和 User 的私聊经历自然表达态度，其他成员默认不知道这些私聊内容，除非该成员主动在群里说出。`;
             }
             
@@ -3316,7 +3427,7 @@ ${isSingleChat ? '- 禁止执着于旧话题，例如当user明确表达不困�
 
                         if (contextMessages.length > 0) {
                             const formattedContext = contextMessages.map(msg => {
-                                const role = msg.role === 'user' ? (currentUserState.name || 'User') : member.nickname;
+                                const role = msg.role === 'user' ? currentUserPromptName : member.nickname;
                                 let text = msg.content || msg.text || msg.transcript || msg.description || '';
 
                                 if (msg.type === 'voice_message') {
@@ -3340,9 +3451,9 @@ ${isSingleChat ? '- 禁止执着于旧话题，例如当user明确表达不困�
                                 return `${timeStr}${role}: ${text}`;
                             }).join('\n');
 
-                            infoStr += `\n\n【挂载单聊记忆｜成员：${member.nickname}｜成员ID：${member.id}｜User：${currentUserState.name || 'User'}】\n以下内容只属于群成员「${member.nickname}」（ID: ${member.id}）与 User「${currentUserState.name || 'User'}」之间的单聊记忆/私聊上下文，不是当前群聊内公开发生的消息。\n使用规则：\n- 只有 ${member.nickname} 本人可以在自己的公开发言、心声或给 User 的私信中参考这些记忆，用来承接私人关系、称呼、语气、前文和共同经历。\n- 其他群成员不是全知视角，默认完全不知道这些私聊内容；除非 ${member.nickname} 已经在公开群聊里主动说出某个信息，否则其他成员不得引用、反应或暗示知道。\n- 当 ${member.nickname} 触发给 User 发私信时，必须优先参考这一段单聊记忆来衔接内容，但私信内容仍不能让其他群成员默认知情。\n${formattedContext}`;
+                            infoStr += `\n\n【挂载单聊记忆｜成员：${member.nickname}｜成员ID：${member.id}｜User：${currentUserPromptName}】\n以下内容只属于群成员「${member.nickname}」（ID: ${member.id}）与 User「${currentUserPromptName}」之间的单聊记忆/私聊上下文，不是当前群聊内公开发生的消息。\n使用规则：\n- 只有 ${member.nickname} 本人可以在自己的公开发言、心声或给 User 的私信中参考这些记忆，用来承接私人关系、称呼、语气、前文和共同经历。\n- 其他群成员不是全知视角，默认完全不知道这些私聊内容；除非 ${member.nickname} 已经在公开群聊里主动说出某个信息，否则其他成员不得引用、反应或暗示知道。\n- 当 ${member.nickname} 触发给 User 发私信时，必须优先参考这一段单聊记忆来衔接内容，但私信内容仍不能让其他群成员默认知情。\n${formattedContext}`;
                         } else {
-                            infoStr += `\n\n【挂载单聊记忆｜成员：${member.nickname}｜成员ID：${member.id}｜User：${currentUserState.name || 'User'}】\n已开启挂载，但暂未找到可注入的单聊上下文。仍需记住：这类记忆只属于 ${member.nickname} 本人与 User，其他群成员默认不知道。`;
+                            infoStr += `\n\n【挂载单聊记忆｜成员：${member.nickname}｜成员ID：${member.id}｜User：${currentUserPromptName}】\n已开启挂载，但暂未找到可注入的单聊上下文。仍需记住：这类记忆只属于 ${member.nickname} 本人与 User，其他群成员默认不知道。`;
                         }
                     }
 
@@ -3552,7 +3663,7 @@ ${commonMemorySections || 'None'}`);
             addOnlinePromptSection('behavior', `${singleChatHumanPrompt}
 ${chatContextAntiRepetitionPrompt}
 Reply naturally as your character in a chat app.
-- 角色的回复必须被拆分成 ${singleChatMessageRange.min}-${singleChatMessageRange.max} 条独立的短消息，模拟真实聊天的断续感，就像你在思考和打字一样。
+- 【单聊消息条数｜不可违反】本轮必须先自行选定一个 ${singleChatMessageRange.min}-${singleChatMessageRange.max}（含边界）之间的整数 N；<chat_json> 中 type 为 text、voice、sticker 或 image 的普通聊天气泡必须严格等于 N 条，不能少于 N 条，也不能多于 N 条。即使回复很短，也必须用自然且不同的独立气泡满足 N；不得用换行、合并文本、空文本或其他类型对象规避计数。
 - 避免一次性写出长篇大论。（超过60中文字/70外文的段落应被强制分段）
 - 偶尔可以出现轻微的错别字，并在下一条消息中用“是[正确词汇]”的方式修正，例如：
   角色: 我明天去那家参观尝尝。
@@ -3617,56 +3728,79 @@ Never truncate OUTPUT(x)
 </GEMINI_OVERRIDE_CORE>`;
         addOnlinePromptSection('priority', geminiOverridePrompt);
 
-        const messages = [];
-        appendOnlinePromptSections(messages, 'priority');
-        appendOnlinePromptSections(messages, 'identity');
-        appendOnlinePromptSections(messages, 'data');
+        const systemInstructionBlocks = [];
+        const conversationMessages = [];
+        let requestContextTrace = null;
+        appendOnlinePromptSections(systemInstructionBlocks, 'priority');
+        appendOnlinePromptSections(systemInstructionBlocks, 'identity');
+        appendOnlinePromptSections(systemInstructionBlocks, 'data');
         const offlineMeetingContext = window.imApp.buildOfflineMeetingContext
             ? window.imApp.buildOfflineMeetingContext(friend, { excludeRecord: pendingOfflineHandoff })
             : '';
         if (offlineMeetingContext) {
-            messages.push({
-                role: 'system',
-                content: offlineMeetingContext
-            });
+            systemInstructionBlocks.push(offlineMeetingContext);
         }
         if (groupChatMemoryContext && friend.type !== 'group') {
-            messages.push({
-                role: 'system',
-                content: groupChatMemoryContext
-            });
+            systemInstructionBlocks.push(groupChatMemoryContext);
         }
         const cherishedXml = memoryRecall.cherishedEntries.length > 0
             ? `<cherished_memories>\n${memoryRecall.cherishedEntries.map(entry => `<memory>\n<title>${entry.title || ''}</title>\n<time>${entry.createdAt || entry.time || ''}</time>\n<content>${entry.content || ''}</content>\n<detail>${entry.detail || ''}</detail>\n<reason>${entry.reason || ''}</reason>\n</memory>`).join('\n')}\n</cherished_memories>`
             : '';
         if (cherishedXml) {
-            messages.push({
-                role: 'system',
-                content: cherishedXml
-            });
+            systemInstructionBlocks.push(cherishedXml);
         }
         if (window.imApp.buildApiContextMessages) {
             const contextMessages = window.imApp.buildApiContextMessages(friend, {
-                userName: currentUserState.name || 'User',
-                excludeOfflineMeetingRecords: true
+                userName: currentUserPromptName,
+                excludeOfflineMeetingRecords: true,
+                includeContextMetadata: true
             });
 
             if (Array.isArray(contextMessages) && contextMessages.length > 0) {
                 const formattedContextMsgs = contextMessages.map(m => {
+                    const {
+                        _contextMessageId: contextMessageId,
+                        _contextTimestamp: contextTimestamp,
+                        ...apiMessage
+                    } = m;
                     let timeStr = '';
-                    if (m.timestamp) {
-                        timeStr = formatDetailedTime(m.timestamp);
+                    if (contextTimestamp) {
+                        timeStr = formatDetailedTime(contextTimestamp);
                     }
                     return {
-                        ...m,
-                        content: `${timeStr}${m.content}`
+                        ...apiMessage,
+                        content: `${timeStr}${apiMessage.content}`,
+                        _contextTraceMessageId: contextMessageId,
+                        _contextTraceTimestamp: contextTimestamp
                     };
                 });
-                messages.push(...formattedContextMsgs);
+                conversationMessages.push(...formattedContextMsgs);
+                const timestamps = formattedContextMsgs
+                    .map(message => Number(message._contextTraceTimestamp) || 0)
+                    .filter(Boolean);
+                requestContextTrace = {
+                    friendId: friendKey,
+                    apiRunId,
+                    source: options.source || 'manual',
+                    strategy: friend.type === 'group' ? 'message_window' : 'round_aligned_message_window',
+                    configuredMessageLimit: window.imApp.getContextLimit ? window.imApp.getContextLimit(friend) : 0,
+                    selectedMessageCount: formattedContextMsgs.length,
+                    selectedUserRoundCount: formattedContextMsgs.filter(message => message.role === 'user').length,
+                    selectedCharacterCount: formattedContextMsgs.reduce((total, message) => total + String(message.content || '').length, 0),
+                    firstMessageTimestamp: timestamps[0] || null,
+                    lastMessageTimestamp: timestamps[timestamps.length - 1] || null,
+                    firstMessageId: formattedContextMsgs[0]?._contextTraceMessageId || null,
+                    lastMessageId: formattedContextMsgs[formattedContextMsgs.length - 1]?._contextTraceMessageId || null
+                };
             }
         }
 
-        const dialogueMessages = messages.filter(message => message && message.role !== 'system');
+        conversationMessages.forEach(message => {
+            delete message._contextTraceMessageId;
+            delete message._contextTraceTimestamp;
+        });
+
+        const dialogueMessages = conversationMessages.filter(message => message && message.role !== 'system');
         const latestDialogueMessage = dialogueMessages.length > 0 ? dialogueMessages[dialogueMessages.length - 1] : null;
         const shouldStartFirstMessage = !latestDialogueMessage;
         const shouldContinueWithoutUser = !!options.continueWithoutUser
@@ -3685,76 +3819,52 @@ Never truncate OUTPUT(x)
                 content: buildContinueWithoutUserPrompt(friend, { isGroupAfterUserLeft })
             };
         } else if (latestDialogueMessage?.role === 'user') {
-            const triggerIndex = messages.lastIndexOf(latestDialogueMessage);
-            if (triggerIndex >= 0) messages.splice(triggerIndex, 1);
+            const triggerIndex = conversationMessages.lastIndexOf(latestDialogueMessage);
+            if (triggerIndex >= 0) conversationMessages.splice(triggerIndex, 1);
             responseTriggerMessage = latestDialogueMessage;
         }
 
-        appendOnlinePromptSections(messages, 'behavior');
-        appendOnlinePromptSections(messages, 'runtime');
+        appendOnlinePromptSections(systemInstructionBlocks, 'behavior');
+        appendOnlinePromptSections(systemInstructionBlocks, 'runtime');
         if (isGroupAfterUserLeft) {
-            messages.push({
-                role: 'system',
-                content: options.source === 'left_group_continue'
-                    ? '本次触发来自 User 不在群内时的下箭头“推进剧情”：请让群成员在 User 不参与且群成员不知道被旁观的前提下继续群聊。'
-                    : '当前 User 已退出群聊：后续回复不要把 User 当作在线参与者。'
-            });
+            systemInstructionBlocks.push(options.source === 'left_group_continue'
+                ? '本次触发来自 User 不在群内时的下箭头“推进剧情”：请让群成员在 User 不参与且群成员不知道被旁观的前提下继续群聊。'
+                : '当前 User 已退出群聊：后续回复不要把 User 当作在线参与者。');
         }
 
         if (options.extraSystemPrompt) {
-            messages.push({
-                role: 'system',
-                content: String(options.extraSystemPrompt)
-            });
+            systemInstructionBlocks.push(String(options.extraSystemPrompt));
         }
 
         const togetherReadingContext = window.libraryApp?.getTogetherReadingContext
             ? window.libraryApp.getTogetherReadingContext(friend)
             : '';
         if (togetherReadingContext) {
-            messages.push({
-                role: 'system',
-                content: String(togetherReadingContext)
-            });
+            systemInstructionBlocks.push(String(togetherReadingContext));
         }
 
         const togetherListeningContext = window.libraryApp?.getTogetherListeningContext
             ? window.libraryApp.getTogetherListeningContext(friend)
             : '';
         if (togetherListeningContext) {
-            messages.push({
-                role: 'system',
-                content: String(togetherListeningContext)
-            });
+            systemInstructionBlocks.push(String(togetherListeningContext));
         }
 
         if (pendingRegenerateContext) {
-            messages.push({
-                role: 'system',
-                content: buildRegenerateRetrySystemPrompt(pendingRegenerateContext)
-            });
+            systemInstructionBlocks.push(buildRegenerateRetrySystemPrompt(pendingRegenerateContext));
         }
 
         if (minimizedSingleCallContextPrompt) {
-            messages.push({
-                role: 'system',
-                content: minimizedSingleCallContextPrompt
-            });
+            systemInstructionBlocks.push(minimizedSingleCallContextPrompt);
         }
-        appendOnlinePromptSections(messages, 'features');
+        appendOnlinePromptSections(systemInstructionBlocks, 'features');
         if (groupPollVotePrompt) {
-            messages.push({
-                role: 'system',
-                content: groupPollVotePrompt
-            });
+            systemInstructionBlocks.push(groupPollVotePrompt);
         }
         if (responseCoreBehaviorAnchor) {
-            messages.push({
-                role: 'system',
-                content: responseCoreBehaviorAnchor
-            });
+            systemInstructionBlocks.push(responseCoreBehaviorAnchor);
         }
-        appendOnlinePromptSections(messages, 'format');
+        appendOnlinePromptSections(systemInstructionBlocks, 'format');
         const finalChatJsonFormatReminder = friend.type === 'group'
             ? `【最终输出格式自检｜紧邻本轮回复，最高优先级】
 现在只按以下顺序输出：先输出完整 <chat_json>合法JSON数组</chat_json>，再输出允许的附加标签。回复的第一个非空白字符必须是“<”。
@@ -3762,21 +3872,38 @@ ${groupPollVotePrompt ? '当前存在群投票附加任务：必须在 </chat_js
 正式输出前在内部确认：标签成对闭合；数组和对象完整闭合；所有键与字符串使用双引号；没有代码块、注释、尾逗号或标签外正文；至少有一条可显示气泡。如果复杂内容可能破坏格式，缩短回复并舍弃可选附加内容，也必须先保证上述最小结构完整合法。不要输出这段自检过程。`
             : `【最终输出格式自检｜紧邻本轮回复，最高优先级】
 现在只按以下顺序输出：先输出完整 <chat_json>合法JSON数组</chat_json>${singleChatCotEnabled ? '，紧接着输出完整 <cot_summary>按用户自定义 COT 完成的完整分析</cot_summary>' : ''}，再输出其他允许的附加标签。回复的第一个非空白字符必须是“<”。
-单聊最小合法气泡示例：<chat_json>[{"type":"text","text":"符合角色和上下文的自然回复","translation":"","quote":""}]</chat_json>
+单聊气泡数必须严格满足 ${getSingleChatMessageRange(friend).min}-${getSingleChatMessageRange(friend).max} 条；不得因为内容较短、格式复杂或附加任务而减少或增加普通聊天气泡。单聊最小合法气泡示例：<chat_json>[{"type":"text","text":"符合角色和上下文的自然回复","translation":"","quote":""}]</chat_json>
 ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</cot_summary>，并且只能位于 </chat_json> 之后、其他附加标签之前。\n' : ''} 
 如果本轮提供了“角色收藏 User 消息”候选且你自主决定收藏，<message_favorite> 必须放在 </chat_json> 后；不收藏则完全省略该标签。
-正式输出前在内部确认：标签成对闭合；数组和对象完整闭合；所有键与字符串使用双引号；没有代码块、注释、尾逗号或标签外正文；至少有一条可显示气泡。如果复杂内容可能破坏格式，缩短回复并舍弃可选附加内容，也必须先保证上述最小结构完整合法。不要输出这段自检过程。`;
-        messages.push({
-            role: 'system',
-            content: finalChatJsonFormatReminder
-        });
+正式输出前在内部确认：标签成对闭合；数组和对象完整闭合；所有键与字符串使用双引号；没有代码块、注释、尾逗号或标签外正文；普通聊天气泡数量满足上面的单聊消息条数规则。如果复杂内容可能破坏格式，缩短每条气泡并舍弃可选附加内容，但不得改变普通聊天气泡数量。不要输出这段自检过程。`;
+        systemInstructionBlocks.push(finalChatJsonFormatReminder);
         if (offlineHandoffContext) {
-            messages.push({
-                role: 'system',
-                content: `<offline_handoff_context>\n${offlineHandoffContext}\n</offline_handoff_context>`
-            });
+            systemInstructionBlocks.push(`<offline_handoff_context>\n${offlineHandoffContext}\n</offline_handoff_context>`);
         }
+        const mergedSystemInstruction = systemInstructionBlocks.filter(Boolean).join('\n\n');
+        const messages = mergedSystemInstruction
+            ? [{ role: 'system', content: mergedSystemInstruction }, ...conversationMessages]
+            : conversationMessages.slice();
         if (responseTriggerMessage) messages.push(responseTriggerMessage);
+        const contextTrace = requestContextTrace || {
+            friendId: friendKey,
+            apiRunId,
+            source: options.source || 'manual',
+            strategy: friend.type === 'group' ? 'message_window' : 'round_aligned_message_window',
+            configuredMessageLimit: window.imApp.getContextLimit ? window.imApp.getContextLimit(friend) : 0,
+            selectedMessageCount: 0,
+            selectedUserRoundCount: 0,
+            selectedCharacterCount: 0,
+            firstMessageTimestamp: null,
+            lastMessageTimestamp: null,
+            firstMessageId: null,
+            lastMessageId: null
+        };
+        contextTrace.requestMessageCount = messages.length;
+        contextTrace.requestCharacterCount = getChatPromptSize(messages);
+        contextTrace.createdAt = Date.now();
+        recordRequestContextTrace(friend, contextTrace);
+        console.debug('[iMessage] request context trace', contextTrace);
 
         // Skip API call and return immediately if chatting with official account
         if (friend.type === 'official') {
@@ -3795,16 +3922,17 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
             for (let regenerateAttempt = 0; regenerateAttempt < 2; regenerateAttempt++) {
                 const attemptMessages = regenerateAttempt === 0
                     ? messages
-                    : [
-                        ...messages,
-                        {
-                            role: 'system',
-                            content: buildRegenerateRetrySystemPrompt(pendingRegenerateContext, {
-                                strong: true,
-                                previousCheck: regenerateSimilarityCheck
-                            })
-                        }
-                    ];
+                    : messages.map((message, index) => (
+                        index === 0 && message?.role === 'system'
+                            ? {
+                                ...message,
+                                content: `${message.content}\n\n${buildRegenerateRetrySystemPrompt(pendingRegenerateContext, {
+                                    strong: true,
+                                    previousCheck: regenerateSimilarityCheck
+                                })}`
+                            }
+                            : message
+                    ));
 
                 const data = await fetchChatCompletionWithResilience(endpoint, requestApiConfig, attemptMessages, requestController);
                 if (!isConversationCurrent()) return;
@@ -4919,7 +5047,14 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
                         } else if (paymentAction === 'transfer') {
                             const nowMsg = Date.now();
                             const senderName = paymentSpeakerName;
-                            const receiverName = window.userState?.name || window.userState?.realName || window.userState?.nickname || 'User';
+                            const groupUserIdentity = activeFriend?.type === 'group' && window.imApp?.getGroupUserIdentity
+                                ? window.imApp.getGroupUserIdentity(activeFriend)
+                                : null;
+                            const receiverName = groupUserIdentity?.name
+                                || window.userState?.name
+                                || window.userState?.realName
+                                || window.userState?.nickname
+                                || 'User';
                             const paymentMsg = {
                                 id: window.imChat.createMessageId('pay'),
                                 role: 'assistant',
@@ -5092,6 +5227,27 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
                 }
                 if (!isConversationCurrent()) return false;
 
+                let generatedImage = null;
+                if (isImageReply && shouldAutoGenerateChatImage(speakerFriend)) {
+                    try {
+                        window.showToast?.('正在根据对话生成图片…');
+                        const promptConfig = speakerFriend.imagePromptConfig || {};
+                        generatedImage = await window.imChat.generateChatImage(
+                            buildAutoImagePrompt(currentItem, promptConfig, recentText),
+                            speakerFriend,
+                            {
+                                charAppearance: promptConfig.charAppearance,
+                                userAppearance: promptConfig.userAppearance,
+                                artistPrompt: promptConfig.artistPrompt,
+                                negativePrompt: promptConfig.negativePrompt
+                            }
+                        );
+                    } catch (error) {
+                        console.warn('[iMessage] automatic image generation failed; using placeholder', error);
+                        if (!options.silent) window.showToast?.(error?.message || '自动生图失败，已发送虚拟图片');
+                    }
+                }
+
                 const nowMsg = Date.now();
                 const msgObj = isStickerReply
                     ? {
@@ -5126,10 +5282,17 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
                         id: window.imChat.createMessageId('img'),
                         role: 'assistant',
                         type: 'image',
-                        content: window.imChat.CHAT_IMAGE_PLACEHOLDER_URL || 'assets/imessage/chat-image-placeholder-512.jpg',
+                        content: generatedImage?.imageUrl || window.imChat.CHAT_IMAGE_PLACEHOLDER_URL || 'assets/imessage/chat-image-placeholder-512.jpg',
                         text,
                         description: currentItem.description || text,
-                        imageSource: 'char',
+                        imageSource: generatedImage ? 'generated' : 'char',
+                        imageProvider: generatedImage?.provider || '',
+                        imageModel: generatedImage?.model || '',
+                        imageSize: generatedImage?.size || '',
+                        faceReferenceUsed: !!generatedImage?.faceReferenceUsed,
+                        senderName: speakerFriend.nickname || speakerFriend.realName || 'Char',
+                        senderAvatarUrl: speakerFriend.avatarUrl || '',
+                        senderAvatarAssetId: speakerFriend.avatarAssetId || '',
                         timestamp: nowMsg,
                         replyTo: aiReplyTo,
                         apiRunId
@@ -5675,6 +5838,10 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
     window.imChat.runAutonomousActivityForFriend = runAutonomousActivityForFriend;
     window.imChat.runAutonomousMomentForFriend = runAutonomousMomentForFriend;
     window.imChat.refreshAutonomousActivityTimers = refreshAutonomousActivityTimers;
+    window.imChat.getLastRequestContextTrace = function getLastRequestContextTrace(friendOrId) {
+        const trace = lastRequestContextTraces.get(getFriendKey(friendOrId));
+        return trace ? { ...trace } : null;
+    };
 
     window.addEventListener('u2:background-activity-tick', () => {
         if (!document.hidden) return;

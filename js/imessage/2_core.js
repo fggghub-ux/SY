@@ -46,6 +46,69 @@ window.imData = {
 };
 
 window.imApp = window.imApp || {};
+
+window.imApp.getGroupUserIdentity = function(group, options = {}) {
+    const user = window.getUserState ? window.getUserState() : (window.userState || {});
+    const accounts = typeof window.getAccounts === 'function' ? window.getAccounts() : [];
+    const currentAccountId = typeof window.getCurrentAccountId === 'function' ? window.getCurrentAccountId() : null;
+    const currentAccount = accounts.find(account => String(account?.id) === String(currentAccountId)) || null;
+    const override = !options.ignoreOverride && group?.type === 'group'
+        ? group.memory?.userOverride
+        : null;
+    const source = override || currentAccount || user || {};
+    const name = String(source.name || source.realName || source.nickname || user.name || user.realName || 'User').trim() || 'User';
+
+    return {
+        accountId: String(source.id || currentAccount?.id || user.id || ''),
+        name,
+        avatarUrl: String(source.avatarUrl || source.avatar || user.avatarUrl || user.avatar || 'assets/moren-thumb.jpg'),
+        persona: String(source.persona || source.signature || user.persona || ''),
+        signature: String(source.signature || source.persona || user.signature || '')
+    };
+};
+
+window.imApp.captureGroupUserIdentity = function(group, message) {
+    if (!group || group.type !== 'group' || !message || message.role !== 'user') return message;
+    if (message.userIdentity && typeof message.userIdentity === 'object' && String(message.userIdentity.name || '').trim()) {
+        return message;
+    }
+
+    const identity = window.imApp.getGroupUserIdentity(group);
+    message.userIdentity = {
+        accountId: identity.accountId,
+        name: identity.name,
+        avatarUrl: identity.avatarUrl
+    };
+    return message;
+};
+
+window.imApp.getMessageUserIdentity = function(friend, message) {
+    if (friend?.type === 'group' && message?.role === 'user') {
+        const snapshot = message.userIdentity;
+        if (snapshot && typeof snapshot === 'object' && String(snapshot.name || '').trim()) {
+            const legacyFallback = window.imApp.getGroupUserIdentity(friend, { ignoreOverride: true });
+            return {
+                accountId: String(snapshot.accountId || ''),
+                name: String(snapshot.name).trim(),
+                avatarUrl: String(snapshot.avatarUrl || legacyFallback.avatarUrl || 'assets/moren-thumb.jpg'),
+                persona: legacyFallback.persona,
+                signature: legacyFallback.signature
+            };
+        }
+
+        // Legacy messages predate group identity snapshots, so retain their old global-profile behavior.
+        return window.imApp.getGroupUserIdentity(friend, { ignoreOverride: true });
+    }
+
+    const user = window.getUserState ? window.getUserState() : (window.userState || {});
+    return {
+        accountId: String(user.id || ''),
+        name: String(user.name || user.realName || user.nickname || 'User'),
+        avatarUrl: String(user.avatarUrl || user.avatar || 'assets/moren-thumb.jpg'),
+        persona: String(user.persona || ''),
+        signature: String(user.signature || '')
+    };
+};
 window.imApp.DEFAULT_STATUS_PROMPT = '固定使用简体中文，写角色此刻没有说出口的三句真实心声。每句约10个汉字，每行一句，共三行；不要添加序号、引号、标题、前缀或解释。';
 window.imApp.DEFAULT_SINGLE_CHAT_COT_PROMPT = `请按以下顺序完整分析：
 1. 当前具体日期、时间与时间段，以及这对本轮场景和聊天承接意味着什么。
@@ -283,6 +346,24 @@ window.imApp.applyGlobalChatCss = function(themeState = window.u2ThemeState || {
     if (styleTag.textContent !== nextCss) styleTag.textContent = nextCss;
 };
 
+window.imApp.applyGlobalGroupCss = function(themeState = window.u2ThemeState || {}) {
+    const styleId = 'global-imessage-group-css';
+    let styleTag = document.getElementById(styleId);
+
+    if (!styleTag) {
+        styleTag = document.createElement('style');
+        styleTag.id = styleId;
+        document.head.appendChild(styleTag);
+    }
+
+    const enabled = !!themeState.imessageGroupCssEnabled;
+    const css = typeof themeState.imessageGroupCss === 'string' ? themeState.imessageGroupCss : '';
+    const nextCss = enabled && css.trim()
+        ? window.imApp.scopeUserCss(css, '.active-chat-interface.im-chat-group')
+        : '';
+    if (styleTag.textContent !== nextCss) styleTag.textContent = nextCss;
+};
+
 window.imApp.createDefaultAutonomousTask = function() {
     return {
         enabled: false,
@@ -347,7 +428,7 @@ window.imApp.createDefaultMemory = function() {
         longTermEntries: [],
         cherishedEntries: [],
         relationships: [],
-        socialAccounts: [],
+        xDirectMessageMount: { enabled: true, limit: 10, dmId: '' },
         schedule: { enabled: false, sleepTime: '23:00', wakeTime: '07:00', events: [] },
         lastSummaryMessageCount: 0,
         mountSettings: {},
@@ -438,6 +519,26 @@ window.imApp.normalizeLinkedAccountChats = function(chats) {
             };
         })
         .filter(Boolean);
+};
+
+window.imApp.createDefaultXDirectMessageMount = function() {
+    return {
+        enabled: true,
+        limit: 10,
+        dmId: ''
+    };
+};
+
+window.imApp.normalizeXDirectMessageMount = function(mount) {
+    const fallback = window.imApp.createDefaultXDirectMessageMount();
+    const source = mount && typeof mount === 'object' && !Array.isArray(mount) ? mount : {};
+    const parsedLimit = Number(source.limit);
+
+    return {
+        enabled: source.enabled !== false,
+        limit: Number.isFinite(parsedLimit) ? Math.max(1, Math.min(50, Math.floor(parsedLimit))) : fallback.limit,
+        dmId: source.dmId == null ? '' : String(source.dmId)
+    };
 };
 
 window.imApp.isCharacterSleeping = function(friend) {
@@ -636,12 +737,43 @@ window.imApp.normalizeFriendData = function(friend) {
     const imagePromptConfig = normalized.imagePromptConfig && typeof normalized.imagePromptConfig === 'object'
         ? normalized.imagePromptConfig
         : {};
+    const promptPresetIds = new Set();
+    const promptPresets = (Array.isArray(imagePromptConfig.presets) ? imagePromptConfig.presets : [])
+        .map((preset, index) => {
+            if (!preset || typeof preset !== 'object') return null;
+            const name = String(preset.name || '').trim().slice(0, 80);
+            const prompt = String(preset.prompt || '').trim().slice(0, 8000);
+            if (!name || !prompt) return null;
+            const id = String(preset.id || `image-preset-${normalized.id}-${index}`).trim();
+            if (!id || promptPresetIds.has(id)) return null;
+            promptPresetIds.add(id);
+            const createdAt = Math.max(0, Number(preset.createdAt) || Date.now());
+            return {
+                id,
+                name,
+                prompt,
+                charAppearance: String(preset.charAppearance || '').trim().slice(0, 4000),
+                userAppearance: String(preset.userAppearance || '').trim().slice(0, 4000),
+                artistPrompt: String(preset.artistPrompt || '').trim().slice(0, 4000),
+                negativePrompt: String(preset.negativePrompt || '').trim().slice(0, 4000),
+                createdAt,
+                updatedAt: Math.max(createdAt, Number(preset.updatedAt) || createdAt)
+            };
+        })
+        .filter(Boolean)
+        .slice(0, 30);
+    const activePromptPresetId = promptPresetIds.has(String(imagePromptConfig.activePresetId || '').trim())
+        ? String(imagePromptConfig.activePresetId).trim()
+        : '';
     normalized.imagePromptConfig = {
-        charAppearance: String(imagePromptConfig.charAppearance || ''),
-        userAppearance: String(imagePromptConfig.userAppearance || ''),
-        artistPrompt: String(imagePromptConfig.artistPrompt || ''),
-        negativePrompt: String(imagePromptConfig.negativePrompt || ''),
-        lastPrompt: String(imagePromptConfig.lastPrompt || '')
+        charAppearance: String(imagePromptConfig.charAppearance || '').trim().slice(0, 4000),
+        userAppearance: String(imagePromptConfig.userAppearance || '').trim().slice(0, 4000),
+        artistPrompt: String(imagePromptConfig.artistPrompt || '').trim().slice(0, 4000),
+        negativePrompt: String(imagePromptConfig.negativePrompt || '').trim().slice(0, 4000),
+        lastPrompt: String(imagePromptConfig.lastPrompt || '').trim().slice(0, 8000),
+        activePresetId: activePromptPresetId,
+        autoGenerate: imagePromptConfig.autoGenerate === true,
+        presets: promptPresets
     };
     normalized.messages = Array.isArray(normalized.messages) ? normalized.messages : [];
     normalized.language = String(normalized.language || 'zh').trim() || 'zh';
@@ -849,19 +981,7 @@ window.imApp.normalizeFriendData = function(friend) {
             }))
             : defaultMemory.cherishedEntries,
         relationships: Array.isArray(memory.relationships) ? memory.relationships : defaultMemory.relationships,
-        socialAccounts: Array.isArray(memory.socialAccounts)
-            ? memory.socialAccounts
-                .map((account, index) => ({
-                    platform: account?.platform || '',
-                    label: account?.label || account?.platform || '社交账号',
-                    handle: account?.handle || '',
-                    url: account?.url || '',
-                    ytChannelId: account?.ytChannelId || account?.channelId || '',
-                    updatedAt: account?.updatedAt || '',
-                    id: account?.id || `social-${index}`
-                }))
-                .filter(account => account.platform || account.handle || account.url)
-                : defaultMemory.socialAccounts,
+        xDirectMessageMount: window.imApp.normalizeXDirectMessageMount(memory.xDirectMessageMount),
         recallPresentation: normalizedRecallPresentation,
         userOverride: memory.userOverride || null,
         mountSettings: (memory.mountSettings && typeof memory.mountSettings === 'object' && !Array.isArray(memory.mountSettings))
@@ -982,7 +1102,26 @@ window.imApp.getRecentContextMessages = function(friend) {
     const normalizedFriend = window.imApp.normalizeFriendData(friend || {});
     const contextLimit = window.imApp.getContextLimit(normalizedFriend);
     const allMessages = Array.isArray(normalizedFriend.messages) ? normalizedFriend.messages : [];
-    return contextLimit > 0 ? allMessages.slice(-contextLimit) : [];
+    if (contextLimit <= 0 || allMessages.length === 0) return [];
+
+    if (normalizedFriend.type === 'group') {
+        return allMessages.slice(-contextLimit);
+    }
+
+    const boundedStartIndex = Math.max(0, allMessages.length - contextLimit);
+    let roundStartIndex = -1;
+
+    // Preserve the leading user message so an included Char reply never starts mid-turn.
+    for (let index = boundedStartIndex; index >= 0; index -= 1) {
+        if (allMessages[index]?.role === 'user') {
+            roundStartIndex = index;
+            break;
+        }
+    }
+
+    return roundStartIndex >= 0
+        ? allMessages.slice(roundStartIndex)
+        : allMessages.slice(-contextLimit);
 };
 
 window.imApp.formatOfflineMeetingRecordForContext = function(message) {
@@ -1328,7 +1467,12 @@ window.imApp.formatMessageForApiContext = function(message, friend, options = {}
     }
 
     if (isGroupChat) {
-        const userName = options.userName || window.userState?.name || 'User';
+        const userName = String(
+            normalizedMessage.userIdentity?.name
+            || options.userName
+            || window.imApp.getGroupUserIdentity(normalizedFriend).name
+            || 'User'
+        ).trim() || 'User';
         if (normalizedMessage.role === 'user') {
             if (normalizedMessage.replyTo) {
                 apiContent = `[引用了消息："${normalizedMessage.replyTo}"]\n${apiContent}`;
@@ -1373,10 +1517,19 @@ window.imApp.buildApiContextMessages = function(friend, options = {}) {
 
     return recentMessages
         .filter(message => !(options.excludeOfflineMeetingRecords && message?.type === 'offline_meeting_record'))
-        .map((message, index) => window.imApp.formatMessageForApiContext(message, normalizedFriend, {
-            ...options,
-            expandLinkContent: message && message.type === 'fake_link' ? index === latestLinkIndex : options.expandLinkContent
-        }))
+        .map((message, index) => {
+            const formattedMessage = window.imApp.formatMessageForApiContext(message, normalizedFriend, {
+                ...options,
+                expandLinkContent: message && message.type === 'fake_link' ? index === latestLinkIndex : options.expandLinkContent
+            });
+            if (!formattedMessage || !options.includeContextMetadata) return formattedMessage;
+
+            return {
+                ...formattedMessage,
+                _contextMessageId: String(message?.id || ''),
+                _contextTimestamp: Number(message?.timestamp) || 0
+            };
+        })
         .filter(item => item && item.role && typeof item.content === 'string' && item.content.trim());
 };
 
@@ -1426,6 +1579,97 @@ window.imApp.buildLinkedAccountMemoryContext = function(friend, options = {}) {
     });
 
     return lines.join('\n');
+};
+
+window.imApp.getXDirectMessageMountCandidates = function(friendOrId) {
+    const friendId = window.imApp.resolveFriendId(friendOrId);
+    if (friendId == null) return [];
+
+    const xState = typeof window.getAppState === 'function'
+        ? window.getAppState('x')
+        : window.__xFallbackState;
+    const directMessages = Array.isArray(xState?.xDirectMessages) ? xState.xDirectMessages : [];
+
+    const getMessageText = (message) => {
+        if (!message || typeof message !== 'object') return '';
+        if (message.type === 'post-card') {
+            const post = message.postSnapshot || message.post || {};
+            return `[X Post] ${String(post.text || post.content || '').trim()}`.trim();
+        }
+        return String(message.text || message.content || message.message || '').trim();
+    };
+
+    return directMessages
+        .filter(item => item && String(item.sourceFriendId || '') === String(friendId))
+        .map((item, index) => {
+            const messages = Array.isArray(item.messages) ? item.messages : [];
+            const lastMessage = messages[messages.length - 1] || null;
+            const lastTimestamp = Number(lastMessage?.createdAt || lastMessage?.timestamp || item.updatedAt || item.addedAt) || 0;
+            return {
+                id: String(item.id || ''),
+                name: String(item.name || item.nickname || item.realName || 'X Char'),
+                handle: String(item.handle || ''),
+                messages,
+                messageCount: messages.length,
+                lastMessageText: getMessageText(lastMessage),
+                updatedAt: lastTimestamp,
+                index
+            };
+        })
+        .filter(item => item.id)
+        .sort((left, right) => right.updatedAt - left.updatedAt || left.index - right.index);
+};
+
+window.imApp.buildXDirectMessageMemoryContext = function(friend, options = {}) {
+    const normalizedFriend = window.imApp.normalizeFriendData(friend || {});
+    if (normalizedFriend.type === 'group') return '';
+
+    const mount = window.imApp.normalizeXDirectMessageMount(normalizedFriend.memory?.xDirectMessageMount);
+    if (!mount.enabled) return '';
+
+    const mountCandidates = window.imApp.getXDirectMessageMountCandidates(normalizedFriend);
+    const mountedThread = mountCandidates.find(item => item.id === mount.dmId)
+        || (!mount.dmId ? mountCandidates[0] : null);
+    if (!mountedThread) return '';
+
+    const requestedLimit = Number(options.maxMessages);
+    const limit = Number.isFinite(requestedLimit)
+        ? Math.max(1, Math.min(50, Math.floor(requestedLimit)))
+        : mount.limit;
+    const charName = normalizedFriend.nickname || normalizedFriend.realName || 'Char';
+    const xCharName = mountedThread.name || 'X Char';
+    const sanitize = (value) => String(value == null ? '' : value)
+        .replace(/[<>]/g, character => character === '<' ? '‹' : '›')
+        .slice(0, 800);
+    const formatTime = (value) => {
+        const timestamp = Number(value) || 0;
+        if (!timestamp) return 'Unknown time';
+        const date = new Date(timestamp);
+        const pad = number => String(number).padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    };
+    const formatMessage = (message) => {
+        if (!message || typeof message !== 'object') return '';
+        const isPostCard = message.type === 'post-card';
+        const post = isPostCard ? (message.postSnapshot || message.post || {}) : null;
+        const rawText = isPostCard
+            ? `[X Post] ${post?.name || ''} ${post?.text || post?.content || ''}`
+            : (message.text || message.content || message.message || '');
+        const text = sanitize(rawText).trim();
+        if (!text) return '';
+        const speaker = message.source === 'user' || message.sender === 'user' ? 'User' : xCharName;
+        return `[${formatTime(message.createdAt || message.timestamp)}] ${speaker}: ${text}`;
+    };
+    const recentMessages = mountedThread.messages
+        .slice()
+        .sort((left, right) => Number(left?.createdAt || left?.timestamp || 0) - Number(right?.createdAt || right?.timestamp || 0))
+        .slice(-limit)
+        .map(formatMessage)
+        .filter(Boolean);
+
+    if (recentMessages.length === 0) return '';
+
+    return `<mounted_x_direct_message_context>\nSource: a manually mounted X private-message conversation. This is prior cross-platform context, not a message sent in the current iMessage thread.\nMounted X thread: ${sanitize(xCharName)}${mountedThread.handle ? ` (${sanitize(mountedThread.handle)})` : ''}\nUse it only to maintain continuity with User. Do not say other characters saw it, and do not present it as an iMessage bubble.\nCurrent iMessage Char: ${sanitize(charName)}\nRecent X private messages:\n${recentMessages.join('\n')}\n</mounted_x_direct_message_context>`;
 };
 
 window.imApp.getMomentMessages = function() {
@@ -2069,6 +2313,7 @@ window.imApp.appendFriendMessage = async function(friendId, message, options = {
     if (!Array.isArray(targetFriend.messages)) targetFriend.messages = [];
 
     const targetMessage = message && typeof message === 'object' ? message : {};
+    window.imApp.captureGroupUserIdentity(targetFriend, targetMessage);
     const previousUnreadCount = Math.max(0, Number(targetFriend.unreadCount) || 0);
     const nextOrder = targetFriend.messages.length;
     targetMessage.__messageOrder = nextOrder;
@@ -3050,6 +3295,12 @@ window.imApp.commitFriendsChange = async function(mutator, options = {}) {
             options.onSuccess(window.imData.friends);
         }
 
+        deletedFriendIds.forEach((friendId) => {
+            window.dispatchEvent(new CustomEvent('u2:friend-removed', {
+                detail: { friendId }
+            }));
+        });
+
         return true;
     } catch (e) {
         console.error('Failed to commit friends change', e);
@@ -3915,9 +4166,13 @@ window.imApp.initializeData = async function() {
                     ? await window.imStorage.loadMomentsCoverUrl()
                     : null
             };
+            const legacySocialAccountFriendIds = [];
 
             window.imData.friends = Array.isArray(initialPayload.friends)
                 ? initialPayload.friends.map((friend) => {
+                    if (Array.isArray(friend?.memory?.socialAccounts) && friend.id != null) {
+                        legacySocialAccountFriendIds.push(String(friend.id));
+                    }
                     const normalizedFriend = window.imApp.normalizeFriendData(friend);
                     normalizedFriend.messages = Array.isArray(friend.messages) ? friend.messages : [];
                     normalizedFriend.messagesLoaded = !!friend.messagesLoaded || normalizedFriend.messages.length > 0;
@@ -3936,6 +4191,13 @@ window.imApp.initializeData = async function() {
             window.imData.momentsLoaded = false;
             window.imData.momentMessagesLoaded = false;
             window.imData.stickersLoaded = false;
+
+            if (legacySocialAccountFriendIds.length > 0 && window.imStorage.saveFriendMeta) {
+                Promise.all(legacySocialAccountFriendIds.map(friendId => {
+                    const normalizedFriend = window.imApp.getFriendById(friendId);
+                    return normalizedFriend ? window.imStorage.saveFriendMeta(normalizedFriend) : null;
+                })).catch(error => console.warn('Failed to remove legacy social-account memory data', error));
+            }
         } else {
             console.warn('imStorage not available, iMessage will run with volatile in-memory state.');
         }
@@ -4195,6 +4457,9 @@ window.addEventListener('pagehide', () => {
     const modalImageComposerInput = document.getElementById('modal-image-composer-input');
     const modalGenerationPromptGroup = document.getElementById('modal-generation-prompt-group');
     const modalGenerationContextBtn = document.getElementById('modal-generation-context-btn');
+    const modalGenerationPresetSelect = document.getElementById('modal-generation-preset-select');
+    const modalGenerationSavePresetBtn = document.getElementById('modal-generation-save-preset-btn');
+    const modalAutoImageGenerationToggle = document.getElementById('modal-auto-image-generation-toggle');
     const modalGenerationCharAppearance = document.getElementById('modal-generation-char-appearance');
     const modalGenerationUserAppearance = document.getElementById('modal-generation-user-appearance');
     const modalGenerationArtistPrompt = document.getElementById('modal-generation-artist-prompt');
@@ -4298,6 +4563,24 @@ window.addEventListener('pagehide', () => {
             if (options.imageComposer) renderModalImageComposer(options.imageComposer);
             else if (modalImageComposerGroup) modalImageComposerGroup.style.display = 'none';
             if (modalGenerationPromptGroup) modalGenerationPromptGroup.style.display = options.generationPrompt ? 'block' : 'none';
+            if (modalGenerationPresetSelect) {
+                modalGenerationPresetSelect.replaceChildren();
+                const currentOption = document.createElement('option');
+                currentOption.value = '';
+                currentOption.textContent = '当前编辑内容';
+                modalGenerationPresetSelect.appendChild(currentOption);
+                (Array.isArray(options.generationPrompt?.presets) ? options.generationPrompt.presets : []).forEach((preset) => {
+                    const option = document.createElement('option');
+                    option.value = String(preset.id || '');
+                    option.textContent = String(preset.name || '未命名预设');
+                    modalGenerationPresetSelect.appendChild(option);
+                });
+                modalGenerationPresetSelect.value = String(options.generationPrompt?.activePresetId || '');
+                modalGenerationPresetSelect.disabled = !options.generationPrompt?.presets?.length;
+            }
+            if (modalAutoImageGenerationToggle) {
+                modalAutoImageGenerationToggle.checked = options.generationPrompt?.autoGenerate === true;
+            }
             if (modalGenerationCharAppearance) modalGenerationCharAppearance.value = options.generationPrompt?.charAppearance || '';
             if (modalGenerationUserAppearance) modalGenerationUserAppearance.value = options.generationPrompt?.userAppearance || '';
             if (modalGenerationArtistPrompt) modalGenerationArtistPrompt.value = options.generationPrompt?.artistPrompt || '';
@@ -4324,6 +4607,11 @@ window.addEventListener('pagehide', () => {
             if (modalReferenceFaceGroup) modalReferenceFaceGroup.style.display = 'none';
             if (modalImageComposerGroup) modalImageComposerGroup.style.display = 'none';
             if (modalGenerationPromptGroup) modalGenerationPromptGroup.style.display = 'none';
+            if (modalGenerationPresetSelect) {
+                modalGenerationPresetSelect.replaceChildren();
+                modalGenerationPresetSelect.disabled = true;
+            }
+            if (modalAutoImageGenerationToggle) modalAutoImageGenerationToggle.checked = false;
             
             modalMessage.textContent = options.message || '';
             modalConfirmBtn.textContent = options.confirmText || '确认';
@@ -4364,7 +4652,12 @@ window.addEventListener('pagehide', () => {
             charAppearance: modalGenerationCharAppearance?.value || '',
             userAppearance: modalGenerationUserAppearance?.value || '',
             artistPrompt: modalGenerationArtistPrompt?.value || '',
-            negativePrompt: modalGenerationNegativePrompt?.value || ''
+            negativePrompt: modalGenerationNegativePrompt?.value || '',
+            activePresetId: modalGenerationPresetSelect?.value || '',
+            autoGenerate: modalAutoImageGenerationToggle?.checked === true,
+            presets: Array.isArray(currentModalGenerationPrompt?.presets)
+                ? currentModalGenerationPrompt.presets
+                : []
         };
     }
 
@@ -4493,6 +4786,79 @@ window.addEventListener('pagehide', () => {
         }
     });
 
+    modalGenerationPresetSelect?.addEventListener('change', async () => {
+        const generationPrompt = currentModalGenerationPrompt;
+        if (!generationPrompt) return;
+        const presetId = String(modalGenerationPresetSelect.value || '').trim();
+        const preset = (Array.isArray(generationPrompt.presets) ? generationPrompt.presets : [])
+            .find((item) => String(item?.id || '') === presetId);
+        if (preset) {
+            if (modalTextarea) modalTextarea.value = preset.prompt || '';
+            if (modalGenerationCharAppearance) modalGenerationCharAppearance.value = preset.charAppearance || '';
+            if (modalGenerationUserAppearance) modalGenerationUserAppearance.value = preset.userAppearance || '';
+            if (modalGenerationArtistPrompt) modalGenerationArtistPrompt.value = preset.artistPrompt || '';
+            if (modalGenerationNegativePrompt) modalGenerationNegativePrompt.value = preset.negativePrompt || '';
+        }
+        if (typeof generationPrompt.onPresetSelect === 'function') {
+            try {
+                await generationPrompt.onPresetSelect(presetId, preset || null);
+            } catch (error) {
+                window.showToast?.(error?.message || '提示词预设切换失败');
+            }
+        }
+    });
+
+    modalGenerationSavePresetBtn?.addEventListener('click', async () => {
+        const generationPrompt = currentModalGenerationPrompt;
+        if (!generationPrompt) return;
+        const prompt = String(modalTextarea?.value || modalInput?.value || '').trim();
+        if (!prompt) {
+            window.showToast?.('请输入生图提示词后再保存预设');
+            return;
+        }
+        const defaultName = modalGenerationPresetSelect?.selectedOptions?.[0]?.textContent || '';
+        const name = String(window.prompt('请输入预设名称', defaultName === '当前编辑内容' ? '' : defaultName) || '').trim();
+        if (!name) return;
+        const now = Date.now();
+        const existing = (Array.isArray(generationPrompt.presets) ? generationPrompt.presets : [])
+            .find((item) => String(item?.name || '').trim() === name);
+        const preset = {
+            id: existing?.id || `image-preset-${now}-${Math.random().toString(36).slice(2, 7)}`,
+            name,
+            prompt,
+            charAppearance: String(modalGenerationCharAppearance?.value || '').trim(),
+            userAppearance: String(modalGenerationUserAppearance?.value || '').trim(),
+            artistPrompt: String(modalGenerationArtistPrompt?.value || '').trim(),
+            negativePrompt: String(modalGenerationNegativePrompt?.value || '').trim(),
+            createdAt: existing?.createdAt || now,
+            updatedAt: now
+        };
+        const presets = (Array.isArray(generationPrompt.presets) ? generationPrompt.presets : [])
+            .filter((item) => String(item?.id || '') !== String(preset.id));
+        presets.push(preset);
+        generationPrompt.presets = presets.slice(-30);
+        generationPrompt.activePresetId = preset.id;
+        if (modalGenerationPresetSelect) {
+            const option = Array.from(modalGenerationPresetSelect.options).find((item) => item.value === preset.id);
+            if (!option) {
+                const newOption = document.createElement('option');
+                newOption.value = preset.id;
+                newOption.textContent = preset.name;
+                modalGenerationPresetSelect.appendChild(newOption);
+            }
+            modalGenerationPresetSelect.disabled = false;
+            modalGenerationPresetSelect.value = preset.id;
+        }
+        try {
+            if (typeof generationPrompt.onSavePreset === 'function') {
+                await generationPrompt.onSavePreset({ preset, presets: generationPrompt.presets, activePresetId: preset.id });
+            }
+            window.showToast?.('提示词预设已保存');
+        } catch (error) {
+            window.showToast?.(error?.message || '提示词预设保存失败');
+        }
+    });
+
     if (customModalOverlay) {
         customModalOverlay.addEventListener('click', (e) => {
             if (e.target === customModalOverlay) closeCustomModal(true);
@@ -4546,9 +4912,7 @@ window.addEventListener('pagehide', () => {
     const imServiceItems = document.querySelectorAll('.line-service-item');
     imServiceItems.forEach(item => {
         item.addEventListener('click', async () => {
-            const spanText = item.querySelector('span')?.textContent?.trim() || '';
-            // Check if this is the Stickers button
-            if (spanText === 'Stickers') {
+            if (item.dataset.imessageService === 'stickers') {
                 try {
                     if (window.imApp?.ensureStickersReady) {
                         await window.imApp.ensureStickersReady();
@@ -5965,7 +6329,14 @@ window.addEventListener('pagehide', () => {
         closeMemoryEntryEditor();
         renderMemoryLocationSheet(currentMemoryLocation);
         renderMemoryView();
-        window.dispatchEvent(new CustomEvent('u2:memory-entries-updated', { detail: { friendId: String(friend.id) } }));
+        window.dispatchEvent(new CustomEvent('u2:memory-entries-updated', {
+            detail: {
+                friendId: String(friend.id),
+                action: 'upsert',
+                collection,
+                entryId: id
+            }
+        }));
         if (window.showToast) window.showToast(existingId ? '记忆已更新' : '记忆已添加');
         return true;
     }
@@ -5990,7 +6361,14 @@ window.addEventListener('pagehide', () => {
         if (options.closeDetail && memoryEntryDetailModal && window.closeView) window.closeView(memoryEntryDetailModal);
         renderMemoryLocationSheet(currentMemoryLocation);
         renderMemoryView();
-        window.dispatchEvent(new CustomEvent('u2:memory-entries-updated', { detail: { friendId: String(friend.id) } }));
+        window.dispatchEvent(new CustomEvent('u2:memory-entries-updated', {
+            detail: {
+                friendId: String(friend.id),
+                action: 'delete',
+                collection,
+                entryId: String(entry.id)
+            }
+        }));
         return true;
     }
 
@@ -6041,6 +6419,14 @@ window.addEventListener('pagehide', () => {
         }
         renderMemoryLocationSheet('iphone');
         renderMemoryView();
+        window.dispatchEvent(new CustomEvent('u2:memory-entries-updated', {
+            detail: {
+                friendId: String(friend.id),
+                action: 'delete',
+                collection: 'shortTermEntries',
+                entryId: String(entry.id)
+            }
+        }));
         return true;
     }
 
@@ -6125,46 +6511,73 @@ window.addEventListener('pagehide', () => {
         if (!memoryLocationSheetContent) return;
 
         location = location || 'iphone';
-        if (location === 'social') {
-            location = 'deleted';
-        }
         currentMemoryLocation = location;
 
         const friend = getCurrentMemoryFriend();
 
         const normalizedFriend = friend ? window.imApp.normalizeFriendData(friend) : null;
 
-        if (location === 'deleted') {
-            const socialAccounts = Array.isArray(normalizedFriend?.memory?.socialAccounts)
-                ? normalizedFriend.memory.socialAccounts
-                : [];
-
-            if (socialAccounts.length === 0) {
+        if (location === 'x-dm') {
+            if (!normalizedFriend || normalizedFriend.type === 'group') {
                 memoryLocationSheetContent.innerHTML = `
-                    <div class="memory-sheet-title">社交账号</div>
+                    <div class="memory-sheet-title">社交帐号</div>
                     <div class="memory-short-list">
-                        <div class="memory-short-empty">暂无社交账号</div>
+                        <div class="memory-short-empty">仅支持 iMessage 单聊 Char 挂载 X 私信。</div>
                     </div>
                 `;
                 return;
             }
 
+            const mount = window.imApp.normalizeXDirectMessageMount(normalizedFriend.memory?.xDirectMessageMount);
+            const candidates = window.imApp.getXDirectMessageMountCandidates(normalizedFriend);
+            const selected = candidates.find(item => item.id === mount.dmId)
+                || (!mount.dmId ? candidates[0] : null);
+            const selectedIsMissing = Boolean(mount.dmId && !selected);
+            const selectedLabel = selected
+                ? `${selected.name}${selected.handle ? ` · ${selected.handle}` : ''}`
+                : '';
+            const savedMount = { ...mount, dmId: selected?.id || mount.dmId };
+
             memoryLocationSheetContent.innerHTML = `
-                <div class="memory-sheet-title">社交账号</div>
-                <div class="memory-short-list">
-                    ${socialAccounts.map(account => `
-                        <div class="memory-short-item" style="gap:12px;">
-                            <span style="width:30px; height:30px; border-radius:9px; background:${account.platform === 'youtube' ? '#ff0000' : (account.platform === 'tiktok' ? '#111111' : '#8e8e93')}; color:#fff; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-                                <i class="${account.platform === 'youtube' ? 'fab fa-youtube' : (account.platform === 'tiktok' ? 'fab fa-tiktok' : 'fas fa-link')}" style="color:#fff; font-size:15px;"></i>
-                            </span>
-                            <span style="display:flex; flex-direction:column; min-width:0; flex:1; gap:2px;">
-                                <span style="font-size:15px; color:#111; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeMemoryHtml(account.handle || account.label || '社交账号')}</span>
-                                <span style="font-size:12px; color:#8e8e93; font-weight:400; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeMemoryHtml(account.url || '')}</span>
-                            </span>
-                        </div>
-                    `).join('')}
+                <div class="memory-sheet-title">社交帐号</div>
+                <div style="margin:0 0 12px; padding:12px 14px; border-radius:14px; background:#f7f7fa; color:#636366; font-size:13px; line-height:1.5;">
+                    当前 Char 对应的 X 私信会作为单聊参考，不会合并两端聊天记录。
+                </div>
+                <div class="memory-short-list" style="gap:10px;">
+                    <label style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; border-radius:14px; background:#f7f7fa;">
+                        <span style="display:flex; flex-direction:column; min-width:0; gap:3px;"><strong style="font-size:15px; color:#111;">X 私信</strong><small style="font-size:12px; color:#8e8e93; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${selected ? escapeMemoryHtml(selectedLabel) : (selectedIsMissing ? '原会话已不存在' : '暂无对应私信')}</small></span>
+                        <span style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
+                            <input id="memory-x-dm-limit" type="number" min="1" max="50" step="1" value="${mount.limit}" aria-label="X 私信上下文条数" style="width:48px; height:32px; border:1px solid #e5e5ea; border-radius:9px; background:#fff; color:#111; font-size:14px; text-align:center;">
+                            <span style="font-size:13px; color:#8e8e93; margin-left:-6px;">条</span>
+                            <input id="memory-x-dm-enabled" type="checkbox" aria-label="开启 X 私信上下文" ${mount.enabled ? 'checked' : ''} ${selected ? '' : 'disabled'}>
+                        </span>
+                    </label>
+                    ${candidates.length === 0 ? '<div class="memory-short-empty">未找到当前 Char 对应的 X 私信。请先在 X 中从 iMessage 导入该 Char 并创建私信。</div>' : ''}
                 </div>
             `;
+
+            const saveMount = async (nextMount) => {
+                const saved = await window.imApp.commitScopedFriendChange(friend, targetFriend => {
+                    targetFriend.memory = window.imApp.normalizeFriendData(targetFriend).memory;
+                    targetFriend.memory.xDirectMessageMount = window.imApp.normalizeXDirectMessageMount(nextMount);
+                }, { silent: true, syncActive: true, syncSettings: true });
+                if (!saved) {
+                    if (window.showToast) window.showToast('X 私信上下文保存失败');
+                    return false;
+                }
+                window.dispatchEvent(new CustomEvent('u2:memory-entries-updated', {
+                    detail: { friendId: String(friend.id), action: 'x-dm-mount' }
+                }));
+                renderMemoryLocationSheet('x-dm');
+                return true;
+            };
+
+            memoryLocationSheetContent.querySelector('#memory-x-dm-enabled')?.addEventListener('change', event => {
+                saveMount({ ...savedMount, enabled: event.target.checked });
+            });
+            memoryLocationSheetContent.querySelector('#memory-x-dm-limit')?.addEventListener('change', event => {
+                saveMount({ ...savedMount, limit: event.target.value });
+            });
             return;
         }
 

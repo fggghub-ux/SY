@@ -81,6 +81,9 @@
         dom.screen.classList.remove('is-checking');
         dom.screen.classList.add('is-hidden');
         setLoginLocked(false);
+        window.dispatchEvent(new CustomEvent('u2:main-interface-ready', {
+            detail: { username: currentSession?.username || readSession()?.username || '' }
+        }));
     }
 
     function readSession() {

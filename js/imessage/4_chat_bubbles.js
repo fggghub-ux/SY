@@ -7,6 +7,7 @@
     const imChat = window.imChat;
     const INITIAL_HISTORY_USER_ROUNDS = 30;
     const HISTORY_LOAD_MORE_USER_ROUNDS = 10;
+    const renderMessageContextByFriend = new WeakMap();
 
     function escapeHtml(value) {
         return String(value == null ? '' : value)
@@ -17,7 +18,10 @@
             .replace(/'/g, '&#039;');
     }
 
-    function getEffectiveUserProfile(friend = null) {
+    function getEffectiveUserProfile(friend = null, message = null) {
+        if (friend?.type === 'group' && window.imApp?.getMessageUserIdentity) {
+            return window.imApp.getMessageUserIdentity(friend, message || { role: 'user' });
+        }
         const boundAccount = window.imApp?.getBoundAccountByFriend
             ? window.imApp.getBoundAccountByFriend(friend)
             : null;
@@ -40,6 +44,13 @@
 
         const avatarUrl = getEffectiveUserProfile(friend).avatarUrl || 'assets/moren-thumb.jpg';
         container.style.setProperty('--group-user-avatar-image', `url(${JSON.stringify(String(avatarUrl))})`);
+    }
+
+    function setGroupUserRowIdentity(row, friend, message = renderMessageContextByFriend.get(friend)) {
+        if (!row || friend?.type !== 'group' || message?.role !== 'user') return;
+        const profile = getEffectiveUserProfile(friend, message);
+        row.setAttribute('data-user-account-id', profile.accountId || '');
+        row.style.setProperty('--group-user-avatar-image', `url(${JSON.stringify(String(profile.avatarUrl || 'assets/moren-thumb.jpg'))})`);
     }
 
     function resolveGroupBubbleIdentity(friend, msg = {}) {
@@ -72,7 +83,7 @@
         }
 
         const payKind = msg.payKind || (msg.role === 'user' ? 'user_to_char' : 'char_received');
-        const userName = getEffectiveUserProfile(friend).name;
+        const userName = getEffectiveUserProfile(friend, msg).name;
         const charName = msg.speaker || msg.charName || friend?.nickname || friend?.realName || friend?.name || 'Char';
         const targetName = msg.targetName || '';
         const charToUserKinds = ['char_to_user_pending', 'char_to_user_claimed', 'user_received_from_char', 'user_rejected_from_char'];
@@ -116,14 +127,14 @@
         };
     }
 
-    function buildMessageHeaderHtml(isUser, friend, timestamp, speakerName, speakerAvatar, hasPrev) {
+    function buildMessageHeaderHtml(isUser, friend, timestamp, speakerName, speakerAvatar, hasPrev, message = null) {
         if (!friend || !friend.showAvatar || hasPrev) return '';
         const date = new Date(timestamp);
         const dateStr = date.toLocaleString('en-US', { month: 'long', day: 'numeric' });
         const ampmTimeStr = date.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true });
         
         if (isUser) {
-            const userProfile = getEffectiveUserProfile(friend);
+            const userProfile = getEffectiveUserProfile(friend, message || renderMessageContextByFriend.get(friend));
             const userName = userProfile.name;
             const userAvatar = userProfile.avatarUrl;
             return `
@@ -504,6 +515,7 @@ function renderGroupRedPacketBubble(msg, friend, container, timestamp = Date.now
         if (groupIdentity.memberId !== '') {
             row.setAttribute('data-speaker-member-id', String(groupIdentity.memberId));
         }
+        setGroupUserRowIdentity(row, friend, msg);
 
         const totalAmount = Number(msg.totalAmount) || 0;
         const packetCount = parseInt(msg.packetCount, 10) || 0;
@@ -532,7 +544,7 @@ function renderGroupRedPacketBubble(msg, friend, container, timestamp = Date.now
             return `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
         })();
 
-        const headerHtml = buildMessageHeaderHtml(isUser, friend, timestamp, speakerName, speakerAvatar, hasPrev);
+        const headerHtml = buildMessageHeaderHtml(isUser, friend, timestamp, speakerName, speakerAvatar, hasPrev, msg);
 
         if (isUser) {
             const metaHtml = "";
@@ -619,9 +631,9 @@ function renderGroupRedPacketBubble(msg, friend, container, timestamp = Date.now
                 const member = isUser
                     ? null
                     : (window.imData?.friends || []).find(item => String(item.id) === String(vote?.voterId));
-                const profile = isUser ? getEffectiveUserProfile(friend) : null;
+                const profile = isUser ? getEffectiveUserProfile(friend, msg) : null;
                 const voterName = vote?.voterName || member?.nickname || member?.realName || (isUser ? profile?.name : '群成员');
-                const avatarUrl = member?.avatarUrl || profile?.avatarUrl || 'assets/moren-thumb.jpg';
+                const avatarUrl = vote?.voterAvatarUrl || member?.avatarUrl || profile?.avatarUrl || 'assets/moren-thumb.jpg';
                 return `<span class="group-poll-voter"><img src="${escapeHtml(avatarUrl)}" alt="">${escapeHtml(voterName)}</span>`;
             }).join('');
             return `
@@ -649,6 +661,7 @@ function renderGroupRedPacketBubble(msg, friend, container, timestamp = Date.now
         row.className = 'chat-row user-row group-poll-row';
         row.setAttribute('data-timestamp', String(timestamp));
         row.setAttribute('data-message-id', messageId);
+        setGroupUserRowIdentity(row, friend, msg);
         row.innerHTML = `
             <div class="chat-checkbox-wrapper" style="display:${window.imData.batchSelectMode ? 'flex' : 'none'};width:40px;justify-content:center;align-items:flex-end;padding-bottom:10px;flex-shrink:0;cursor:pointer;transition:all .2s;">
                 <i class="far fa-circle chat-checkbox" data-timestamp="${timestamp}" style="color:#c7c7cc;font-size:22px;"></i>
@@ -752,6 +765,7 @@ function renderGroupRedPacketBubble(msg, friend, container, timestamp = Date.now
 function renderMessageBubble(msg, friend, container, timestamp = Date.now()) {
         if (!msg || !container) return false;
 
+        if (friend && typeof friend === 'object') renderMessageContextByFriend.set(friend, msg);
         window.imChat.ensureMessageId(msg, msg.type === 'pay_transfer' ? 'pay' : 'msg');
         const msgTime = timestamp || msg.timestamp || Date.now();
         renderCotSummaryCard(msg, friend, container);
@@ -805,7 +819,7 @@ function renderMessageBubble(msg, friend, container, timestamp = Date.now()) {
             return true;
         }
         if (msg.role === 'user') {
-            window.imChat.renderUserBubble(msg.content, container, msgTime, msg.replyTo, msg.translation, msg.showTranslation, msg.id, friend);
+            window.imChat.renderUserBubble(msg.content, container, msgTime, msg.replyTo, msg.translation, msg.showTranslation, msg.id, friend, msg);
             return true;
         }
         if (msg.role === 'assistant') {
@@ -1151,7 +1165,7 @@ function renderTimestamp(timestamp, container) {
     }
 
 
-function renderUserBubble(text, container, timestamp = Date.now(), replyTo = null, translation = null, showTranslation = false, messageId = null, friend = null) {
+function renderUserBubble(text, container, timestamp = Date.now(), replyTo = null, translation = null, showTranslation = false, messageId = null, friend = null, message = null) {
         const rows = Array.from(container.children).filter(el => el.classList.contains('chat-row') && !el.classList.contains('typing-row'));
         const lastRow = rows.length > 0 ? rows[rows.length - 1] : null;
         let hasPrev = false;
@@ -1160,12 +1174,14 @@ function renderUserBubble(text, container, timestamp = Date.now(), replyTo = nul
             lastRow.classList.add('has-next');
         }
 
-        const headerHtml = buildMessageHeaderHtml(true, friend, timestamp, null, null, hasPrev);
+        const userMessage = message || { role: 'user' };
+        const headerHtml = buildMessageHeaderHtml(true, friend, timestamp, null, null, hasPrev, userMessage);
 
         const row = document.createElement('div');
         row.className = `chat-row user-row ${hasPrev ? 'has-prev' : ''}`;
         row.setAttribute('data-timestamp', timestamp);
         row.setAttribute('data-message-id', messageId || window.imChat.createMessageId('msg'));
+        setGroupUserRowIdentity(row, friend, userMessage);
         
         let contentHtml = '';
         if (replyTo) {
@@ -1373,6 +1389,7 @@ function renderImageBubble(msg, friend, container, timestamp = Date.now()) {
         row.setAttribute('data-message-id', window.imChat.ensureMessageId(msg, 'img'));
         if (speakerName) row.setAttribute('data-speaker', speakerName);
         setGroupRowMemberId(row, friend, msg);
+        setGroupUserRowIdentity(row, friend, msg);
         
         const imageSrc = msg.content || window.imChat.CHAT_IMAGE_PLACEHOLDER_URL || '';
         const contentHtml = `
@@ -1405,7 +1422,7 @@ function renderImageBubble(msg, friend, container, timestamp = Date.now()) {
             `;
         }
 
-        const headerHtml = buildMessageHeaderHtml(isUser, friend, timestamp, speakerName, speakerAvatar, hasPrev);
+        const headerHtml = buildMessageHeaderHtml(isUser, friend, timestamp, speakerName, speakerAvatar, hasPrev, msg);
 
         row.innerHTML = `
             <div class="chat-checkbox-wrapper" style="display: ${window.imData.batchSelectMode ? 'flex' : 'none'}; width: 40px; justify-content: center; align-items: flex-end; padding-bottom: 10px; flex-shrink: 0; cursor: pointer; transition: all 0.2s;">
@@ -1465,6 +1482,7 @@ function renderPayTransferBubble(msg, friend, container, timestamp = Date.now())
         row.setAttribute('data-message-id', window.imChat.ensureMessageId(msg, 'pay'));
         if (speakerName) row.setAttribute('data-speaker', speakerName);
         setGroupRowMemberId(row, friend, msg);
+        setGroupUserRowIdentity(row, friend, msg);
 
         const amount = Number(msg.amount) || 0;
         const amountText = `¥${amount.toFixed(2)}`;
@@ -1495,7 +1513,7 @@ function renderPayTransferBubble(msg, friend, container, timestamp = Date.now())
             extraClass = ' is-pending';
         }
 
-        const headerHtml = buildMessageHeaderHtml(isUser, friend, timestamp, speakerName, speakerAvatar, hasPrev);
+        const headerHtml = buildMessageHeaderHtml(isUser, friend, timestamp, speakerName, speakerAvatar, hasPrev, msg);
 
         const date = new Date(timestamp);
         const timeStr = typeof window.formatChatBubbleTime === 'function' ? window.formatChatBubbleTime(timestamp) : `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
@@ -1642,6 +1660,7 @@ function renderMomentForwardBubble(msg, friend, container, timestamp = Date.now(
         const row = document.createElement('div');
         row.className = `chat-row ${isUser ? 'user-row' : 'ai-row'} ${hasPrev ? 'has-prev' : ''}`;
         row.setAttribute('data-message-id', window.imChat.ensureMessageId(msg, 'moment'));
+        setGroupUserRowIdentity(row, friend, msg);
         
         const contentHtml = `
             <div class="moment-forward-bubble im-card-content" style="cursor: pointer; background: #fff; border-radius: 16px; padding: 12px;  border: 1px solid rgba(0,0,0,0.04); display: flex; align-items: center; gap: 12px; width: 220px; text-align: left; margin: 4px 0;">
@@ -1655,7 +1674,7 @@ function renderMomentForwardBubble(msg, friend, container, timestamp = Date.now(
             </div>
         `;
 
-        const headerHtml = buildMessageHeaderHtml(isUser, friend, timestamp, null, null, hasPrev);
+        const headerHtml = buildMessageHeaderHtml(isUser, friend, timestamp, null, null, hasPrev, msg);
 
         const timeStr = typeof window.formatChatBubbleTime === 'function' ? window.formatChatBubbleTime(timestamp) : (() => {
             const date = new Date(timestamp);
@@ -1748,6 +1767,7 @@ function renderVoiceMessageBubble(msg, friend, container, timestamp = Date.now()
             row.setAttribute('data-speaker', speakerName);
         }
         setGroupRowMemberId(row, friend, msg);
+        setGroupUserRowIdentity(row, friend, msg);
 
         const transcript = String(msg.transcript || msg.text || '').trim();
         const calculatedDuration = Math.min(18, Math.max(3, Math.ceil(transcript.length / 3)));
@@ -1792,7 +1812,7 @@ function renderVoiceMessageBubble(msg, friend, container, timestamp = Date.now()
             `;
         }
 
-        const headerHtml = buildMessageHeaderHtml(isUser, friend, timestamp, speakerName, speakerAvatar, hasPrev);
+        const headerHtml = buildMessageHeaderHtml(isUser, friend, timestamp, speakerName, speakerAvatar, hasPrev, msg);
 
         row.innerHTML = `
             <div class="chat-checkbox-wrapper" style="display: ${window.imData.batchSelectMode ? 'flex' : 'none'}; width: 40px; justify-content: center; align-items: flex-end; padding-bottom: 10px; flex-shrink: 0; cursor: pointer; transition: all 0.2s;">
@@ -1883,6 +1903,7 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
             row.setAttribute('data-speaker', speakerName);
         }
         setGroupRowMemberId(row, friend, msg);
+        setGroupUserRowIdentity(row, friend, msg);
 
         const stickerUrl = String(msg.stickerUrl || msg.content || '').trim();
         const stickerName = String(msg.stickerName || msg.text || 'Sticker').trim();
@@ -1916,7 +1937,7 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
             `;
         }
 
-        const headerHtml = buildMessageHeaderHtml(isUser, friend, timestamp, speakerName, speakerAvatar, hasPrev);
+        const headerHtml = buildMessageHeaderHtml(isUser, friend, timestamp, speakerName, speakerAvatar, hasPrev, msg);
 
         row.innerHTML = `
             <div class="chat-checkbox-wrapper" style="display: ${window.imData.batchSelectMode ? 'flex' : 'none'}; width: 40px; justify-content: center; align-items: flex-end; padding-bottom: 10px; flex-shrink: 0; cursor: pointer; transition: all 0.2s;">
@@ -2412,7 +2433,8 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
         row.setAttribute('data-message-id', window.imChat.ensureMessageId(msg, 'link'));
         if (speakerName) row.setAttribute('data-speaker', speakerName);
         setGroupRowMemberId(row, friend, msg);
-        const headerHtml = buildMessageHeaderHtml(isUser, friend, timestamp, speakerName, speakerAvatar, hasPrev);
+        setGroupUserRowIdentity(row, friend, msg);
+        const headerHtml = buildMessageHeaderHtml(isUser, friend, timestamp, speakerName, speakerAvatar, hasPrev, msg);
         row.innerHTML = `
             <div class="chat-checkbox-wrapper" style="display:${window.imData.batchSelectMode ? 'flex' : 'none'};width:40px;justify-content:center;align-items:flex-end;padding-bottom:10px;flex-shrink:0;cursor:pointer;transition:all 0.2s;">
                 <i class="far fa-circle chat-checkbox" data-timestamp="${timestamp}" style="color:#c7c7cc;font-size:22px;"></i>
@@ -2623,9 +2645,10 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
         row.className = `chat-row ${isUser ? 'user-row' : 'ai-row'} ${hasPrev ? 'has-prev' : ''}`;
         row.setAttribute('data-timestamp', timestamp);
         row.setAttribute('data-message-id', window.imChat.ensureMessageId(msg, 'html'));
+        setGroupUserRowIdentity(row, friend, msg);
 
         const contentHtml = msg.content || msg.text || '';
-        const headerHtml = buildMessageHeaderHtml(isUser, friend, timestamp, null, null, hasPrev);
+        const headerHtml = buildMessageHeaderHtml(isUser, friend, timestamp, null, null, hasPrev, msg);
 
         const date = new Date(timestamp);
         const timeStr = typeof window.formatChatBubbleTime === 'function' ? window.formatChatBubbleTime(timestamp) : `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
@@ -2707,6 +2730,7 @@ function renderVoiceCallRecordBubble(msg, friend, container, timestamp = Date.no
         row.className = `chat-row ${isUser ? 'user-row' : 'ai-row'}`;
         row.setAttribute('data-timestamp', timestamp);
         row.setAttribute('data-message-id', window.imChat.ensureMessageId(msg, 'call'));
+        setGroupUserRowIdentity(row, friend, msg);
 
         const duration = msg.duration || 0;
         const m = Math.floor(duration / 60).toString().padStart(2, '0');
@@ -2743,7 +2767,7 @@ function renderVoiceCallRecordBubble(msg, friend, container, timestamp = Date.no
         // Note: It doesn't have hasPrev tracking in its code properly, let's just assume false as it lacks context, or compute if possible.
         // Actually it doesn't compute hasPrev. I'll just pass false for hasPrev as it doesn't track it, 
         // but wait, is it worth adding? No, VoiceCallRecord is usually a system notice or independent item.
-        const headerHtml = buildMessageHeaderHtml(isUser, friend, timestamp, null, null, false);
+        const headerHtml = buildMessageHeaderHtml(isUser, friend, timestamp, null, null, false, msg);
 
         if (isUser) {
             const metaHtml = "";

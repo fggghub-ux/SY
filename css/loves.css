@@ -2006,6 +2006,8 @@
 .loves-moment-menu button:hover { background: var(--loves-accent-soft); }
 .loves-moment-menu button.is-danger { color: var(--loves-danger); }
 .loves-moment-body { color: #2c2c2e; font-size: 14px; line-height: 1.62; white-space: pre-wrap; word-break: break-word; }
+.loves-moment-translate-toggle { display: block; margin: 6px 0 0; padding: 0; border: 0; background: transparent; color: var(--loves-pink-ink); cursor: pointer; font-size: 11px; font-weight: 700; line-height: 1.5; }
+.loves-moment-translation { margin-top: 5px; padding-top: 6px; border-top: 1px solid var(--loves-line); color: var(--loves-muted); font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
 
 .loves-moment-images { margin-top: 12px; display: grid; gap: 5px; }
 .loves-moment-images.is-one { grid-template-columns: minmax(0, 1fr); }
@@ -2022,6 +2024,8 @@
 .loves-moment-comment.is-char { font-size: 14px; line-height: 1.62; }
 .loves-moment-comment-copy { flex: 1; min-width: 0; cursor: pointer; }
 .loves-moment-comment-author { color: var(--loves-pink-ink); font-weight: 750; }
+.loves-moment-comment .loves-moment-translate-toggle { margin-top: 4px; }
+.loves-moment-comment .loves-moment-translation { font-size: 11px; }
 .loves-moment-comment-delete { flex-shrink: 0; padding: 0; border-radius: 0; background: transparent; color: var(--loves-danger); cursor: pointer; font-size: 12px; line-height: 1.5; text-decoration: none; white-space: nowrap; }
 .loves-moment-comment-delete:hover { text-decoration: underline; }
 

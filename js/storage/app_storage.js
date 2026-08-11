@@ -6,11 +6,11 @@
 
 (function() {
     const DB_NAME = 'iiso_app_storage';
-    const OPTIMIZATION_SHADOW_DB_NAME = 'iiso_app_storage_optimization_shadow_v8';
-    const IMPORT_SHADOW_DB_NAME = 'iiso_app_storage_import_shadow_v8';
-    const IMPORT_ROLLBACK_DB_NAME = 'iiso_app_storage_import_rollback_v8';
-    const DB_VERSION = 7;
-    const STORAGE_SCHEMA_VERSION = 8;
+    const OPTIMIZATION_SHADOW_DB_NAME = 'iiso_app_storage_optimization_shadow_v9';
+    const IMPORT_SHADOW_DB_NAME = 'iiso_app_storage_import_shadow_v9';
+    const IMPORT_ROLLBACK_DB_NAME = 'iiso_app_storage_import_rollback_v9';
+    const DB_VERSION = 8;
+    const STORAGE_SCHEMA_VERSION = 9;
     const BACKUP_APP_NAME = 'u2phone';
 
     const STORES = {
@@ -36,6 +36,7 @@
         xPosts: 'x_posts',
         xThreads: 'x_threads',
         xDms: 'x_dms',
+        vectorMemoryIndex: 'vector_memory_index',
         storageCheckpoints: 'storage_checkpoints'
     };
     const BACKUP_STORES = Object.values(STORES);
@@ -205,6 +206,7 @@
         const settingsMap = {
             u2_userState: 'userState',
             u2_apiConfig: 'apiConfig',
+            u2_vectorMemoryConfig: 'vectorMemoryConfig',
             u2_minimaxConfig: 'minimaxConfig',
             u2_apiPresets: 'apiPresets',
             u2_fetchedModels: 'fetchedModels',
@@ -662,6 +664,23 @@
                 if (!db.objectStoreNames.contains(STORES.xDms)) {
                     const dmStore = db.createObjectStore(STORES.xDms, { keyPath: 'id' });
                     dmStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains(STORES.vectorMemoryIndex)) {
+                    const vectorStore = db.createObjectStore(STORES.vectorMemoryIndex, { keyPath: 'id' });
+                    vectorStore.createIndex('scopeFriendKey', 'scopeFriendKey', { unique: false });
+                    vectorStore.createIndex('scopeKey', 'scopeKey', { unique: false });
+                } else {
+                    const upgradeTransaction = event.target.transaction;
+                    if (upgradeTransaction) {
+                        const vectorStore = upgradeTransaction.objectStore(STORES.vectorMemoryIndex);
+                        if (!hasStoreIndex(vectorStore, 'scopeFriendKey')) {
+                            vectorStore.createIndex('scopeFriendKey', 'scopeFriendKey', { unique: false });
+                        }
+                        if (!hasStoreIndex(vectorStore, 'scopeKey')) {
+                            vectorStore.createIndex('scopeKey', 'scopeKey', { unique: false });
+                        }
+                    }
                 }
 
                 if (!db.objectStoreNames.contains(STORES.storageCheckpoints)) {
@@ -1472,6 +1491,13 @@
             senderName: safe.senderName,
             senderAvatarUrl: safe.senderAvatarUrl,
             senderAvatarAssetId: typeof safe.senderAvatarAssetId === 'string' ? safe.senderAvatarAssetId : '',
+            userIdentity: safe.userIdentity && typeof safe.userIdentity === 'object'
+                ? {
+                    accountId: String(safe.userIdentity.accountId || ''),
+                    name: String(safe.userIdentity.name || ''),
+                    avatarUrl: String(safe.userIdentity.avatarUrl || '')
+                }
+                : null,
             packetMsg: safe.packetMsg,
             claims: safe.claims,
             packetCount: safe.packetCount,
@@ -1604,6 +1630,13 @@
             senderName: row.senderName,
             senderAvatarUrl: row.senderAvatarUrl,
             senderAvatarAssetId: row.senderAvatarAssetId || '',
+            userIdentity: row.userIdentity && typeof row.userIdentity === 'object'
+                ? {
+                    accountId: String(row.userIdentity.accountId || ''),
+                    name: String(row.userIdentity.name || ''),
+                    avatarUrl: String(row.userIdentity.avatarUrl || '')
+                }
+                : null,
             packetMsg: row.packetMsg,
             claims: row.claims,
             packetCount: row.packetCount,
@@ -2769,6 +2802,10 @@
             currentAccountId: safe.currentAccountId ?? null,
             apiConfig: safe.apiConfig && typeof safe.apiConfig === 'object'
                 ? {
+                    provider: ['openai', 'deepseek', 'siliconflow', 'gemini', 'anthropic', 'openai-compatible']
+                        .includes(String(safe.apiConfig.provider || '').toLowerCase())
+                        ? String(safe.apiConfig.provider).toLowerCase()
+                        : 'openai-compatible',
                     endpoint: typeof safe.apiConfig.endpoint === 'string' ? safe.apiConfig.endpoint : '',
                     apiKey: typeof safe.apiConfig.apiKey === 'string' ? safe.apiConfig.apiKey : '',
                     model: typeof safe.apiConfig.model === 'string' ? safe.apiConfig.model : '',
@@ -2776,7 +2813,42 @@
                         ? parseFloat(safe.apiConfig.temperature)
                         : 0.7
                 }
-                : { endpoint: '', apiKey: '', model: '', temperature: 0.7 },
+                : { provider: 'openai-compatible', endpoint: '', apiKey: '', model: '', temperature: 0.7 },
+            vectorMemoryConfig: (() => {
+                const source = safe.vectorMemoryConfig && typeof safe.vectorMemoryConfig === 'object'
+                    ? safe.vectorMemoryConfig
+                    : {};
+                const isLegacyConfig = !source.provider && [
+                    'namespace',
+                    'embeddingModel',
+                    'embeddingDimensions',
+                    'embeddingRevision',
+                    'topK',
+                    'timeoutMs'
+                ].some((key) => Object.prototype.hasOwnProperty.call(source, key));
+                const provider = ['siliconflow', 'openai', 'dashscope', 'zhipu', 'openai-compatible']
+                    .includes(String(source.provider || '').toLowerCase())
+                    ? String(source.provider).toLowerCase()
+                    : 'siliconflow';
+                const defaultModels = {
+                    siliconflow: 'BAAI/bge-m3',
+                    openai: 'text-embedding-3-small',
+                    dashscope: 'text-embedding-v4',
+                    zhipu: 'embedding-3',
+                    'openai-compatible': ''
+                };
+                return {
+                    enabled: !isLegacyConfig && source.enabled === true,
+                    provider,
+                    endpoint: provider === 'openai-compatible' && typeof source.endpoint === 'string'
+                        ? source.endpoint
+                        : '',
+                    apiKey: !isLegacyConfig && typeof source.apiKey === 'string' ? source.apiKey : '',
+                    model: typeof source.model === 'string' && source.model.trim()
+                        ? source.model
+                        : defaultModels[provider]
+                };
+            })(),
             apiPresets: Array.isArray(safe.apiPresets) ? safe.apiPresets : [],
             fetchedModels: Array.isArray(safe.fetchedModels) ? safe.fetchedModels : [],
             assistiveBallSettings: safe.assistiveBallSettings && typeof safe.assistiveBallSettings === 'object'
@@ -2844,6 +2916,7 @@
             setSetting('userState', normalized.userState),
             setSetting('currentAccountId', normalized.currentAccountId),
             setSetting('apiConfig', normalized.apiConfig),
+            setSetting('vectorMemoryConfig', normalized.vectorMemoryConfig),
             setSetting('apiPresets', normalized.apiPresets),
             setSetting('fetchedModels', normalized.fetchedModels),
             setSetting('assistiveBallSettings', normalized.assistiveBallSettings),
@@ -2861,6 +2934,7 @@
             accounts: normalized.accounts,
             currentAccountId: normalized.currentAccountId,
             apiConfig: normalized.apiConfig,
+            vectorMemoryConfig: normalized.vectorMemoryConfig,
             apiPresets: normalized.apiPresets,
             fetchedModels: normalized.fetchedModels,
             assistiveBallSettings: normalized.assistiveBallSettings,
@@ -2881,6 +2955,7 @@
             userState,
             currentAccountId,
             apiConfig,
+            vectorMemoryConfig,
             apiPresets,
             fetchedModels,
             assistiveBallSettings,
@@ -2894,6 +2969,7 @@
             getSetting('userState', null),
             getSetting('currentAccountId', null),
             getSetting('apiConfig', null),
+            getSetting('vectorMemoryConfig', null),
             getSetting('apiPresets', []),
             getSetting('fetchedModels', []),
             getSetting('assistiveBallSettings', { enabled: false }),
@@ -2917,6 +2993,7 @@
                     : (accountsRecord && Array.isArray(accountsRecord.value) ? accountsRecord.value : []),
                 currentAccountId: durableSettings.currentAccountId ?? currentAccountId,
                 apiConfig: durableSettings.apiConfig ?? apiConfig,
+                vectorMemoryConfig: durableSettings.vectorMemoryConfig ?? vectorMemoryConfig,
                 apiPresets: durableSettings.apiPresets ?? apiPresets,
                 fetchedModels: durableSettings.fetchedModels ?? fetchedModels,
                 assistiveBallSettings: durableSettings.assistiveBallSettings ?? assistiveBallSettings,
@@ -3138,6 +3215,7 @@
         [STORES.xPosts]: 'id',
         [STORES.xThreads]: 'postId',
         [STORES.xDms]: 'id',
+        [STORES.vectorMemoryIndex]: 'id',
         [STORES.storageCheckpoints]: 'id'
     };
 
@@ -3197,6 +3275,7 @@
         const settingsMap = {
             u2_userState: 'userState',
             u2_apiConfig: 'apiConfig',
+            u2_vectorMemoryConfig: 'vectorMemoryConfig',
             u2_minimaxConfig: 'minimaxConfig',
             u2_apiPresets: 'apiPresets',
             u2_fetchedModels: 'fetchedModels',
@@ -3303,6 +3382,7 @@
             accounts: normalized.accounts,
             currentAccountId: normalized.currentAccountId,
             apiConfig: normalized.apiConfig,
+            vectorMemoryConfig: normalized.vectorMemoryConfig,
             apiPresets: normalized.apiPresets,
             fetchedModels: normalized.fetchedModels,
             assistiveBallSettings: normalized.assistiveBallSettings,

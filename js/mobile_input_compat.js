@@ -8,10 +8,12 @@
     let viewportListenersBound = false;
     let bottomSheetViewportGuardBound = false;
     let focusScopeViewportGuardBound = false;
+    let focusScopeViewportFrame = 0;
     const bottomSheetFocusGuard = {
         active: false,
         overlay: null,
         scrollLeft: 0,
+        scrollTop: 0,
         previousScrollSnapType: '',
         previousScrollBehavior: '',
         previousOverflowX: '',
@@ -53,6 +55,7 @@
     function resolveFocusScope(target) {
         if (!isAndroid || !isBottomSheetEditableTarget(target)) return null;
 
+        let resolvedScope = null;
         for (const registration of focusScopeRegistrations.values()) {
             let root = null;
             try {
@@ -60,9 +63,14 @@
             } catch (error) {
                 console.warn('[mobileInputCompat] Invalid focus scope selector:', registration.selector, error);
             }
-            if (root) return { registration, root, target };
+            if (!root) continue;
+
+            // Keep feature-specific roots ahead of the app-wide fallback.
+            if (!resolvedScope || registration.priority > resolvedScope.registration.priority) {
+                resolvedScope = { registration, root, target };
+            }
         }
-        return null;
+        return resolvedScope;
     }
 
     function restoreFocusScopeWindowPosition(scope = activeFocusScope) {
@@ -104,6 +112,14 @@
         }
     }
 
+    function getFocusScopeViewportConfig(registration) {
+        return {
+            className: String(registration?.viewportClassName || '').trim(),
+            heightCssVariable: String(registration?.viewportHeightCssVariable || '').trim(),
+            topCssVariable: String(registration?.viewportTopCssVariable || '').trim()
+        };
+    }
+
     function scrollFocusScopeToLatest(scope) {
         const scrollContainer = getFocusScopeScrollContainer(scope);
         if (!scrollContainer) return;
@@ -112,28 +128,93 @@
         });
     }
 
+    function scrollFocusScopeTargetIntoView(scope) {
+        const scrollContainer = getFocusScopeScrollContainer(scope);
+        const target = scope?.target;
+        if (!scrollContainer || !target?.isConnected) return;
+
+        requestAnimationFrame(() => {
+            const containerRect = scrollContainer.getBoundingClientRect();
+            const targetRect = target.getBoundingClientRect();
+            const padding = 16;
+            const visibleTop = containerRect.top + padding;
+            const visibleBottom = containerRect.bottom - padding;
+
+            if (targetRect.top < visibleTop) {
+                scrollContainer.scrollTop += targetRect.top - visibleTop;
+            } else if (targetRect.bottom > visibleBottom) {
+                scrollContainer.scrollTop += targetRect.bottom - visibleBottom;
+            }
+        });
+    }
+
+    function scrollFocusScopeContent(scope) {
+        if (scope?.registration.scrollBehavior === 'focus') {
+            scrollFocusScopeTargetIntoView(scope);
+            return;
+        }
+        scrollFocusScopeToLatest(scope);
+    }
+
+    function restoreFocusScopeViewport(root, originalRoot, viewportConfig) {
+        if (!root?.style) return;
+
+        if (viewportConfig.className) {
+            if (viewportConfig.heightCssVariable) {
+                if (originalRoot.heightCssValue) {
+                    root.style.setProperty(viewportConfig.heightCssVariable, originalRoot.heightCssValue);
+                } else {
+                    root.style.removeProperty(viewportConfig.heightCssVariable);
+                }
+            }
+            if (viewportConfig.topCssVariable) {
+                if (originalRoot.topCssValue) {
+                    root.style.setProperty(viewportConfig.topCssVariable, originalRoot.topCssValue);
+                } else {
+                    root.style.removeProperty(viewportConfig.topCssVariable);
+                }
+            }
+            root.classList.remove(viewportConfig.className);
+            return;
+        }
+
+        root.style.height = originalRoot.height;
+        root.style.top = originalRoot.top;
+        root.style.bottom = originalRoot.bottom;
+        root.classList.remove('u2-android-keyboard-open');
+    }
+
     function restoreFocusScopeLayout(scope = activeFocusScope, options = {}) {
         if (!scope) return;
 
         const { root, originalRoot } = scope;
-        if (root?.style) {
-            root.style.height = originalRoot.height;
-            root.style.top = originalRoot.top;
-            root.style.bottom = originalRoot.bottom;
-            root.classList.remove('u2-android-keyboard-open');
-        }
+        restoreFocusScopeViewport(root, originalRoot, getFocusScopeViewportConfig(scope.registration));
         scope.keyboardWasOpen = false;
+        scope.appliedViewportHeight = 0;
+        scope.appliedViewportTop = 0;
         restoreFocusScopeWindowPosition(scope);
-        if (options.scrollToLatest) scrollFocusScopeToLatest(scope);
+        if (options.scrollToLatest) scrollFocusScopeContent(scope);
+    }
+
+    function scheduleFocusScopeLayoutRestore(scope, options = {}) {
+        if (!scope) return;
+        clearFocusScopeRestoreTimers(scope);
+        [0, 60, 180, 360].forEach(delay => {
+            scope.restoreTimers.push(setTimeout(() => restoreFocusScopeLayout(scope, options), delay));
+        });
     }
 
     function releaseFocusScope(scope = activeFocusScope) {
         if (!scope) return;
 
+        const scrollToLatest = scope.keyboardWasOpen;
         clearFocusScopeRestoreTimers(scope);
-        restoreFocusScopeLayout(scope, { scrollToLatest: scope.keyboardWasOpen });
+        if (scope.releaseTimer) clearTimeout(scope.releaseTimer);
+        scope.releaseTimer = null;
+        restoreFocusScopeLayout(scope, { scrollToLatest });
         scope.root?.classList?.remove('u2-android-focus-locked');
         if (activeFocusScope === scope) activeFocusScope = null;
+        scheduleFocusScopeLayoutRestore(scope, { scrollToLatest });
     }
 
     function captureFocusScope(target) {
@@ -142,6 +223,10 @@
         if (!resolved) return false;
 
         if (activeFocusScope && activeFocusScope.root === resolved.root) {
+            if (activeFocusScope.releaseTimer) {
+                clearTimeout(activeFocusScope.releaseTimer);
+                activeFocusScope.releaseTimer = null;
+            }
             activeFocusScope.target = target;
             if (!activeFocusScope.keyboardWasOpen) {
                 const metrics = getViewportMetrics();
@@ -166,12 +251,16 @@
             restingHeight: Math.max(layoutHeight, metrics.height),
             restingLayoutHeight: layoutHeight,
             keyboardWasOpen: false,
+            appliedViewportHeight: 0,
+            appliedViewportTop: 0,
             restoreTimers: [],
             releaseTimer: null,
             originalRoot: {
                 height: root.style.height,
                 top: root.style.top,
-                bottom: root.style.bottom
+                bottom: root.style.bottom,
+                heightCssValue: root.style.getPropertyValue(getFocusScopeViewportConfig(resolved.registration).heightCssVariable),
+                topCssValue: root.style.getPropertyValue(getFocusScopeViewportConfig(resolved.registration).topCssVariable)
             }
         };
         root.classList.add('u2-android-focus-locked');
@@ -202,6 +291,13 @@
         scheduleFocusScopeWindowRestore(scope);
 
         if (!keyboardOpen) {
+            // Android can dispatch focusout before its keyboard animation has
+            // restored visualViewport, especially when Enter replaces an input.
+            // Keep the fixed viewport until the keyboard actually retreats.
+            const keyboardStillRetreating = scope.keyboardWasOpen
+                && !focused
+                && scope.restingHeight - viewportHeight > 72;
+            if (keyboardStillRetreating) return;
             if (scope.keyboardWasOpen) restoreFocusScopeLayout(scope, { scrollToLatest: true });
             if (!focused || viewportHeight >= scope.restingHeight - 72) {
                 scope.restingHeight = Math.max(scope.restingHeight, layoutHeight, metrics.height);
@@ -211,16 +307,39 @@
         }
 
         scope.keyboardWasOpen = true;
-        scope.root.style.height = `${viewportHeight}px`;
-        scope.root.style.top = `${viewportTop}px`;
-        scope.root.style.bottom = 'auto';
-        scope.root.classList.add('u2-android-keyboard-open');
-        scrollFocusScopeToLatest(scope);
+        const viewportConfig = getFocusScopeViewportConfig(scope.registration);
+        const viewportClassName = viewportConfig.className || 'u2-android-keyboard-open';
+        const metricsChanged = viewportHeight !== scope.appliedViewportHeight
+            || viewportTop !== scope.appliedViewportTop;
+        const viewportClassApplied = scope.root.classList.contains(viewportClassName);
+        if (!metricsChanged && viewportClassApplied) return;
+
+        scope.appliedViewportHeight = viewportHeight;
+        scope.appliedViewportTop = viewportTop;
+        if (viewportConfig.className) {
+            if (viewportConfig.heightCssVariable) {
+                scope.root.style.setProperty(viewportConfig.heightCssVariable, `${viewportHeight}px`);
+            }
+            if (viewportConfig.topCssVariable) {
+                scope.root.style.setProperty(viewportConfig.topCssVariable, `${viewportTop}px`);
+            }
+            scope.root.classList.add(viewportConfig.className);
+        } else {
+            scope.root.style.height = `${viewportHeight}px`;
+            scope.root.style.top = `${viewportTop}px`;
+            scope.root.style.bottom = 'auto';
+            scope.root.classList.add('u2-android-keyboard-open');
+        }
+        scrollFocusScopeContent(scope);
     }
 
     function handleFocusScopeViewportChange() {
         if (!isAndroid || !activeFocusScope) return;
-        applyFocusScopeViewport();
+        if (focusScopeViewportFrame) return;
+        focusScopeViewportFrame = requestAnimationFrame(() => {
+            focusScopeViewportFrame = 0;
+            applyFocusScopeViewport();
+        });
     }
 
     function bindFocusScopeViewportGuard() {
@@ -232,15 +351,26 @@
 
     function releaseFocusScopeIfIdle(scope) {
         if (!scope || scope !== activeFocusScope) return;
+        scope.releaseTimer = null;
         if (isActiveFocusScopeStillFocused(scope)) {
             scheduleFocusScopeWindowRestore(scope);
+            return;
+        }
+
+        const metrics = getViewportMetrics();
+        const layoutHeight = Math.round(window.innerHeight || metrics.height || 0);
+        const layoutAlreadyResized = scope.restingLayoutHeight - layoutHeight > 100;
+        const viewportHeight = layoutAlreadyResized ? layoutHeight : metrics.height;
+        const keyboardStillRetreating = scope.keyboardWasOpen
+            && scope.restingHeight - viewportHeight > 72;
+        if (keyboardStillRetreating) {
+            scheduleFocusScopeRelease(scope);
             return;
         }
         releaseFocusScope(scope);
     }
 
-    function scheduleFocusScopeRelease() {
-        const scope = activeFocusScope;
+    function scheduleFocusScopeRelease(scope = activeFocusScope) {
         if (!isAndroid || !scope) return;
         if (scope.releaseTimer) clearTimeout(scope.releaseTimer);
         scope.releaseTimer = setTimeout(() => releaseFocusScopeIfIdle(scope), 120);
@@ -249,16 +379,22 @@
     function registerFocusScope(options = {}) {
         const selector = String(options.selector || '').trim();
         if (!selector) return function() {};
+        const priority = Number(options.priority);
 
         const previous = focusScopeRegistrations.get(selector);
         if (previous) previous.cleanup();
 
         const registration = {
             selector,
+            priority: Number.isFinite(priority) ? priority : 0,
             preferFocusScope: options.preferFocusScope === true,
             resolveScrollContainer: typeof options.resolveScrollContainer === 'function'
                 ? options.resolveScrollContainer
                 : null,
+            scrollBehavior: options.scrollBehavior === 'focus' ? 'focus' : 'latest',
+            viewportClassName: String(options.viewportClassName || '').trim(),
+            viewportHeightCssVariable: String(options.viewportHeightCssVariable || '').trim(),
+            viewportTopCssVariable: String(options.viewportTopCssVariable || '').trim(),
             cleanup: null
         };
         registration.cleanup = () => {
@@ -298,7 +434,16 @@
             }
             pagesContainer.scrollLeft = bottomSheetFocusGuard.scrollLeft;
         }
-        resetHorizontalWindowScroll();
+        const scrollTop = bottomSheetFocusGuard.scrollTop;
+        try {
+            window.scrollTo(0, scrollTop);
+        } catch (error) {
+            // Some embedded Android WebViews can reject scrollTo while the keyboard is animating.
+        }
+        document.documentElement.scrollLeft = 0;
+        document.documentElement.scrollTop = scrollTop;
+        document.body.scrollLeft = 0;
+        document.body.scrollTop = scrollTop;
     }
 
     function scheduleBottomSheetFocusRestore() {
@@ -321,6 +466,9 @@
         if (!bottomSheetFocusGuard.active) {
             bottomSheetFocusGuard.active = true;
             bottomSheetFocusGuard.scrollLeft = pagesContainer ? pagesContainer.scrollLeft : 0;
+            bottomSheetFocusGuard.scrollTop = Math.round(
+                window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0
+            );
             if (pagesContainer) {
                 bottomSheetFocusGuard.previousScrollSnapType = pagesContainer.style.scrollSnapType || '';
                 bottomSheetFocusGuard.previousScrollBehavior = pagesContainer.style.scrollBehavior || '';
@@ -345,6 +493,17 @@
     }
 
     function activateAndroidInputGuard(target) {
+        // Feature-owned inputs can keep their own viewport anchoring without
+        // the app-wide fallback pinning #app at the same time. This is needed
+        // for full-screen call UIs whose visible origin may move independently
+        // in Android Chromium-family browsers.
+        const registeredEntry = registrations.get(target);
+        if (registeredEntry?.managesOwnViewport) {
+            if (bottomSheetFocusGuard.active) unlockBottomSheetFocusScroll();
+            if (activeFocusScope) releaseFocusScope(activeFocusScope);
+            return 'managed-viewport';
+        }
+
         const preferredScope = resolveFocusScope(target);
         if (preferredScope?.registration.preferFocusScope) {
             if (bottomSheetFocusGuard.active) unlockBottomSheetFocusScroll();
@@ -373,6 +532,14 @@
             pagesContainer.style.touchAction = bottomSheetFocusGuard.previousTouchAction;
             pagesContainer.scrollLeft = bottomSheetFocusGuard.scrollLeft;
         }
+        const scrollTop = bottomSheetFocusGuard.scrollTop;
+        try {
+            window.scrollTo(0, scrollTop);
+        } catch (error) {
+            // Some embedded Android WebViews can reject scrollTo while the keyboard is animating.
+        }
+        document.documentElement.scrollTop = scrollTop;
+        document.body.scrollTop = scrollTop;
 
         if (bottomSheetFocusGuard.overlay?.classList) {
             bottomSheetFocusGuard.overlay.classList.remove('u2-android-input-locked');
@@ -381,6 +548,7 @@
         bottomSheetFocusGuard.active = false;
         bottomSheetFocusGuard.overlay = null;
         bottomSheetFocusGuard.scrollLeft = 0;
+        bottomSheetFocusGuard.scrollTop = 0;
         bottomSheetFocusGuard.previousScrollSnapType = '';
         bottomSheetFocusGuard.previousScrollBehavior = '';
         bottomSheetFocusGuard.previousOverflowX = '';
@@ -519,6 +687,7 @@
             multiline: !!options.multiline,
             blurAfterSend: !!options.blurAfterSend,
             restoreWindowScroll: options.restoreWindowScroll !== false,
+            managesOwnViewport: options.managesOwnViewport === true,
             openClasses: Array.isArray(options.openClasses)
                 ? options.openClasses.filter(Boolean)
                 : ['keyboard-open'],
@@ -620,6 +789,13 @@
         } else {
             setTimeout(releaseBottomSheetFocusScrollIfIdle, 120);
         }
+    });
+
+    // Covers editable controls in views that do not need a bespoke scroll
+    // container. Feature scopes registered by individual apps take precedence.
+    registerFocusScope({
+        selector: '#app',
+        priority: -100
     });
 
     window.mobileInputCompat = {
