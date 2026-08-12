@@ -207,6 +207,7 @@
             u2_userState: 'userState',
             u2_apiConfig: 'apiConfig',
             u2_vectorMemoryConfig: 'vectorMemoryConfig',
+            u2_ttsConfig: 'ttsConfig',
             u2_minimaxConfig: 'minimaxConfig',
             u2_apiPresets: 'apiPresets',
             u2_fetchedModels: 'fetchedModels',
@@ -2669,12 +2670,18 @@
                 friendPositionsStore: {}
             },
             netflix: {
-                works: [],
-                boundWorldBookIds: [],
+                schemaVersion: 4,
                 homeCatalog: null,
-                playbackCatalog: {},
-                playbackCustomCss: '',
-                presetState: null
+                activeRun: null,
+                saveSlots: {
+                    auto: null,
+                    manual: [null, null, null, null, null, null]
+                },
+                unlockedEndings: [],
+                uiSettings: {
+                    textSpeed: 'normal',
+                    reduceMotion: false
+                }
             },
             desktop: {},
             bstage: {},
@@ -3276,6 +3283,7 @@
             u2_userState: 'userState',
             u2_apiConfig: 'apiConfig',
             u2_vectorMemoryConfig: 'vectorMemoryConfig',
+            u2_ttsConfig: 'ttsConfig',
             u2_minimaxConfig: 'minimaxConfig',
             u2_apiPresets: 'apiPresets',
             u2_fetchedModels: 'fetchedModels',
@@ -4796,6 +4804,7 @@
     const LEGACY_SETTING_KEY_MAP = {
         u2_userState: 'userState',
         u2_apiConfig: 'apiConfig',
+        u2_ttsConfig: 'ttsConfig',
         u2_minimaxConfig: 'minimaxConfig',
         u2_apiPresets: 'apiPresets',
         u2_fetchedModels: 'fetchedModels',

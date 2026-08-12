@@ -272,15 +272,26 @@
             : { min: 2, max: 8 };
     }
 
-    function buildAutonomousActivityPrompt(friend, now = Date.now()) {
+    function buildAutonomousActivityPrompt(friend, now = Date.now(), options = {}) {
         const messages = Array.isArray(friend?.messages) ? friend.messages : [];
         const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
         const lastUserMessage = messages.slice().reverse().find(msg => msg && msg.role === 'user') || null;
         const lastAssistantMessage = messages.slice().reverse().find(msg => msg && msg.role === 'assistant') || null;
-        const userHasNotReplied = !!lastAssistantMessage && (!lastUserMessage || Number(lastAssistantMessage.timestamp) > Number(lastUserMessage.timestamp));
+        const includeTime = options?.includeTime !== false;
         const charName = friend?.realName || friend?.nickname || '你';
 
         const messageRange = getSingleChatMessageRange(friend);
+        if (!includeTime) {
+            return `【自主活动触发】
+这不是 User 刚刚发来的消息，而是 ${charName} 在自动回复开关开启后主动发起的一轮消息。
+上一条消息来自：${lastMessage?.role === 'user' ? 'User' : (lastMessage?.role === 'assistant' ? charName : '未知')}
+上一条消息内容：${getAutonomousMessageText(lastMessage) || '暂无'}
+
+本轮要求：
+1. 如果 User 在你上一轮之后一直没回复，可以自然地问 User 在干嘛、怎么没回，或报备你现在正在做什么；不要像客服催促。
+2. 如果最近话题没有结束，要承接上一轮；也可以开启自然的新话题或分享身边状态。
+3. 输出 ${messageRange.min}-${messageRange.max} 条独立聊天气泡，必须继续遵守原本 <chat_json> JSON 输出格式。`;
+        }
         return `【自主活动触发】
 这不是 User 刚刚发来的消息，而是 ${charName} 在自动回复开关开启后，间隔 30-240 分钟随机主动发起的一轮消息。
 当前真实时间：${formatAutonomousPromptTime(now)}
@@ -1619,8 +1630,20 @@ ${prompt}
     }
 
     function splitRegenerateComparableLines(value) {
-        return String(value || '')
-            .split(/\n+|(?<=[。！？!?])/)
+        // Do not use RegExp lookbehind here: pre-16.4 WebKit fails to parse this
+        // entire script, leaving online chat without its AI request handler.
+        const segments = [];
+        const sentenceEndings = '。！？!?';
+        String(value || '').split(/\n+/).forEach((line) => {
+            let startIndex = 0;
+            for (let index = 0; index < line.length; index += 1) {
+                if (sentenceEndings.indexOf(line.charAt(index)) === -1) continue;
+                segments.push(line.slice(startIndex, index + 1));
+                startIndex = index + 1;
+            }
+            if (startIndex < line.length) segments.push(line.slice(startIndex));
+        });
+        return segments
             .map(line => line.trim())
             .filter(Boolean)
             .slice(0, 8);
@@ -2431,7 +2454,9 @@ Output only valid JSON with this exact shape:
             await handleAiReply(latestFriend, activeContainer, null, {
                 source: 'autonomous',
                 silent: true,
-                extraSystemPrompt: buildAutonomousActivityPrompt(latestFriend, now)
+                extraSystemPrompt: buildAutonomousActivityPrompt(latestFriend, now, {
+                    includeTime: latestFriend.timeAware !== false
+                })
             });
             return true;
         } catch (error) {
@@ -2683,6 +2708,7 @@ ${unvotedMemberLines.length > 0 ? unvotedMemberLines.join('\n') : '- 无'}
             if(btnEl) btnEl.style.opacity = '0.5';
 
             friend.memory = window.imApp.normalizeFriendData(friend).memory;
+            const includeTime = friend.timeAware !== false;
             captureRegenerateRunSnapshot(friend, apiRunId);
             const activeGroupPollMessage = getGroupPollForNextReply(friend);
             const groupPollVotePrompt = buildGroupPollVotePrompt(friend, activeGroupPollMessage);
@@ -2756,22 +2782,24 @@ ${unvotedMemberLines.length > 0 ? unvotedMemberLines.join('\n') : '- 无'}
                 && left.getDate() === right.getDate();
         }
 
-        function buildOfflineHandoffRequirement(meeting, actorLabel) {
+        function buildOfflineHandoffRequirement(meeting, actorLabel, options = {}) {
             if (!meeting) return '';
+            const includeTime = options?.includeTime !== false;
             const safeActorLabel = String(actorLabel || 'Char').trim() || 'Char';
             const meetingMemoryScope = safeActorLabel === '群成员'
                 ? '群成员共同经历过的公开事件'
                 : `${safeActorLabel}亲身经历过的事件`;
-            const endedAt = String(meeting.dateText || '').trim()
-                || (Number(meeting.timestamp) > 0 ? formatPromptTime(meeting.timestamp) : '未知');
+            const endedAt = includeTime
+                ? (String(meeting.dateText || '').trim()
+                    || (Number(meeting.timestamp) > 0 ? formatPromptTime(meeting.timestamp) : '未知'))
+                : '';
             const title = String(meeting.title || '').trim() || '见面记录';
             const summary = String(meeting.summary || meeting.rawSummary || meeting.content || '').trim()
                 || '（本次见面没有保存可用总结；不得虚构具体细节。）';
             return `【线下转线上衔接｜本轮强制执行】
 当前处于线下见面结束后、${safeActorLabel}尚未在线回复的交接轮次。以下是本次待交接会面的完整、直接上下文，不依赖任何更早的标签或近期消息窗口：
 <offline_meeting_handoff>
-<ended_at>${endedAt}</ended_at>
-<title>${title}</title>
+${includeTime ? `<ended_at>${endedAt}</ended_at>\n` : ''}<title>${title}</title>
 <meeting_summary>${summary}</meeting_summary>
 </offline_meeting_handoff>
 把以上总结当作${meetingMemoryScope}，同时回应 User 当前消息。回复须自然体现至少一项与当前消息相关的见面事实、情绪、约定、未决事项或关系变化；若当前话题没有直接对应，也要自然保留关系或情绪余波，不得机械复述整个总结。
@@ -3022,7 +3050,7 @@ ${groupTemporalDecisionPrompt}
                 const formattedMessages = groupMemory.selectedMessages.map((message) => {
                     const formatted = window.imApp.formatMessageForApiContext(message, group, { userName });
                     if (!formatted?.content) return '';
-                    const timePrefix = message.timestamp ? `${formatPromptTime(message.timestamp)} ` : '';
+                    const timePrefix = includeTime && message.timestamp ? `${formatPromptTime(message.timestamp)} ` : '';
                     return `${timePrefix}${formatted.content}`;
                 }).filter(Boolean);
                 const groupName = group.nickname || group.realName || '未命名群聊';
@@ -3058,10 +3086,10 @@ ${groupTemporalDecisionPrompt}
             scheduleSection,
             `<relationship_network>\n${relationshipText}\n</relationship_network>`,
             window.imApp.buildLinkedAccountMemoryContext
-                ? window.imApp.buildLinkedAccountMemoryContext(friend)
+                ? window.imApp.buildLinkedAccountMemoryContext(friend, { includeTime })
                 : '',
             window.imApp.buildXDirectMessageMemoryContext
-                ? window.imApp.buildXDirectMessageMemoryContext(friend)
+                ? window.imApp.buildXDirectMessageMemoryContext(friend, { includeTime })
                 : '',
             (() => {
                 const stickerText = buildMountedStickerContext(friend);
@@ -3242,7 +3270,8 @@ ${isSingleChat ? '- 禁止执着于旧话题，例如当user明确表达不困�
             : null;
         const offlineHandoffContext = buildOfflineHandoffRequirement(
             pendingOfflineHandoff,
-            friend.type === 'group' ? '群成员' : 'Char'
+            friend.type === 'group' ? '群成员' : 'Char',
+            { includeTime }
         );
         let isGroupAfterUserLeft = false;
         let groupExitPrompt = '';
@@ -3315,6 +3344,8 @@ ${isSingleChat ? '- 禁止执着于旧话题，例如当user明确表达不困�
 
         if (friend.type === 'group') {
             const groupMembers = window.imChat.getGroupMemberFriends(friend);
+            const allowGroupMemberPrivateChats = friend.allowGroupMemberPrivateChats !== false;
+            const allowGroupMemberFriendPrivateChats = friend.allowGroupMemberFriendPrivateChats !== false;
             const allowedSpeakerNames = groupMembers.map(member => member.nickname).filter(Boolean);
             const memberLanguageMap = groupMembers.map(member => {
                 const language = member.language || 'zh';
@@ -3325,16 +3356,24 @@ ${isSingleChat ? '- 禁止执着于旧话题，例如当user明确表达不困�
                     languageName: languageNames[language] || language
                 };
             });
+            const memberPrivateLanguageRequirements = [
+                allowGroupMemberPrivateChats
+                    ? '- <group_private_messages> 中每名 speaker 的 messages，必须使用该 speaker 映射的语言。'
+                    : '',
+                allowGroupMemberFriendPrivateChats
+                    ? '- <group_friend_private_chats> 中的 friendMessages 也必须跟随该段发起 speaker 的映射语言；该 speaker 对应的 speakerMessages 同样必须使用该映射语言。'
+                    : ''
+            ].filter(Boolean).join('\n');
             const memberLanguageRequirement = `\n\n【群成员独立语言｜最高优先级】
 - 必须先根据每条输出对象的 speaker 找到下方映射，再决定该对象 text 的语言；严禁使用群聊对象的统一语言覆盖成员设置。
 - 成员语言映射：${JSON.stringify(memberLanguageMap)}
-- <chat_json> 中每条 text/voice 的 text、<group_private_messages> 中每名 speaker 的 messages，以及 <group_friend_private_chats> 中该 speaker 对应的 speakerMessages，都必须使用该 speaker 映射的语言。
-- <group_friend_private_chats> 中的 friendMessages 也必须跟随该段发起 speaker 的映射语言，使整段好友私聊使用同一种语言。
+- <chat_json> 中每条 text/voice 的 text 必须使用该 speaker 映射的语言。
+${memberPrivateLanguageRequirements}
 - 映射语言为 Chinese/zh 时，text 使用中文且 translation 必须为空字符串；其他语言的 text 必须只使用对应语言，translation 必须填写自然准确的简体中文翻译。
 - thought 始终使用简体中文，不受成员语言影响。`;
             isGroupAfterUserLeft = Number(friend.leftGroupAt) > 0;
             if (isGroupAfterUserLeft) {
-                const leftAtText = formatDetailedTime(friend.leftGroupAt);
+                const leftAtText = includeTime ? formatDetailedTime(friend.leftGroupAt) : '';
                 const isObserverGroup = friend.groupObserverMode === true;
                 const snapshot = Array.isArray(friend.leftGroupMemberSnapshot) && friend.leftGroupMemberSnapshot.length > 0
                     ? friend.leftGroupMemberSnapshot
@@ -3344,7 +3383,9 @@ ${isSingleChat ? '- 禁止执着于旧话题，例如当user明确表达不困�
                     : (allowedSpeakerNames.length > 0 ? allowedSpeakerNames.join('、') : 'None');
                 const absenceDescription = isObserverGroup
                     ? `${currentUserPromptName} 从创建时起就不在这个群聊中，只在界面外旁观，不能发言，群成员也不知道 User 正在旁观。`
-                    : `${currentUserPromptName} 已在 ${leftAtText || '刚刚'} 退出这个群聊，现在不能发言，也不会看到接下来的群聊内容。`;
+                    : includeTime
+                        ? `${currentUserPromptName} 已在 ${leftAtText || '刚刚'} 退出这个群聊，现在不能发言，也不会看到接下来的群聊内容。`
+                        : `${currentUserPromptName} 已退出这个群聊，现在不能发言，也不会看到接下来的群聊内容。`;
                 groupExitPrompt = `\n【当前群状态｜User 不在群聊】\n- ${absenceDescription}\n- 当前群成员快照：${memberSnapshotText}。\n- 接下来的回复必须表现为群成员之间继续聊天，不要对 User 说话、不要等待 User 回复、不要让 User 发送消息。\n- 已挂载的单聊记忆仍然只属于对应成员本人：某个成员可以基于自己和 User 的私聊经历自然表达态度，其他成员默认不知道这些私聊内容，除非该成员主动在群里说出。`;
             }
             
@@ -3367,7 +3408,7 @@ ${isSingleChat ? '- 禁止执着于旧话题，例如当user明确表达不困�
                 await Promise.all(mountedMembers.map(member => window.imApp.ensureFriendMessagesLoaded(member)));
             }
 
-            const memberFriendChatCandidates = groupMembers.map(member => {
+            const memberFriendChatCandidates = allowGroupMemberFriendPrivateChats ? groupMembers.map(member => {
                 const relationshipCandidates = (Array.isArray(member.memory?.relationships) ? member.memory.relationships : [])
                     .map(relation => {
                         const contact = (window.imData.friends || []).find(item => {
@@ -3406,7 +3447,7 @@ ${isSingleChat ? '- 禁止执着于旧话题，例如当user明确表达不困�
                     linkedCandidates,
                     canGeneratePrivateFriend: relationshipCandidates.length === 0
                 };
-            });
+            }) : [];
 
             const membersInfo = groupMembers.length > 0
                 ? groupMembers.map(member => {
@@ -3444,7 +3485,7 @@ ${isSingleChat ? '- 禁止执着于旧话题，例如当user明确表达不困�
                                 }
 
                                 let timeStr = '';
-                                if (msg.timestamp) {
+                                if (includeTime && msg.timestamp) {
                                     timeStr = formatDetailedTime(msg.timestamp);
                                 }
 
@@ -3458,9 +3499,9 @@ ${isSingleChat ? '- 禁止执着于旧话题，例如当user明确表达不困�
                     }
 
                     const linkedFriendMemory = window.imApp.buildLinkedAccountMemoryContext
-                        ? window.imApp.buildLinkedAccountMemoryContext(member, { maxMessagesPerFriend: 8 })
+                        ? window.imApp.buildLinkedAccountMemoryContext(member, { maxMessagesPerFriend: 8, includeTime })
                         : '';
-                    if (linkedFriendMemory) {
+                    if (allowGroupMemberFriendPrivateChats && linkedFriendMemory) {
                         infoStr += `\n\n【${member.nickname} 自己的好友私聊记忆｜严格私有】\n以下关联好友会话只属于 ${member.nickname} 自己。只有 ${member.nickname} 可以参考这些内容；其他群成员默认完全不知道，除非 ${member.nickname} 主动在群里公开。\n${linkedFriendMemory}`;
                     }
                     
@@ -3492,8 +3533,9 @@ ${membersInfo}
 只允许以下这些成员发言：
 ${allowedSpeakerNames.length > 0 ? allowedSpeakerNames.join('、') : 'None'}
 
-群成员可私聊的好友候选（优先关系网，其次复用角色已有私有联系人；只有 canGeneratePrivateFriend 为 true 时才允许按人设生成新好友）：
-${JSON.stringify(memberFriendChatCandidates)}${memberLanguageRequirement}`);
+${allowGroupMemberFriendPrivateChats
+    ? `群成员可私聊的好友候选（优先关系网，其次复用角色已有私有联系人；只有 canGeneratePrivateFriend 为 true 时才允许按人设生成新好友）：\n${JSON.stringify(memberFriendChatCandidates)}`
+    : '【成员与其好友私聊】已关闭：不要输出 <group_friend_private_chats> 标签，也不要生成或引用对应候选。'}${memberLanguageRequirement}`);
             addOnlinePromptSection('identity', afterRoleWorldBookContext
                 ? `角色后规则：\n${afterRoleWorldBookContext}`
                 : '');
@@ -3512,15 +3554,22 @@ ${chatContextAntiRepetitionPrompt}
 5. 【强限制】：严禁使用名单之外的名字发言，严禁虚构新成员，严禁让 User 冒充群成员发言。
 13. 【User 未回复也必须继续】：如果本轮没有 User 新发言，或触发来源是 AI继续/空输入/自动续写/角色主动说话，你仍然必须让群成员继续自然聊天；不要等待 User、不要输出空内容、不要说“用户没有输入”，可以承接上一句、回应沉默、成员互相接话或开启符合当前关系的新话题。`);
 
-            addOnlinePromptSection('features', `7. 【重要】如果群员想要发红包，或者你觉得气氛到了该发红包了，可以输出红包对象格式：{"type":"red_packet","speaker":"发红包的成员名","amount":100,"count":5,"description":"红包封面语"}。
-8d. 【真人撤回行为】：群成员可以像真人聊天一样偶尔手滑打错字、叫错名字、把话发给错人，或在冲动表达、暴露真心、说得太重、越过关系边界后突然反悔撤回。要模拟“先发出去再撤回”，必须先输出一条普通 text 气泡，紧接着输出同一 speaker 的 recall 对象，并且 recall.text 必须与上一条被撤回气泡的 text 完全一致。打错字后可以再补发一条自然的更正；反悔后可以沉默、装作无事发生、含糊解释或换一句更克制的话，不必每次都解释。格式示例：{"type":"text","speaker":"成员名","text":"你今晚来找她吧","thought":"突然发现自己打错了字","translation":"","quote":""},{"type":"recall","speaker":"成员名","text":"你今晚来找她吧"},{"type":"text","speaker":"成员名","text":"打错了，是来找我","thought":"有点尴尬但想装作自然","translation":"","quote":""}。撤回只能偶尔发生，必须由当下情绪和人设触发，禁止每轮固定撤回或为了展示功能而撤回。
-14. 【群聊衍生私信｜严格按需】：群成员只有在自己明确觉得某些话不适合公开说、不能让其他成员知道，或必须避开群内其他人单独告诉 User 时，才可以在本轮群聊回复之外给 User 发私信。普通寒暄、公开可说的话、对群消息的常规回应不得转成私信；私信也不得复制群内公开回复。
+            const groupPrivateMessagingFeaturePrompt = [
+                allowGroupMemberPrivateChats
+                    ? `14. 【群聊衍生私信｜严格按需】：群成员只有在自己明确觉得某些话不适合公开说、不能让其他成员知道，或必须避开群内其他人单独告诉 User 时，才可以在本轮群聊回复之外给 User 发私信。普通寒暄、公开可说的话、对群消息的常规回应不得转成私信；私信也不得复制群内公开回复。
 15. 如果没有真实且具体的保密动机，完全不要输出私信标签。需要私信时，在 <chat_json>...</chat_json> 之外额外输出且只输出一个 <group_private_messages>...</group_private_messages> 标签，标签内必须是合法 JSON 数组，格式为：[{"speaker":"成员完整准确名字","messages":[{"text":"第一条私信","translation":"中文翻译或空字符串"},{"text":"第二条私信","translation":"中文翻译或空字符串"}]}]。
-16. 每个发私信的成员必须属于允许发言名单，每名成员必须连续发送 2-5 条私信；可以有多名成员，但每个人都必须有独立且合理的保密动机。发给 User 的私信必须站在该 speaker 本人的视角，优先参考该 speaker 自己的挂载单聊记忆来衔接称呼、私人关系、前文和语气；严禁引用其他成员的单聊记忆。其他成员不知道这些私信内容，后续群聊也不得默认其他成员已经知情。
-17. 【成员与自己好友的私聊｜可选】：当群内话题、人设、关系或刚发生的事情让某位群成员自然地想联系自己的好友时，可以额外生成好友私聊。优先选择 relationshipCandidates；没有合适关系网对象时可复用 linkedCandidates。只有 canGeneratePrivateFriend 为 true 且现有私有联系人也不合适时，才可按该成员人设创造一个合理的新好友。
+16. 每个发私信的成员必须属于允许发言名单，每名成员必须连续发送 2-5 条私信；可以有多名成员，但每个人都必须有独立且合理的保密动机。发给 User 的私信必须站在该 speaker 本人的视角，优先参考该 speaker 自己的挂载单聊记忆来衔接称呼、私人关系、前文和语气；严禁引用其他成员的单聊记忆。其他成员不知道这些私信内容，后续群聊也不得默认其他成员已经知情。`
+                    : '14. 【群成员给 User 私聊】已关闭：不得输出 <group_private_messages> 标签，也不得在本轮生成、描述或暗示群聊衍生私信。',
+                allowGroupMemberFriendPrivateChats
+                    ? `17. 【成员与自己好友的私聊｜可选】：当群内话题、人设、关系或刚发生的事情让某位群成员自然地想联系自己的好友时，可以额外生成好友私聊。优先选择 relationshipCandidates；没有合适关系网对象时可复用 linkedCandidates。只有 canGeneratePrivateFriend 为 true 且现有私有联系人也不合适时，才可按该成员人设创造一个合理的新好友。
 18. 需要生成时，在 <chat_json>...</chat_json> 之外额外输出且只输出一个 <group_friend_private_chats>...</group_friend_private_chats> 标签。已有关系网好友使用 recipientId；已有私有联系人使用 linkedChatId；生成新好友使用 generatedRecipient，三者只能选一个。格式示例：[{"speaker":"群成员完整准确名字","recipientId":"关系网候选准确ID","rounds":[{"speakerMessages":[{"text":"群成员发给好友的原文","translation":"非中文原文的自然中文翻译；中文则空字符串"}],"friendMessages":[{"text":"好友回复的原文","translation":"非中文原文的自然中文翻译；中文则空字符串"}]}]},{"speaker":"群成员完整准确名字","linkedChatId":"已有私有联系人准确ID","rounds":[...]},{"speaker":"群成员完整准确名字","generatedRecipient":{"realName":"真实姓名","remark":"该成员给此人的备注","persona":"人物设定","relationship":"与该成员的关系"},"rounds":[...]}]。
 19. 每段好友私聊必须有 2-4 轮完整往返。每一轮先由群成员连续发送 2-5 条 speakerMessages，再由好友连续回复 2-5 条 friendMessages；每条消息都必须是 {"text":"原文","translation":"中文翻译或空字符串"}。如果 text 不是中文，translation 必须填写自然中文翻译；如果 text 本身是中文，translation 必须是空字符串。消息必须承接上一轮，形成真实连续的私聊，不能是互不相关的句子。
-20. speaker 必须是当前群成员；recipientId 或 linkedChatId 必须来自该 speaker 对应候选。generatedRecipient 只在 canGeneratePrivateFriend 为 true 时有效，并且姓名、关系、人设必须互相一致且不能复制已有联系人。每段好友私聊只属于发送成员与收件好友，其他群成员默认不知道内容，后续不得串用。
+20. speaker 必须是当前群成员；recipientId 或 linkedChatId 必须来自该 speaker 对应候选。generatedRecipient 只在 canGeneratePrivateFriend 为 true 时有效，并且姓名、关系、人设必须互相一致且不能复制已有联系人。每段好友私聊只属于发送成员与收件好友，其他群成员默认不知道内容，后续不得串用。`
+                    : '17. 【成员与其好友私聊】已关闭：不得输出 <group_friend_private_chats> 标签，也不得生成或写入成员与好友的私聊。'
+            ].join('\n');
+            addOnlinePromptSection('features', `7. 【重要】如果群员想要发红包，或者你觉得气氛到了该发红包了，可以输出红包对象格式：{"type":"red_packet","speaker":"发红包的成员名","amount":100,"count":5,"description":"红包封面语"}。
+8d. 【真人撤回行为】：群成员可以像真人聊天一样偶尔手滑打错字、叫错名字、把话发给错人，或在冲动表达、暴露真心、说得太重、越过关系边界后突然反悔撤回。要模拟“先发出去再撤回”，必须先输出一条普通 text 气泡，紧接着输出同一 speaker 的 recall 对象，并且 recall.text 必须与上一条被撤回气泡的 text 完全一致。打错字后可以再补发一条自然的更正；反悔后可以沉默、装作无事发生、含糊解释或换一句更克制的话，不必每次都解释。格式示例：{"type":"text","speaker":"成员名","text":"你今晚来找她吧","thought":"突然发现自己打错了字","translation":"","quote":""},{"type":"recall","speaker":"成员名","text":"你今晚来找她吧"},{"type":"text","speaker":"成员名","text":"打错了，是来找我","thought":"有点尴尬但想装作自然","translation":"","quote":""}。撤回只能偶尔发生，必须由当下情绪和人设触发，禁止每轮固定撤回或为了展示功能而撤回。
+${groupPrivateMessagingFeaturePrompt}
 ${dynamicActionNarrationRequirement}`);
 
             responseCoreBehaviorAnchor = `【本轮群聊行为锚点｜紧邻输出】：
@@ -3735,7 +3784,7 @@ Never truncate OUTPUT(x)
         appendOnlinePromptSections(systemInstructionBlocks, 'identity');
         appendOnlinePromptSections(systemInstructionBlocks, 'data');
         const offlineMeetingContext = window.imApp.buildOfflineMeetingContext
-            ? window.imApp.buildOfflineMeetingContext(friend, { excludeRecord: pendingOfflineHandoff })
+            ? window.imApp.buildOfflineMeetingContext(friend, { excludeRecord: pendingOfflineHandoff, includeTime })
             : '';
         if (offlineMeetingContext) {
             systemInstructionBlocks.push(offlineMeetingContext);
@@ -3764,7 +3813,7 @@ Never truncate OUTPUT(x)
                         ...apiMessage
                     } = m;
                     let timeStr = '';
-                    if (contextTimestamp) {
+                    if (includeTime && contextTimestamp) {
                         timeStr = formatDetailedTime(contextTimestamp);
                     }
                     return {
@@ -4050,6 +4099,11 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
                 const privateMessagesBlock = window.imChat.extractTaggedBlock(fullReply, 'group_private_messages');
                 if (privateMessagesBlock) {
                     fullReply = window.imChat.removeTaggedBlock(fullReply, 'group_private_messages');
+                    const allowPrivateMessagesAtParse = (getLiveFriendById(friend.id) || friend)
+                        .allowGroupMemberPrivateChats !== false;
+                    if (!allowPrivateMessagesAtParse) {
+                        console.warn('[iMessage] Ignored group private messages because the group setting is disabled');
+                    } else {
                     const parsedPrivateBatches = window.imChat.parseJsonArrayFromText(privateMessagesBlock);
                     const batchesByMemberId = new Map();
 
@@ -4087,11 +4141,17 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
                     groupPrivateMessageBatches = Array.from(batchesByMemberId.values())
                         .map((batch) => ({ ...batch, messages: batch.messages.slice(0, 5) }))
                         .filter((batch) => batch.messages.length >= 2);
+                    }
                 }
 
                 const friendPrivateChatsBlock = window.imChat.extractTaggedBlock(fullReply, 'group_friend_private_chats');
                 if (friendPrivateChatsBlock) {
                     fullReply = window.imChat.removeTaggedBlock(fullReply, 'group_friend_private_chats');
+                    const allowFriendPrivateChatsAtParse = (getLiveFriendById(friend.id) || friend)
+                        .allowGroupMemberFriendPrivateChats !== false;
+                    if (!allowFriendPrivateChatsAtParse) {
+                        console.warn('[iMessage] Ignored group member friend chats because the group setting is disabled');
+                    } else {
                     const parsedFriendChats = window.imChat.parseJsonArrayFromText(friendPrivateChatsBlock);
                     const seenPairs = new Set();
 
@@ -4212,6 +4272,7 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
                             seenPairs.add(pairKey);
                             return { member, recipient, rounds };
                         }).filter(Boolean);
+                    }
                     }
                 }
             }
@@ -5378,7 +5439,9 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
                 return true;
             };
 
-            if (friend.type === 'group' && groupPrivateMessageBatches.length > 0) {
+            if (friend.type === 'group'
+                && (getLiveFriendById(friend.id) || friend).allowGroupMemberPrivateChats !== false
+                && groupPrivateMessageBatches.length > 0) {
                 let privateMessageSaveFailed = false;
                 let privateMessageAppendedTotal = 0;
 
@@ -5455,7 +5518,9 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
                 }
             }
 
-            if (friend.type === 'group' && groupFriendPrivateChats.length > 0) {
+            if (friend.type === 'group'
+                && (getLiveFriendById(friend.id) || friend).allowGroupMemberFriendPrivateChats !== false
+                && groupFriendPrivateChats.length > 0) {
                 let friendPrivateChatSaveFailed = false;
 
                 for (const privateChat of groupFriendPrivateChats) {

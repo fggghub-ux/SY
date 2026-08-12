@@ -31,6 +31,8 @@
     const groupTimeAwareToggle = document.getElementById('group-time-aware-toggle');
     const groupAutoExpandTranslationToggle = document.getElementById('group-auto-expand-translation-toggle');
     const groupShowUserAvatarToggle = document.getElementById('group-show-user-avatar-toggle');
+    const groupMemberPrivateChatsToggle = document.getElementById('group-member-private-chats-toggle');
+    const groupMemberFriendPrivateChatsToggle = document.getElementById('group-member-friend-private-chats-toggle');
     const groupManualSummaryBtn = document.getElementById('group-manual-summary-btn');
     const groupMemoryShortTermBtn = document.getElementById('group-memory-shortterm-btn');
     const groupMemoryLongTermBtn = document.getElementById('group-memory-longterm-btn');
@@ -188,9 +190,38 @@
         return group;
     }
 
+    function getResolvedGroupMembers(group) {
+        if (!group || group.type !== 'group') return [];
+        if (typeof window.imChat?.getGroupMemberFriends === 'function') {
+            return window.imChat.getGroupMemberFriends(group);
+        }
+
+        const seenIds = new Set();
+        return (Array.isArray(group.members) ? group.members : [])
+            .map(memberRef => {
+                const normalizedRef = String(memberRef == null ? '' : memberRef).trim();
+                if (!normalizedRef) return null;
+                return (window.imData?.friends || []).find(friend => isSelectableGroupMember(friend)
+                    && (String(friend.id) === normalizedRef
+                        || String(friend.nickname || '').trim() === normalizedRef
+                        || String(friend.realName || '').trim() === normalizedRef)) || null;
+            })
+            .filter(member => {
+                if (!member) return false;
+                const memberId = String(member.id);
+                if (seenIds.has(memberId)) return false;
+                seenIds.add(memberId);
+                return true;
+            });
+    }
+
+    function getCanonicalGroupMemberIds(group) {
+        return getResolvedGroupMembers(group).map(member => String(member.id));
+    }
+
     function getGroupMemberCount(group) {
         const userIsInGroup = !(group && Number(group.leftGroupAt) > 0);
-        return (Array.isArray(group?.members) ? group.members.length : 0) + (userIsInGroup ? 1 : 0);
+        return getResolvedGroupMembers(group).length + (userIsInGroup ? 1 : 0);
     }
 
     function formatGroupMemberCount(count) {
@@ -203,6 +234,16 @@
         const page = document.getElementById(`chat-interface-${group.id}`);
         const signEl = page ? page.querySelector('.ins-chat-sign') : null;
         if (signEl) signEl.textContent = formatGroupMemberCount(getGroupMemberCount(group));
+    }
+
+    function refreshGroupMembershipUi(group) {
+        const refreshedGroup = resolveLatestGroup(group) || group;
+        if (!refreshedGroup) return null;
+        syncGroupHeaderMemberCount(refreshedGroup);
+        if (window.imApp.openGroupDetails) window.imApp.openGroupDetails(refreshedGroup);
+        if (window.imApp.renderGroupsList) window.imApp.renderGroupsList({ force: true });
+        if (window.imChat?.renderChatsList) window.imChat.renderChatsList();
+        return refreshedGroup;
     }
 
     window.imApp.calculateChatMemoryTokenEstimate = window.imApp.calculateChatMemoryTokenEstimate || function(friend) {
@@ -555,7 +596,8 @@
             const item = document.createElement('div');
             item.className = 'line-list-item';
 
-            const isSelected = tempGroupMembers.includes(friend.id);
+            const friendId = String(friend.id);
+            const isSelected = tempGroupMembers.some(id => String(id) === friendId);
 
             const avatarHtml = friend.avatarUrl
                 ? `<img src="${friend.avatarUrl}" style="width:100%;height:100%;object-fit:cover;">`
@@ -571,9 +613,9 @@
 
             item.addEventListener('click', () => {
                 if (isSelected) {
-                    tempGroupMembers = tempGroupMembers.filter(id => id !== friend.id);
+                    tempGroupMembers = tempGroupMembers.filter(id => String(id) !== friendId);
                 } else {
-                    tempGroupMembers.push(friend.id);
+                    tempGroupMembers.push(friendId);
                 }
                 renderCreateGroupMembersList();
                 updateCreateGroupConfirmBtn();
@@ -699,6 +741,12 @@
         if (groupShowUserAvatarToggle) {
             groupShowUserAvatarToggle.checked = currentViewingGroup.showGroupUserAvatar === true;
         }
+        if (groupMemberPrivateChatsToggle) {
+            groupMemberPrivateChatsToggle.checked = currentViewingGroup.allowGroupMemberPrivateChats !== false;
+        }
+        if (groupMemberFriendPrivateChatsToggle) {
+            groupMemberFriendPrivateChatsToggle.checked = currentViewingGroup.allowGroupMemberFriendPrivateChats !== false;
+        }
 
         refreshGroupMemoryCounts(currentViewingGroup);
 
@@ -720,10 +768,10 @@
         groupAddMemberList.innerHTML = '';
 
         const allFriendsAndNpcs = window.imData.friends.filter(isSelectableGroupMember);
-        const currentMemberIds = currentViewingGroup.members || [];
+        const currentMemberIds = new Set(getCanonicalGroupMemberIds(currentViewingGroup));
 
         allFriendsAndNpcs.forEach(friend => {
-            const isAlreadyInGroup = currentMemberIds.includes(friend.id);
+            const isAlreadyInGroup = currentMemberIds.has(String(friend.id));
             const item = document.createElement('div');
             item.className = 'line-list-item';
             if (isAlreadyInGroup) {
@@ -744,7 +792,11 @@
             if (!isAlreadyInGroup) {
                 item.addEventListener('click', async () => {
                     const saved = await commitCurrentGroupChange((targetGroup) => {
-                        targetGroup.members.push(friend.id);
+                        const canonicalMemberIds = getCanonicalGroupMemberIds(targetGroup);
+                        if (!canonicalMemberIds.includes(String(friend.id))) {
+                            canonicalMemberIds.push(String(friend.id));
+                        }
+                        targetGroup.members = canonicalMemberIds;
                     }, { silent: true });
 
                     if (!saved) {
@@ -760,7 +812,7 @@
                         <div style="font-size: 13px; color: #8e8e93; margin-right: 15px;">已在群内</div>
                     `;
 
-                    window.imApp.openGroupDetails(currentViewingGroup);
+                    refreshGroupMembershipUi(currentViewingGroup);
 
                     if (window.showToast) window.showToast(`已邀请 ${friend.nickname} 加入群聊`);
                 });
@@ -814,10 +866,7 @@
             </div>
         `;
 
-        if (group.members) {
-            group.members.forEach(id => {
-                const f = window.imData.friends.find(x => x.id === id);
-                if (!f) return;
+        getResolvedGroupMembers(group).forEach(f => {
                 const avatar = f.avatarUrl ? `<img src="${f.avatarUrl}" style="width: 100%; height: 100%; object-fit: cover;">` : `<i class="fas fa-user" style="color: #fff;"></i>`;
                 membersHtml += `
                     <div class="group-detail-member-item" data-id="${f.id}" style="padding: 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #f2f2f7; cursor: pointer;">
@@ -833,7 +882,6 @@
                     </div>
                 `;
             });
-        }
 
         if (listContainer) {
             listContainer.innerHTML = membersHtml;
@@ -1065,24 +1113,26 @@
                     onConfirm: async () => {
                         currentViewingGroup = liveGroup;
                         const memberKey = String(memberId);
+                        const memberStorageKeys = Array.from(new Set([
+                            memberKey,
+                            String(targetMember.nickname || '').trim(),
+                            String(targetMember.realName || '').trim()
+                        ].filter(Boolean)));
                         const saved = await commitCurrentGroupChange((targetGroup) => {
-                            targetGroup.members = (Array.isArray(targetGroup.members) ? targetGroup.members : [])
+                            targetGroup.members = getCanonicalGroupMemberIds(targetGroup)
                                 .filter(id => String(id) !== memberKey);
 
                             if (targetGroup.memory) {
                                 if (targetGroup.memory.mountSettings) {
-                                    delete targetGroup.memory.mountSettings[memberKey];
-                                    delete targetGroup.memory.mountSettings[memberId];
+                                    memberStorageKeys.forEach(key => delete targetGroup.memory.mountSettings[key]);
                                 }
                                 if (targetGroup.memory.mountLimits) {
-                                    delete targetGroup.memory.mountLimits[memberKey];
-                                    delete targetGroup.memory.mountLimits[memberId];
+                                    memberStorageKeys.forEach(key => delete targetGroup.memory.mountLimits[key]);
                                 }
                             }
 
                             if (targetGroup.memberProfiles) {
-                                delete targetGroup.memberProfiles[memberKey];
-                                delete targetGroup.memberProfiles[memberId];
+                                memberStorageKeys.forEach(key => delete targetGroup.memberProfiles[key]);
                             }
                         }, { silent: true, metaOnly: true, syncActive: true });
 
@@ -1092,11 +1142,8 @@
                         }
 
                         const refreshedGroup = resolveLatestGroup(liveGroup.id) || liveGroup;
-                        syncGroupHeaderMemberCount(refreshedGroup);
                         closeView(sheet);
-                        if (window.imApp.openGroupDetails) window.imApp.openGroupDetails(refreshedGroup);
-                        if (window.imApp.renderGroupsList) window.imApp.renderGroupsList();
-                        if (window.imChat?.renderChatsList) window.imChat.renderChatsList();
+                        refreshGroupMembershipUi(refreshedGroup);
                         if (groupCallInviteSheet?.classList.contains('active')) {
                             selectedGroupCallMembers = selectedGroupCallMembers.filter(id => String(id) !== memberKey);
                             renderGroupCallInviteList();
@@ -1162,7 +1209,7 @@
             let groupName = document.getElementById('group-name-input').value.trim();
             if (!groupName) {
                 const memberNames = tempGroupMembers.map(id => {
-                    const f = window.imData.friends.find(x => x.id === id);
+                    const f = window.imData.friends.find(x => String(x.id) === String(id));
                     return f ? f.nickname : '';
                 }).filter(Boolean);
                 groupName = memberNames.join(', ');
@@ -1183,7 +1230,7 @@
                 signature: 'Group Chat',
                 persona: '',
                 avatarUrl: avatarUrl,
-                members: [...tempGroupMembers],
+                members: Array.from(new Set(tempGroupMembers.map(id => String(id)))),
                 leftGroupAt: observerStartedAt,
                 groupObserverMode: !includeUser,
                 messages: [],
@@ -1793,6 +1840,12 @@
                 ? !!groupAutoExpandTranslationToggle.checked
                 : currentViewingGroup.autoExpandTranslation === true;
             const showGroupUserAvatar = groupShowUserAvatarToggle?.checked === true;
+            const allowGroupMemberPrivateChats = groupMemberPrivateChatsToggle
+                ? !!groupMemberPrivateChatsToggle.checked
+                : currentViewingGroup.allowGroupMemberPrivateChats !== false;
+            const allowGroupMemberFriendPrivateChats = groupMemberFriendPrivateChatsToggle
+                ? !!groupMemberFriendPrivateChatsToggle.checked
+                : currentViewingGroup.allowGroupMemberFriendPrivateChats !== false;
             let limit = groupContextLimitInput ? Number(groupContextLimitInput.value) : 100;
 
             if (!Number.isFinite(limit) || limit <= 0) {
@@ -1813,6 +1866,8 @@
                 targetGroup.timeAware = timeAware;
                 targetGroup.autoExpandTranslation = autoExpandTranslation;
                 targetGroup.showGroupUserAvatar = showGroupUserAvatar;
+                targetGroup.allowGroupMemberPrivateChats = allowGroupMemberPrivateChats;
+                targetGroup.allowGroupMemberFriendPrivateChats = allowGroupMemberFriendPrivateChats;
             }, { silent: true });
 
             if (!saved) {

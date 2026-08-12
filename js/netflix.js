@@ -1,3728 +1,2060 @@
 /**
- * Netflix App Logic
+ * Netflix visual-novel app.
+ * The movie catalog remains the entry shell; playback is a persistent AI story game.
  */
 
 class NetflixApp {
     constructor() {
+        this.core = window.NetflixGameCore;
         this.view = document.getElementById('netflix-view');
-        this.header = document.getElementById('netflix-header');
-        this.content = document.getElementById('netflix-content');
-        this.headerAvatar = this.view ? this.view.querySelector('.netflix-avatar') : null;
-        this.navItems = [];
-        this.tabPanels = [];
-        this.navIndicator = null;
-        this.editAvatarDataUrl = '';
-        this.presetState = this.loadPresetState();
-        this.presetDraft = null;
-        this.activePlaybackPresetEditorKey = null;
-        this.playbackPresetDraft = null;
-        this.createDraft = this.createDefaultWorkDraft();
-        this.netflixState = this.loadNetflixState();
-        this.availableActors = [];
-        this.dragState = null;
-        this.longPressTimer = null;
-        this.activeWorkId = null;
-        this.activeEpisodeNumber = 1;
-        this.activeDetailWorkId = null;
-        this.activeDetailEpisodeNumber = 1;
-        this.activeDetailCatalogOnly = false;
-        this.activePlaybackId = null;
-        this.activePlaybackEpisodeNumber = 1;
-        this.editingMessageId = null;
-        this.editingWorkId = null;
-        this.isHomeSearchLoading = false;
-        this.isPlaybackNextLoading = false;
         this.isOpen = false;
-
-        if (this.view) {
-            this.init();
-        }
+        this.activeTab = 'home';
+        this.activeCatalogItem = null;
+        this.setupDraft = null;
+        this.availableCharacters = [];
+        this.isBusy = false;
+        this.isSearchBusy = false;
+        this.saveModalMode = 'load';
+        this.pendingRequestChoice = null;
+        this.isTransitioning = false;
+        this.customChoiceOpen = false;
+        this.pendingRunPreview = null;
+        this.mapTransform = { x: 0, y: 0, scale: 1 };
+        this.mapPointers = new Map();
+        this.mapGesture = null;
+        this.mapEditMode = false;
+        this.migratedLegacyState = false;
+        if (!this.core || !this.view) return;
+        this.state = this.loadState();
+        this.init();
     }
 
     init() {
         this.renderStructure();
         this.cacheElements();
         this.bindEvents();
-        this.applyCustomCss();
-        this.renderUserProfile();
+        this.renderHome();
+        this.renderProfile();
+        this.renderNav();
+        if (this.migratedLegacyState) this.finishLegacyMigration();
     }
 
-    renderStructure() {
-        if (!this.content || !this.view) return;
-
-        this.content.innerHTML = `
-            <div class="netflix-tab-panel active" data-panel="home">
-                <div id="netflix-home-content"></div>
-            </div>
-
-            <div class="netflix-tab-panel netflix-create-panel" data-panel="create">
-                <div class="netflix-create-hub">
-                    <button type="button" class="netflix-create-new-btn" id="netflix-create-new-trigger">
-                        <i class="fas fa-video"></i>
-                        <span>新影片</span>
-                    </button>
-                    <h3>我的作品</h3>
-                    <div class="netflix-create-works-list" id="netflix-create-works-list">
-                        <!-- 作品列表将在这里渲染 -->
-                    </div>
-                </div>
-            </div>
-
-            <div class="netflix-tab-panel netflix-profile-panel" data-panel="profile">
-                <div class="netflix-profile-avatar" id="netflix-profile-avatar"><i class="fas fa-user"></i></div>
-                <h2 id="netflix-profile-name">User</h2>
-                <div class="netflix-profile-stats">
-                    <div><strong id="netflix-profile-followers">0</strong><span>粉丝</span></div>
-                    <div><strong id="netflix-profile-subs">0</strong><span>订阅</span></div>
-                </div>
-                <div class="netflix-profile-list">
-                    <div id="netflix-world-book-entry"><i class="fas fa-clock"></i><span>世界书</span></div>
-                    <div id="netflix-settings-entry"><i class="fas fa-cog"></i><span>设置</span></div>
-                </div>
-                <div class="netflix-acting-section">
-                    <h2>参演影片</h2>
-                    <div class="netflix-acting-list" id="netflix-acting-list"></div>
-                </div>
-            </div>
-        `;
-
-        const nav = this.view.querySelector('.netflix-bottom-nav');
-        if (nav) {
-            nav.innerHTML = `
-                <div class="netflix-nav-indicator"></div>
-                <div class="netflix-nav-item active" data-tab="home">
-                    <i class="fas fa-home"></i>
-                    <span>首页</span>
-                </div>
-                <div class="netflix-nav-item" data-tab="create">
-                    <i class="fas fa-plus"></i>
-                    <span>创作</span>
-                </div>
-                <div class="netflix-nav-item" data-tab="profile">
-                    <div class="netflix-nav-avatar"><i class="fas fa-user"></i></div>
-                    <span>我的 Netflix</span>
-                </div>
-            `;
-        }
-
-        if (!this.view.querySelector('#netflix-profile-sheet')) {
-            this.view.insertAdjacentHTML('beforeend', `
-                <div class="netflix-profile-sheet" id="netflix-profile-sheet">
-                    <div class="netflix-profile-sheet-card">
-                        <div class="netflix-sheet-handle"></div>
-                        <div class="netflix-sheet-title">编辑资料</div>
-                        <div class="netflix-edit-avatar" id="netflix-edit-avatar-trigger">
-                            <i class="fas fa-camera"></i>
-                            <img id="netflix-edit-avatar-preview" src="" alt="">
-                            <input type="file" id="netflix-edit-avatar-input" accept="image/*" style="display: none;">
-                        </div>
-                        <label class="netflix-edit-field">
-                            <span>姓名</span>
-                            <input type="text" id="netflix-edit-name-input" placeholder="输入姓名">
-                        </label>
-                        <label class="netflix-edit-field">
-                            <span>人设</span>
-                            <textarea id="netflix-edit-persona-input" placeholder="输入人设"></textarea>
-                        </label>
-                        <div class="netflix-edit-save" id="netflix-edit-save-btn">保存</div>
-                    </div>
-                </div>
-            `);
-        }
-
-        if (!this.view.querySelector('#netflix-settings-sheet')) {
-            this.view.insertAdjacentHTML('beforeend', `
-                <div class="netflix-settings-sheet" id="netflix-settings-sheet">
-                    <div class="netflix-settings-card">
-                        <div class="netflix-sheet-handle"></div>
-                        <div class="netflix-settings-title">CSS 设置</div>
-                        <div class="netflix-settings-tab-content active" id="netflix-settings-tab-playback">
-                            <label class="netflix-settings-upload">
-                                <i class="fas fa-file-code"></i>
-                                <span>上传播放界面 CSS</span>
-                                <input type="file" id="netflix-settings-playback-css-file" accept=".css,text/css">
-                            </label>
-                            <label class="netflix-settings-field">
-                                <span>播放界面 CSS</span>
-                                <textarea id="netflix-settings-playback-css-input" placeholder="这里的 CSS 只会应用到播放界面。自动限定在 #netflix-playback-sheet 内。"></textarea>
-                            </label>
-                        </div>
-
-                        <div class="netflix-settings-actions" style="grid-template-columns: 1fr 1fr;">
-                            <button type="button" id="netflix-settings-clear">清空当前</button>
-                            <button type="button" id="netflix-settings-apply">应用当前</button>
-                        </div>
-                    </div>
-                </div>
-            `);
-        }
-
-        if (!this.view.querySelector('#netflix-actor-picker-sheet')) {
-            this.view.insertAdjacentHTML('beforeend', `
-                <div class="netflix-actor-picker-sheet" id="netflix-actor-picker-sheet">
-                    <div class="netflix-actor-picker-card">
-                        <div class="netflix-sheet-handle"></div>
-                        <div class="netflix-actor-picker-title">选择主演</div>
-                        <div class="netflix-actor-picker-list" id="netflix-actor-picker-list"></div>
-                        <button type="button" id="netflix-actor-picker-done-btn">完成</button>
-                    </div>
-                </div>
-            `);
-        }
-
-        if (!this.view.querySelector('#netflix-work-detail-sheet')) {
-            this.view.insertAdjacentHTML('beforeend', `
-                <div class="netflix-work-detail-sheet" id="netflix-work-detail-sheet">
-                    <div class="netflix-work-detail-card">
-                        <div class="netflix-sheet-handle"></div>
-                        <div class="netflix-work-detail-content" id="netflix-work-detail-content"></div>
-                    </div>
-                </div>
-            `);
-        }
-
-        if (!this.view.querySelector('#netflix-create-form-sheet')) {
-            this.view.insertAdjacentHTML('beforeend', `
-                <div class="netflix-create-form-sheet" id="netflix-create-form-sheet">
-                    <div class="netflix-create-form-close" id="netflix-create-form-close"><i class="fas fa-times"></i></div>
-                    <div class="netflix-create-form-body">
-                        <div class="netflix-create-form">
-                            <div class="netflix-cover-upload" id="netflix-work-cover-trigger">
-                                <input type="file" id="netflix-work-cover-input" accept="image/*" style="display: none;">
-                                <img id="netflix-work-cover-preview" src="" alt="">
-                                <div class="netflix-cover-placeholder">
-                                    <i class="fas fa-image"></i>
-                                    <span>封面</span>
-                                </div>
-                            </div>
-
-                            <label class="netflix-create-field">
-                                <span>作品名字</span>
-                                <input type="text" id="netflix-work-title-input" placeholder="输入作品名字">
-                            </label>
-
-                            <div class="netflix-create-field">
-                                <span>分类</span>
-                                <div class="netflix-category-segment" id="netflix-work-category-segment">
-                                    <button type="button" class="active" data-category="电视剧">电视剧</button>
-                                    <button type="button" data-category="电影">电影</button>
-                                    <button type="button" data-category="综艺">综艺</button>
-                                    <button type="button" data-category="纪录片">纪录片</button>
-                                </div>
-                            </div>
-
-                            <label class="netflix-create-field">
-                                <span>标签</span>
-                                <input type="text" id="netflix-work-tags-input" placeholder="输入标签，用空格或逗号分隔">
-                            </label>
-                            <div class="netflix-tag-preview" id="netflix-work-tag-preview"></div>
-
-                            <div class="netflix-create-field">
-                                <span>主演</span>
-                                <div class="netflix-cast-list" id="netflix-work-cast-list">
-                                    <button type="button" class="netflix-cast-add" id="netflix-work-cast-add-btn" aria-label="添加主演">
-                                        <i class="fas fa-plus"></i>
-                                    </button>
-                                </div>
-                            </div>
-
-                            <label class="netflix-create-field">
-                                <span>作品简介</span>
-                                <textarea id="netflix-work-summary-input" placeholder="输入作品简介"></textarea>
-                            </label>
-
-                            <button type="button" class="netflix-create-submit" id="netflix-work-start-btn">开始创作</button>
-                            <button type="button" class="netflix-create-submit" id="netflix-work-delete-btn" style="display: none; background: #e50914; color: white; margin-top: 10px;">删除影片</button>
-                        </div>
-                    </div>
-                </div>
-            `);
-        }
-
-        if (!this.view.querySelector('#netflix-world-book-sheet')) {
-            this.view.insertAdjacentHTML('beforeend', `
-                <div class="netflix-world-book-sheet" id="netflix-world-book-sheet">
-                    <div class="netflix-world-book-card">
-                        <div class="netflix-sheet-handle"></div>
-                        <div class="netflix-world-book-header">
-                            <div></div>
-                            <div class="netflix-world-book-title">世界书</div>
-                            <button type="button" id="netflix-world-book-close" class="netflix-world-book-close"><i class="fas fa-times"></i></button>
-                        </div>
-                        <div class="netflix-world-book-list" id="netflix-world-book-list"></div>
-                        <button type="button" class="netflix-world-book-save" id="netflix-world-book-save">保存挂载</button>
-                    </div>
-                </div>
-            `);
-        }
-
-        if (!this.view.querySelector('#netflix-home-search-sheet')) {
-            this.view.insertAdjacentHTML('beforeend', `
-                <div class="netflix-home-search-sheet" id="netflix-home-search-sheet">
-                    <div class="netflix-home-search-card">
-                        <div class="netflix-sheet-handle"></div>
-                        <div class="netflix-home-search-title">搜索 Netflix</div>
-                        <label class="netflix-home-search-field">
-                            <i class="fas fa-search"></i>
-                            <input type="text" id="netflix-home-search-input" placeholder="输入想看的类型、人物或剧情">
-                        </label>
-                        <div class="netflix-home-search-hint">留空会随机生成一组首页影片。</div>
-                        <div class="netflix-home-search-actions">
-                            <button type="button" id="netflix-home-search-cancel">取消</button>
-                            <button type="button" id="netflix-home-search-confirm">确认</button>
-                        </div>
-                    </div>
-                </div>
-            `);
-        }
-
-        if (!this.view.querySelector('#netflix-playback-sheet')) {
-            this.view.insertAdjacentHTML('beforeend', `
-                <div class="netflix-playback-sheet" id="netflix-playback-sheet">
-                    <div class="netflix-playback-header">
-                        <div class="netflix-playback-header-left">
-                            <button type="button" class="netflix-playback-icon-btn" id="netflix-playback-close" aria-label="返回"><i class="fas fa-chevron-left"></i></button>
-                            <button type="button" class="netflix-playback-icon-btn" id="netflix-playback-episode-btn" aria-label="选集"><i class="fas fa-list-ol"></i></button>
-                        </div>
-                        <div class="netflix-playback-title" id="netflix-playback-title">播放中</div>
-                        <div class="netflix-playback-header-right">
-                            <button type="button" class="netflix-playback-icon-btn" id="netflix-playback-cast-btn" aria-label="主演"><i class="fas fa-user-friends"></i></button>
-                            <button type="button" class="netflix-playback-icon-btn" id="netflix-playback-preset-btn" aria-label="预设管理"><i class="fas fa-bars"></i></button>
-                        </div>
-                    </div>
-                    <div class="netflix-playback-body" id="netflix-playback-body"></div>
-
-                    <div class="netflix-record-episode-sidebar netflix-playback-episode-sidebar" id="netflix-playback-episode-sidebar">
-                        <div class="netflix-rps-header">
-                            <h3>选集</h3>
-                            <div class="netflix-rps-close" id="netflix-playback-episode-close"><i class="fas fa-times"></i></div>
-                        </div>
-                        <div class="netflix-episode-list" id="netflix-playback-episode-list"></div>
-                        <div class="netflix-playback-episode-actions" style="padding: 15px; display: flex; flex-direction: column; gap: 10px;">
-                            <button type="button" class="netflix-playback-next-btn" id="netflix-playback-advance-btn" style="margin: 0; background: #2b2b2b;">推进本集</button>
-                            <button type="button" class="netflix-playback-next-btn" id="netflix-playback-next-btn" style="margin: 0;">完成本集并开启下一集</button>
-                        </div>
-                    </div>
-
-                    <div class="netflix-record-preset-sidebar netflix-playback-preset-sidebar" id="netflix-playback-preset-sidebar">
-                        <div class="netflix-rps-header">
-                            <h3>预设管理</h3>
-                            <div class="netflix-rps-close" id="netflix-playback-preset-close"><i class="fas fa-times"></i></div>
-                        </div>
-                        <div class="netflix-rps-body" id="netflix-playback-preset-body"></div>
-                    </div>
-
-                    <div class="netflix-playback-cast-sheet" id="netflix-playback-cast-sheet">
-                        <div class="netflix-playback-cast-card">
-                            <div class="netflix-sheet-handle"></div>
-                            <div class="netflix-playback-cast-title">本集主演</div>
-                            <div class="netflix-playback-cast-list" id="netflix-playback-cast-list"></div>
-                            <button type="button" class="netflix-playback-cast-add" id="netflix-playback-cast-add">添加主演</button>
-                            <button type="button" class="netflix-playback-cast-done" id="netflix-playback-cast-done">完成</button>
-                        </div>
-                    </div>
-
-                    <div class="netflix-playback-next-modal" id="netflix-playback-next-modal">
-                        <div class="netflix-playback-next-card">
-                            <button type="button" class="netflix-record-modal-close" id="netflix-playback-next-close"><i class="fas fa-times"></i></button>
-                            <div class="netflix-record-modal-title">下一集</div>
-                            <textarea id="netflix-playback-next-input" class="netflix-edit-message-input" placeholder="输入下一集剧情走向，可留空..."></textarea>
-                            <button type="button" class="netflix-edit-message-save" id="netflix-playback-next-confirm">确定</button>
-                        </div>
-                    </div>
-                </div>
-            `);
-        }
-    }
-
-    createHeroBanner(item = null, index = 0) {
-        const work = item ? this.normalizeCatalogItem(item, `banner-${index}`, '电视剧') : null;
-        const title = work?.title || '暂无影片';
-        const tags = work ? [work.category, ...(work.tags || [])].filter(Boolean).slice(0, 3) : ['等待搜索', '随机生成', '首页横幅'];
-        const coverUrl = work?.coverUrl || '';
-        const background = coverUrl
-            ? `background-image: url('${this.escapeAttr(coverUrl)}');`
-            : `background: ${this.getCatalogFallbackGradient(index)};`;
-        return `
-            <div class="netflix-hero-banner ${work ? '' : 'netflix-hero-empty'}" ${work ? `data-catalog-id="${this.escapeHtml(work.id)}"` : ''}>
-                <div class="netflix-hero-img-wrapper">
-                    <div class="netflix-hero-placeholder" style="${background} width: 100%; height: 100%;"></div>
-                    <div class="netflix-hero-fade"></div>
-                </div>
-                <div class="netflix-hero-info">
-                    <h1 class="netflix-hero-title">${this.escapeHtml(title)}</h1>
-                    <div class="netflix-tags">
-                        ${tags.map(tag => `<span>${this.escapeHtml(tag)}</span>`).join('<em>·</em>')}
-                    </div>
-                    <div class="netflix-hero-actions">
-                        <button type="button" class="netflix-btn netflix-btn-play" ${work ? '' : 'disabled'}>
-                            <i class="fas fa-play"></i> 播放
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    cacheElements() {
-        this.header = document.getElementById('netflix-header');
-        this.content = document.getElementById('netflix-content');
-        this.headerAvatar = this.view.querySelector('.netflix-avatar');
-        this.headerSearchBtn = this.view.querySelector('.netflix-header-right .fa-search');
-        this.homeContent = this.view.querySelector('#netflix-home-content');
-        this.navItems = Array.from(this.view.querySelectorAll('.netflix-nav-item'));
-        this.tabPanels = Array.from(this.view.querySelectorAll('.netflix-tab-panel'));
-        this.navIndicator = this.view.querySelector('.netflix-nav-indicator');
-        this.profileSheet = this.view.querySelector('#netflix-profile-sheet');
-        this.worldBookEntry = this.view.querySelector('#netflix-world-book-entry');
-        this.settingsEntry = this.view.querySelector('#netflix-settings-entry');
-        this.settingsSheet = this.view.querySelector('#netflix-settings-sheet');
-        this.settingsTabs = [];
-        this.settingsTabContents = {
-            playback: this.view.querySelector('#netflix-settings-tab-playback')
-        };
-        this.settingsPlaybackCssFile = this.view.querySelector('#netflix-settings-playback-css-file');
-        this.settingsPlaybackCssInput = this.view.querySelector('#netflix-settings-playback-css-input');
-        this.settingsApply = this.view.querySelector('#netflix-settings-apply');
-        this.settingsClear = this.view.querySelector('#netflix-settings-clear');
-        this.worldBookSheet = this.view.querySelector('#netflix-world-book-sheet');
-        this.worldBookList = this.view.querySelector('#netflix-world-book-list');
-        this.worldBookClose = this.view.querySelector('#netflix-world-book-close');
-        this.worldBookSave = this.view.querySelector('#netflix-world-book-save');
-        this.homeSearchSheet = this.view.querySelector('#netflix-home-search-sheet');
-        this.homeSearchInput = this.view.querySelector('#netflix-home-search-input');
-        this.homeSearchCancel = this.view.querySelector('#netflix-home-search-cancel');
-        this.homeSearchConfirm = this.view.querySelector('#netflix-home-search-confirm');
-        this.playbackSheet = this.view.querySelector('#netflix-playback-sheet');
-        this.playbackClose = this.view.querySelector('#netflix-playback-close');
-        this.playbackEpisodeBtn = this.view.querySelector('#netflix-playback-episode-btn');
-        this.playbackTitle = this.view.querySelector('#netflix-playback-title');
-        this.playbackCastBtn = this.view.querySelector('#netflix-playback-cast-btn');
-        this.playbackPresetBtn = this.view.querySelector('#netflix-playback-preset-btn');
-        this.playbackBody = this.view.querySelector('#netflix-playback-body');
-        this.playbackEpisodeSidebar = this.view.querySelector('#netflix-playback-episode-sidebar');
-        this.playbackEpisodeClose = this.view.querySelector('#netflix-playback-episode-close');
-        this.playbackEpisodeList = this.view.querySelector('#netflix-playback-episode-list');
-        this.playbackAdvanceBtn = this.view.querySelector('#netflix-playback-advance-btn');
-        this.playbackNextBtn = this.view.querySelector('#netflix-playback-next-btn');
-        this.playbackPresetSidebar = this.view.querySelector('#netflix-playback-preset-sidebar');
-        this.playbackPresetClose = this.view.querySelector('#netflix-playback-preset-close');
-        this.playbackPresetBody = this.view.querySelector('#netflix-playback-preset-body');
-        this.playbackCastSheet = this.view.querySelector('#netflix-playback-cast-sheet');
-        this.playbackCastList = this.view.querySelector('#netflix-playback-cast-list');
-        this.playbackCastAdd = this.view.querySelector('#netflix-playback-cast-add');
-        this.playbackCastDone = this.view.querySelector('#netflix-playback-cast-done');
-        this.playbackNextModal = this.view.querySelector('#netflix-playback-next-modal');
-        this.playbackNextClose = this.view.querySelector('#netflix-playback-next-close');
-        this.playbackNextInput = this.view.querySelector('#netflix-playback-next-input');
-        this.playbackNextConfirm = this.view.querySelector('#netflix-playback-next-confirm');
-        
-        this.createNewTrigger = this.view.querySelector('#netflix-create-new-trigger');
-        this.createWorksList = this.view.querySelector('#netflix-create-works-list');
-        this.createFormSheet = this.view.querySelector('#netflix-create-form-sheet');
-        this.createFormClose = this.view.querySelector('#netflix-create-form-close');
-
-        this.workCoverTrigger = this.view.querySelector('#netflix-work-cover-trigger');
-        this.workCoverInput = this.view.querySelector('#netflix-work-cover-input');
-        this.workCoverPreview = this.view.querySelector('#netflix-work-cover-preview');
-        this.workTitleInput = this.view.querySelector('#netflix-work-title-input');
-        this.workCategoryButtons = Array.from(this.view.querySelectorAll('#netflix-work-category-segment button'));
-        this.workTagsInput = this.view.querySelector('#netflix-work-tags-input');
-        this.workTagPreview = this.view.querySelector('#netflix-work-tag-preview');
-        this.workCastList = this.view.querySelector('#netflix-work-cast-list');
-        this.workCastAddBtn = this.view.querySelector('#netflix-work-cast-add-btn');
-        this.workSummaryInput = this.view.querySelector('#netflix-work-summary-input');
-        this.workStartBtn = this.view.querySelector('#netflix-work-start-btn');
-        this.workDeleteBtn = this.view.querySelector('#netflix-work-delete-btn');
-        this.actingList = this.view.querySelector('#netflix-acting-list');
-        this.workDetailSheet = this.view.querySelector('#netflix-work-detail-sheet');
-        this.workDetailContent = this.view.querySelector('#netflix-work-detail-content');
-        this.actorPickerSheet = this.view.querySelector('#netflix-actor-picker-sheet');
-        this.actorPickerList = this.view.querySelector('#netflix-actor-picker-list');
-        this.actorPickerDoneBtn = this.view.querySelector('#netflix-actor-picker-done-btn');
-        this.editAvatarTrigger = this.view.querySelector('#netflix-edit-avatar-trigger');
-        this.editAvatarPreview = this.view.querySelector('#netflix-edit-avatar-preview');
-        this.editAvatarInput = this.view.querySelector('#netflix-edit-avatar-input');
-        this.editNameInput = this.view.querySelector('#netflix-edit-name-input');
-        this.editPersonaInput = this.view.querySelector('#netflix-edit-persona-input');
-        this.editSaveBtn = this.view.querySelector('#netflix-edit-save-btn');
-    }
-
-    bindEvents() {
-        document.getElementById('app-netflix-btn')?.addEventListener('click', () => this.open());
-
-        if (this.content && this.header) {
-            this.content.addEventListener('scroll', () => {
-                this.header.classList.toggle('scrolled', this.content.scrollTop > 50);
-            });
-        }
-
-        this.navItems.forEach(item => {
-            item.addEventListener('click', () => {
-                this.switchTab(item.getAttribute('data-tab') || 'home');
-            });
-        });
-
-        if (this.headerAvatar) {
-            this.headerAvatar.addEventListener('click', () => this.openProfileSheet());
-        }
-
-        if (this.headerSearchBtn) {
-            this.headerSearchBtn.addEventListener('click', () => this.openHomeSearchSheet());
-        }
-
-        if (this.homeSearchSheet) {
-            this.homeSearchSheet.addEventListener('click', (event) => {
-                if (event.target === this.homeSearchSheet && !this.isHomeSearchLoading) this.closeHomeSearchSheet();
-            });
-        }
-
-        if (this.homeSearchCancel) {
-            this.homeSearchCancel.addEventListener('click', () => this.closeHomeSearchSheet());
-        }
-
-        if (this.homeSearchConfirm) {
-            this.homeSearchConfirm.addEventListener('click', () => this.generateHomeCatalogFromSearch());
-        }
-
-        if (this.homeSearchInput) {
-            this.homeSearchInput.addEventListener('keydown', (event) => {
-                if (event.key === 'Enter') this.generateHomeCatalogFromSearch();
-            });
-        }
-
-        this.playbackClose?.addEventListener('click', () => this.closePlaybackSheet());
-        this.playbackEpisodeBtn?.addEventListener('click', () => this.openPlaybackEpisodeSidebar());
-        this.playbackEpisodeClose?.addEventListener('click', () => this.closePlaybackEpisodeSidebar());
-        this.playbackPresetBtn?.addEventListener('click', () => this.openPlaybackPresetSidebar());
-        this.playbackPresetClose?.addEventListener('click', () => this.closePlaybackPresetSidebar());
-        this.playbackCastBtn?.addEventListener('click', () => this.openPlaybackCastSheet());
-        this.playbackCastDone?.addEventListener('click', () => this.closePlaybackCastSheet());
-        this.playbackCastAdd?.addEventListener('click', () => this.addPlaybackCastMember());
-        this.playbackAdvanceBtn?.addEventListener('click', () => this.openPlaybackNextModal('advance'));
-        this.playbackNextBtn?.addEventListener('click', () => this.openPlaybackNextModal('next'));
-        this.playbackNextClose?.addEventListener('click', () => this.closePlaybackNextModal());
-        this.playbackNextConfirm?.addEventListener('click', () => this.handlePlaybackModalConfirm());
-        this.playbackCastSheet?.addEventListener('click', (event) => {
-            if (event.target === this.playbackCastSheet) this.closePlaybackCastSheet();
-        });
-        this.playbackNextModal?.addEventListener('click', (event) => {
-            if (event.target === this.playbackNextModal && !this.isPlaybackNextLoading) this.closePlaybackNextModal();
-        });
-
-        if (this.worldBookEntry) {
-            this.worldBookEntry.addEventListener('click', () => this.openWorldBookSheet());
-        }
-
-        if (this.settingsEntry) {
-            this.settingsEntry.addEventListener('click', () => this.openSettingsSheet());
-        }
-
-        if (this.settingsSheet) {
-            this.settingsSheet.addEventListener('click', (event) => {
-                if (event.target === this.settingsSheet) this.closeSettingsSheet();
-            });
-        }
-
-        if (this.settingsPlaybackCssFile) {
-            this.settingsPlaybackCssFile.addEventListener('change', (event) => this.handleCssFile(event, this.settingsPlaybackCssInput));
-        }
-
-        if (this.settingsApply) {
-            this.settingsApply.addEventListener('click', () => this.saveCustomCss());
-        }
-
-        if (this.settingsClear) {
-            this.settingsClear.addEventListener('click', () => this.clearCustomCss());
-        }
-
-        if (this.worldBookSheet) {
-            this.worldBookSheet.addEventListener('click', (event) => {
-                if (event.target === this.worldBookSheet) this.closeWorldBookSheet();
-            });
-        }
-
-        if (this.worldBookClose) {
-            this.worldBookClose.addEventListener('click', () => this.closeWorldBookSheet());
-        }
-
-        if (this.worldBookSave) {
-            this.worldBookSave.addEventListener('click', () => this.saveMountedWorldBooks());
-        }
-
-        if (this.profileSheet) {
-            this.profileSheet.addEventListener('click', (event) => {
-                if (event.target === this.profileSheet) this.closeProfileSheet();
-            });
-        }
-
-        if (this.actorPickerSheet) {
-            this.actorPickerSheet.addEventListener('click', (event) => {
-                if (event.target === this.actorPickerSheet) this.closeActorPicker();
-            });
-        }
-
-        if (this.workDetailSheet) {
-            this.workDetailSheet.addEventListener('click', (event) => {
-                if (event.target === this.workDetailSheet) this.closeWorkDetail();
-            });
-        }
-
-        if (this.editAvatarTrigger && this.editAvatarInput) {
-            this.editAvatarTrigger.addEventListener('click', () => this.editAvatarInput.click());
-            this.editAvatarInput.addEventListener('change', (event) => this.handleAvatarFile(event));
-        }
-
-        if (this.editSaveBtn) {
-            this.editSaveBtn.addEventListener('click', () => this.saveProfile());
-        }
-
-        if (this.createNewTrigger) {
-            this.createNewTrigger.addEventListener('click', () => this.openCreateFormSheet());
-        }
-
-        if (this.createFormClose) {
-            this.createFormClose.addEventListener('click', () => this.closeCreateFormSheet());
-        }
-
-        if (this.workCoverTrigger && this.workCoverInput) {
-            this.workCoverTrigger.addEventListener('click', (event) => {
-                if (event.target !== this.workCoverInput) this.workCoverInput.click();
-            });
-            this.workCoverInput.addEventListener('change', (event) => this.handleWorkCoverFile(event));
-        }
-
-        if (this.workTitleInput) {
-            this.workTitleInput.addEventListener('input', () => {
-                this.createDraft.title = this.workTitleInput.value;
-            });
-        }
-
-        this.workCategoryButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                this.createDraft.category = button.getAttribute('data-category') || '电视剧';
-                this.renderCreateForm();
-            });
-        });
-
-        if (this.workTagsInput) {
-            this.workTagsInput.addEventListener('input', () => {
-                this.createDraft.tagsText = this.workTagsInput.value;
-                this.renderTagPreview();
-            });
-        }
-
-        if (this.workCastAddBtn) {
-            this.workCastAddBtn.addEventListener('click', () => this.openActorPicker());
-        }
-
-        if (this.workSummaryInput) {
-            this.workSummaryInput.addEventListener('input', () => {
-                this.createDraft.summary = this.workSummaryInput.value;
-            });
-        }
-
-        if (this.workStartBtn) {
-            this.workStartBtn.addEventListener('click', () => this.saveCreatedWork());
-        }
-
-        if (this.workDeleteBtn) {
-            this.workDeleteBtn.addEventListener('click', () => this.deleteWork());
-        }
-
-        if (this.actorPickerDoneBtn) {
-            this.actorPickerDoneBtn.addEventListener('click', () => this.closeActorPicker());
-        }
-
-        this.renderCreateForm();
-        this.renderWorks();
-        this.renderHomeCatalog();
-    }
-
-    createDefaultWorkDraft() {
-        return {
-            coverUrl: '',
-            title: '',
-            category: '电视剧',
-            tagsText: '',
-            cast: [],
-            summary: ''
-        };
-    }
-
-    getHomeSectionNames() {
-        return ['为你推荐', '电影', '电视剧', '综艺', '纪录片'];
-    }
-
-    createDefaultHomeCatalog() {
-        return {
-            banners: [null, null, null],
-            recent: [],
-            sections: this.getHomeSectionNames().reduce((sections, name) => {
-                sections[name] = [];
-                return sections;
-            }, {})
-        };
-    }
-
-    normalizeHomeCatalog(rawCatalog = null) {
-        const defaults = this.createDefaultHomeCatalog();
-        const safe = rawCatalog && typeof rawCatalog === 'object' ? rawCatalog : {};
-        const sections = { ...defaults.sections };
-        this.getHomeSectionNames().forEach(name => {
-            const source = name === '为你推荐'
-                ? (safe.sections?.[name] || safe.recommendations || safe.recommended)
-                : safe.sections?.[name];
-            sections[name] = Array.isArray(source)
-                ? source.slice(0, 4).map((item, index) => this.normalizeCatalogItem(item, `${name}-${index}`, name === '为你推荐' ? '' : name)).filter(Boolean)
-                : [];
-        });
-
-        return {
-            banners: Array.from({ length: 3 }, (_, index) => {
-                const item = Array.isArray(safe.banners) ? safe.banners[index] : null;
-                return item ? this.normalizeCatalogItem(item, `banner-${index}`, '') : null;
-            }),
-            recent: Array.isArray(safe.recent)
-                ? safe.recent.slice(0, 8).map((item, index) => this.normalizeCatalogItem(item, `recent-${index}`, '')).filter(Boolean)
-                : [],
-            sections
-        };
-    }
-
-    normalizeCatalogItem(item = {}, fallbackId = this.createPresetId('catalog'), fallbackCategory = '') {
-        if (!item || typeof item !== 'object') return null;
-        const title = String(item.title || item.name || item.workTitle || '').trim();
-        const category = String(item.category || item.type || fallbackCategory || '电视剧').trim();
-        const tags = Array.isArray(item.tags)
-            ? item.tags
-            : String(item.tag || item.label || '')
-                .split(/[，,、\s]+/)
-                .filter(Boolean);
-        const safeTitle = title || '未命名影片';
-        const idBase = item.id || `${fallbackId}-${safeTitle}-${category}`;
-        const summary = String(item.summary || item.description || item.desc || '').trim();
-        const coverUrl = this.normalizeCoverUrl(item.coverUrl || item.cover || item.thumbnail || item.imageUrl || '', safeTitle, fallbackId);
-        const castSource = Array.isArray(item.cast)
-            ? item.cast
-            : (Array.isArray(item.actors) ? item.actors : []);
-        const cast = castSource
-            .slice(0, 3)
-            .map((actor, index) => this.normalizePlaybackActor(actor, index))
-            .filter(Boolean);
-        return {
-            id: item.id ? String(idBase) : this.createCatalogId(idBase),
-            title: safeTitle,
-            category: category || '电视剧',
-            tags: tags.map(tag => String(tag).trim()).filter(Boolean).slice(0, 4),
-            coverUrl,
+    createDefaultCatalog() {
+        const make = (id, title, category, summary, seed, tags = []) => ({
+            id,
+            title,
+            category,
             summary,
+            tags,
+            coverUrl: `https://picsum.photos/seed/${seed}/720/1080?grayscale`,
+            cast: []
+        });
+        const items = [
+            make('default-night-train', '雾夜列车', '悬疑', '一列不会停站的夜车，载着彼此隐瞒秘密的旅客驶向未知终点。', 'u2-night-train', ['命运', '群像']),
+            make('default-summer-letter', '夏日未寄信', '恋爱', '多年后重返海边小镇，一封未寄出的信让旧日关系再次泛起涟漪。', 'u2-summer-letter', ['重逢', '治愈']),
+            make('default-glass-city', '玻璃城', '都市', '光鲜城市的幕后，每个人都在欲望、名声与真心之间作出选择。', 'u2-glass-city', ['成长', '名利']),
+            make('default-star-academy', '星光学院', '校园', '新人演员进入竞争激烈的表演学院，在友情、爱情与舞台梦想之间成长。', 'u2-star-academy', ['养成', '青春']),
+            make('default-ancient-promise', '长安旧约', '古风', '旧朝暗流涌动，一纸婚约把两个立场相反的人推向同一场棋局。', 'u2-ancient-promise', ['权谋', '情感']),
+            make('default-island', '无人岛来信', '奇幻', '每天清晨，海岸都会出现一封来自未来的信。', 'u2-island-letter', ['探索', '奇幻']),
+            make('default-stage', '未落幕', '娱乐圈', '一次意外同台，让沉寂的演员重新站到聚光灯下。', 'u2-stage', ['事业', '羁绊'])
+        ];
+        return {
+            banners: items.slice(0, 3),
+            recent: [],
+            sections: {
+                '为你推荐': items.slice(3, 7),
+                '恋爱剧情': [items[1], items[4], items[6]],
+                '成长养成': [items[3], items[2], items[5]],
+                '悬疑奇幻': [items[0], items[5], items[4]]
+            }
+        };
+    }
+
+    normalizeCatalogItem(item = {}, fallbackId = '') {
+        if (!item || typeof item !== 'object') return null;
+        const title = String(item.title || item.name || '未命名影片').trim() || '未命名影片';
+        const category = String(item.category || item.type || '剧情').trim() || '剧情';
+        const id = String(item.id || fallbackId || `catalog-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
+        const cast = (Array.isArray(item.cast) ? item.cast : (Array.isArray(item.actors) ? item.actors : []))
+            .map((actor, index) => ({
+                id: String(actor?.id || `film-${id}-${index}`),
+                type: 'custom',
+                sourceId: '',
+                name: String(actor?.roleName || actor?.name || actor?.realName || `主演${index + 1}`).trim(),
+                persona: String(actor?.rolePersona || actor?.persona || actor?.desc || '').trim(),
+                avatar: String(actor?.avatar || actor?.avatarUrl || '').trim(),
+                affinity: this.core.clampInt(actor?.affinity, 0, 100, 50)
+            }));
+        return {
+            id,
+            title,
+            category,
+            summary: String(item.summary || item.description || item.desc || '').trim(),
+            tags: (Array.isArray(item.tags) ? item.tags : String(item.tags || '').split(/[，,、\s]+/)).map(tag => String(tag).trim()).filter(Boolean).slice(0, 5),
+            coverUrl: this.normalizeCoverUrl(item.coverUrl || item.cover || item.thumbnail || '', `${id}-${title}`),
             cast
         };
     }
 
-    createCatalogId(value) {
-        return `catalog-${String(value || Date.now()).toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 80) || Date.now()}`;
+    normalizeCoverUrl(url, seed = 'netflix') {
+        const value = String(url || '').trim();
+        if (/^(https?:\/\/|data:image\/|blob:)/i.test(value)) return value;
+        return `https://picsum.photos/seed/${encodeURIComponent(seed)}/720/1080?grayscale`;
     }
 
-    normalizeCoverUrl(url, title, fallbackId = '') {
-        const trimmed = String(url || '').trim();
-        if (/^https?:\/\//i.test(trimmed) || /^data:image\//i.test(trimmed)) return trimmed;
-        const seed = encodeURIComponent(`${title || 'netflix'}-${fallbackId || ''}`);
-        return `https://picsum.photos/seed/${seed}/640/960?grayscale`;
-    }
-
-    getCatalogFallbackGradient(index = 0) {
-        const gradients = [
-            'linear-gradient(135deg, #3a3a3a, #111)',
-            'linear-gradient(135deg, #5a1418, #141414)',
-            'linear-gradient(135deg, #1f3446, #080808)',
-            'linear-gradient(135deg, #332a4a, #111)'
-        ];
-        return gradients[index % gradients.length];
-    }
-
-    renderHomeCatalog() {
-        if (!this.homeContent) return;
-        const catalog = this.normalizeHomeCatalog(this.netflixState.homeCatalog);
-        this.netflixState.homeCatalog = catalog;
-        const rows = [
-            this.renderRecentRow(catalog.recent),
-            ...this.getHomeSectionNames().map((name, index) => this.renderCatalogSection(name, catalog.sections[name] || [], index === this.getHomeSectionNames().length - 1))
-        ].join('');
-
-        this.homeContent.innerHTML = `
-            <div class="netflix-hero-scroll">
-                ${catalog.banners.map((item, index) => this.createHeroBanner(item, index)).join('')}
-            </div>
-            ${rows}
-        `;
-        this.bindHomeCatalogEvents();
-    }
-
-    renderRecentRow(items = []) {
-        const content = items.length
-            ? items.map((item, index) => this.renderCatalogCard(item, index, false)).join('')
-            : '<div class="netflix-row-empty">暂无</div>';
-        return `
-            <div class="netflix-row">
-                <h2 class="netflix-row-title">最近观看</h2>
-                <div class="netflix-row-scroll netflix-recent-row-scroll">${content}</div>
-            </div>
-        `;
-    }
-
-    renderCatalogSection(title, items = [], isLast = false) {
-        const content = items.length
-            ? items.map((item, index) => this.renderCatalogCard(item, index, true)).join('')
-            : '<div class="netflix-row-empty">暂无</div>';
-        return `
-            <div class="netflix-row ${isLast ? 'netflix-last-row' : ''}">
-                <h2 class="netflix-row-title">${this.escapeHtml(title)}</h2>
-                <div class="netflix-row-scroll">${content}</div>
-            </div>
-        `;
-    }
-
-    renderCatalogCard(item, index = 0, vertical = true) {
-        const work = this.normalizeCatalogItem(item, `card-${index}`, item?.category || '');
-        if (!work) return '';
-        const tags = [work.category, ...(work.tags || [])].filter(Boolean).slice(0, 2);
-        return `
-            <button type="button" class="netflix-card ${vertical ? 'vertical' : ''} netflix-catalog-card" data-catalog-id="${this.escapeHtml(work.id)}" aria-label="查看${this.escapeHtml(work.title)}">
-                <div class="netflix-card-img" style="background-image:url('${this.escapeAttr(work.coverUrl)}');"></div>
-                <div class="netflix-card-text">
-                    <strong>${this.escapeHtml(work.title)}</strong>
-                    <span>${tags.map(tag => this.escapeHtml(tag)).join(' · ')}</span>
-                </div>
-            </button>
-        `;
-    }
-
-    bindHomeCatalogEvents() {
-        if (!this.homeContent) return;
-        this.homeContent.querySelectorAll('[data-catalog-id]').forEach(element => {
-            element.addEventListener('click', () => {
-                const item = this.findCatalogItem(element.getAttribute('data-catalog-id'));
-                if (item) this.openCatalogWorkDetail(item);
-            });
-        });
-    }
-
-    findCatalogItem(itemId) {
-        const catalog = this.normalizeHomeCatalog(this.netflixState.homeCatalog);
-        const allItems = [
-            ...catalog.banners.filter(Boolean),
-            ...catalog.recent,
-            ...this.getHomeSectionNames().flatMap(name => catalog.sections[name] || [])
-        ];
-        return allItems.find(item => String(item.id) === String(itemId)) || null;
-    }
-
-    openHomeSearchSheet() {
-        if (this.homeSearchSheet) this.homeSearchSheet.classList.add('active');
-        if (this.homeSearchInput) {
-            this.homeSearchInput.value = '';
-            setTimeout(() => this.homeSearchInput?.focus(), 80);
-        }
-    }
-
-    closeHomeSearchSheet(force = false) {
-        if (this.isHomeSearchLoading && !force) return;
-        if (this.homeSearchSheet) this.homeSearchSheet.classList.remove('active');
-    }
-
-    setHomeSearchLoading(isLoading) {
-        this.isHomeSearchLoading = !!isLoading;
-        if (this.homeSearchSheet) this.homeSearchSheet.classList.toggle('loading', this.isHomeSearchLoading);
-        if (this.homeSearchInput) this.homeSearchInput.disabled = this.isHomeSearchLoading;
-        if (this.homeSearchCancel) this.homeSearchCancel.disabled = this.isHomeSearchLoading;
-        if (this.homeSearchConfirm) {
-            this.homeSearchConfirm.disabled = this.isHomeSearchLoading;
-            this.homeSearchConfirm.innerHTML = this.isHomeSearchLoading
-                ? '<i class="fas fa-spinner fa-spin"></i> 生成中'
-                : '确认';
-        }
-    }
-
-    async generateHomeCatalogFromSearch() {
-        if (this.isHomeSearchLoading) return;
-        const apiConfig = typeof window.getApiConfig === 'function' ? window.getApiConfig() : (window.apiConfig || {});
-        if (!apiConfig || !apiConfig.endpoint || !apiConfig.apiKey) {
-            if (typeof window.showToast === 'function') window.showToast('请先在设置中配置大模型 API');
-            return;
-        }
-
-        const query = (this.homeSearchInput?.value || '').trim();
-        this.setHomeSearchLoading(true);
-        try {
-            const endpoint = this.resolveChatCompletionsEndpoint(apiConfig.endpoint);
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiConfig.apiKey}`
-                },
-                body: JSON.stringify({
-                    model: apiConfig.model || 'gpt-3.5-turbo',
-                    messages: [{ role: 'user', content: this.createHomeCatalogPrompt(query) }],
-                    temperature: parseFloat(apiConfig.temperature) || 0.8,
-                    response_format: { type: 'json_object' }
-                })
-            });
-
-            if (!response.ok) throw new Error(`API Request Failed: ${response.status}`);
-            const data = await response.json();
-            const content = data.choices?.[0]?.message?.content || '';
-            const parsed = this.parseJsonFromText(content);
-            const recent = this.normalizeHomeCatalog(this.netflixState.homeCatalog).recent;
-            const nextCatalog = this.normalizeGeneratedHomeCatalog(parsed, recent);
-            this.netflixState.homeCatalog = nextCatalog;
-            this.saveNetflixState();
-            this.renderHomeCatalog();
-            this.closeHomeSearchSheet(true);
-            if (typeof window.showToast === 'function') window.showToast('Netflix 首页已生成');
-        } catch (error) {
-            console.error('Netflix home catalog generation failed:', error);
-            if (typeof window.showToast === 'function') window.showToast('生成失败，请检查 API 返回格式或网络');
-        } finally {
-            this.setHomeSearchLoading(false);
-        }
-    }
-
-    resolveChatCompletionsEndpoint(endpoint = '') {
-        const resolved = String(endpoint || '').trim();
-        return resolved ? window.u2Api.resolveChatCompletionsEndpoint(resolved) : '';
-    }
-
-    getNetflixApiConfig() {
-        return typeof window.getApiConfig === 'function' ? window.getApiConfig() : (window.apiConfig || {});
-    }
-
-    async requestChatCompletion(promptText, options = {}) {
-        const apiConfig = options.apiConfig || this.getNetflixApiConfig();
-        if (!apiConfig || !apiConfig.endpoint || !apiConfig.apiKey) {
-            throw new Error('API_CONFIG_MISSING');
-        }
-
-        const endpoint = this.resolveChatCompletionsEndpoint(apiConfig.endpoint);
-        const timeoutMs = Number(options.timeoutMs) || 60000;
-        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
-
-        try {
-            const body = {
-                model: apiConfig.model || 'gpt-3.5-turbo',
-                messages: [{ role: 'user', content: promptText }],
-                temperature: parseFloat(apiConfig.temperature) || 0.8
-            };
-            if (options.responseFormat) body.response_format = options.responseFormat;
-
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiConfig.apiKey}`
-                },
-                body: JSON.stringify(body),
-                signal: controller?.signal
-            });
-
-            if (!response.ok) {
-                let detail = '';
-                try {
-                    detail = await response.text();
-                } catch (error) {
-                    detail = '';
-                }
-                const error = new Error(`API Request Failed: ${response.status}${detail ? ` ${detail.slice(0, 240)}` : ''}`);
-                error.status = response.status;
-                throw error;
-            }
-
-            return response.json();
-        } catch (error) {
-            if (error?.name === 'AbortError') {
-                const timeoutError = new Error('API_REQUEST_TIMEOUT');
-                timeoutError.isTimeout = true;
-                throw timeoutError;
-            }
-            throw error;
-        } finally {
-            if (timeoutId) clearTimeout(timeoutId);
-        }
-    }
-
-    createHomeCatalogPrompt(query = '') {
-        const intent = query
-            ? `用户搜索内容是：“${query}”。请围绕这个内容生成。`
-            : '用户没有输入搜索内容。请随机生成一组适合 Netflix 首页的影片。';
-        return `${intent}
-请返回严格 JSON，不要 Markdown，不要解释。结构必须是：
-{
-  "banners": [
-    {"title":"作品名","category":"电影/电视剧/综艺/纪录片","tags":["标签1","标签2"],"coverUrl":"https://picsum.photos/seed/.../640/960?grayscale","summary":"简介","cast":[{"realName":"演员名","roleName":"饰演角色","rolePersona":"人物设定","avatar":""}]}
-  ],
-  "recommendations": [
-    {"title":"作品名","category":"电影/电视剧/综艺/纪录片","tags":["标签1","标签2"],"coverUrl":"https://picsum.photos/seed/.../640/960?grayscale","summary":"简介","cast":[{"realName":"演员名","roleName":"饰演角色","rolePersona":"人物设定","avatar":""}]}
-  ],
-  "sections": {
-    "电影": [],
-    "电视剧": [],
-    "综艺": [],
-    "纪录片": []
-  }
-}
-数量要求：banners 必须 3 个，recommendations 必须 4 个，sections 里的电影、电视剧、综艺、纪录片各 4 个。
-每个作品都必须包含 title、category、tags、coverUrl、summary、cast。cast 必须是 1-3 个主演，每个主演包含 realName、roleName、rolePersona、avatar，avatar 可为空字符串。
-coverUrl 使用外部图片链接，优先使用 https://picsum.photos/seed/英文或拼音关键词/640/960?grayscale 这种稳定链接。`;
-    }
-
-    parseJsonFromText(text = '') {
-        const raw = String(text || '').replace(/```json/gi, '').replace(/```/g, '').trim();
-        const match = raw.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
-        return JSON.parse(match ? match[0] : raw);
-    }
-
-    normalizeGeneratedHomeCatalog(parsed, existingRecent = []) {
-        const safe = parsed && typeof parsed === 'object' ? parsed : {};
-        const catalog = this.createDefaultHomeCatalog();
-        catalog.banners = (Array.isArray(safe.banners) ? safe.banners : [])
-            .slice(0, 3)
-            .map((item, index) => this.normalizeCatalogItem(item, `banner-${index}`, ''))
-            .filter(Boolean);
-        while (catalog.banners.length < 3) catalog.banners.push(null);
-
-        catalog.recent = Array.isArray(existingRecent)
-            ? existingRecent.slice(0, 8).map((item, index) => this.normalizeCatalogItem(item, `recent-${index}`, '')).filter(Boolean)
-            : [];
-        catalog.sections['为你推荐'] = (Array.isArray(safe.recommendations) ? safe.recommendations : (safe.sections?.['为你推荐'] || []))
-            .slice(0, 4)
-            .map((item, index) => this.normalizeCatalogItem(item, `recommend-${index}`, ''))
-            .filter(Boolean);
-
-        ['电影', '电视剧', '综艺', '纪录片'].forEach(name => {
-            catalog.sections[name] = (Array.isArray(safe.sections?.[name]) ? safe.sections[name] : [])
-                .slice(0, 4)
-                .map((item, index) => this.normalizeCatalogItem(item, `${name}-${index}`, name))
-                .filter(Boolean);
-        });
-
-        const requiredCounts = [
-            catalog.banners.filter(Boolean).length === 3,
-            catalog.sections['为你推荐'].length === 4,
-            catalog.sections['电影'].length === 4,
-            catalog.sections['电视剧'].length === 4,
-            catalog.sections['综艺'].length === 4,
-            catalog.sections['纪录片'].length === 4
-        ];
-        if (!requiredCounts.every(Boolean)) throw new Error('Generated catalog is incomplete');
-
-        return this.normalizeHomeCatalog(catalog);
-    }
-
-    normalizePlaybackCatalog(rawCatalog = null) {
-        const safe = rawCatalog && typeof rawCatalog === 'object' ? rawCatalog : {};
-        return Object.entries(safe).reduce((catalog, [id, entry]) => {
-            const normalized = this.normalizePlaybackEntry(entry, id);
-            if (normalized) catalog[normalized.id] = normalized;
-            return catalog;
+    normalizeCatalog(rawCatalog) {
+        const fallback = this.createDefaultCatalog();
+        const source = rawCatalog && typeof rawCatalog === 'object' ? rawCatalog : fallback;
+        const sectionSource = source.sections && typeof source.sections === 'object' ? source.sections : fallback.sections;
+        const sections = Object.entries(sectionSource).reduce((result, [name, items]) => {
+            result[String(name)] = (Array.isArray(items) ? items : []).map((item, index) => this.normalizeCatalogItem(item, `section-${name}-${index}`)).filter(Boolean);
+            return result;
         }, {});
-    }
-
-    normalizePlaybackEntry(entry = {}, fallbackId = '') {
-        if (!entry || typeof entry !== 'object') return null;
-        const item = this.normalizeCatalogItem(entry.item || entry.work || entry, fallbackId || 'playback', entry.category || '');
-        if (!item) return null;
-        const episodes = Array.isArray(entry.episodes)
-            ? entry.episodes.map((episode, index) => this.normalizePlaybackEpisode(episode, index + 1)).filter(Boolean)
-            : [];
-        const introIndex = episodes.findIndex(episode => Number(episode.number) === 0);
-        if (introIndex === -1) {
-            episodes.unshift(this.createInitialPlaybackEpisode(item));
-        } else {
-            episodes[introIndex] = this.normalizePlaybackIntroEpisode(episodes[introIndex], item);
-        }
-        episodes.sort((a, b) => Number(a.number) - Number(b.number));
-        const requestedActive = Number(entry.activeEpisodeNumber);
-        const activeEpisodeNumber = episodes.some(episode => Number(episode.number) === requestedActive)
-            ? requestedActive
-            : 0;
+        const normalizedBanners = (Array.isArray(source.banners) ? source.banners : fallback.banners).map((item, index) => this.normalizeCatalogItem(item, `banner-${index}`)).filter(Boolean).slice(0, 3);
+        const normalizedRecent = (Array.isArray(source.recent) ? source.recent : []).map((item, index) => this.normalizeCatalogItem(item, `recent-${index}`)).filter(Boolean).slice(0, 8);
+        const hasExplicitCatalogShape = !!rawCatalog && typeof rawCatalog === 'object' && ('banners' in rawCatalog || 'recent' in rawCatalog || 'sections' in rawCatalog);
+        if (!Object.keys(sections).length && !hasExplicitCatalogShape) return fallback;
         return {
-            id: item.id,
-            item,
-            episodes,
-            activeEpisodeNumber,
-            presetSwitches: entry.presetSwitches && typeof entry.presetSwitches === 'object' ? entry.presetSwitches : {},
-            updatedAt: entry.updatedAt || new Date().toISOString()
+            banners: normalizedBanners,
+            recent: normalizedRecent,
+            sections
         };
     }
 
-    normalizePlaybackEpisode(episode = {}, fallbackNumber = 1) {
-        const safe = episode && typeof episode === 'object' ? episode : {};
-        const parsedNumber = Number(safe.number);
-        return {
-            number: Number.isFinite(parsedNumber) ? parsedNumber : fallbackNumber,
-            recap: typeof safe.recap === 'string' ? safe.recap : '',
-            content: typeof safe.content === 'string' ? safe.content : '',
-            summary: typeof safe.summary === 'string' ? safe.summary : '',
-            comments: Array.isArray(safe.comments) ? safe.comments : [],
-            cast: Array.isArray(safe.cast) ? safe.cast.map((actor, index) => this.normalizePlaybackActor(actor, index)).filter(Boolean) : [],
-            createdAt: safe.createdAt || new Date().toISOString()
-        };
-    }
-
-    createInitialPlaybackEpisode(item) {
-        const itemCast = Array.isArray(item?.cast)
-            ? item.cast.map((actor, index) => this.normalizePlaybackActor(actor, index)).filter(Boolean)
-            : [];
-        return this.normalizePlaybackIntroEpisode({
-            number: 0,
-            recap: '',
-            content: item.summary || '',
-            summary: item.summary || '',
-            cast: itemCast.length ? itemCast : this.createDefaultPlaybackCast(),
-            createdAt: new Date().toISOString()
-        }, item);
-    }
-
-    normalizePlaybackIntroEpisode(episode = {}, item = {}) {
-        const itemCast = Array.isArray(item?.cast)
-            ? item.cast.map((actor, index) => this.normalizePlaybackActor(actor, index)).filter(Boolean)
-            : [];
-        const fallbackCast = itemCast.length ? itemCast : this.createDefaultPlaybackCast();
-        return {
-            ...episode,
-            number: 0,
-            recap: '',
-            content: episode.content || item.summary || '',
-            summary: episode.summary || item.summary || '',
-            cast: Array.isArray(episode.cast) && episode.cast.length ? episode.cast : fallbackCast,
-            createdAt: episode.createdAt || new Date().toISOString()
-        };
-    }
-
-    createDefaultPlaybackCast() {
-        const user = this.getUserState();
-        const name = user.name || user.realName || 'User';
-        return [{
-            id: this.createPresetId('cast'),
-            realName: name,
-            name,
-            roleName: name,
-            rolePersona: user.persona || user.signature || '',
-            avatar: user.avatarUrl || user.avatar || ''
-        }];
-    }
-
-    normalizePlaybackActor(actor = {}, index = 0) {
-        if (!actor || typeof actor !== 'object') return null;
-        const realName = String(actor.realName || actor.name || `主演${index + 1}`).trim();
-        return {
-            id: String(actor.id || this.createPresetId('cast')),
-            realName,
-            name: String(actor.name || realName).trim(),
-            roleName: String(actor.roleName || actor.name || realName).trim(),
-            rolePersona: String(actor.rolePersona || actor.persona || actor.desc || '').trim(),
-            avatar: String(actor.avatar || actor.avatarUrl || '').trim()
-        };
-    }
-
-    getPlaybackEntry(playbackId = this.activePlaybackId) {
-        if (!playbackId) return null;
-        const catalog = this.netflixState.playbackCatalog || {};
-        const entry = catalog[playbackId] || null;
-        return entry ? this.normalizePlaybackEntry(entry, playbackId) : null;
-    }
-
-    savePlaybackEntry(entry) {
-        if (!entry) return;
-        if (!this.netflixState.playbackCatalog || typeof this.netflixState.playbackCatalog !== 'object') {
-            this.netflixState.playbackCatalog = {};
-        }
-        entry.updatedAt = new Date().toISOString();
-        this.netflixState.playbackCatalog[entry.id] = this.normalizePlaybackEntry(entry, entry.id);
-    }
-
-    getSerializablePlaybackEpisodes(entry) {
-        return (entry?.episodes || [])
-            .filter(episode => Number(episode.number) > 0)
-            .map((episode, index) => ({
-                number: index + 1,
-                recap: episode.recap || '',
-                content: episode.content || '',
-                summary: episode.summary || '',
-                comments: Array.isArray(episode.comments) ? episode.comments : [],
-                cast: Array.isArray(episode.cast) ? episode.cast : [],
-                createdAt: episode.createdAt || new Date().toISOString()
-            }));
-    }
-
-    syncPlaybackEntryToSourceWork(entry) {
-        if (!entry?.id) return null;
-        const sourceWork = (this.netflixState.works || []).find(work => String(work.id) === String(entry.id));
-        if (!sourceWork) return null;
-        sourceWork.title = entry.item?.title || sourceWork.title || '未命名作品';
-        sourceWork.category = entry.item?.category || sourceWork.category || '电视剧';
-        sourceWork.tags = Array.isArray(entry.item?.tags) ? entry.item.tags : (sourceWork.tags || []);
-        sourceWork.coverUrl = entry.item?.coverUrl || sourceWork.coverUrl || '';
-        sourceWork.summary = entry.item?.summary || sourceWork.summary || '';
-        sourceWork.cast = Array.isArray(entry.item?.cast) ? entry.item.cast : (sourceWork.cast || []);
-        sourceWork.episodes = JSON.parse(JSON.stringify(this.getSerializablePlaybackEpisodes(entry)));
-        sourceWork.episodeCount = sourceWork.episodes.length || 1;
-        return this.normalizeWork(sourceWork, sourceWork.id);
-    }
-
-    getActivePlaybackEpisode() {
-        const entry = this.getPlaybackEntry();
-        if (!entry) return null;
-        return entry.episodes.find(episode => Number(episode.number) === Number(this.activePlaybackEpisodeNumber))
-            || entry.episodes.find(episode => Number(episode.number) === 0)
-            || entry.episodes[0]
-            || null;
-    }
-
-    upsertRecentCatalogItem(item) {
-        const work = this.normalizeCatalogItem(item, item?.id || 'recent', item?.category || '');
-        if (!work) return;
-        const catalog = this.normalizeHomeCatalog(this.netflixState.homeCatalog);
-        catalog.recent = [work, ...catalog.recent.filter(existing => String(existing.id) !== String(work.id))].slice(0, 8);
-        this.netflixState.homeCatalog = catalog;
-    }
-
-    normalizeNetflixState(rawState = null) {
-        const safe = rawState && typeof rawState === 'object' ? rawState : {};
-        return {
-            works: Array.isArray(safe.works) ? safe.works.map((work, index) => this.normalizeWork(work, `legacy-work-${index}`)) : [],
-            boundWorldBookIds: Array.isArray(safe.boundWorldBookIds) ? safe.boundWorldBookIds.map(String) : [],
-            homeCatalog: this.normalizeHomeCatalog(safe.homeCatalog),
-            playbackCatalog: this.normalizePlaybackCatalog(safe.playbackCatalog),
-            playbackCustomCss: typeof safe.playbackCustomCss === 'string' ? safe.playbackCustomCss : ''
-        };
-    }
-
-    loadNetflixState() {
-        let rawState = null;
+    loadState() {
+        let raw = null;
         try {
-            const hasNetflixDomain = this.hasNetflixDomain();
-            if (hasNetflixDomain && typeof window.getAppState === 'function') {
-                rawState = window.getAppState('netflix') || null;
-            }
-            if (!hasNetflixDomain && window.StorageManager && typeof window.StorageManager.load === 'function') {
-                rawState = {
-                    works: window.StorageManager.load('u2_netflixWorks', []),
-                    boundWorldBookIds: window.StorageManager.load('u2_netflixBoundWorldBookIds', []),
-                    homeCatalog: window.StorageManager.load('u2_netflixHomeCatalog', null),
-                    playbackCatalog: window.StorageManager.load('u2_netflixPlaybackCatalog', null),
-                    playbackCustomCss: window.StorageManager.load('u2_netflixPlaybackCustomCss', '')
-                };
-            }
-            if (!rawState && typeof window.getAppState === 'function') {
-                rawState = window.getAppState('netflix') || null;
-            }
+            if (typeof window.getAppState === 'function') raw = window.getAppState('netflix');
+            if (!raw && window.appStorage?.readDomain) raw = window.appStorage.readDomain('netflix', null);
         } catch (error) {
-            console.warn('Failed to load Netflix state:', error);
+            console.warn('[Netflix] state load failed:', error);
         }
-        return this.normalizeNetflixState(rawState);
+        const normalized = this.core.normalizeState(raw, this.createDefaultCatalog());
+        this.migratedLegacyState = normalized.migrated;
+        normalized.state.homeCatalog = this.normalizeCatalog(normalized.state.homeCatalog);
+        return normalized.state;
     }
 
-    hasNetflixDomain() {
-        return typeof window.appStorage?.readDomain === 'function'
-            && window.appStorage.readDomain('netflix', null) !== null;
-    }
-
-    refreshFromPersistedState() {
-        const hadNetflixDomain = this.hasNetflixDomain();
-        this.netflixState = this.loadNetflixState();
-        this.presetState = this.loadPresetState();
-        if (!hadNetflixDomain) {
-            this.saveNetflixState();
-            this.savePresetState();
-        }
-        this.applyCustomCss();
-        this.renderUserProfile();
-        this.renderHomeCatalog();
-        this.renderWorks();
-    }
-
-    saveNetflixState() {
+    async saveState(options = {}) {
         try {
-            if (typeof window.getAppState === 'function' && typeof window.setAppState === 'function') {
-                const previous = window.getAppState('netflix') || {};
-                window.setAppState('netflix', {
-                    ...previous,
-                    works: this.netflixState.works,
-                    boundWorldBookIds: this.netflixState.boundWorldBookIds || [],
-                    homeCatalog: this.netflixState.homeCatalog || this.createDefaultHomeCatalog(),
-                    playbackCatalog: this.netflixState.playbackCatalog || {},
-                    playbackCustomCss: this.netflixState.playbackCustomCss || ''
-                }, { silent: true });
-            } else if (window.StorageManager && typeof window.StorageManager.save === 'function') {
-                window.StorageManager.save('u2_netflixWorks', this.netflixState.works);
-                window.StorageManager.save('u2_netflixBoundWorldBookIds', this.netflixState.boundWorldBookIds || []);
-                window.StorageManager.save('u2_netflixHomeCatalog', this.netflixState.homeCatalog || this.createDefaultHomeCatalog());
-                window.StorageManager.save('u2_netflixPlaybackCatalog', this.netflixState.playbackCatalog || {});
-                window.StorageManager.save('u2_netflixPlaybackCustomCss', this.netflixState.playbackCustomCss || '');
+            if (typeof window.setAppState === 'function') {
+                window.setAppState('netflix', this.state, { silent: true });
+            } else if (window.appStorage?.commitDomain) {
+                await window.appStorage.commitDomain('netflix', this.state, { critical: true, reason: 'netflix-visual-novel' });
             }
-            if (window.StorageManager && typeof window.StorageManager.save === 'function') {
-                window.StorageManager.save('u2_netflixPlaybackCustomCss', this.netflixState.playbackCustomCss || '');
-            }
+            if (options.flush && typeof window.saveGlobalData === 'function') await window.saveGlobalData();
+            return true;
         } catch (error) {
-            console.warn('Failed to save Netflix state:', error);
+            console.error('[Netflix] state save failed:', error);
+            this.toast('存档写入失败，请稍后重试');
+            return false;
         }
     }
 
-    openSettingsSheet() {
-        if (this.settingsPlaybackCssInput) {
-            this.settingsPlaybackCssInput.value = this.netflixState.playbackCustomCss || '';
+    async finishLegacyMigration() {
+        await this.saveState({ flush: true });
+        const legacyKeys = [
+            'u2_netflixWorks',
+            'u2_netflixBoundWorldBookIds',
+            'u2_netflixHomeCatalog',
+            'u2_netflixPlaybackCatalog',
+            'u2_netflixPlaybackCustomCss',
+            'u2_netflixPresetState'
+        ];
+        if (window.appStorage?.removeLegacyKey) {
+            await Promise.allSettled(legacyKeys.map(key => window.appStorage.removeLegacyKey(key)));
         }
-        if (this.settingsSheet) this.settingsSheet.classList.add('active');
     }
 
-    closeSettingsSheet() {
-        if (this.settingsSheet) this.settingsSheet.classList.remove('active');
+    renderStructure() {
+        this.view.innerHTML = `
+            <header class="netflix-header" id="netflix-header">
+                <button type="button" class="netflix-logo" data-action="close-app" aria-label="关闭 Netflix">N</button>
+                <div class="netflix-header-actions">
+                    <button type="button" class="netflix-icon-button" data-action="open-search" aria-label="搜索"><i class="fas fa-search"></i></button>
+                    <button type="button" class="netflix-header-avatar" data-action="open-profile" aria-label="我的 Netflix"><i class="fas fa-user"></i></button>
+                </div>
+            </header>
+            <main class="netflix-content" id="netflix-content">
+                <section class="netflix-panel is-active" data-panel="home"><div id="netflix-home-content"></div></section>
+                <section class="netflix-panel netflix-profile-panel" data-panel="profile" id="netflix-profile-panel"></section>
+            </main>
+            <nav class="netflix-bottom-nav" aria-label="Netflix 导航">
+                <button type="button" class="netflix-nav-item is-active" data-tab="home"><i class="fas fa-home"></i><span>首页</span></button>
+                <button type="button" class="netflix-nav-item" data-tab="profile"><i class="fas fa-user-circle"></i><span>我的 Netflix</span></button>
+            </nav>
+
+            <section class="netflix-sheet netflix-detail-sheet" id="netflix-detail-sheet" aria-hidden="true">
+                <div class="netflix-detail-card" id="netflix-detail-card"></div>
+            </section>
+
+            <section class="netflix-sheet netflix-search-sheet" id="netflix-search-sheet" aria-hidden="true">
+                <div class="netflix-modal-card netflix-search-card" role="dialog" aria-modal="true" aria-labelledby="netflix-search-title">
+                    <button type="button" class="netflix-modal-close" data-action="close-search" aria-label="关闭"><i class="fas fa-times"></i></button>
+                    <span class="netflix-eyebrow">DISCOVER</span>
+                    <h2 id="netflix-search-title">生成新的片库</h2>
+                    <p>输入喜欢的题材、人物关系或故事氛围，留空则随机生成。</p>
+                    <textarea id="netflix-search-input" placeholder="例如：豪门成长、娱乐圈、久别重逢"></textarea>
+                    <button type="button" class="netflix-primary-button" data-action="confirm-search" id="netflix-search-confirm">生成片库</button>
+                </div>
+            </section>
+
+            <section class="netflix-setup-view" id="netflix-setup-view" aria-hidden="true">
+                <header class="netflix-subview-header">
+                    <button type="button" class="netflix-icon-button" data-action="close-setup" aria-label="返回"><i class="fas fa-chevron-left"></i></button>
+                    <div><span>NEW STORY</span><strong>初始化游戏</strong></div>
+                    <button type="button" class="netflix-subview-text-button" data-action="open-load">读档</button>
+                </header>
+                <div class="netflix-setup-scroll" id="netflix-setup-body"></div>
+            </section>
+
+            <section class="netflix-game-view" id="netflix-game-view" aria-hidden="true">
+                <div class="netflix-game-backdrop" id="netflix-game-backdrop"></div>
+                <div class="netflix-game-shade"></div>
+                <header class="netflix-game-header">
+                    <button type="button" class="netflix-game-top-button" data-action="return-to-netflix" aria-label="返回 Netflix"><i class="fas fa-chevron-left"></i></button>
+                    <div class="netflix-game-title" id="netflix-game-title"></div>
+                    <button type="button" class="netflix-game-top-button" data-action="open-game-menu" id="netflix-game-menu-button" aria-label="菜单"><i class="fas fa-bars"></i></button>
+                </header>
+                <div class="netflix-scene-heading" id="netflix-scene-heading"></div>
+                <div class="netflix-game-stage" id="netflix-game-stage"></div>
+                <section class="netflix-training-view" id="netflix-training-view" aria-hidden="true">
+                    <header class="netflix-training-header">
+                        <button type="button" class="netflix-game-top-button" data-action="continue-story" aria-label="继续剧情"><i class="fas fa-chevron-left"></i></button>
+                        <div><span id="netflix-training-day">DAY 01</span><strong id="netflix-training-title">养成地图</strong></div>
+                        <button type="button" class="netflix-game-top-button" data-action="open-game-menu" aria-label="菜单"><i class="fas fa-bars"></i></button>
+                    </header>
+                    <div class="netflix-training-hud" id="netflix-training-hud"></div>
+                    <div class="netflix-map-viewport" id="netflix-map-viewport" tabindex="0" aria-label="养成地图，可拖动和缩放">
+                        <div class="netflix-map-canvas" id="netflix-map-canvas"></div>
+                    </div>
+                    <div class="netflix-map-controls" aria-label="地图缩放控制">
+                        <button type="button" data-action="map-zoom-out" aria-label="缩小地图"><i class="fas fa-minus"></i></button>
+                        <button type="button" data-action="map-reset-view" aria-label="复位地图"><i class="fas fa-crosshairs"></i></button>
+                        <button type="button" data-action="map-zoom-in" aria-label="放大地图"><i class="fas fa-plus"></i></button>
+                    </div>
+                    <div class="netflix-training-event" id="netflix-training-event" aria-hidden="true"></div>
+                </section>
+                <div class="netflix-generation-overlay" id="netflix-generation-overlay" role="status" aria-live="polite" aria-hidden="true">
+                    <div><i class="fas fa-spinner fa-spin"></i><strong id="netflix-generation-title">正在生成剧情</strong><span id="netflix-generation-detail">正在建立世界与人物关系，请稍候。</span></div>
+                </div>
+            </section>
+
+            <section class="netflix-sheet netflix-menu-sheet" id="netflix-menu-sheet" aria-hidden="true">
+                <div class="netflix-menu-card" role="dialog" aria-modal="true" aria-label="游戏菜单">
+                    <div class="netflix-menu-header"><div><span>STORY MENU</span><h2>游戏菜单</h2></div><button type="button" class="netflix-modal-close" data-action="close-game-menu" aria-label="关闭"><i class="fas fa-times"></i></button></div>
+                    <div class="netflix-menu-grid">
+                        <button type="button" data-action="continue-context" id="netflix-menu-continue"><i class="fas fa-play"></i><span>继续游戏</span></button>
+                        <button type="button" data-action="open-save"><i class="fas fa-save"></i><span>存档</span></button>
+                        <button type="button" data-action="open-load"><i class="fas fa-folder-open"></i><span>读档</span></button>
+                        <button type="button" data-action="show-attributes"><i class="fas fa-chart-bar"></i><span>属性</span></button>
+                        <button type="button" data-action="show-relations"><i class="fas fa-user-friends"></i><span>关系</span></button>
+                        <button type="button" data-action="show-history"><i class="fas fa-book-open"></i><span>剧情回看</span></button>
+                        <button type="button" data-action="restart-game"><i class="fas fa-redo"></i><span>重新开始</span></button>
+                    </div>
+                    <button type="button" class="netflix-menu-exit" data-action="return-to-netflix"><i class="fas fa-sign-out-alt"></i> 返回 Netflix</button>
+                </div>
+            </section>
+
+            <section class="netflix-sheet netflix-save-sheet" id="netflix-save-sheet" aria-hidden="true">
+                <div class="netflix-save-card" role="dialog" aria-modal="true" aria-labelledby="netflix-save-title">
+                    <header><div><span>SAVE DATA</span><h2 id="netflix-save-title">读档</h2></div><button type="button" class="netflix-modal-close" data-action="close-saves" aria-label="关闭"><i class="fas fa-times"></i></button></header>
+                    <div class="netflix-save-list" id="netflix-save-list"></div>
+                </div>
+            </section>
+
+            <section class="netflix-sheet netflix-cast-picker-sheet" id="netflix-cast-picker-sheet" aria-hidden="true">
+                <div class="netflix-modal-card netflix-cast-picker-card" role="dialog" aria-modal="true" aria-labelledby="netflix-cast-picker-title">
+                    <button type="button" class="netflix-modal-close" data-action="close-cast-picker" aria-label="关闭"><i class="fas fa-times"></i></button>
+                    <span class="netflix-eyebrow">CAST</span><h2 id="netflix-cast-picker-title">添加主演</h2>
+                    <div class="netflix-cast-picker-list" id="netflix-cast-picker-list"></div>
+                    <button type="button" class="netflix-secondary-button" data-action="add-custom-cast"><i class="fas fa-plus"></i> 手动添加 NPC</button>
+                </div>
+            </section>
+
+            <section class="netflix-sheet netflix-info-sheet" id="netflix-info-sheet" aria-hidden="true">
+                <div class="netflix-info-card" role="dialog" aria-modal="true" aria-labelledby="netflix-info-title">
+                    <header><h2 id="netflix-info-title"></h2><button type="button" class="netflix-modal-close" data-action="close-info" aria-label="关闭"><i class="fas fa-times"></i></button></header>
+                    <div class="netflix-info-body" id="netflix-info-body"></div>
+                </div>
+            </section>
+
+            <section class="netflix-sheet netflix-map-editor-sheet" id="netflix-map-editor-sheet" aria-hidden="true">
+                <div class="netflix-info-card netflix-map-editor-card" role="dialog" aria-modal="true" aria-labelledby="netflix-map-editor-title">
+                    <header><div><span>MAP EDITOR</span><h2 id="netflix-map-editor-title">编辑养成地图</h2></div><button type="button" class="netflix-modal-close" data-action="close-map-editor" aria-label="关闭"><i class="fas fa-times"></i></button></header>
+                    <div class="netflix-info-body" id="netflix-map-editor-body"></div>
+                </div>
+            </section>
+        `;
     }
 
-    handleCssFile(event, targetInput) {
-        const file = event?.target?.files?.[0];
+    cacheElements() {
+        this.content = this.view.querySelector('#netflix-content');
+        this.header = this.view.querySelector('#netflix-header');
+        this.homeContent = this.view.querySelector('#netflix-home-content');
+        this.profilePanel = this.view.querySelector('#netflix-profile-panel');
+        this.detailSheet = this.view.querySelector('#netflix-detail-sheet');
+        this.detailCard = this.view.querySelector('#netflix-detail-card');
+        this.searchSheet = this.view.querySelector('#netflix-search-sheet');
+        this.searchInput = this.view.querySelector('#netflix-search-input');
+        this.searchConfirm = this.view.querySelector('#netflix-search-confirm');
+        this.setupView = this.view.querySelector('#netflix-setup-view');
+        this.setupBody = this.view.querySelector('#netflix-setup-body');
+        this.gameView = this.view.querySelector('#netflix-game-view');
+        this.gameBackdrop = this.view.querySelector('#netflix-game-backdrop');
+        this.gameTitle = this.view.querySelector('#netflix-game-title');
+        this.sceneHeading = this.view.querySelector('#netflix-scene-heading');
+        this.gameStage = this.view.querySelector('#netflix-game-stage');
+        this.gameMenuButton = this.view.querySelector('#netflix-game-menu-button');
+        this.trainingView = this.view.querySelector('#netflix-training-view');
+        this.trainingDay = this.view.querySelector('#netflix-training-day');
+        this.trainingTitle = this.view.querySelector('#netflix-training-title');
+        this.trainingHud = this.view.querySelector('#netflix-training-hud');
+        this.mapViewport = this.view.querySelector('#netflix-map-viewport');
+        this.mapCanvas = this.view.querySelector('#netflix-map-canvas');
+        this.trainingEvent = this.view.querySelector('#netflix-training-event');
+        this.generationOverlay = this.view.querySelector('#netflix-generation-overlay');
+        this.generationTitle = this.view.querySelector('#netflix-generation-title');
+        this.generationDetail = this.view.querySelector('#netflix-generation-detail');
+        this.menuContinue = this.view.querySelector('#netflix-menu-continue');
+        this.menuSheet = this.view.querySelector('#netflix-menu-sheet');
+        this.saveSheet = this.view.querySelector('#netflix-save-sheet');
+        this.saveTitle = this.view.querySelector('#netflix-save-title');
+        this.saveList = this.view.querySelector('#netflix-save-list');
+        this.castPickerSheet = this.view.querySelector('#netflix-cast-picker-sheet');
+        this.castPickerList = this.view.querySelector('#netflix-cast-picker-list');
+        this.infoSheet = this.view.querySelector('#netflix-info-sheet');
+        this.infoTitle = this.view.querySelector('#netflix-info-title');
+        this.infoBody = this.view.querySelector('#netflix-info-body');
+        this.mapEditorSheet = this.view.querySelector('#netflix-map-editor-sheet');
+        this.mapEditorBody = this.view.querySelector('#netflix-map-editor-body');
+    }
+
+    bindEvents() {
+        document.getElementById('app-netflix-btn')?.addEventListener('click', () => this.open());
+        this.view.addEventListener('click', event => this.handleClick(event));
+        this.view.addEventListener('input', event => this.handleInput(event));
+        this.view.addEventListener('change', event => this.handleChange(event));
+        this.content?.addEventListener('scroll', () => this.header?.classList.toggle('is-scrolled', this.content.scrollTop > 28));
+        this.mapViewport?.addEventListener('wheel', event => this.handleMapWheel(event), { passive: false });
+        this.mapViewport?.addEventListener('pointerdown', event => this.handleMapPointerDown(event));
+        this.mapViewport?.addEventListener('pointermove', event => this.handleMapPointerMove(event));
+        this.mapViewport?.addEventListener('pointerup', event => this.handleMapPointerUp(event));
+        this.mapViewport?.addEventListener('pointercancel', event => this.handleMapPointerUp(event));
+        window.addEventListener('pagehide', () => {
+            if (this.state.activeRun && !this.isBusy) this.updateAutoSave(false);
+        });
+    }
+
+    handleClick(event) {
+        const target = event.target.closest('[data-action], [data-tab], [data-catalog-id], [data-choice-id], [data-location-id], [data-training-choice-id]');
+        if (!target || !this.view.contains(target)) return;
+        if (target.dataset.tab) return this.switchTab(target.dataset.tab);
+        if (target.dataset.catalogId) return this.openDetailById(target.dataset.catalogId);
+        if (target.dataset.choiceId) return this.chooseStoryOption(target.dataset.choiceId);
+        if (target.dataset.locationId) return this.openTrainingLocation(target.dataset.locationId);
+        if (target.dataset.trainingChoiceId) return this.resolveTrainingChoice(target.dataset.trainingChoiceId);
+        const action = target.dataset.action;
+        const actions = {
+            'close-app': () => this.close(),
+            'open-profile': () => this.switchTab('profile'),
+            'open-search': () => this.openSearch(),
+            'close-search': () => this.closeSheet(this.searchSheet),
+            'confirm-search': () => this.generateCatalog(),
+            'close-detail': () => this.closeSheet(this.detailSheet),
+            'play-title': () => this.openSetup(this.activeCatalogItem),
+            'delete-title': () => this.deleteCatalogTitle(),
+            'close-setup': () => this.closeSetup(),
+            'reroll-attributes': () => this.rerollAttributes(),
+            'add-attribute': () => this.addCustomAttribute(),
+            'delete-attribute': () => this.deleteCustomAttribute(target.dataset.attributeId),
+            'open-cast-picker': () => this.openCastPicker(),
+            'close-cast-picker': () => this.closeSheet(this.castPickerSheet),
+            'add-existing-cast': () => this.addExistingCharacter(target.dataset.characterId),
+            'add-custom-cast': () => this.addCustomCast(),
+            'delete-cast': () => this.deleteCast(target.dataset.castId),
+            'start-game': () => this.startNewGame(),
+            'advance-dialogue': () => this.advanceDialogue(),
+            'toggle-custom-choice': () => this.toggleCustomChoice(),
+            'submit-custom-choice': () => this.submitCustomChoice(),
+            'enter-training': () => this.enterTraining(),
+            'continue-story': () => this.continueStory(),
+            'advance-training-event': () => this.advanceTrainingEvent(),
+            'dismiss-training-result': () => this.dismissTrainingResult(),
+            'close-training-event': () => this.closeTrainingEvent(),
+            'select-companion': () => this.selectTrainingCompanion(target.dataset.companionId),
+            'map-zoom-in': () => this.zoomMap(0.15),
+            'map-zoom-out': () => this.zoomMap(-0.15),
+            'map-reset-view': () => this.resetMapView(),
+            'toggle-map-layout': () => this.toggleMapLayout(),
+            'open-map-editor': () => this.openMapEditor(),
+            'close-map-editor': () => this.closeSheet(this.mapEditorSheet),
+            'add-map-node': () => this.addMapNode(),
+            'delete-map-node': () => this.deleteMapNode(target.dataset.mapNodeId),
+            'save-map-editor': () => this.saveMapEditor(),
+            'regenerate-map': () => this.regenerateMap(),
+            'enter-main-game': () => this.enterMainGame(),
+            'continue-epilogue': () => this.continueEpilogue(),
+            'open-game-menu': () => this.openGameMenu(),
+            'close-game-menu': () => this.closeSheet(this.menuSheet),
+            'continue-context': () => this.continueContext(),
+            'open-save': () => this.openSaves('save'),
+            'open-load': () => this.openSaves('load'),
+            'close-saves': () => this.closeSheet(this.saveSheet),
+            'save-slot': () => this.writeManualSave(Number(target.dataset.slotIndex)),
+            'load-slot': () => this.loadSave(target.dataset.slotKind, Number(target.dataset.slotIndex)),
+            'delete-save': () => this.deleteManualSave(Number(target.dataset.slotIndex)),
+            'show-attributes': () => this.showAttributes(),
+            'show-relations': () => this.showRelations(),
+            'show-character-detail': () => this.showCharacterDetail(target.dataset.characterId),
+            'back-to-relations': () => this.showRelations(false),
+            'acquaint-character': () => this.resolveIdentityCard(true),
+            'defer-character': () => this.resolveIdentityCard(false),
+            'show-history': () => this.showHistory(),
+            'show-endings': () => this.showEndings(),
+            'show-worldbooks': () => this.showWorldBooksInfo(),
+            'close-info': () => this.closeSheet(this.infoSheet),
+            'restart-game': () => this.restartGame(),
+            'return-to-netflix': () => this.returnToNetflix()
+        };
+        if (action && actions[action]) actions[action]();
+    }
+
+    handleInput(event) {
+        if (!this.setupDraft) return;
+        const field = event.target.dataset.setupField;
+        if (field) this.setupDraft[field] = event.target.value;
+        const attributeId = event.target.dataset.attributeId;
+        if (attributeId) {
+            const attribute = this.setupDraft.attributes.find(item => item.id === attributeId);
+            if (attribute) {
+                if (event.target.dataset.attributeField === 'name') attribute.name = event.target.value;
+                if (event.target.dataset.attributeField === 'value') attribute.value = this.core.clampInt(event.target.value, 0, 100, 0);
+            }
+        }
+        const castId = event.target.dataset.castId;
+        if (castId) {
+            const actor = this.setupDraft.cast.find(item => item.id === castId);
+            if (actor) {
+                const castField = event.target.dataset.castField;
+                if (castField === 'name') actor.name = event.target.value;
+                if (castField === 'persona') actor.persona = event.target.value;
+                if (castField === 'affinity' && actor.type !== 'user') {
+                    actor.affinity = this.core.clampInt(event.target.value, 0, 100, 50);
+                    const output = event.target.closest('.netflix-affinity-field')?.querySelector('b');
+                    if (output) output.textContent = String(actor.affinity);
+                }
+            }
+        }
+    }
+
+    handleChange(event) {
+        if (!this.setupDraft) return;
+        if (event.target.matches('[data-worldbook-id]')) {
+            const id = String(event.target.dataset.worldbookId);
+            const ids = new Set(this.setupDraft.worldBookIds || []);
+            event.target.checked ? ids.add(id) : ids.delete(id);
+            this.setupDraft.worldBookIds = Array.from(ids);
+        }
+        if (event.target.dataset.action === 'upload-cover') this.readImageFile(event.target, dataUrl => {
+            this.setupDraft.coverUrl = dataUrl;
+            this.renderSetup();
+        });
+        if (event.target.dataset.action === 'upload-cast-avatar') {
+            const castId = event.target.dataset.castId;
+            this.readImageFile(event.target, dataUrl => {
+                const actor = this.setupDraft.cast.find(item => item.id === castId);
+                if (actor) actor.avatar = dataUrl;
+                this.renderSetup();
+            });
+        }
+    }
+
+    readImageFile(input, callback) {
+        const file = input.files?.[0];
         if (!file) return;
         const reader = new FileReader();
-        reader.onload = (readerEvent) => {
-            if (targetInput) {
-                targetInput.value = String(readerEvent.target?.result || '');
-            }
-        };
-        reader.readAsText(file);
-        if (event.target) event.target.value = '';
-    }
-
-    getActiveSettingsTab() {
-        return 'playback';
-    }
-
-    saveCustomCss() {
-        if (this.settingsPlaybackCssInput) {
-            this.netflixState.playbackCustomCss = String(this.settingsPlaybackCssInput.value || '');
-            if (typeof window.showToast === 'function') window.showToast('播放界面样式已应用');
-        }
-        this.applyCustomCss();
-        this.saveNetflixState();
-    }
-
-    clearCustomCss() {
-        if (this.settingsPlaybackCssInput) {
-            this.netflixState.playbackCustomCss = '';
-            this.settingsPlaybackCssInput.value = '';
-            if (typeof window.showToast === 'function') window.showToast('播放界面样式已清空');
-        }
-        this.applyCustomCss();
-        this.saveNetflixState();
-    }
-
-    applyCustomCss() {
-        const playbackCss = this.netflixState?.playbackCustomCss || '';
-
-        if (typeof document === 'undefined') return;
-        const styleId = 'netflix-custom-styles';
-        let style = document.getElementById(styleId);
-        
-        let finalCss = '';
-
-        if (playbackCss.trim()) {
-            finalCss += this.scopeCssBlock(
-                String(playbackCss).replace(/\/\*[\s\S]*?\*\//g, '').replace(/@import\s+[^;]+;/gi, ''), 
-                '#netflix-playback-sheet'
-            );
-        }
-
-        if (!finalCss) {
-            if (style) style.remove();
-            return;
-        }
-
-        if (!document.head) return;
-        if (!style) {
-            style = document.createElement('style');
-            style.id = styleId;
-            document.head.appendChild(style);
-        }
-        style.textContent = finalCss;
-    }
-
-    scopeCssBlock(css = '', scope = '#netflix-playback-sheet') {
-        let output = '';
-        let index = 0;
-        while (index < css.length) {
-            const openIndex = css.indexOf('{', index);
-            if (openIndex === -1) {
-                output += css.slice(index);
-                break;
-            }
-            const selector = css.slice(index, openIndex).trim();
-            const closeIndex = this.findMatchingBrace(css, openIndex);
-            if (closeIndex === -1) {
-                output += css.slice(index);
-                break;
-            }
-            const body = css.slice(openIndex + 1, closeIndex);
-            const lowerSelector = selector.toLowerCase();
-            if (lowerSelector.startsWith('@keyframes') || lowerSelector.startsWith('@-webkit-keyframes') || lowerSelector.startsWith('@font-face')) {
-                output += `${selector}{${body}}`;
-            } else if (lowerSelector.startsWith('@media') || lowerSelector.startsWith('@supports') || lowerSelector.startsWith('@container') || lowerSelector.startsWith('@layer')) {
-                output += `${selector}{${this.scopeCssBlock(body, scope)}}`;
-            } else if (selector.startsWith('@')) {
-                output += '';
-            } else {
-                const scopedSelector = this.scopeCssSelectors(selector, scope);
-                if (scopedSelector) output += `${scopedSelector}{${body}}`;
-            }
-            index = closeIndex + 1;
-        }
-        return output;
-    }
-
-    findMatchingBrace(css = '', openIndex = 0) {
-        let depth = 0;
-        let quote = '';
-        for (let index = openIndex; index < css.length; index += 1) {
-            const char = css[index];
-            const prev = css[index - 1];
-            if (quote) {
-                if (char === quote && prev !== '\\') quote = '';
-                continue;
-            }
-            if (char === '"' || char === "'") {
-                quote = char;
-                continue;
-            }
-            if (char === '{') depth += 1;
-            if (char === '}') {
-                depth -= 1;
-                if (depth === 0) return index;
-            }
-        }
-        return -1;
-    }
-
-    scopeCssSelectors(selectorText = '', scope = '#netflix-playback-sheet') {
-        return this.splitCssSelectors(selectorText)
-            .map(selector => selector.trim())
-            .filter(Boolean)
-            .map(selector => {
-                if (selector.startsWith(scope)) return selector;
-                if (/^(html|body|:root)$/i.test(selector)) return scope;
-                if (/^(html|body)\b/i.test(selector)) {
-                    return selector.replace(/^(html|body)\b/i, scope);
-                }
-                return `${scope} ${selector}`;
-            })
-            .join(', ');
-    }
-
-    splitCssSelectors(selectorText = '') {
-        const selectors = [];
-        let current = '';
-        let depth = 0;
-        let quote = '';
-        for (let index = 0; index < selectorText.length; index += 1) {
-            const char = selectorText[index];
-            const prev = selectorText[index - 1];
-            if (quote) {
-                current += char;
-                if (char === quote && prev !== '\\') quote = '';
-                continue;
-            }
-            if (char === '"' || char === "'") {
-                quote = char;
-                current += char;
-                continue;
-            }
-            if (char === '(' || char === '[') depth += 1;
-            if (char === ')' || char === ']') depth = Math.max(0, depth - 1);
-            if (char === ',' && depth === 0) {
-                selectors.push(current);
-                current = '';
-            } else {
-                current += char;
-            }
-        }
-        if (current.trim()) selectors.push(current);
-        return selectors;
-    }
-
-    renderCreateForm() {
-        if (this.workDeleteBtn) {
-            this.workDeleteBtn.style.display = this.editingWorkId ? 'block' : 'none';
-        }
-        if (this.workCoverPreview) {
-            if (this.createDraft.coverUrl) {
-                this.workCoverPreview.src = this.createDraft.coverUrl;
-                this.workCoverPreview.style.display = 'block';
-            } else {
-                this.workCoverPreview.removeAttribute('src');
-                this.workCoverPreview.style.display = 'none';
-            }
-        }
-        if (this.workTitleInput) this.workTitleInput.value = this.createDraft.title || '';
-        this.workCategoryButtons.forEach(button => {
-            button.classList.toggle('active', button.getAttribute('data-category') === this.createDraft.category);
-        });
-        if (this.workTagsInput) this.workTagsInput.value = this.createDraft.tagsText || '';
-        if (this.workSummaryInput) this.workSummaryInput.value = this.createDraft.summary || '';
-        this.renderTagPreview();
-        this.renderCastList();
-    }
-
-    parseWorkTags(text = this.createDraft.tagsText) {
-        return String(text || '')
-            .split(/[\s,，、]+/)
-            .map(tag => tag.trim())
-            .filter(Boolean);
-    }
-
-    parseEpisodeCount(value = null) {
-        const count = parseInt(value, 10);
-        return Number.isFinite(count) && count > 0 ? count : 1;
-    }
-
-    renderTagPreview() {
-        if (!this.workTagPreview) return;
-        const tags = this.parseWorkTags();
-        this.workTagPreview.innerHTML = tags.length
-            ? tags.map(tag => `<span>${this.escapeHtml(tag)}</span>`).join('')
-            : '<em>暂无标签</em>';
-    }
-
-    renderCastList() {
-        if (!this.workCastList || !this.workCastAddBtn) return;
-        const castItems = this.createDraft.cast.map(actor => `
-            <div class="netflix-cast-item" data-actor-id="${actor.id}">
-                <div class="netflix-cast-avatar">${actor.avatar ? `<img src="${actor.avatar}" alt="">` : `<span>${this.escapeHtml((actor.realName || actor.name || '?').charAt(0))}</span>`}</div>
-                <div class="netflix-cast-meta">
-                    <strong>${this.escapeHtml(actor.realName || actor.name || '未命名')}</strong>
-                    <label>
-                        <span>饰演</span>
-                        <input type="text" data-actor-id="${actor.id}" class="role-name-input" value="${this.escapeHtml(actor.roleName || '')}" placeholder="角色名">
-                    </label>
-                    <label>
-                        <span>人设</span>
-                        <textarea data-actor-id="${actor.id}" class="role-persona-input" placeholder="角色人设" style="min-height: 60px;">${this.escapeHtml(actor.rolePersona || '')}</textarea>
-                    </label>
-                </div>
-            </div>
-        `).join('');
-        this.workCastList.innerHTML = `
-            ${castItems}
-            <button type="button" class="netflix-cast-add" id="netflix-work-cast-add-btn" aria-label="添加主演">
-                <i class="fas fa-plus"></i>
-            </button>
-        `;
-        this.workCastAddBtn = this.view.querySelector('#netflix-work-cast-add-btn');
-        this.workCastAddBtn?.addEventListener('click', () => this.openActorPicker());
-        this.workCastList.querySelectorAll('.netflix-cast-meta .role-name-input').forEach(input => {
-            input.addEventListener('input', () => {
-                const actor = this.createDraft.cast.find(item => item.id === input.getAttribute('data-actor-id'));
-                if (actor) actor.roleName = input.value;
-            });
-        });
-        this.workCastList.querySelectorAll('.netflix-cast-meta .role-persona-input').forEach(textarea => {
-            textarea.addEventListener('input', () => {
-                const actor = this.createDraft.cast.find(item => item.id === textarea.getAttribute('data-actor-id'));
-                if (actor) actor.rolePersona = textarea.value;
-            });
-        });
-    }
-
-    handleWorkCoverFile(event) {
-        const file = event.target.files && event.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-            this.createDraft.coverUrl = reader.result || '';
-            this.renderCreateForm();
-        };
-        reader.readAsDataURL(file);
-        event.target.value = '';
-    }
-
-    async getAvailableActors() {
-        const user = this.getUserState();
-        const actors = [{
-            id: 'user-current',
-            type: 'user',
-            sourceId: 'user-current',
-            realName: user.name || user.realName || 'User',
-            name: user.name || user.realName || 'User',
-            roleName: user.name || user.realName || 'User',
-            rolePersona: user.persona || user.desc || user.bio || '',
-            avatar: user.avatarUrl || user.avatar || ''
-        }];
-
-        try {
-            let friends = [];
-            if (window.imStorage && typeof window.imStorage.loadFriends === 'function') {
-                friends = await window.imStorage.loadFriends();
-            } else if (typeof window.getAppState === 'function') {
-                friends = window.getAppState('imessage')?.friends || [];
-            }
-
-            friends
-                .filter(friend => friend && (friend.type === 'char' || friend.type === 'npc'))
-                .forEach(friend => {
-                    const realName = friend.realName || friend.realname || friend.originalName || friend.name || friend.nickname || (friend.type === 'npc' ? 'NPC' : 'Char');
-                    const name = friend.nickname || friend.name || friend.realName || realName;
-                    actors.push({
-                        id: `${friend.type}-${friend.id || realName}`,
-                        sourceId: friend.id || '',
-                        type: friend.type,
-                        realName,
-                        name,
-                        roleName: name,
-                        rolePersona: friend.persona || friend.desc || friend.signature || friend.bio || '',
-                        avatar: friend.avatarUrl || friend.avatar || friend.avatarDataUrl || ''
-                    });
-                });
-        } catch (error) {
-            console.warn('Failed to load Netflix actors:', error);
-        }
-
-        return actors;
-    }
-
-    async openActorPicker() {
-        if (!this.actorPickerSheet || !this.actorPickerList) return;
-        this.actorPickerList.innerHTML = '<div class="netflix-actor-empty">加载中...</div>';
-        this.actorPickerSheet.classList.add('active');
-        this.availableActors = await this.getAvailableActors();
-        this.renderActorPicker();
-    }
-
-    closeActorPicker() {
-        if (this.actorPickerSheet) this.actorPickerSheet.classList.remove('active');
-    }
-
-    renderActorPicker() {
-        if (!this.actorPickerList) return;
-        if (!this.availableActors.length) {
-            this.actorPickerList.innerHTML = '<div class="netflix-actor-empty">暂无可选主演</div>';
-            return;
-        }
-        const selectedIds = new Set(this.createDraft.cast.map(actor => actor.id));
-        this.actorPickerList.innerHTML = this.availableActors.map(actor => `
-            <button type="button" class="netflix-actor-option ${selectedIds.has(actor.id) ? 'selected' : ''}" data-actor-id="${actor.id}" ${actor.id === 'user-current' ? 'disabled style="opacity: 0.8; cursor: not-allowed;"' : ''}>
-                <div class="netflix-actor-avatar">${actor.avatar ? `<img src="${actor.avatar}" alt="">` : `<span>${this.escapeHtml((actor.realName || actor.name || '?').charAt(0))}</span>`}</div>
-                <div class="netflix-actor-info">
-                    <strong>${this.escapeHtml(actor.realName || actor.name || '未命名')}</strong>
-                    <span>${this.escapeHtml(actor.type === 'user' ? 'user' : actor.type)}</span>
-                </div>
-                <i class="fas ${selectedIds.has(actor.id) ? 'fa-check-circle' : 'fa-plus-circle'}"></i>
-            </button>
-        `).join('');
-        this.actorPickerList.querySelectorAll('.netflix-actor-option').forEach(button => {
-            button.addEventListener('click', () => this.toggleCreateActor(button.getAttribute('data-actor-id')));
-        });
-    }
-
-    toggleCreateActor(actorId) {
-        if (actorId === 'user-current') {
-            if (typeof window.showToast === 'function') window.showToast('User 必须作为主演，不可取消');
-            return;
-        }
-        const existingIndex = this.createDraft.cast.findIndex(actor => actor.id === actorId);
-        if (existingIndex >= 0) {
-            this.createDraft.cast.splice(existingIndex, 1);
-        } else {
-            const nonUserCount = this.createDraft.cast.filter(a => a.type !== 'user').length;
-            if (nonUserCount >= 2) {
-                if (typeof window.showToast === 'function') window.showToast('最多只能选择两个 Char 作为主演');
-                return;
-            }
-            const actor = this.availableActors.find(item => item.id === actorId);
-            if (actor) this.createDraft.cast.push({ ...actor });
-        }
-        this.renderActorPicker();
-        this.renderCastList();
-    }
-
-    openCreateFormSheet() {
-        if (!this.createDraft.cast.some(a => a.type === 'user')) {
-            const user = this.getUserState();
-            this.createDraft.cast.unshift({
-                id: 'user-current',
-                type: 'user',
-                sourceId: 'user-current',
-                realName: user.name || user.realName || 'User',
-                name: user.name || user.realName || 'User',
-                roleName: user.name || user.realName || 'User',
-                rolePersona: user.persona || user.signature || '',
-                avatar: user.avatarUrl || user.avatar || ''
-            });
-        }
-        this.renderCreateForm();
-        if (this.createFormSheet) this.createFormSheet.classList.add('active');
-    }
-
-    openEditWorkForm() {
-        const work = this.getActiveWork();
-        if (!work) return;
-        this.editingWorkId = work.id;
-        this.createDraft = {
-            coverUrl: work.coverUrl || '',
-            title: work.title || '',
-            category: work.category || '电视剧',
-            tagsText: (work.tags || []).join(', '),
-            cast: JSON.parse(JSON.stringify(work.cast || [])),
-            summary: work.summary || ''
-        };
-        
-        if (this.workStartBtn) this.workStartBtn.textContent = '保存修改';
-        this.openCreateFormSheet();
-    }
-
-    closeCreateFormSheet() {
-        if (this.createFormSheet) this.createFormSheet.classList.remove('active');
-        this.editingWorkId = null;
-        if (this.workStartBtn) this.workStartBtn.textContent = '开始创作';
-        this.createDraft = this.createDefaultWorkDraft();
-    }
-
-    openWorldBookSheet() {
-        this.renderWorldBookSheet();
-        if (this.worldBookSheet) this.worldBookSheet.classList.add('active');
-    }
-
-    closeWorldBookSheet() {
-        if (this.worldBookSheet) this.worldBookSheet.classList.remove('active');
-    }
-
-    renderWorldBookSheet() {
-        if (!this.worldBookList) return;
-        const books = this.getAvailableWorldBooks();
-        const selected = new Set((this.netflixState.boundWorldBookIds || []).map(String));
-        if (!books.length) {
-            this.worldBookList.innerHTML = '<div class="netflix-world-book-empty">暂无世界书，请先在设置中创建。</div>';
-            return;
-        }
-
-        const grouped = books.reduce((acc, book) => {
-            const group = book.group || '未分组';
-            if (!acc[group]) acc[group] = [];
-            acc[group].push(book);
-            return acc;
-        }, {});
-
-        this.worldBookList.innerHTML = Object.entries(grouped).map(([group, items]) => `
-            <div class="netflix-world-book-group">
-                <div class="netflix-world-book-group-title">${this.escapeHtml(group)}</div>
-                ${items.map(book => {
-                    const id = String(book.id);
-                    const entries = Array.isArray(book.entries) ? book.entries : [];
-                    return `
-                        <label class="netflix-world-book-item">
-                            <div class="netflix-world-book-item-main">
-                                <i class="fas fa-book"></i>
-                                <div>
-                                    <strong>${this.escapeHtml(book.name || '未命名世界书')}</strong>
-                                    <span>${entries.length} 条词条</span>
-                                </div>
-                            </div>
-                            <input type="checkbox" class="netflix-world-book-checkbox" value="${this.escapeHtml(id)}" ${selected.has(id) ? 'checked' : ''}>
-                        </label>
-                    `;
-                }).join('')}
-            </div>
-        `).join('');
-    }
-
-    saveMountedWorldBooks() {
-        const ids = Array.from(this.worldBookList?.querySelectorAll('.netflix-world-book-checkbox:checked') || []).map(input => input.value);
-        this.netflixState.boundWorldBookIds = ids;
-        this.saveNetflixState();
-        this.closeWorldBookSheet();
-        if (typeof window.showToast === 'function') window.showToast('世界书已挂载');
-    }
-
-    getAvailableWorldBooks() {
-        if (typeof window.getWorldBooks === 'function') {
-            const books = window.getWorldBooks();
-            if (Array.isArray(books)) return books;
-        }
-        if (window.StorageManager && typeof window.StorageManager.load === 'function') {
-            return window.StorageManager.load('u2_worldBooks', []) || [];
-        }
-        return [];
-    }
-
-    getMountedWorldBookContext() {
-        const selected = new Set((this.netflixState.boundWorldBookIds || []).map(String));
-        if (!selected.size) return '';
-        return this.getAvailableWorldBooks()
-            .filter(book => selected.has(String(book.id)))
-            .map(book => {
-                const entriesText = (Array.isArray(book.entries) ? book.entries : [])
-                    .filter(entry => entry && entry.enabled !== false)
-                    .map(entry => {
-                        const title = entry.title || entry.name || entry.keyword || '未命名词条';
-                        return `【${title}】\n${entry.content || ''}`.trim();
-                    })
-                    .filter(Boolean)
-                    .join('\n');
-                return entriesText ? `《${book.name || '未命名世界书'}》\n${entriesText}` : '';
-            })
-            .filter(Boolean)
-            .join('\n\n');
-    }
-    normalizeRecordMessage(message = {}, fallbackIndex = 0) {
-        const safe = message && typeof message === 'object' ? message : {};
-        const role = safe.role === 'api' || safe.role === 'char' ? 'char' : 'user';
-        return {
-            id: safe.id || this.createPresetId(`msg-${fallbackIndex}`),
-            role,
-            content: safe.content || safe.text || '',
-            scene: Number.isFinite(Number(safe.scene)) ? Number(safe.scene) : null,
-            tokens: Number.isFinite(Number(safe.tokens)) ? Number(safe.tokens) : 0,
-            createdAt: safe.createdAt || new Date().toISOString()
-        };
-    }
-
-    getLegacyMessagesContent(messages = []) {
-        if (!Array.isArray(messages) || !messages.length) return '';
-        return messages
-            .map((message, index) => {
-                const normalized = this.normalizeRecordMessage(message, index);
-                const speaker = normalized.role === 'user' ? 'User' : 'Char';
-                return normalized.content ? `${speaker}: ${normalized.content}` : '';
-            })
-            .filter(Boolean)
-            .join('\n\n');
-    }
-
-    getActiveWork() {
-        if (!this.activeWorkId) return null;
-        return (this.netflixState.works || []).find(work => String(work.id) === String(this.activeWorkId)) || null;
-    }
-
-    ensureWorkEpisodes(work) {
-        if (!work) return [];
-        const savedEpisodes = Array.isArray(work.episodes) ? work.episodes : [];
-        if (savedEpisodes.length === 0) {
-            savedEpisodes.push({ number: 1, recap: '', content: '', summary: '', comments: [], cast: [], messages: [] });
-        }
-        work.episodes = savedEpisodes.map((saved, index) => {
-            const messages = Array.isArray(saved.messages)
-                ? saved.messages.map((message, msgIndex) => this.normalizeRecordMessage(message, msgIndex))
-                : [];
-            const content = typeof saved.content === 'string' && saved.content.trim()
-                ? saved.content
-                : this.getLegacyMessagesContent(messages);
-            return {
-                number: Number(saved.number) > 0 ? Number(saved.number) : index + 1,
-                recap: typeof saved.recap === 'string' ? saved.recap : '',
-                opening: typeof saved.opening === 'string' ? saved.opening : '',
-                content,
-                summary: typeof saved.summary === 'string' ? saved.summary : '',
-                comments: Array.isArray(saved.comments) ? saved.comments : [],
-                cast: Array.isArray(saved.cast) ? saved.cast.map((actor, actorIndex) => this.normalizePlaybackActor(actor, actorIndex)).filter(Boolean) : [],
-                messages
-            };
-        });
-        work.episodeCount = work.episodes.length;
-        return work.episodes;
-    }
-
-    saveCreatedWork() {
-        const title = (this.workTitleInput?.value || '').trim();
-        if (!title) {
-            if (typeof window.showToast === 'function') window.showToast('请输入作品名字');
-            return;
-        }
-
-        if (this.editingWorkId) {
-            const work = this.netflixState.works.find(w => w.id === this.editingWorkId);
-            if (work) {
-                work.title = title;
-                work.coverUrl = this.createDraft.coverUrl || '';
-                work.category = this.createDraft.category || '电视剧';
-                work.tags = this.parseWorkTags();
-                work.cast = this.createDraft.cast.map(actor => ({
-                    id: actor.id,
-                    type: actor.type,
-                    sourceId: actor.sourceId || '',
-                    realName: actor.realName || actor.name || '',
-                    name: actor.name || actor.realName || '',
-                    roleName: actor.roleName || actor.name || actor.realName || '',
-                    rolePersona: actor.rolePersona || '',
-                    avatar: actor.avatar || ''
-                }));
-                work.summary = (this.workSummaryInput?.value || '').trim();
-            }
-            this.saveNetflixState();
-            this.renderWorks();
-            this.closeCreateFormSheet();
-            if (typeof window.showToast === 'function') window.showToast('修改成功');
-        } else {
-            const work = {
-                id: this.createPresetId('work'),
-                coverUrl: this.createDraft.coverUrl || '',
-                title,
-                category: this.createDraft.category || '电视剧',
-                tags: this.parseWorkTags(),
-                episodeCount: 1,
-                cast: this.createDraft.cast.map(actor => ({
-                    id: actor.id,
-                    type: actor.type,
-                    sourceId: actor.sourceId || '',
-                    realName: actor.realName || actor.name || '',
-                    name: actor.name || actor.realName || '',
-                    roleName: actor.roleName || actor.name || actor.realName || '',
-                    rolePersona: actor.rolePersona || '',
-                    avatar: actor.avatar || ''
-                })),
-                summary: (this.workSummaryInput?.value || '').trim(),
-                series: [],
-                episodes: [{ number: 1, recap: '', content: '', summary: '', comments: [], cast: [] }],
-                likeCount: 0,
-                subscriberCount: 0,
-                comments: [],
-                createdAt: new Date().toISOString()
-            };
-
-            this.netflixState.works.unshift(work);
-            this.saveNetflixState();
-            this.renderWorks();
-            this.closeCreateFormSheet();
-            if (typeof window.showToast === 'function') window.showToast('作品创建成功');
-        }
-    }
-
-    deleteWork() {
-        const workId = this.editingWorkId;
-        if (!workId) return;
-        const work = this.netflixState.works.find(item => String(item.id) === String(workId));
-        const title = work?.title || '这部影片';
-        if (!window.confirm(`确定要删除“${title}”吗？此操作不可恢复。`)) return;
-
-        this.netflixState.works = this.netflixState.works.filter(item => String(item.id) !== String(workId));
-        if (String(this.activeWorkId) === String(workId)) {
-            this.activeWorkId = null;
-            this.activeEpisodeNumber = 1;
-        }
-        if (String(this.activePlaybackId) === String(workId)) {
-            this.activePlaybackId = null;
-            this.activePlaybackEpisodeNumber = 1;
-            this.closePlaybackSheet();
-        }
-        if (String(this.activeDetailWorkId) === String(workId)) {
-            this.activeDetailWorkId = null;
-            this.activeDetailEpisodeNumber = 1;
-            this.closeWorkDetail();
-        }
-        this.editingWorkId = null;
-        this.saveNetflixState();
-        this.renderWorks();
-        this.closeCreateFormSheet();
-        if (typeof window.showToast === 'function') window.showToast('影片已删除');
-    }
-
-    renderWorks() {
-        const works = (this.netflixState.works || []).map((work, index) => this.normalizeWork(work, `legacy-work-${index}`));
-        
-        // 渲染“参演影片” (Profile页)
-        if (this.actingList) {
-            if (!works.length) {
-                this.actingList.innerHTML = '<div class="netflix-acting-empty">暂无</div>';
-            } else {
-                this.actingList.innerHTML = works.map(work => `
-                    <button type="button" class="netflix-work-card" data-work-id="${this.escapeHtml(work.id)}" aria-label="查看${this.escapeHtml(work.title || '未命名作品')}">
-                        <div class="netflix-work-cover">${work.coverUrl ? `<img src="${work.coverUrl}" alt="">` : '<i class="fas fa-film"></i>'}</div>
-                        <div class="netflix-work-title">${this.escapeHtml(work.title || '未命名作品')}</div>
-                    </button>
-                `).join('');
-
-                this.actingList.querySelectorAll('.netflix-work-card').forEach(card => {
-                    card.addEventListener('click', () => this.openWorkDetail(card.getAttribute('data-work-id')));
-                });
-            }
-        }
-
-        // 渲染“我的作品” (Create面板中的列表)
-        if (this.createWorksList) {
-            if (!works.length) {
-                this.createWorksList.innerHTML = '<div style="grid-column:1/-1;color:#888;font-size:14px;padding:20px 0;text-align:center;">您还没有创建任何作品</div>';
-            } else {
-                this.createWorksList.innerHTML = works.map(work => `
-                    <div class="netflix-create-work-item" data-work-id="${this.escapeHtml(work.id)}">
-                        <div class="netflix-create-work-item-cover">
-                            ${work.coverUrl ? `<img src="${work.coverUrl}" alt="">` : '<i class="fas fa-film"></i>'}
-                        </div>
-                        <div class="netflix-create-work-item-title">${this.escapeHtml(work.title || '未命名作品')}</div>
-                    </div>
-                `).join('');
-
-                this.createWorksList.querySelectorAll('.netflix-create-work-item').forEach(card => {
-                    card.addEventListener('click', () => this.openPlaybackFromWork(card.getAttribute('data-work-id'), 1));
-                });
-            }
-        }
-    }
-
-    normalizeWork(work = {}, fallbackId = this.createPresetId('work')) {
-        const safe = work && typeof work === 'object' ? work : {};
-        const normalized = {
-            ...safe,
-            id: safe.id || fallbackId,
-            coverUrl: safe.coverUrl || '',
-            title: safe.title || '未命名作品',
-            category: safe.category || '电视剧',
-            tags: Array.isArray(safe.tags) ? safe.tags : [],
-            episodeCount: this.parseEpisodeCount(safe.episodeCount),
-            cast: Array.isArray(safe.cast) ? safe.cast : [],
-            summary: safe.summary || '',
-            series: Array.isArray(safe.series) ? safe.series : [],
-            likeCount: Number.isFinite(Number(safe.likeCount)) ? Number(safe.likeCount) : 0,
-            subscriberCount: Number.isFinite(Number(safe.subscriberCount)) ? Number(safe.subscriberCount) : 0,
-            comments: Array.isArray(safe.comments) ? safe.comments : []
-        };
-        this.ensureWorkEpisodes(normalized);
-        return normalized;
-    }
-
-    openWorkDetail(workId) {
-        const work = (this.netflixState.works || [])
-            .map((item, index) => this.normalizeWork(item, `legacy-work-${index}`))
-            .find(item => String(item.id) === String(workId));
-        if (!work) return;
-        this.activeDetailWorkId = work.id;
-        this.activeDetailEpisodeNumber = 1;
-        this.activeDetailCatalogOnly = false;
-        this.renderWorkDetail(work);
-        if (this.workDetailSheet) this.workDetailSheet.classList.add('active');
-    }
-
-    openCatalogWorkDetail(item) {
-        let catalogWork = this.normalizeCatalogWorkForDetail(item);
-        if (!catalogWork) return;
-
-        // 如果在 playbackCatalog 中有这个影片的记录，则优先使用它来合并集数和评论
-        const playbackEntry = this.getPlaybackEntry(catalogWork.id);
-        if (playbackEntry) {
-            catalogWork.episodes = playbackEntry.episodes.filter(ep => Number(ep.number) > 0);
-            catalogWork.episodeCount = catalogWork.episodes.length || catalogWork.episodeCount;
-        }
-
-        this.activeDetailWorkId = catalogWork.id;
-        this.activeDetailEpisodeNumber = 1;
-        this.activeDetailCatalogOnly = true;
-        this.renderWorkDetail(catalogWork);
-        if (this.workDetailSheet) this.workDetailSheet.classList.add('active');
-    }
-
-    createCatalogItemFromWork(work) {
-        return this.normalizeCatalogItem({
-            id: work.id,
-            title: work.title,
-            category: work.category,
-            tags: work.tags,
-            coverUrl: work.coverUrl,
-            summary: work.summary,
-            cast: work.cast
-        }, work.id, work.category || '');
-    }
-
-    createPlaybackEpisodeFromWorkEpisode(episode = {}, fallbackNumber = 1, work = {}) {
-        const number = Number(episode.number) > 0 ? Number(episode.number) : fallbackNumber;
-        const cast = Array.isArray(episode.cast) && episode.cast.length ? episode.cast : (Array.isArray(work.cast) ? work.cast : []);
-        return this.normalizePlaybackEpisode({
-            number,
-            recap: episode.recap || '',
-            content: episode.content || this.getLegacyMessagesContent(episode.messages || ''),
-            summary: episode.summary || '',
-            comments: Array.isArray(episode.comments) ? episode.comments : [],
-            cast,
-            createdAt: episode.createdAt || new Date().toISOString()
-        }, number);
-    }
-
-    createPlaybackEntryFromWork(work) {
-        const normalizedWork = this.normalizeWork(work, work?.id || this.createPresetId('work'));
-        const item = this.createCatalogItemFromWork(normalizedWork);
-        const episodes = normalizedWork.episodes.map((episode, index) => this.createPlaybackEpisodeFromWorkEpisode(episode, index + 1, normalizedWork));
-        return this.normalizePlaybackEntry({
-            id: item.id,
-            item,
-            episodes,
-            activeEpisodeNumber: 1
-        }, item.id);
-    }
-
-    mergePlaybackEntryWithWork(entry, workEntry) {
-        if (!entry) return workEntry;
-        const merged = this.normalizePlaybackEntry({
-            ...entry,
-            item: { ...entry.item, ...workEntry.item }
-        }, workEntry.id);
-        const existingByNumber = new Map(merged.episodes.map(episode => [Number(episode.number), episode]));
-        workEntry.episodes.forEach(episode => {
-            const number = Number(episode.number);
-            const existing = existingByNumber.get(number);
-            if (!existing || (!existing.content && episode.content)) {
-                existingByNumber.set(number, episode);
-            }
-        });
-        merged.episodes = Array.from(existingByNumber.values()).sort((a, b) => Number(a.number) - Number(b.number));
-        return this.normalizePlaybackEntry(merged, workEntry.id);
-    }
-
-    openPlaybackFromWork(workId, episodeNumber = 1) {
-        const work = (this.netflixState.works || [])
-            .map((item, index) => this.normalizeWork(item, `legacy-work-${index}`))
-            .find(item => String(item.id) === String(workId));
-        if (!work) return;
-
-        const workEntry = this.createPlaybackEntryFromWork(work);
-        let entry = this.getPlaybackEntry(workEntry.id);
-        entry = this.mergePlaybackEntryWithWork(entry, workEntry);
-
-        const requestedNumber = Number(episodeNumber);
-        const targetNumber = Number.isFinite(requestedNumber) && entry.episodes.some(episode => Number(episode.number) === requestedNumber)
-            ? requestedNumber
-            : (entry.episodes.some(episode => Number(episode.number) === 1) ? 1 : 0);
-
-        this.activePlaybackId = entry.id;
-        this.activePlaybackEpisodeNumber = targetNumber;
-        entry.activeEpisodeNumber = targetNumber;
-        this.savePlaybackEntry(entry);
-        this.upsertRecentCatalogItem(entry.item);
-        this.saveNetflixState();
-        this.renderHomeCatalog();
-        this.renderPlaybackWindow();
-        this.closeWorkDetail();
-        if (this.playbackSheet) this.playbackSheet.classList.add('active');
-    }
-
-    openPlaybackFromCatalog(item, episodeNumber = null) {
-        const catalogItem = this.normalizeCatalogItem(item, item?.id || this.createPresetId('playback'), item?.category || '');
-        if (!catalogItem) return;
-        let entry = this.getPlaybackEntry(catalogItem.id);
-        if (!entry) {
-            entry = this.normalizePlaybackEntry({ id: catalogItem.id, item: catalogItem, episodes: [this.createInitialPlaybackEpisode(catalogItem)] }, catalogItem.id);
-        } else {
-            entry.item = { ...entry.item, ...catalogItem };
-            entry = this.normalizePlaybackEntry(entry, entry.id);
-        }
-        this.activePlaybackId = entry.id;
-        const requestedNumber = Number(episodeNumber);
-        this.activePlaybackEpisodeNumber = Number.isFinite(requestedNumber) && entry.episodes.some(episode => Number(episode.number) === requestedNumber)
-            ? requestedNumber
-            : 0;
-        entry.activeEpisodeNumber = this.activePlaybackEpisodeNumber;
-        this.savePlaybackEntry(entry);
-        this.upsertRecentCatalogItem(entry.item);
-        this.saveNetflixState();
-        this.renderHomeCatalog();
-        this.renderPlaybackWindow();
-        this.closeWorkDetail();
-        if (this.playbackSheet) this.playbackSheet.classList.add('active');
-    }
-
-    closePlaybackSheet() {
-        if (this.playbackSheet) this.playbackSheet.classList.remove('active');
-        this.closePlaybackEpisodeSidebar();
-        this.closePlaybackPresetSidebar();
-        this.closePlaybackCastSheet();
-        this.closePlaybackNextModal(true);
-    }
-
-    renderPlaybackWindow() {
-        const entry = this.getPlaybackEntry();
-        if (!entry || !this.playbackBody) return;
-        const episode = entry.episodes.find(item => Number(item.number) === Number(this.activePlaybackEpisodeNumber))
-            || entry.episodes.find(item => Number(item.number) === 0)
-            || entry.episodes[0];
-        this.activePlaybackEpisodeNumber = Number(episode?.number) || 0;
-        entry.activeEpisodeNumber = this.activePlaybackEpisodeNumber;
-        this.savePlaybackEntry(entry);
-        const isIntro = Number(this.activePlaybackEpisodeNumber) === 0;
-        if (this.playbackTitle) this.playbackTitle.textContent = `${entry.item.title || '未命名影片'} · ${isIntro ? '影片介绍' : `第 ${this.activePlaybackEpisodeNumber} 集`}`;
-        const content = (episode?.content || '').trim() || (isIntro ? '暂无影片介绍' : '暂无正文。点击选集中的“推进本集”生成剧情。');
-        const episodeSections = isIntro
-            ? `
-                <section class="netflix-playback-content">
-                    <div class="netflix-playback-section-label">影片介绍</div>
-                    <p>${this.escapeHtml(content)}</p>
-                </section>
-            `
-            : `
-                <section class="netflix-playback-fixed">
-                    <div class="netflix-playback-section-label">前情回顾</div>
-                    <p>${this.escapeHtml((episode?.recap || '').trim() || '暂无前情回顾')}</p>
-                </section>
-                <section class="netflix-playback-content">
-                    <div class="netflix-playback-section-label">本集正文</div>
-                    <p>${this.escapeHtml(content)}</p>
-                </section>
-                <section class="netflix-playback-fixed">
-                    <div class="netflix-playback-section-label">本集总结</div>
-                    <p>${this.escapeHtml((episode?.summary || '').trim() || '暂无本集总结')}</p>
-                </section>
-            `;
-        this.playbackBody.innerHTML = `
-            <article class="netflix-playback-reader">
-                ${episodeSections}
-            </article>
-        `;
-        this.playbackBody.scrollTop = 0;
-    }
-
-    openPlaybackEpisodeSidebar() {
-        if (!this.playbackEpisodeSidebar) return;
-        this.renderPlaybackEpisodeSidebar();
-        this.playbackEpisodeSidebar.classList.add('active');
-    }
-
-    closePlaybackEpisodeSidebar() {
-        if (this.playbackEpisodeSidebar) this.playbackEpisodeSidebar.classList.remove('active');
-    }
-
-    renderPlaybackEpisodeSidebar() {
-        if (!this.playbackEpisodeList) return;
-        const entry = this.getPlaybackEntry();
-        if (!entry) {
-            this.playbackEpisodeList.innerHTML = '<div class="netflix-record-empty">暂无影片</div>';
-            return;
-        }
-        this.playbackEpisodeList.innerHTML = entry.episodes.map(episode => `
-            <button type="button" class="netflix-episode-item ${Number(episode.number) === Number(this.activePlaybackEpisodeNumber) ? 'active' : ''}" data-episode-number="${episode.number}" aria-label="长按删除">
-                <span>${Number(episode.number) === 0 ? '影片介绍' : `第 ${episode.number} 集`}</span>
-                <em>${Number(episode.number) === 0 ? '介绍' : (episode.summary ? '已总结' : '未总结')}</em>
-            </button>
-        `).join('');
-
-        let pressTimer = null;
-        let isLongPress = false;
-
-        this.playbackEpisodeList.querySelectorAll('.netflix-episode-item').forEach(button => {
-            const parsedNumber = Number(button.getAttribute('data-episode-number'));
-            const nextNumber = Number.isFinite(parsedNumber) ? parsedNumber : 0;
-
-            button.addEventListener('pointerdown', (e) => {
-                if (e.button !== 0 && e.type !== 'touchstart') return;
-                isLongPress = false;
-                
-                // 第 0 集（影片介绍）不允许删除
-                if (nextNumber === 0) return;
-                
-                pressTimer = setTimeout(() => {
-                    isLongPress = true;
-                    if (window.confirm(`确定要删除播放中的 第 ${nextNumber} 集 吗？这也会从原作品中同步移除。`)) {
-                        this.deletePlaybackEpisode(nextNumber);
-                    }
-                }, 600);
-            });
-
-            button.addEventListener('pointerup', () => {
-                if (pressTimer) clearTimeout(pressTimer);
-                if (!isLongPress) {
-                    const latest = this.getPlaybackEntry();
-                    if (latest) {
-                        latest.activeEpisodeNumber = nextNumber;
-                        this.savePlaybackEntry(latest);
-                        this.saveNetflixState();
-                    }
-                    this.activePlaybackEpisodeNumber = nextNumber;
-                    this.renderPlaybackWindow();
-                    this.renderPlaybackEpisodeSidebar();
-                    this.closePlaybackEpisodeSidebar();
-                }
-            });
-
-            button.addEventListener('pointerleave', () => {
-                if (pressTimer) clearTimeout(pressTimer);
-            });
-            button.addEventListener('pointercancel', () => {
-                if (pressTimer) clearTimeout(pressTimer);
-            });
-        });
-    }
-
-    deletePlaybackEpisode(numberToDelete) {
-        const entry = this.getPlaybackEntry();
-        if (!entry || !entry.episodes) return;
-        
-        // 至少要保留第0集介绍和第1集
-        const normalEpisodes = entry.episodes.filter(ep => Number(ep.number) > 0);
-        if (normalEpisodes.length <= 1) {
-            if (typeof window.showToast === 'function') window.showToast('这是最后一集，无法删除');
-            return;
-        }
-
-        // 删除目标集数，并重新编号（忽略第 0 集）
-        entry.episodes = entry.episodes.filter(ep => Number(ep.number) !== numberToDelete);
-        
-        let counter = 1;
-        entry.episodes.forEach(ep => {
-            if (Number(ep.number) > 0) {
-                ep.number = counter;
-                counter++;
-            }
-        });
-
-        // 调整活动集数
-        const maxNumber = counter - 1;
-        if (this.activePlaybackEpisodeNumber > maxNumber) {
-            this.activePlaybackEpisodeNumber = maxNumber;
-        } else if (this.activePlaybackEpisodeNumber === numberToDelete) {
-            this.activePlaybackEpisodeNumber = Math.max(1, numberToDelete - 1);
-        }
-        
-        entry.activeEpisodeNumber = this.activePlaybackEpisodeNumber;
-        
-        this.savePlaybackEntry(entry);
-        
-        const sourceWork = this.syncPlaybackEntryToSourceWork(entry);
-
-        this.saveNetflixState();
-        this.renderPlaybackWindow();
-        this.renderPlaybackEpisodeSidebar();
-        
-        // 如果当前作品详情页开着，也要同步更新
-        if (this.workDetailSheet && this.workDetailSheet.classList.contains('active') && String(this.activeDetailWorkId) === String(entry.id)) {
-            const updatedWork = sourceWork || this.normalizeWork({ ...entry.item, episodes: entry.episodes.filter(ep => Number(ep.number) > 0), episodeCount: maxNumber, isCatalogItem: true }, entry.id);
-            this.renderWorkDetail(updatedWork);
-        }
-        
-        if (typeof window.showToast === 'function') window.showToast(`已删除并同步原作品`);
-    }
-
-    openPlaybackPresetSidebar() {
-        if (!this.playbackPresetSidebar) return;
-        this.renderPlaybackPresetSidebar();
-        this.playbackPresetSidebar.classList.add('active');
-    }
-
-    closePlaybackPresetSidebar() {
-        if (this.playbackPresetSidebar) this.playbackPresetSidebar.classList.remove('active');
-        this.activePlaybackPresetEditorKey = null;
-        this.playbackPresetDraft = null;
-    }
-
-    togglePlaybackPresetEditor(categoryKey, itemId, switchKey) {
-        if (this.activePlaybackPresetEditorKey === switchKey) {
-            this.activePlaybackPresetEditorKey = null;
-            this.playbackPresetDraft = null;
-            this.renderPlaybackPresetSidebar();
-            return;
-        }
-
-        const preset = this.getActivePreset();
-        const item = (preset.itemsByCategory?.[categoryKey] || []).find(candidate => String(candidate.id) === String(itemId));
-        if (!item) return;
-
-        this.activePlaybackPresetEditorKey = switchKey;
-        if ((item.key || item.id) === 'wordCount') {
-            const range = this.parsePresetWordCount(item.value || '500-800');
-            this.playbackPresetDraft = { categoryKey, itemId, min: range.min, max: range.max };
-        } else {
-            this.playbackPresetDraft = { categoryKey, itemId, value: item.value || '' };
-        }
-        this.renderPlaybackPresetSidebar();
-    }
-
-    renderPlaybackPresetEditor(item) {
-        const draft = this.playbackPresetDraft;
-        if (!draft) return '';
-        const isWordCount = (item.key || item.id) === 'wordCount';
-        const fields = isWordCount
-            ? `
-                <div class="netflix-rps-range">
-                    <label>
-                        <span>最少字数</span>
-                        <input type="number" min="1" step="1" value="${this.escapeAttr(draft.min)}" data-preset-field="min">
-                    </label>
-                    <label>
-                        <span>最多字数</span>
-                        <input type="number" min="1" step="1" value="${this.escapeAttr(draft.max)}" data-preset-field="max">
-                    </label>
-                </div>
-            `
-            : `<textarea class="netflix-rps-editor-textarea" data-preset-field="value" aria-label="编辑${this.escapeAttr(item.label || '预设')}" placeholder="输入${this.escapeAttr(item.label || '预设')}内容">${this.escapeHtml(draft.value || '')}</textarea>`;
-
-        return `
-            <div class="netflix-rps-editor">
-                ${fields}
-                <div class="netflix-rps-editor-actions">
-                    <button type="button" class="netflix-rps-editor-cancel">取消</button>
-                    <button type="button" class="netflix-rps-editor-save">保存</button>
-                </div>
-            </div>
-        `;
-    }
-
-    savePlaybackPresetEditor() {
-        const draft = this.playbackPresetDraft;
-        if (!draft) return;
-        const preset = this.getActivePreset();
-        const item = (preset.itemsByCategory?.[draft.categoryKey] || []).find(candidate => String(candidate.id) === String(draft.itemId));
-        if (!item) return;
-
-        if ((item.key || item.id) === 'wordCount') {
-            const min = Math.floor(Number(draft.min));
-            const max = Math.floor(Number(draft.max));
-            if (!Number.isFinite(min) || !Number.isFinite(max) || min < 1 || max < 1) {
-                if (typeof window.showToast === 'function') window.showToast('字数必须为正整数');
-                return;
-            }
-            item.value = this.formatPresetWordCount(`${min}-${max}`);
-        } else {
-            const value = String(draft.value || '').trim();
-            if (!value) {
-                if (typeof window.showToast === 'function') window.showToast('预设内容不能为空');
-                return;
-            }
-            item.value = value;
-        }
-
-        this.savePresetState();
-        this.activePlaybackPresetEditorKey = null;
-        this.playbackPresetDraft = null;
-        this.renderPlaybackPresetSidebar();
-        if (typeof window.showToast === 'function') window.showToast('预设已保存');
-    }
-
-    renderPlaybackPresetSidebar() {
-        if (!this.playbackPresetBody) return;
-        const entry = this.getPlaybackEntry();
-        if (!entry) {
-            this.playbackPresetBody.innerHTML = '<div style="color:#888;font-size:14px;text-align:center;">暂无影片</div>';
-            return;
-        }
-        const preset = this.getActivePreset();
-        const definitions = this.getPresetDefinitions();
-        const defaultOffKeys = this.getDefaultOffPresetKeys();
-        
-        const html = this.getPresetCategoryOrder().map(categoryKey => {
-            const category = definitions[categoryKey];
-            if (!category) return '';
-            
-            const items = preset.itemsByCategory[categoryKey] || [];
-            if (items.length === 0) return '';
-            
-            const itemsHtml = items.map(item => {
-                const switchKey = `${categoryKey}:${item.id}`;
-                const saved = preset.switchState?.[switchKey];
-                const isActive = typeof saved === 'boolean' ? saved : !defaultOffKeys.has(item.key || item.id);
-                const isExpanded = this.activePlaybackPresetEditorKey === switchKey;
-                return `
-                <div class="netflix-rps-item-shell ${isExpanded ? 'expanded' : ''}">
-                    <div class="netflix-rps-item">
-                        <button type="button" class="netflix-rps-item-toggle" data-category="${this.escapeAttr(categoryKey)}" data-item-id="${this.escapeAttr(item.id)}" data-switch-key="${this.escapeAttr(switchKey)}" aria-expanded="${isExpanded}">
-                            <span class="netflix-rps-item-label">${this.escapeHtml(item.label || '未命名')}</span>
-                            <i class="fas fa-chevron-down netflix-rps-item-chevron"></i>
-                        </button>
-                        <button type="button" class="netflix-rps-switch ${isActive ? 'active' : ''}" role="switch" aria-checked="${isActive}" aria-label="启用${this.escapeAttr(item.label || '预设')}" data-switch-key="${this.escapeAttr(switchKey)}"></button>
-                    </div>
-                    ${isExpanded ? this.renderPlaybackPresetEditor(item) : ''}
-                </div>
-            `;
-            }).join('');
-
-            return `
-                <div class="netflix-rps-category">
-                    <h4>${category.label}</h4>
-                    ${itemsHtml}
-                </div>
-            `;
-        }).join('');
-        
-        this.playbackPresetBody.innerHTML = html || '<div style="color:#888;font-size:14px;text-align:center;">暂无预设条目</div>';
-
-        this.playbackPresetBody.querySelectorAll('.netflix-rps-item-toggle').forEach(toggle => {
-            toggle.addEventListener('click', () => {
-                this.togglePlaybackPresetEditor(
-                    toggle.getAttribute('data-category'),
-                    toggle.getAttribute('data-item-id'),
-                    toggle.getAttribute('data-switch-key')
-                );
-            });
-        });
-        
-        this.playbackPresetBody.querySelectorAll('.netflix-rps-switch').forEach(switchEl => {
-            switchEl.addEventListener('click', event => {
-                event.stopPropagation();
-                switchEl.classList.toggle('active');
-                switchEl.setAttribute('aria-checked', String(switchEl.classList.contains('active')));
-                if (!preset.switchState) preset.switchState = {};
-                preset.switchState[switchEl.getAttribute('data-switch-key')] = switchEl.classList.contains('active');
-                this.savePresetState();
-            });
-        });
-
-        this.playbackPresetBody.querySelectorAll('[data-preset-field]').forEach(input => {
-            input.addEventListener('input', () => {
-                if (!this.playbackPresetDraft) return;
-                this.playbackPresetDraft[input.getAttribute('data-preset-field')] = input.value;
-            });
-        });
-
-        this.playbackPresetBody.querySelector('.netflix-rps-editor-cancel')?.addEventListener('click', () => {
-            this.activePlaybackPresetEditorKey = null;
-            this.playbackPresetDraft = null;
-            this.renderPlaybackPresetSidebar();
-        });
-        this.playbackPresetBody.querySelector('.netflix-rps-editor-save')?.addEventListener('click', () => this.savePlaybackPresetEditor());
-    }
-
-    openPlaybackCastSheet() {
-        const entry = this.getPlaybackEntry();
-        if (!entry) return;
-        const episode = entry.episodes.find(item => Number(item.number) === Number(this.activePlaybackEpisodeNumber)) || entry.episodes[0];
-        if (episode && (!Array.isArray(episode.cast) || !episode.cast.length)) {
-            const previous = entry.episodes
-                .filter(item => Number(item.number) < Number(episode.number) && Number(item.number) >= 0 && Array.isArray(item.cast) && item.cast.length)
-                .slice(-1)[0];
-            episode.cast = previous ? previous.cast.map(actor => ({ ...actor, id: this.createPresetId('cast') })) : this.createDefaultPlaybackCast();
-            this.savePlaybackEntry(entry);
-            this.syncPlaybackEntryToSourceWork(entry);
-            this.saveNetflixState();
-        }
-        this.renderPlaybackCastSheet();
-        if (this.playbackCastSheet) this.playbackCastSheet.classList.add('active');
-    }
-
-    closePlaybackCastSheet() {
-        if (this.playbackCastSheet) this.playbackCastSheet.classList.remove('active');
-    }
-
-    renderPlaybackCastSheet() {
-        if (!this.playbackCastList) return;
-        const entry = this.getPlaybackEntry();
-        const episode = this.getActivePlaybackEpisode();
-        if (!entry || !episode) {
-            this.playbackCastList.innerHTML = '<div class="netflix-actor-empty">暂无影片</div>';
-            return;
-        }
-        const cast = Array.isArray(episode.cast) ? episode.cast : [];
-        this.playbackCastList.innerHTML = cast.length ? cast.map(actor => `
-            <div class="netflix-playback-cast-item" data-cast-id="${this.escapeHtml(actor.id)}">
-                <button type="button" class="netflix-cast-avatar netflix-playback-cast-avatar" aria-label="更换头像">
-                    ${actor.avatar ? `<img src="${this.escapeAttr(actor.avatar)}" alt="">` : `<span>${this.escapeHtml((actor.realName || actor.name || '?').charAt(0))}</span>`}
-                    <i class="fas fa-camera"></i>
-                </button>
-                <input type="file" class="netflix-playback-cast-avatar-input" accept="image/*">
-                <div class="netflix-cast-meta">
-                    <label>
-                        <span>名字</span>
-                        <input type="text" data-field="realName" value="${this.escapeHtml(actor.realName || '')}" placeholder="演员名">
-                    </label>
-                    <label>
-                        <span>饰演</span>
-                        <input type="text" data-field="roleName" value="${this.escapeHtml(actor.roleName || '')}" placeholder="角色名">
-                    </label>
-                    <label>
-                        <span>人设</span>
-                        <textarea data-field="rolePersona" placeholder="角色人设">${this.escapeHtml(actor.rolePersona || '')}</textarea>
-                    </label>
-                </div>
-                <button type="button" class="netflix-playback-cast-delete" aria-label="删除主演"><i class="fas fa-times"></i></button>
-            </div>
-        `).join('') : '<div class="netflix-actor-empty">暂无本集主演</div>';
-
-        this.playbackCastList.querySelectorAll('[data-field]').forEach(input => {
-            input.addEventListener('input', () => {
-                const row = input.closest('.netflix-playback-cast-item');
-                const actorId = row?.getAttribute('data-cast-id');
-                const field = input.getAttribute('data-field');
-                this.updatePlaybackCastMember(actorId, field, input.value);
-            });
-        });
-        this.playbackCastList.querySelectorAll('.netflix-playback-cast-avatar').forEach(button => {
-            button.addEventListener('click', () => {
-                const input = button.closest('.netflix-playback-cast-item')?.querySelector('.netflix-playback-cast-avatar-input');
-                input?.click();
-            });
-        });
-        this.playbackCastList.querySelectorAll('.netflix-playback-cast-avatar-input').forEach(input => {
-            input.addEventListener('change', () => {
-                const actorId = input.closest('.netflix-playback-cast-item')?.getAttribute('data-cast-id');
-                this.handlePlaybackCastAvatarFile(actorId, input);
-            });
-        });
-        this.playbackCastList.querySelectorAll('.netflix-playback-cast-delete').forEach(button => {
-            button.addEventListener('click', () => {
-                const actorId = button.closest('.netflix-playback-cast-item')?.getAttribute('data-cast-id');
-                this.deletePlaybackCastMember(actorId);
-            });
-        });
-    }
-
-    addPlaybackCastMember() {
-        const entry = this.getPlaybackEntry();
-        const episode = this.getActivePlaybackEpisode();
-        if (!entry || !episode) return;
-        if (!Array.isArray(episode.cast)) episode.cast = [];
-        episode.cast.push({
-            id: this.createPresetId('cast'),
-            realName: '新主演',
-            name: '新主演',
-            roleName: '新角色',
-            rolePersona: '',
-            avatar: ''
-        });
-        const stored = this.getPlaybackEntry();
-        const storedEpisode = stored?.episodes.find(item => Number(item.number) === Number(episode.number));
-        if (storedEpisode) storedEpisode.cast = episode.cast;
-        const latest = stored || entry;
-        this.savePlaybackEntry(latest);
-        this.syncPlaybackEntryToSourceWork(latest);
-        this.saveNetflixState();
-        this.renderPlaybackCastSheet();
-    }
-
-    updatePlaybackCastMember(actorId, field, value) {
-        const entry = this.getPlaybackEntry();
-        const episode = this.getActivePlaybackEpisode();
-        if (!entry || !episode || !actorId || !field) return;
-        const target = episode.cast?.find(actor => String(actor.id) === String(actorId));
-        if (!target || !['realName', 'roleName', 'rolePersona'].includes(field)) return;
-        target[field] = value;
-        if (field === 'realName') target.name = value;
-        const stored = this.getPlaybackEntry();
-        const storedEpisode = stored?.episodes.find(item => Number(item.number) === Number(episode.number));
-        if (storedEpisode) storedEpisode.cast = episode.cast;
-        const latest = stored || entry;
-        this.savePlaybackEntry(latest);
-        this.syncPlaybackEntryToSourceWork(latest);
-        this.saveNetflixState();
-    }
-
-    handlePlaybackCastAvatarFile(actorId, input) {
-        const file = input?.files?.[0];
-        if (!file || !actorId) return;
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const avatar = event.target?.result;
-            if (!avatar) return;
-            const entry = this.getPlaybackEntry();
-            const episode = this.getActivePlaybackEpisode();
-            if (!entry || !episode) return;
-            const target = episode.cast?.find(actor => String(actor.id) === String(actorId));
-            if (!target) return;
-            target.avatar = String(avatar);
-            const stored = this.getPlaybackEntry();
-            const storedEpisode = stored?.episodes.find(item => Number(item.number) === Number(episode.number));
-            if (storedEpisode) storedEpisode.cast = episode.cast;
-            const latest = stored || entry;
-            this.savePlaybackEntry(latest);
-            this.syncPlaybackEntryToSourceWork(latest);
-            this.saveNetflixState();
-            this.renderPlaybackCastSheet();
-        };
+        reader.onload = () => callback(String(reader.result || ''));
         reader.readAsDataURL(file);
         input.value = '';
     }
 
-    deletePlaybackCastMember(actorId) {
-        const entry = this.getPlaybackEntry();
-        const episode = this.getActivePlaybackEpisode();
-        if (!entry || !episode || !actorId) return;
-        episode.cast = (episode.cast || []).filter(actor => String(actor.id) !== String(actorId));
-        const stored = this.getPlaybackEntry();
-        const storedEpisode = stored?.episodes.find(item => Number(item.number) === Number(episode.number));
-        if (storedEpisode) storedEpisode.cast = episode.cast;
-        const latest = stored || entry;
-        this.savePlaybackEntry(latest);
-        this.syncPlaybackEntryToSourceWork(latest);
-        this.saveNetflixState();
-        this.renderPlaybackCastSheet();
+    getUserState() {
+        if (typeof window.getUserState === 'function') return window.getUserState() || {};
+        return window.userState && typeof window.userState === 'object' ? window.userState : {};
     }
 
-    openPlaybackNextModal(actionType = 'advance') {
-        if (!this.getPlaybackEntry()) return;
-        this.currentPlaybackModalAction = actionType;
-        if (this.playbackNextInput) {
-            this.playbackNextInput.value = '';
-            this.playbackNextInput.placeholder = actionType === 'advance' 
-                ? '输入接下来本集剧情的发展方向，可留空自由推进...' 
-                : '（可选）输入对整个这一集的杀青补充设定，即将生成前情回顾与评论区...';
-        }
-        const titleEl = this.playbackNextModal?.querySelector('.netflix-record-modal-title');
-        if (titleEl) {
-            titleEl.textContent = actionType === 'advance' ? '推进本集' : '完成本集并开启下一集';
-        }
-        if (this.playbackNextModal) this.playbackNextModal.classList.add('active');
-        setTimeout(() => this.playbackNextInput?.focus(), 0);
+    getUserActor() {
+        const user = this.getUserState();
+        return {
+            id: 'user-current',
+            sourceId: 'user-current',
+            type: 'user',
+            name: String(user.name || user.realName || 'User'),
+            persona: String(user.persona || user.signature || user.bio || ''),
+            avatar: String(user.avatarUrl || user.avatar || ''),
+            affinity: null
+        };
     }
 
-    handlePlaybackModalConfirm() {
-        if (this.currentPlaybackModalAction === 'advance') {
-            this.generateAdvancePlaybackEpisode();
-        } else {
-            this.generateNextPlaybackEpisode();
-        }
-    }
-
-    closePlaybackNextModal(force = false) {
-        if (this.isPlaybackNextLoading && !force) return;
-        if (this.playbackNextModal) this.playbackNextModal.classList.remove('active');
-    }
-
-    setPlaybackNextLoading(isLoading) {
-        this.isPlaybackNextLoading = !!isLoading;
-        if (this.playbackNextInput) this.playbackNextInput.disabled = this.isPlaybackNextLoading;
-        if (this.playbackNextClose) this.playbackNextClose.disabled = this.isPlaybackNextLoading;
-        if (this.playbackNextConfirm) {
-            this.playbackNextConfirm.disabled = this.isPlaybackNextLoading;
-            this.playbackNextConfirm.innerHTML = this.isPlaybackNextLoading
-                ? '<i class="fas fa-spinner fa-spin"></i> 生成中'
-                : '确定';
-        }
-    }
-
-    getPlaybackPresetContext(entry) {
-        return this.getGlobalPresetContext();
-    }
-
-    getGlobalPresetContext() {
-        const preset = this.getActivePreset();
-        const definitions = this.getPresetDefinitions();
-        const defaultOffKeys = this.getDefaultOffPresetKeys();
-        const lines = [];
-        this.getPresetCategoryOrder().forEach(categoryKey => {
-            const category = definitions[categoryKey];
-            const items = preset.itemsByCategory[categoryKey] || [];
-            items.forEach(item => {
-                const switchKey = `${categoryKey}:${item.id}`;
-                const saved = preset.switchState?.[switchKey];
-                const isActive = typeof saved === 'boolean' ? saved : !defaultOffKeys.has(item.key || item.id);
-                if (isActive && item.value) {
-                    lines.push(this.formatPresetContextLine(item, category?.label || categoryKey));
-                }
-            });
-        });
-        return lines.join('\n');
-    }
-
-    formatPresetContextLine(item, categoryLabel = '') {
-        if ((item.key || item.id) === 'wordCount') {
-            return `字数要求：${this.formatPresetWordCount(item.value)}字`;
-        }
-        return `[${categoryLabel} / ${item.label || '未命名'}] ${item.value}`;
-    }
-
-    getPresetWordCountText(preset = this.getActivePreset()) {
-        const item = (preset?.itemsByCategory?.length || preset?.itemsByCategory?.narration || [])
-            .find(candidate => (candidate.key || candidate.id) === 'wordCount');
-        return `${this.formatPresetWordCount(item?.value || '500-800')}字`;
-    }
-
-    getPlaybackWordCountText(entry) {
-        return this.getPresetWordCountText(this.getActivePreset(), entry);
-    }
-
-    createPlaybackAdvancePrompt(entry, currentEpisode, direction) {
-        const work = entry.item || {};
-        const tags = Array.isArray(work.tags) && work.tags.length ? work.tags.join('、') : '无';
-        const cast = Array.isArray(currentEpisode.cast) ? currentEpisode.cast : [];
-        const isIntro = Number(currentEpisode.number) === 0;
-        const wordCountText = this.getPlaybackWordCountText(entry);
-        const castText = cast.length
-            ? cast.map(actor => `- ${actor.realName || actor.name || '未知'} 饰 ${actor.roleName || actor.name || '未知'}${actor.rolePersona ? `\n  人设: ${actor.rolePersona}` : ''}`).join('\n')
-            : '无';
-        const worldBookContext = this.getMountedWorldBookContext();
-        const presetContext = this.getPlaybackPresetContext(entry);
-        return `【系统提示】
-你正在为 Netflix 生成影片播放页创作本集的后续正文内容。请以电影感、小说叙事的方式写作，直接推进当前集的剧情。
-
-${worldBookContext ? `【世界书】\n${worldBookContext}\n\n` : ''}【作品信息】
-作品名: ${work.title || '未命名影片'}
-分类: ${work.category || '未知'}
-标签: ${tags}
-简介: ${work.summary || '无'}
-
-【本集出场主演】
-${castText}
-
-${presetContext ? `【启用的预设】\n${presetContext}\n\n` : ''}${isIntro ? '【影片介绍】' : '【本集前情回顾】'}
-${isIntro ? (currentEpisode.content || work.summary || '无') : (currentEpisode.recap || '无')}
-
-【本集已有正文】
-${currentEpisode.content || '暂无内容，请开始撰写本集开局。'}
-
-【用户输入的接下来剧情走向】
-${direction || '无，允许自由推进。'}
-
-【任务】
-请续写本集正文，需要满足字数要求：${wordCountText}。请严格返回 JSON 格式，不要包含 Markdown 标记或多余的解释说明：
-{
-  "content": "电影感正文的续写部分，${wordCountText}"
-}`;
-    }
-
-    async generateAdvancePlaybackEpisode() {
-        if (this.isPlaybackNextLoading) return;
-        const apiConfig = this.getNetflixApiConfig();
-        if (!apiConfig || !apiConfig.endpoint || !apiConfig.apiKey) {
-            if (typeof window.showToast === 'function') window.showToast('请先在设置中配置大模型 API');
-            return;
-        }
-        const entry = this.getPlaybackEntry();
-        const currentEpisode = this.getActivePlaybackEpisode();
-        if (!entry || !currentEpisode) return;
-
-        const direction = (this.playbackNextInput?.value || '').trim();
-        this.setPlaybackNextLoading(true);
+    getWorldBooks() {
         try {
-            const endpoint = this.resolveChatCompletionsEndpoint(apiConfig.endpoint);
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiConfig.apiKey}`
-                },
-                body: JSON.stringify({
-                    model: apiConfig.model || 'gpt-3.5-turbo',
-                    messages: [{ role: 'user', content: this.createPlaybackAdvancePrompt(entry, currentEpisode, direction) }],
-                    temperature: parseFloat(apiConfig.temperature) || 0.8,
-                    response_format: { type: 'json_object' }
-                })
-            });
-
-            if (!response.ok) throw new Error(`API Request Failed: ${response.status}`);
-            const data = await response.json();
-            const parsed = this.parseJsonFromText(data.choices?.[0]?.message?.content || '');
-            const additionalContent = String(parsed.content || '').trim();
-            if (!additionalContent) throw new Error('Playback advance response is incomplete');
-
-            const latest = this.getPlaybackEntry(entry.id) || entry;
-            const latestCurrent = latest.episodes.find(item => Number(item.number) === Number(currentEpisode.number)) || currentEpisode;
-            
-            // 追加正文
-            latestCurrent.content = latestCurrent.content ? `${latestCurrent.content}\n\n${additionalContent}` : additionalContent;
-
-            this.savePlaybackEntry(latest);
-            const sourceWork = this.syncPlaybackEntryToSourceWork(latest);
-            this.saveNetflixState();
-            this.renderWorks();
-            if (this.workDetailSheet && this.workDetailSheet.classList.contains('active') && String(this.activeDetailWorkId) === String(latest.id)) {
-                const fallbackWork = this.normalizeWork({
-                    ...latest.item,
-                    episodes: this.getSerializablePlaybackEpisodes(latest),
-                    episodeCount: this.getSerializablePlaybackEpisodes(latest).length,
-                    isCatalogItem: true
-                }, latest.id);
-                this.renderWorkDetail(sourceWork || fallbackWork);
-            }
-            this.renderPlaybackWindow();
-            this.closePlaybackNextModal(true);
-            if (typeof window.showToast === 'function') window.showToast('本集剧情已推进');
+            if (typeof window.getWorldBooks === 'function') return window.getWorldBooks() || [];
         } catch (error) {
-            console.error('Netflix playback advance episode failed:', error);
-            if (typeof window.showToast === 'function') window.showToast('剧情推进失败，请检查 API 或网络');
-        } finally {
-            this.setPlaybackNextLoading(false);
+            console.warn('[Netflix] world books unavailable:', error);
         }
-    }
-
-    createPlaybackNextPrompt(entry, currentEpisode, direction) {
-        const work = entry.item || {};
-        const tags = Array.isArray(work.tags) && work.tags.length ? work.tags.join('、') : '无';
-        const cast = Array.isArray(currentEpisode.cast) ? currentEpisode.cast : [];
-        const isIntro = Number(currentEpisode.number) === 0;
-        const castText = cast.length
-            ? cast.map(actor => `- ${actor.realName || actor.name || '未知'} 饰 ${actor.roleName || actor.name || '未知'}${actor.rolePersona ? `\n  人设: ${actor.rolePersona}` : ''}`).join('\n')
-            : '无';
-        const worldBookContext = this.getMountedWorldBookContext();
-        return `【系统提示】
-你正在处理一场影视剧集的播放页杀青阶段。请根据以下作品信息、世界观以及本集的完整内容，完成以下两项任务：
-1. 提取本集的核心情节与戏剧张力，用电影级、小说感（第三人称）的叙事风格写一段约 200 字左右的精炼前情回顾，为下一集的开场铺垫悬念和气氛。同时写一段 100 字以内的本集总结。
-2. 扮演不同类型的真实观众（细节党、考据党、CP粉、颜狗、剧情粉、喷子等），针对本集具体情节和人物表现，生成 5 到 10 条主楼评论。每条主楼可附带 0 到 2 条楼中楼回复（replies）。
-   要求：
-   - 字数差异化：有极短的情绪宣泄（如 10 字以内，“啊啊啊绝了！”），也有较长的剧情分析或吐槽（10-30 字左右）。
-   - 强真实感：口语化、玩梗、带点饭圈黑话或网络流行语，必须严格结合剧情内容发散。不要像机器人一样官方点评。
-
-${worldBookContext ? `【世界书】\n${worldBookContext}\n\n` : ''}【作品信息】
-作品名: ${work.title || '未命名影片'}
-分类: ${work.category || '未知'}
-标签: ${tags}
-简介: ${work.summary || '无'}
-
-【本集出场主演】
-${castText}
-
-${isIntro ? '【影片介绍】' : '【本集前情回顾】'}
-${isIntro ? (currentEpisode.content || work.summary || '无') : (currentEpisode.recap || '无')}
-
-【本集完整正文】
-${currentEpisode.content || '无'}
-
-【用户对整集的附加设定说明】
-${direction || '无'}
-
-【任务】
-请严格返回 JSON 格式，不要包含 Markdown 标记或多余解释说明：
-{
-  "summary": "100字内本集总结",
-  "recap": "200字左右的精炼前情回顾，悬念迭起、电影感十足...",
-  "comments": [
-    {
-      "name": "极光追逐者",
-      "text": "天哪这集XX的那个眼神简直绝了！谁懂啊！",
-      "likes": 2304,
-      "replies": [
-        { "name": "吃瓜群众甲", "text": "对对对，我看的时候也尖叫了！", "likes": 128 }
-      ]
-    }
-  ]
-}`;
-    }
-
-    getNextPlaybackEpisodeNumber(entry) {
-        const numbers = (entry?.episodes || [])
-            .map(episode => Number(episode.number))
-            .filter(number => Number.isFinite(number) && number > 0);
-        return numbers.length ? Math.max(...numbers) + 1 : 1;
-    }
-
-    async generateNextPlaybackEpisode() {
-        if (this.isPlaybackNextLoading) return;
-        const apiConfig = typeof window.getApiConfig === 'function' ? window.getApiConfig() : (window.apiConfig || {});
-        if (!apiConfig || !apiConfig.endpoint || !apiConfig.apiKey) {
-            if (typeof window.showToast === 'function') window.showToast('请先在设置中配置大模型 API');
-            return;
-        }
-        const entry = this.getPlaybackEntry();
-        const currentEpisode = this.getActivePlaybackEpisode();
-        if (!entry || !currentEpisode) return;
-
-        const direction = (this.playbackNextInput?.value || '').trim();
-        this.setPlaybackNextLoading(true);
-        try {
-            const endpoint = this.resolveChatCompletionsEndpoint(apiConfig.endpoint);
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiConfig.apiKey}`
-                },
-                body: JSON.stringify({
-                    model: apiConfig.model || 'gpt-3.5-turbo',
-                    messages: [{ role: 'user', content: this.createPlaybackNextPrompt(entry, currentEpisode, direction) }],
-                    temperature: parseFloat(apiConfig.temperature) || 0.8,
-                    response_format: { type: 'json_object' }
-                })
-            });
-
-            if (!response.ok) throw new Error(`API Request Failed: ${response.status}`);
-            const data = await response.json();
-            const parsed = this.parseJsonFromText(data.choices?.[0]?.message?.content || '');
-            const summary = String(parsed.summary || '').trim();
-            const recapText = String(parsed.recap || '').trim();
-            const generatedComments = Array.isArray(parsed.comments) ? parsed.comments : [];
-
-            if (!summary && !recapText) throw new Error('Playback episode finish response is incomplete');
-
-            const latest = this.getPlaybackEntry(entry.id) || entry;
-            const latestCurrent = latest.episodes.find(item => Number(item.number) === Number(currentEpisode.number)) || currentEpisode;
-            
-            // 写入当前集的总结和评论
-            latestCurrent.summary = summary;
-            latestCurrent.comments = generatedComments.map(c => {
-                const replies = Array.isArray(c.replies) ? c.replies.map(r => ({
-                    name: String(r.name || '网友').trim(),
-                    text: String(r.text || r.content || '').trim(),
-                    likes: Number(r.likes) || Math.floor(Math.random() * 50)
-                })).filter(r => r.text) : [];
-                return {
-                    name: String(c.name || '热心网友').trim(),
-                    text: String(c.text || c.content || '').trim(),
-                    likes: Number(c.likes) || Math.floor(Math.random() * 1000),
-                    replies
-                };
-            }).filter(c => c.text);
-
-            // 建立下一集
-            const nextNumber = this.getNextPlaybackEpisodeNumber(latest);
-            const inheritedCast = (latestCurrent.cast && latestCurrent.cast.length ? latestCurrent.cast : this.createDefaultPlaybackCast())
-                .map(actor => ({ ...actor, id: this.createPresetId('cast') }));
-            
-            latest.episodes.push({
-                number: nextNumber,
-                recap: recapText,
-                content: '',
-                summary: '',
-                comments: [],
-                cast: inheritedCast,
-                createdAt: new Date().toISOString()
-            });
-
-            latest.activeEpisodeNumber = nextNumber;
-            this.activePlaybackEpisodeNumber = nextNumber;
-            this.savePlaybackEntry(latest);
-            this.upsertRecentCatalogItem(latest.item);
-            const sourceWork = this.syncPlaybackEntryToSourceWork(latest);
-
-            this.saveNetflixState();
-            this.renderHomeCatalog();
-            this.renderWorks(); // 重新渲染我的作品
-
-            // 如果当前是从详情页打开的，同步更新详情页
-            if (this.workDetailSheet && this.workDetailSheet.classList.contains('active') && String(this.activeDetailWorkId) === String(latest.id)) {
-                const serializableEpisodes = this.getSerializablePlaybackEpisodes(latest);
-                const updatedWork = sourceWork || this.normalizeWork({ ...latest.item, episodes: serializableEpisodes, episodeCount: serializableEpisodes.length, isCatalogItem: true }, latest.id);
-                this.renderWorkDetail(updatedWork);
-            }
-
-            this.renderPlaybackWindow();
-            this.renderPlaybackEpisodeSidebar();
-            this.closePlaybackNextModal(true);
-            if (typeof window.showToast === 'function') window.showToast('本集已结束，生成前情回顾与评论，并进入下一集');
-        } catch (error) {
-            console.error('Netflix playback finish episode failed:', error);
-            if (typeof window.showToast === 'function') window.showToast('完成本集生成失败，请检查 API 或网络');
-        } finally {
-            this.setPlaybackNextLoading(false);
-        }
-    }
-
-    normalizeCatalogWorkForDetail(item) {
-        const catalogItem = this.normalizeCatalogItem(item, item?.id || this.createPresetId('catalog-detail'), item?.category || '');
-        if (!catalogItem) return null;
-        return this.normalizeWork({
-            ...catalogItem,
-            episodeCount: catalogItem.category === '电影' ? 1 : 6,
-            cast: Array.isArray(catalogItem.cast) ? catalogItem.cast : [],
-            comments: [],
-            episodes: [],
-            isCatalogItem: true
-        }, catalogItem.id);
-    }
-
-    closeWorkDetail() {
-        if (this.workDetailSheet) this.workDetailSheet.classList.remove('active');
-        this.activeDetailCatalogOnly = false;
-    }
-
-    renderWorkDetail(work) {
-        if (!this.workDetailContent) return;
-        const tags = [work.category, ...(work.tags || [])].filter(Boolean);
-        const tagText = tags.join(' • ');
-        this.ensureWorkEpisodes(work);
-        const detailEpisodeNumber = this.getDetailEpisodeNumber(work);
-        const detailCommentsCount = this.getEpisodeComments(work, detailEpisodeNumber).length;
-        
-        let castHtml = '';
-        if (work.cast && work.cast.length) {
-            castHtml = `
-                <div class="netflix-wd-cast-scroll">
-                    ${work.cast.map(actor => {
-                        const actorName = actor.realName || actor.name || '未知';
-                        const roleName = actor.roleName || actor.name || '';
-                        const avatarContent = actor.avatar ? `<img src="${this.escapeAttr(actor.avatar)}" alt="">` : this.escapeHtml(actorName.charAt(0));
-                        return `
-                        <div class="netflix-wd-cast-item">
-                            <div class="netflix-wd-cast-avatar">${avatarContent}</div>
-                            <div class="netflix-wd-cast-name">${this.escapeHtml(actorName)}</div>
-                            ${roleName ? `<div class="netflix-wd-cast-role">饰 ${this.escapeHtml(roleName)}</div>` : ''}
-                        </div>
-                        `;
-                    }).join('')}
-                </div>
-            `;
-        } else {
-            castHtml = '<div style="font-size:12px;color:#bcbcbc;margin-bottom:16px;">暂无演员记录</div>';
-        }
-            
-        const isMovie = (work.category || '') === '电影';
-        const epCount = this.parseEpisodeCount(work.episodeCount);
-        const episodesHtml = this.renderEpisodeList(work, isMovie, epCount, detailEpisodeNumber);
-        const commentsHtml = this.renderWorkComments(work, detailEpisodeNumber);
-        
-        // 模拟随机的年份和匹配度
-        const matchScore = Math.floor(Math.random() * (99 - 80) + 80);
-        const year = new Date().getFullYear() - Math.floor(Math.random() * 5);
-
-        this.workDetailContent.innerHTML = `
-            <div class="netflix-wd-hero">
-                ${work.coverUrl ? `<img src="${this.escapeAttr(work.coverUrl)}" alt="">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#555;font-size:40px;"><i class="fas fa-film"></i></div>'}
-                <div class="netflix-wd-hero-fade"></div>
-                <div class="netflix-wd-close" onclick="window.netflixApp && window.netflixApp.closeWorkDetail()">
-                    <i class="fas fa-times"></i>
-                </div>
-            </div>
-
-            <div class="netflix-wd-body">
-                <h2 class="netflix-wd-title">${this.escapeHtml(work.title || '未命名作品')}</h2>
-                
-                <div class="netflix-wd-meta">
-                    <span class="netflix-wd-meta-match">${matchScore}% 匹配</span>
-                    <span>${year}</span>
-                    <span class="netflix-wd-meta-age">16+</span>
-                    <span>${isMovie ? '1 小时 58 分钟' : `${epCount} 集`}</span>
-                    <span class="netflix-wd-meta-hd">HD</span>
-                </div>
-
-                <button class="netflix-wd-btn-play" id="netflix-wd-play-btn"><i class="fas fa-play"></i> 播放</button>
-                <button class="netflix-wd-btn-download"><i class="fas fa-download"></i> 下载</button>
-
-                <p class="netflix-wd-summary">${this.escapeHtml(work.summary || '这是一部精彩的影视作品，讲述了令人着迷的故事，充满反转与惊喜。在追寻真相的路上，主角们经历了重重考验。')}</p>
-                
-                <div class="netflix-wd-cast-tags">
-                    <div style="margin-bottom:8px;">主演：</div>
-                    ${castHtml}
-                    <div>类型：<span>${this.escapeHtml(tagText || '未知')}</span></div>
-                </div>
-
-                <div class="netflix-wd-actions">
-                    <div class="netflix-wd-action-item">
-                        <i class="fas fa-plus"></i>
-                        <span>我的列表</span>
-                    </div>
-                    <div class="netflix-wd-action-item">
-                        <i class="far fa-thumbs-up"></i>
-                        <span>评价</span>
-                    </div>
-                    <div class="netflix-wd-action-item">
-                        <i class="fas fa-share-alt"></i>
-                        <span>分享</span>
-                    </div>
-                </div>
-
-                <div class="netflix-wd-tabs">
-                    <div class="netflix-wd-tab active">相关内容</div>
-                    <div class="netflix-wd-tab">更多影片</div>
-                </div>
-
-                ${!isMovie ? `
-                <div class="netflix-wd-episodes-header">
-                    <select>
-                        <option>第 1 季</option>
-                    </select>
-                </div>
-                ` : ''}
-
-                <div class="netflix-wd-episode-list">
-                    ${episodesHtml}
-                </div>
-
-                <div class="netflix-wd-tabs" style="margin-top: 30px;">
-                    <div class="netflix-wd-tab active">第 ${detailEpisodeNumber} 集评论区 (${detailCommentsCount})</div>
-                </div>
-                <div class="netflix-wd-comments-list">
-                    ${commentsHtml}
-                </div>
-            </div>
-        `;
-
-        this.workDetailContent.querySelectorAll('.netflix-wd-episode-item').forEach(item => {
-            item.addEventListener('click', () => {
-                this.activeDetailEpisodeNumber = Number(item.getAttribute('data-episode-number')) || 1;
-                const latestWork = (this.netflixState.works || []).find(candidate => String(candidate.id) === String(work.id)) || work;
-                this.renderWorkDetail(this.normalizeWork(latestWork, work.id));
-            });
-        });
-        this.workDetailContent.querySelector('#netflix-wd-play-btn')?.addEventListener('click', () => {
-            if (work.isCatalogItem || this.activeDetailCatalogOnly) {
-                this.openPlaybackFromCatalog(work);
-                return;
-            }
-            this.openPlaybackFromWork(work.id, detailEpisodeNumber);
-        });
-    }
-
-    getDetailEpisodeNumber(work) {
-        const episodes = this.ensureWorkEpisodes(work);
-        const max = Math.max(1, episodes.length || 1);
-        return Math.min(Math.max(1, Number(this.activeDetailEpisodeNumber) || 1), max);
-    }
-
-    getEpisodeComments(work, episodeNumber = 1) {
-        this.ensureWorkEpisodes(work);
-        const episode = work.episodes.find(item => Number(item.number) === Number(episodeNumber));
-        const comments = Array.isArray(episode?.comments) ? episode.comments : [];
-        if (Number(episodeNumber) === 1 && comments.length === 0 && Array.isArray(work.comments)) {
-            return work.comments;
-        }
-        return comments;
-    }
-
-    renderEpisodeList(work, isMovie, count, activeEpisodeNumber = 1) {
-        this.ensureWorkEpisodes(work);
-        
-        if (isMovie || count <= 1) {
-            const episode = work.episodes[0] || {};
-            const desc = (episode.summary || episode.recap || episode.content || work.summary || '点击立即播放完整影片。体验沉浸式的视听盛宴。').trim();
-            return `
-                <div class="netflix-wd-episode-item ${Number(activeEpisodeNumber) === 1 ? 'active' : ''}" data-episode-number="1">
-                    <div class="netflix-wd-ep-img">
-                        ${work.coverUrl ? `<img src="${work.coverUrl}" alt="">` : ''}
-                        <i class="fas fa-play-circle"></i>
-                    </div>
-                    <div class="netflix-wd-ep-info">
-                        <div class="netflix-wd-ep-head">
-                            <span class="netflix-wd-ep-title">正片</span>
-                            <span class="netflix-wd-ep-duration">1 小时 58 分钟</span>
-                        </div>
-                        <div class="netflix-wd-ep-desc">${this.escapeHtml(desc)}</div>
-                    </div>
-                </div>
-            `;
-        }
-        
-        return Array.from({ length: count }, (_, i) => {
-            const epNum = i + 1;
-            const episode = work.episodes.find(ep => Number(ep.number) === epNum) || {};
-            const duration = Math.floor(Math.random() * (55 - 42) + 42); // 42-55 minutes
-            const desc = (episode.summary || episode.recap || episode.content || '随着故事的深入，新的线索逐渐浮出水面，角色面临着前所未有的艰难抉择。').trim();
-            
-            return `
-                <div class="netflix-wd-episode-item ${Number(activeEpisodeNumber) === epNum ? 'active' : ''}" data-episode-number="${epNum}">
-                    <div class="netflix-wd-ep-img">
-                        ${work.coverUrl ? `<img src="${work.coverUrl}" alt="">` : ''}
-                        <i class="fas fa-play-circle"></i>
-                        <div class="netflix-progress-bar" style="height: 2px;"><div class="netflix-progress-fill" style="width: ${i === 0 ? '100%' : i === 1 ? '45%' : '0'};"></div></div>
-                    </div>
-                    <div class="netflix-wd-ep-info">
-                        <div class="netflix-wd-ep-head">
-                            <span class="netflix-wd-ep-title">${epNum}. 第 ${epNum} 集</span>
-                            <span class="netflix-wd-ep-duration">${duration} 分钟</span>
-                        </div>
-                        <div class="netflix-wd-ep-desc">${this.escapeHtml(desc)}</div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-    }
-
-    renderWorkComments(work, episodeNumber = 1) {
-        const comments = this.getEpisodeComments(work, episodeNumber);
-        if (!comments.length) {
-            return `
-                <div class="netflix-comment-empty">
-                    <i class="far fa-comment-dots"></i>
-                    <p>成为第一个评价的人吧。</p>
-                </div>
-            `;
-        }
-
-        const formatLikes = (num) => {
-            if (num >= 10000) return (num / 10000).toFixed(1) + 'w';
-            if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
-            return num;
-        };
-
-        const renderCommentBlock = (comment, isReply = false) => {
-            const avatarSeed = encodeURIComponent(comment.name || 'user');
-            const avatarUrl = `https://api.dicebear.com/7.x/identicon/svg?seed=${avatarSeed}&backgroundColor=transparent`;
-            const likesStr = formatLikes(comment.likes || Math.floor(Math.random() * 100));
-            const timeStr = Math.floor(Math.random() * 24) + '小时前';
-
-            return `
-                <div class="netflix-comment-item ${isReply ? 'is-reply' : ''}">
-                    <div class="netflix-comment-avatar">
-                        <img src="${avatarUrl}" alt="avatar">
-                    </div>
-                    <div class="netflix-comment-main">
-                        <div class="netflix-comment-header">
-                            <span class="netflix-comment-name">${this.escapeHtml(comment.name || '热心网友')}</span>
-                            <span class="netflix-comment-time">${timeStr}</span>
-                        </div>
-                        <div class="netflix-comment-bubble">
-                            <p class="netflix-comment-text">${this.escapeHtml(comment.text || comment.content || '')}</p>
-                        </div>
-                        <div class="netflix-comment-actions">
-                            <button type="button" class="netflix-c-action-btn"><i class="far fa-thumbs-up"></i> ${likesStr}</button>
-                            <button type="button" class="netflix-c-action-btn"><i class="far fa-thumbs-down"></i></button>
-                            <button type="button" class="netflix-c-action-btn"><i class="far fa-comment"></i> 回复</button>
-                            <button type="button" class="netflix-c-action-btn"><i class="fas fa-share"></i></button>
-                        </div>
-                        ${!isReply && comment.replies && comment.replies.length ? `
-                            <div class="netflix-comment-replies">
-                                ${comment.replies.map(reply => renderCommentBlock(reply, true)).join('')}
-                            </div>
-                        ` : ''}
-                    </div>
-                </div>
-            `;
-        };
-
-        return comments.map(comment => renderCommentBlock(comment, false)).join('');
-    }
-
-    getPresetDefinitions() {
-        return {
-            style: {
-                label: '文风',
-                items: [{ key: 'plainStyle', label: '白描文风', defaultValue: this.getPlainStylePresetText() }]
-            },
-            length: {
-                label: '字数',
-                items: [{ key: 'wordCount', label: '字数要求', defaultValue: '500-800' }]
-            },
-            perspective: {
-                label: '视角',
-                items: [
-                    { key: 'firstPerson', label: '第一人称', defaultValue: this.getFirstPersonPresetText() },
-                    { key: 'secondPerson', label: '第二人称', defaultValue: this.getSecondPersonPresetText() },
-                    { key: 'thirdPerson', label: '第三人称', defaultValue: this.getThirdPersonPresetText() }
-                ]
-            }
-        };
-    }
-
-    getFirstPersonPresetText() {
-        return `
-<第一人称视角规则>
-- 你只能使用“我”的视角进行叙述。“我”即为{{user}}。
-</第一人称视角规则>`.trim();
-    }
-
-    getSecondPersonPresetText() {
-        return `
-<第二人称视角规则>
-- 你只能使用“你”进行叙述。“你”即为{{user}}。
-</第二人称视角规则>`.trim();
-    }
-
-    getThirdPersonPresetText() {
-        return `
-<第三人称视角规则>
-- 只能使用“他/她/它”或具体人名进行叙述。
-- 不得出现“我”或“你”作为叙述者介入内容。
-- 未在场景中发生或角色无法感知的信息，需通过场景内的线索呈现，不得直接抛出全知总结。
-</第三人称视角规则>`.trim();
-    }
-
-    getPlainStylePresetText() {
-        return `
-<文风>
-1. 核心定义
-白描：以最简洁客观的语言描摹事物的可感知形态、动作、空间关系，不添加任何主观修饰、情感解读或修辞。
-
-2. 绝对禁令（出现即违规）
-- 禁用所有修辞手法：比喻、拟人、夸张、排比、反问、象征。
-- 禁用情感形容词与副词（如“孤寂地”“欢快地”），仅允许表示颜色、尺寸、方位等客观属性的词。
-- 禁止心理描写：不得出现“他想”“她感到”“内心涌起”“意识到”“记得”等揭示内心的语句。
-- 禁止主观评价：不得插入作者抒情、议论、解释、总结或价值判断。
-
-3. 必须执行的写作指令
-- 只描写外部可感事物：动作、对话、外貌、环境、声音、气味、光线、温度、质地。只写看得见、听得到、摸得着、闻得到的东西。
-- 以名词和动词为核心，尽量减少“的”“地”“得”及形容词性修饰语。多用单句和短句。
-- 按观察顺序组织内容：由外到内、由远到近、由整体到局部。
-- 通过行动、表情、对话侧写人物状态，禁止直述心理。
-
-4. 模仿范例
-输入（违规）：她拖着疲惫的身子，茫然走在空无一人的长街，路灯把影子拉得好长，像一声叹息。
-输出（白描）：她走在街上。路灯亮着。身后拖着影子。
-
-5. 优先级
-以上规则具有最高优先级。任何描写冲动产生时，必须先用“是否可见/可听/可触”检验，不通过的内容一律删除。
-</文风>`;
-    }
-
-    getDefaultOffPresetKeys() {
-        return new Set(['firstPerson', 'thirdPerson']);
-    }
-
-    getPresetCategoryOrder() {
-        return ['style', 'length', 'perspective'];
-    }
-
-    createPresetId(prefix = 'preset') {
-        return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    }
-
-    createPresetItem(key, label, value = '') {
-        return {
-            id: key || this.createPresetId('item'),
-            key: key || '',
-            label,
-            value
-        };
-    }
-
-    clonePreset(preset) {
-        return JSON.parse(JSON.stringify(preset));
-    }
-
-    createPresetFromDefaults(id = 'default', name = '默认预设', clearValues = true) {
-        const itemsByCategory = {};
-        const switchState = {};
-        const definitions = this.getPresetDefinitions();
-        const defaultOffKeys = this.getDefaultOffPresetKeys();
-
-        this.getPresetCategoryOrder().forEach(categoryKey => {
-            const category = definitions[categoryKey];
-            itemsByCategory[categoryKey] = category.items.map(item => {
-                const presetItem = this.createPresetItem(item.key, item.label, clearValues ? (item.defaultValue || '') : (item.value || item.defaultValue || ''));
-                const switchKey = `${categoryKey}:${presetItem.id}`;
-                switchState[switchKey] = !defaultOffKeys.has(item.key || presetItem.id);
-                return presetItem;
-            });
-        });
-
-        return {
-            id,
-            name,
-            open: {},
-            switchState,
-            itemsByCategory
-        };
-    }
-
-    createDefaultPresetState() {
-        const defaultPreset = this.createPresetFromDefaults('default', '默认预设');
-        return {
-            activePresetId: defaultPreset.id,
-            presets: [defaultPreset]
-        };
-    }
-
-    normalizePreset(preset, fallbackId = 'default') {
-        const safe = preset && typeof preset === 'object' ? preset : {};
-        const normalized = this.createPresetFromDefaults(safe.id || fallbackId, safe.name || '默认预设');
-        normalized.open = safe.open && typeof safe.open === 'object' ? safe.open : {};
-        normalized.switchState = safe.switchState && typeof safe.switchState === 'object' ? safe.switchState : normalized.switchState;
-
-        const definitions = this.getPresetDefinitions();
-        this.getPresetCategoryOrder().forEach(categoryKey => {
-            const legacyCategoryKey = (categoryKey === 'length' || categoryKey === 'perspective') ? 'narration' : categoryKey;
-            const savedItems = Array.isArray(safe.itemsByCategory?.[categoryKey])
-                ? safe.itemsByCategory[categoryKey]
-                : (Array.isArray(safe.itemsByCategory?.[legacyCategoryKey]) ? safe.itemsByCategory[legacyCategoryKey] : []);
-            const defaultItems = definitions[categoryKey].items.map(item => {
-                const legacyKeys = this.getLegacyPresetKeys(item.key);
-                const savedItem = savedItems.find(candidate => candidate.key === item.key || candidate.id === item.key || legacyKeys.includes(candidate.key) || legacyKeys.includes(candidate.id));
-                const savedValue = typeof savedItem?.value === 'string' && savedItem.value.trim() ? savedItem.value : '';
-                const value = savedValue || item.defaultValue || '';
-                return this.createPresetItem(item.key, item.label, item.key === 'wordCount' ? this.formatPresetWordCount(value) : value);
-            });
-            normalized.itemsByCategory[categoryKey] = defaultItems;
-        });
-
-        return normalized;
-    }
-
-    getLegacyPresetKeys() {
         return [];
     }
 
-    normalizeDefaultPresetValue(key, value = '') {
-        if (key === 'wordCount') return this.formatPresetWordCount(value);
-        if (key === 'plainStyle' && !String(value || '').trim()) return this.getPlainStylePresetText();
-        if (key === 'firstPerson' && !String(value || '').trim()) return this.getFirstPersonPresetText();
-        if (key === 'secondPerson' && !String(value || '').trim()) return this.getSecondPersonPresetText();
-        if (key === 'thirdPerson' && !String(value || '').trim()) return this.getThirdPersonPresetText();
-        return value || '';
+    snapshotWorldBooks(ids) {
+        const selected = new Set((Array.isArray(ids) ? ids : []).map(String));
+        return this.getWorldBooks().filter(book => selected.has(String(book.id))).map(book => ({
+            id: String(book.id),
+            name: String(book.name || '未命名世界书'),
+            content: (Array.isArray(book.entries) ? book.entries : [])
+                .filter(entry => entry && entry.enabled !== false)
+                .map(entry => `【${entry.title || entry.name || entry.keyword || '词条'}】\n${entry.content || ''}`.trim())
+                .filter(Boolean)
+                .join('\n\n')
+        }));
     }
 
-    parsePresetWordCount(value = '500-800') {
-        const matches = String(value || '').match(/\d+/g) || [];
-        let min = Number(matches[0]) || 500;
-        let max = Number(matches[1]) || min || 800;
-        min = Math.max(1, Math.floor(min));
-        max = Math.max(1, Math.floor(max));
-        if (min > max) [min, max] = [max, min];
-        return { min, max };
+    renderAvatarMarkup(actor, className = '') {
+        const name = String(actor?.name || '?');
+        return actor?.avatar
+            ? `<span class="netflix-avatar-image ${className}"><img src="${this.escapeAttr(actor.avatar)}" alt=""></span>`
+            : `<span class="netflix-avatar-fallback ${className}">${this.escapeHtml(name.slice(0, 1).toUpperCase())}</span>`;
     }
 
-    formatPresetWordCount(value = '500-800') {
-        const { min, max } = this.parsePresetWordCount(value);
-        return `${min}-${max}`;
+    renderHome() {
+        const catalog = this.normalizeCatalog(this.state.homeCatalog);
+        this.state.homeCatalog = catalog;
+        const banners = catalog.banners;
+        const rows = [
+            catalog.recent.length ? this.renderCatalogRow('继续你的故事', catalog.recent, true) : '',
+            ...Object.entries(catalog.sections).map(([title, items]) => this.renderCatalogRow(title, items, false))
+        ].filter(Boolean).join('');
+        const hasTitles = banners.length || catalog.recent.length || Object.values(catalog.sections).some(items => items.length);
+        this.homeContent.innerHTML = hasTitles ? `
+            ${banners.length ? `<div class="netflix-hero-scroll">
+                ${banners.map((item, index) => `
+                    <article class="netflix-hero" style="--hero-image:url('${this.escapeAttr(item.coverUrl)}')">
+                        <div class="netflix-hero-copy">
+                            <span>${this.escapeHtml(item.category)}</span>
+                            <h1>${this.escapeHtml(item.title)}</h1>
+                            <p>${this.escapeHtml(item.summary || '开启一段属于你的互动故事。')}</p>
+                            <button type="button" data-catalog-id="${this.escapeAttr(item.id)}"><i class="fas fa-play"></i> 播放</button>
+                        </div>
+                        <div class="netflix-hero-index">0${index + 1}</div>
+                    </article>`).join('')}
+            </div>` : ''}
+            ${rows}
+        ` : '<div class="netflix-catalog-empty"><i class="fas fa-film"></i><h2>片库是空的</h2><p>可以通过右上角搜索生成新的互动故事。</p><button type="button" data-action="open-search">创建故事</button></div>';
     }
 
-    migrateLegacyPresetState(safe) {
-        const preset = this.createPresetFromDefaults('default', safe.name || '默认预设');
-        preset.open = safe.open && typeof safe.open === 'object' ? safe.open : {};
-        preset.switchState = safe.switchState && typeof safe.switchState === 'object' ? safe.switchState : preset.switchState;
+    renderCatalogRow(title, items, landscape) {
+        return `<section class="netflix-row">
+            <header><h2>${this.escapeHtml(title)}</h2><span>${items.length} 部</span></header>
+            <div class="netflix-row-scroll">
+                ${items.map(item => `<button type="button" class="netflix-catalog-card ${landscape ? 'is-landscape' : ''}" data-catalog-id="${this.escapeAttr(item.id)}">
+                    <span class="netflix-catalog-cover" style="background-image:url('${this.escapeAttr(item.coverUrl)}')"></span>
+                    <strong>${this.escapeHtml(item.title)}</strong><small>${this.escapeHtml([item.category, ...(item.tags || [])].slice(0, 2).join(' · '))}</small>
+                </button>`).join('')}
+            </div>
+        </section>`;
+    }
 
-        this.getPresetCategoryOrder().forEach(categoryKey => {
-            const legacyCategoryKey = (categoryKey === 'length' || categoryKey === 'perspective') ? 'narration' : categoryKey;
-            const savedCategory = safe.values && typeof safe.values === 'object'
-                ? (safe.values[categoryKey] || safe.values[legacyCategoryKey])
-                : null;
-            if (savedCategory && typeof savedCategory === 'object') {
-                preset.itemsByCategory[categoryKey] = preset.itemsByCategory[categoryKey].map(item => ({
-                    ...item,
-                    value: this.normalizeDefaultPresetValue(item.key, savedCategory[item.key] || this.getLegacyPresetKeys(item.key).map(key => savedCategory[key]).find(Boolean) || item.value || '')
-                }));
-            }
-        });
+    findCatalogItem(id) {
+        const catalog = this.normalizeCatalog(this.state.homeCatalog);
+        const all = [...catalog.banners, ...catalog.recent, ...Object.values(catalog.sections).flat()];
+        return all.find(item => String(item.id) === String(id)) || null;
+    }
 
+    openDetailById(id) {
+        const item = this.findCatalogItem(id);
+        if (!item) return;
+        this.activeCatalogItem = item;
+        this.detailCard.innerHTML = `
+            <button type="button" class="netflix-detail-close" data-action="close-detail" aria-label="关闭"><i class="fas fa-times"></i></button>
+            <div class="netflix-detail-hero" style="background-image:url('${this.escapeAttr(item.coverUrl)}')"></div>
+            <div class="netflix-detail-body">
+                <span class="netflix-eyebrow">INTERACTIVE STORY</span>
+                <h2>${this.escapeHtml(item.title)}</h2>
+                <div class="netflix-detail-tags"><b>${this.escapeHtml(item.category)}</b>${(item.tags || []).map(tag => `<span>${this.escapeHtml(tag)}</span>`).join('')}</div>
+                <p>${this.escapeHtml(item.summary || '世界尚未书写，等待你进入故事。')}</p>
+                <div class="netflix-detail-actions">
+                    <button type="button" class="netflix-primary-button" data-action="play-title"><i class="fas fa-play"></i> 播放</button>
+                    <button type="button" class="netflix-delete-title-button" data-action="delete-title"><i class="fas fa-trash-alt"></i> 删除故事</button>
+                </div>
+            </div>`;
+        this.openSheet(this.detailSheet);
+    }
+
+    async deleteCatalogTitle() {
+        const item = this.activeCatalogItem;
+        if (this.isBusy || !item) return;
+        if (!window.confirm(`确定从片库删除《${item.title}》吗？\n存档和已解锁结局会保留。`)) return;
+        const id = String(item.id);
+        const catalog = this.normalizeCatalog(this.state.homeCatalog);
+        catalog.banners = catalog.banners.filter(entry => String(entry.id) !== id);
+        catalog.recent = catalog.recent.filter(entry => String(entry.id) !== id);
+        catalog.sections = Object.entries(catalog.sections).reduce((result, [name, items]) => {
+            const remaining = items.filter(entry => String(entry.id) !== id);
+            if (remaining.length) result[name] = remaining;
+            return result;
+        }, {});
+        this.state.homeCatalog = catalog;
+        this.activeCatalogItem = null;
+        this.closeSheet(this.detailSheet);
+        await this.saveState({ flush: true });
+        this.renderHome();
+        this.toast('故事已从片库删除，存档仍然保留');
+    }
+
+    renderProfile() {
+        const user = this.getUserActor();
+        const manualCount = this.state.saveSlots.manual.filter(Boolean).length;
+        const endingCount = this.state.unlockedEndings.length;
+        this.profilePanel.innerHTML = `
+            <div class="netflix-profile-hero">
+                ${this.renderAvatarMarkup(user, 'netflix-profile-avatar')}
+                <div><span>PLAYER PROFILE</span><h1>${this.escapeHtml(user.name)}</h1><p>${this.escapeHtml(user.persona || '你的选择会写下新的故事。')}</p></div>
+            </div>
+            <div class="netflix-profile-stats">
+                <div><strong>${manualCount}</strong><span>手动存档</span></div>
+                <div><strong>${endingCount}</strong><span>已解锁结局</span></div>
+            </div>
+            <div class="netflix-profile-actions">
+                <button type="button" data-action="open-load"><i class="fas fa-folder-open"></i><span><strong>存档管理</strong><small>自动档与 6 个手动档</small></span><i class="fas fa-chevron-right"></i></button>
+                <button type="button" data-action="show-endings"><i class="fas fa-trophy"></i><span><strong>结局收藏</strong><small>回顾已经抵达的故事终点</small></span><i class="fas fa-chevron-right"></i></button>
+                <button type="button" data-action="show-worldbooks"><i class="fas fa-book"></i><span><strong>世界书</strong><small>开局时选择并创建独立快照</small></span><i class="fas fa-chevron-right"></i></button>
+            </div>`;
+        const headerAvatar = this.view.querySelector('.netflix-header-avatar');
+        if (headerAvatar) headerAvatar.innerHTML = user.avatar ? `<img src="${this.escapeAttr(user.avatar)}" alt="">` : '<i class="fas fa-user"></i>';
+    }
+
+    renderNav() {
+        this.view.querySelectorAll('[data-tab]').forEach(button => button.classList.toggle('is-active', button.dataset.tab === this.activeTab));
+        this.view.querySelectorAll('[data-panel]').forEach(panel => panel.classList.toggle('is-active', panel.dataset.panel === this.activeTab));
+    }
+
+    switchTab(tabName = 'home') {
+        this.activeTab = tabName === 'profile' ? 'profile' : 'home';
+        this.renderNav();
+        if (this.activeTab === 'profile') this.renderProfile();
+        if (this.content) this.content.scrollTop = 0;
+    }
+
+    openSearch() {
+        this.searchInput.value = '';
+        this.openSheet(this.searchSheet);
+        setTimeout(() => this.searchInput?.focus({ preventScroll: true }), 80);
+    }
+
+    async generateCatalog() {
+        if (this.isSearchBusy) return;
+        if (!this.hasApiConfig()) return this.toast('请先在设置中配置大模型 API');
+        this.isSearchBusy = true;
+        this.searchConfirm.disabled = true;
+        this.searchConfirm.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 生成中';
+        const query = this.searchInput.value.trim();
+        try {
+            const prompt = `你正在生成 Netflix 互动文游片库。${query ? `用户偏好：${query}` : '请随机选择有戏剧张力的题材。'}\n只返回 JSON 对象，不要 Markdown。格式：{"banners":[作品,作品,作品],"sections":{"为你推荐":[作品,作品,作品,作品],"恋爱剧情":[作品,作品,作品],"成长养成":[作品,作品,作品],"悬疑奇幻":[作品,作品,作品]}}。每个作品格式：{"id":"唯一英文id","title":"中文片名","category":"分类","summary":"80字内世界与矛盾简介","tags":["标签1","标签2"],"coverUrl":"https://picsum.photos/seed/英文关键词/720/1080?grayscale","cast":[{"name":"角色名","persona":"人物人设"}]}。必须恰好生成上述数量。`;
+            const raw = await this.requestJson(prompt);
+            const parsed = this.core.cleanJsonText(raw);
+            const next = this.normalizeCatalog({ banners: parsed.banners, sections: parsed.sections, recent: this.state.homeCatalog.recent });
+            if (next.banners.length < 3 || Object.values(next.sections).some(items => items.length < 3)) throw new Error('片库数量不完整');
+            this.state.homeCatalog = next;
+            await this.saveState({ flush: true });
+            this.renderHome();
+            this.closeSheet(this.searchSheet);
+            this.toast('新的片库已生成');
+        } catch (error) {
+            console.error('[Netflix] catalog generation failed:', error);
+            this.toast(error?.message || '片库生成失败');
+        } finally {
+            this.isSearchBusy = false;
+            this.searchConfirm.disabled = false;
+            this.searchConfirm.innerHTML = '生成片库';
+        }
+    }
+
+    createSetupDraft(item) {
+        const filmCast = (item.cast || []).map((actor, index) => ({ ...actor, id: `film-${item.id}-${index}`, type: 'custom', affinity: 50 }));
         return {
-            activePresetId: preset.id,
-            presets: [preset]
+            sourceId: item.id,
+            title: item.title,
+            category: item.category,
+            coverUrl: item.coverUrl,
+            worldview: item.summary || '',
+            premise: item.summary || '',
+            worldBookIds: [],
+            cast: this.core.normalizeCast([this.getUserActor(), ...filmCast]),
+            attributes: this.core.createDefaultAttributes()
         };
     }
 
-    normalizePresetState(rawState = null) {
-        const safe = rawState && typeof rawState === 'object' ? rawState : {};
-        if (!Array.isArray(safe.presets) && (safe.values || safe.order || safe.name)) {
-            const migrated = this.migrateLegacyPresetState(safe);
-            const preset = this.normalizePreset(migrated.presets[0], 'default');
-            preset.id = 'default';
-            preset.name = '默认预设';
-            return { activePresetId: 'default', presets: [preset] };
-        }
-
-        const sourcePreset = Array.isArray(safe.presets) && safe.presets.length
-            ? (safe.presets.find(preset => preset?.id === safe.activePresetId) || safe.presets[0])
-            : null;
-        const preset = this.normalizePreset(sourcePreset || this.createPresetFromDefaults('default', '默认预设'), 'default');
-        preset.id = 'default';
-        preset.name = '默认预设';
-        return { activePresetId: 'default', presets: [preset] };
+    openSetup(item) {
+        if (!item) return;
+        this.activeCatalogItem = item;
+        this.setupDraft = this.createSetupDraft(item);
+        this.renderSetup();
+        this.closeSheet(this.detailSheet);
+        this.setupView.classList.add('is-active');
+        this.setupView.setAttribute('aria-hidden', 'false');
     }
 
-    loadPresetState() {
-        let rawState = null;
+    closeSetup() {
+        if (this.isBusy) return;
+        this.setupView.classList.remove('is-active');
+        this.setupView.setAttribute('aria-hidden', 'true');
+    }
+
+    renderSetup() {
+        if (!this.setupDraft) return;
+        const books = this.getWorldBooks();
+        const selectedBooks = new Set((this.setupDraft.worldBookIds || []).map(String));
+        this.setupBody.innerHTML = `
+            <section class="netflix-setup-cover" style="--setup-cover:url('${this.escapeAttr(this.setupDraft.coverUrl)}')">
+                <div><span>GAME PROJECT</span><h1>${this.escapeHtml(this.setupDraft.title || '未命名游戏')}</h1></div>
+                <label class="netflix-cover-upload"><i class="fas fa-image"></i> 更换背景<input type="file" accept="image/*" data-action="upload-cover"></label>
+            </section>
+            <section class="netflix-setup-section">
+                <div class="netflix-section-heading"><span>01</span><div><h2>故事设定</h2><p>影片资料已预填，可以完全改写。</p></div></div>
+                <label class="netflix-field"><span>游戏标题</span><input type="text" maxlength="60" data-setup-field="title" value="${this.escapeAttr(this.setupDraft.title)}"></label>
+                <label class="netflix-field"><span>世界观设定</span><textarea maxlength="8000" data-setup-field="worldview" placeholder="时代、地点、社会规则与不可违背的设定">${this.escapeHtml(this.setupDraft.worldview)}</textarea></label>
+                <label class="netflix-field"><span>故事前提</span><textarea maxlength="4000" data-setup-field="premise" placeholder="主线矛盾、开局处境与希望体验的故事方向">${this.escapeHtml(this.setupDraft.premise)}</textarea></label>
+            </section>
+            <section class="netflix-setup-section">
+                <div class="netflix-section-heading"><span>02</span><div><h2>主演人设</h2><p>玩家固定参与；Char 与自定义 NPC 会保存为独立快照。</p></div><button type="button" class="netflix-section-action" data-action="open-cast-picker"><i class="fas fa-plus"></i> 添加</button></div>
+                <div class="netflix-setup-cast-list">
+                    ${this.setupDraft.cast.map(actor => this.renderSetupActor(actor)).join('')}
+                </div>
+            </section>
+            <section class="netflix-setup-section">
+                <div class="netflix-section-heading"><span>03</span><div><h2>User 属性</h2><p>初始值随机 0–100，可直接修改。</p></div><button type="button" class="netflix-section-action" data-action="reroll-attributes"><i class="fas fa-dice"></i> 重随机</button></div>
+                <div class="netflix-attribute-grid">
+                    ${this.setupDraft.attributes.map(attribute => this.renderSetupAttribute(attribute)).join('')}
+                </div>
+                <button type="button" class="netflix-dashed-button" data-action="add-attribute"><i class="fas fa-plus"></i> 添加自定义属性</button>
+            </section>
+            <section class="netflix-setup-section">
+                <div class="netflix-section-heading"><span>04</span><div><h2>世界书</h2><p>开始后保存词条快照，不受后续修改影响。</p></div></div>
+                <div class="netflix-worldbook-options">
+                    ${books.length ? books.map(book => `<label><span><i class="fas fa-book"></i><b>${this.escapeHtml(book.name || '未命名世界书')}</b><small>${Array.isArray(book.entries) ? book.entries.length : 0} 条词条</small></span><input type="checkbox" data-worldbook-id="${this.escapeAttr(book.id)}" ${selectedBooks.has(String(book.id)) ? 'checked' : ''}></label>`).join('') : '<div class="netflix-empty-state">暂无世界书，可直接使用上方世界观开始。</div>'}
+                </div>
+            </section>
+            <div class="netflix-setup-actions">
+                <button type="button" class="netflix-secondary-button" data-action="open-load"><i class="fas fa-folder-open"></i> 读档</button>
+                <button type="button" class="netflix-primary-button" data-action="start-game" id="netflix-start-game-button"><i class="fas fa-play"></i> 开始播放</button>
+            </div>`;
+    }
+
+    renderSetupActor(actor) {
+        return `<article class="netflix-setup-actor" data-actor-card="${this.escapeAttr(actor.id)}">
+            <div class="netflix-actor-visual">
+                ${this.renderAvatarMarkup(actor)}
+                <label aria-label="更换头像"><i class="fas fa-camera"></i><input type="file" accept="image/*" data-action="upload-cast-avatar" data-cast-id="${this.escapeAttr(actor.id)}"></label>
+            </div>
+            <div class="netflix-actor-fields">
+                <div class="netflix-actor-title"><span>${actor.type === 'user' ? `PLAYER · ${this.escapeHtml(actor.name)}` : (actor.type === 'char' ? 'CHAR' : 'NPC')}</span>${actor.type !== 'user' ? `<button type="button" data-action="delete-cast" data-cast-id="${this.escapeAttr(actor.id)}" aria-label="移除主演"><i class="fas fa-trash-alt"></i></button>` : ''}</div>
+                <label class="netflix-field compact"><span>姓名</span><input type="text" maxlength="40" data-cast-id="${this.escapeAttr(actor.id)}" data-cast-field="name" value="${this.escapeAttr(actor.name)}"></label>
+                <label class="netflix-field compact"><span>人设</span><textarea maxlength="3000" data-cast-id="${this.escapeAttr(actor.id)}" data-cast-field="persona" placeholder="性格、背景、关系与说话方式">${this.escapeHtml(actor.persona)}</textarea></label>
+                ${actor.type !== 'user' ? `<label class="netflix-affinity-field"><span>初始好感度</span><input type="number" min="0" max="100" inputmode="numeric" data-cast-id="${this.escapeAttr(actor.id)}" data-cast-field="affinity" value="${actor.affinity}"><b>${actor.affinity}</b></label>` : ''}
+            </div>
+        </article>`;
+    }
+
+    renderSetupAttribute(attribute) {
+        return `<div class="netflix-attribute-editor">
+            ${attribute.isDefault ? `<strong>${this.escapeHtml(attribute.name)}</strong>` : `<input type="text" maxlength="24" data-attribute-id="${this.escapeAttr(attribute.id)}" data-attribute-field="name" value="${this.escapeAttr(attribute.name)}" aria-label="属性名">`}
+            <input type="number" min="0" max="100" inputmode="numeric" data-attribute-id="${this.escapeAttr(attribute.id)}" data-attribute-field="value" value="${attribute.value}" aria-label="${this.escapeAttr(attribute.name)}数值">
+            ${attribute.isDefault ? '<span>/ 100</span>' : `<button type="button" data-action="delete-attribute" data-attribute-id="${this.escapeAttr(attribute.id)}" aria-label="删除属性"><i class="fas fa-times"></i></button>`}
+        </div>`;
+    }
+
+    rerollAttributes() {
+        if (!this.setupDraft) return;
+        const custom = this.setupDraft.attributes.filter(attribute => !attribute.isDefault).map(attribute => ({ ...attribute, value: this.core.randomAttributeValue() }));
+        this.setupDraft.attributes = [...this.core.createDefaultAttributes(), ...custom];
+        this.renderSetup();
+    }
+
+    addCustomAttribute() {
+        if (!this.setupDraft) return;
+        this.setupDraft.attributes.push({ id: `custom-${Date.now()}`, name: '新属性', value: this.core.randomAttributeValue(), isDefault: false });
+        this.renderSetup();
+    }
+
+    deleteCustomAttribute(id) {
+        if (!this.setupDraft) return;
+        this.setupDraft.attributes = this.setupDraft.attributes.filter(attribute => attribute.isDefault || attribute.id !== id);
+        this.renderSetup();
+    }
+
+    async getAvailableCharacters() {
+        let friends = [];
         try {
-            const hasNetflixDomain = this.hasNetflixDomain();
-            if (hasNetflixDomain && typeof window.getAppState === 'function') {
-                rawState = window.getAppState('netflix')?.presetState || null;
-            }
-            if (!hasNetflixDomain && window.StorageManager && typeof window.StorageManager.load === 'function') {
-                rawState = window.StorageManager.load('u2_netflixPresetState', null);
-            }
-            if (!rawState && !hasNetflixDomain && typeof window.getAppState === 'function') {
-                rawState = window.getAppState('netflix')?.presetState || null;
-            }
+            if (window.imStorage?.loadFriends) friends = await window.imStorage.loadFriends();
+            else if (typeof window.getAppState === 'function') friends = window.getAppState('imessage')?.friends || [];
         } catch (error) {
-            console.warn('Failed to load Netflix preset state:', error);
+            console.warn('[Netflix] Char list unavailable:', error);
         }
-        return this.normalizePresetState(rawState);
+        return (Array.isArray(friends) ? friends : []).filter(friend => friend?.type === 'char').map(friend => ({
+            id: `char-${friend.id || friend.realName || friend.name}`,
+            sourceId: String(friend.id || ''),
+            type: 'char',
+            name: String(friend.nickname || friend.name || friend.realName || 'Char'),
+            persona: String(friend.persona || friend.desc || friend.signature || friend.bio || ''),
+            avatar: String(friend.avatarUrl || friend.avatar || friend.avatarDataUrl || ''),
+            affinity: 50
+        }));
     }
 
-    savePresetState() {
+    async openCastPicker() {
+        if (!this.setupDraft) return;
+        this.castPickerList.innerHTML = '<div class="netflix-empty-state"><i class="fas fa-spinner fa-spin"></i> 正在读取 Char…</div>';
+        this.openSheet(this.castPickerSheet);
+        this.availableCharacters = await this.getAvailableCharacters();
+        const selected = new Set(this.setupDraft.cast.map(actor => actor.sourceId).filter(Boolean));
+        this.castPickerList.innerHTML = this.availableCharacters.length ? this.availableCharacters.map(actor => `<button type="button" data-action="add-existing-cast" data-character-id="${this.escapeAttr(actor.id)}" ${selected.has(actor.sourceId) ? 'disabled' : ''}>${this.renderAvatarMarkup(actor)}<span><strong>${this.escapeHtml(actor.name)}</strong><small>${this.escapeHtml(actor.persona || '暂无人设')}</small></span><i class="fas ${selected.has(actor.sourceId) ? 'fa-check' : 'fa-plus'}"></i></button>`).join('') : '<div class="netflix-empty-state">暂无可用 Char，请先在 iMessage 添加。</div>';
+    }
+
+    addExistingCharacter(id) {
+        const actor = this.availableCharacters.find(item => item.id === id);
+        if (!actor || !this.setupDraft) return;
+        if (!this.setupDraft.cast.some(item => item.sourceId && item.sourceId === actor.sourceId)) this.setupDraft.cast.push(this.core.clone(actor));
+        this.closeSheet(this.castPickerSheet);
+        this.renderSetup();
+    }
+
+    addCustomCast() {
+        if (!this.setupDraft) return;
+        this.setupDraft.cast.push({ id: `custom-cast-${Date.now()}`, sourceId: '', type: 'custom', name: '新角色', persona: '', avatar: '', affinity: 50 });
+        this.closeSheet(this.castPickerSheet);
+        this.renderSetup();
+    }
+
+    deleteCast(id) {
+        if (!this.setupDraft) return;
+        this.setupDraft.cast = this.setupDraft.cast.filter(actor => actor.type === 'user' || actor.id !== id);
+        this.renderSetup();
+    }
+
+    validateSetup() {
+        if (!this.setupDraft?.title.trim()) throw new Error('请填写游戏标题');
+        if (!this.setupDraft.worldview.trim()) throw new Error('请填写世界观设定');
+        if (!this.setupDraft.premise.trim()) throw new Error('请填写故事前提');
+        if (!this.setupDraft.cast.some(actor => actor.type === 'user')) throw new Error('主演中必须包含玩家');
+        if (this.setupDraft.cast.some(actor => !String(actor.name || '').trim())) throw new Error('主演姓名不能为空');
+        const names = this.setupDraft.attributes.map(attribute => String(attribute.name || '').trim());
+        if (names.some(name => !name)) throw new Error('属性名称不能为空');
+        if (new Set(names).size !== names.length) throw new Error('属性名称不能重复');
+        if (!this.hasApiConfig()) throw new Error('请先在设置中配置大模型 API');
+    }
+
+    createRunFromDraft() {
+        const now = Date.now();
+        const setup = {
+            ...this.core.clone(this.setupDraft),
+            title: this.setupDraft.title.trim(),
+            worldview: this.setupDraft.worldview.trim(),
+            premise: this.setupDraft.premise.trim(),
+            worldBooks: this.snapshotWorldBooks(this.setupDraft.worldBookIds)
+        };
+        return {
+            id: `run-${now}`,
+            sourceId: setup.sourceId,
+            phase: 'prologue',
+            viewMode: 'story',
+            storyReturnPoint: null,
+            sceneNumber: 0,
+            beatIndex: 0,
+            setup,
+            attributes: this.core.normalizeAttributes(setup.attributes, () => 0.5),
+            cast: this.core.normalizeCast(setup.cast.map(actor => actor.type === 'user' ? actor : ({
+                ...actor,
+                origin: 'setup',
+                acquainted: false,
+                profileComplete: false,
+                companionEligible: true
+            }))),
+            flags: [],
+            storySummary: '',
+            currentScene: null,
+            storyLog: [],
+            training: this.core.createDefaultTraining(),
+            pendingIdentityCard: null,
+            lastChoice: null,
+            startedAt: now,
+            updatedAt: now
+        };
+    }
+
+    async startNewGame() {
+        if (this.isBusy) return;
         try {
-            if (typeof window.getAppState === 'function' && typeof window.setAppState === 'function') {
-                const previous = window.getAppState('netflix') || {};
-                window.setAppState('netflix', { ...previous, presetState: this.presetState }, { silent: true });
-            } else if (window.StorageManager && typeof window.StorageManager.save === 'function') {
-                window.StorageManager.save('u2_netflixPresetState', this.presetState);
-            }
+            this.validateSetup();
         } catch (error) {
-            console.warn('Failed to save Netflix preset state:', error);
+            return this.toast(error.message);
+        }
+        if (this.state.saveSlots.auto && !window.confirm('开始新游戏会覆盖当前自动档，是否继续？')) return;
+        const pendingRun = this.createRunFromDraft();
+        this.pendingRunPreview = pendingRun;
+        this.showPendingGame(pendingRun, '正在生成序章', '正在建立世界与人物关系，请稍候。');
+        this.setBusy(true, '正在生成序章…');
+        try {
+            const raw = await this.requestJson(this.buildScenePrompt(pendingRun, 'prologue', null));
+            const scene = this.normalizeSceneForRun(raw, 'prologue', pendingRun);
+            pendingRun.cast = this.core.mergeCharacterProfiles(pendingRun.cast, scene.characterProfiles, { sceneId: scene.id, seenAt: scene.createdAt });
+            pendingRun.currentScene = scene;
+            pendingRun.storySummary = scene.storySummary || scene.outcome.summary || '';
+            pendingRun.storyLog = [this.createLogEntry(scene)];
+            pendingRun.updatedAt = Date.now();
+            this.state.activeRun = pendingRun;
+            this.upsertRecent(pendingRun.setup);
+            await this.updateAutoSave(true);
+            this.closeSetup();
+            this.openGame();
+        } catch (error) {
+            console.error('[Netflix] prologue generation failed:', error);
+            this.hidePendingGame(true);
+            this.toast(error?.message || '序章生成失败，请重试');
+        } finally {
+            this.pendingRunPreview = null;
+            this.setBusy(false);
         }
     }
 
-    getActivePreset() {
-        return this.presetState.presets.find(preset => preset.id === this.presetState.activePresetId) || this.presetState.presets[0];
+    buildScenePrompt(run, phase, choice) {
+        const setup = run.setup || {};
+        const worldBooks = (setup.worldBooks || []).map(book => `《${book.name}》\n${book.content}`).filter(Boolean).join('\n\n');
+        const attributes = (run.attributes || []).map(attribute => `${attribute.id}（${attribute.name}）=${attribute.value}`).join('；');
+        const cast = (run.cast || []).map(actor => {
+            if (actor.type === 'user') return `${actor.id} | ${actor.name} | 玩家本人，所有对话必须显示姓名“${actor.name}”`;
+            const relation = actor.acquainted ? '已结识' : '已登场但未结识';
+            const profile = actor.profileComplete
+                ? `身份：${actor.identity}；职业：${actor.occupation}；阵营：${actor.faction}；角色属性：${actor.characterAttributes.map(attribute => `${attribute.name}${attribute.value}`).join('、')}`
+                : '身份档案尚未补全，本次实际登场时必须返回 characterProfiles 档案';
+            return `${actor.id} | ${actor.name} | ${actor.origin === 'story' ? '剧情人物' : '开局主演'} | ${relation} | 好感度${actor.affinity} | ${actor.companionEligible ? '可同行' : '不可同行'}\n${profile}\n人设：${actor.persona || '未填写'}`;
+        }).join('\n\n');
+        const recent = (run.storyLog || []).slice(-2).map(entry => `${entry.title}\n${entry.beats.map(beat => `${beat.speakerName ? `${beat.speakerName}：` : ''}${beat.text}`).join('\n')}`).join('\n\n');
+        const trainingRecent = (run.training?.recentEventSummaries || []).slice(-3).join('\n') || '无';
+        const common = `【固定设定】\n标题：${setup.title}\n分类：${setup.category || '剧情'}\n世界观：${setup.worldview}\n故事前提：${setup.premise}\n\n【世界书快照】\n${worldBooks || '无'}\n\n【主演】\n${cast}\n\n【当前 User 属性】\n${attributes}\n\n【累计剧情摘要】\n${run.storySummary || '尚未开始'}\n\n【事件标记】\n${(run.flags || []).join('、') || '无'}\n\n【最近养成事件】\n${trainingRecent}\n\n【最近场景】\n${recent || '无'}`;
+        const schema = `只返回合法 JSON，不要 Markdown、代码围栏或解释。结构：\n{"scene":{"id":"scene-id","title":"场景标题","beats":[{"id":"beat-1","kind":"narration","text":"旁白"},{"id":"beat-2","kind":"dialogue","speakerId":"稳定角色id","speakerName":"显示姓名","text":"对话"}],"characterProfiles":[{"id":"角色稳定id","triggerBeatId":"角色首次实际登场的beat id","name":"姓名","identity":"身份定位","occupation":"职业","faction":"阵营","persona":"完整人设","attributes":[{"id":"开局User属性id","value":0}],"initialAffinity":50,"companionEligible":false}]},"outcome":{"attributeDeltas":{"属性id":0},"affinityDeltas":{"已登记角色id":0},"summary":"更新后的完整剧情摘要","flags":["新增事件标记"]},"choices":[{"id":"choice-id","text":"玩家可执行的行动","requirements":{"attributes":{"属性id":最低值},"affinities":{"已登记角色id":最低值}}}],"storySummary":"更新后的完整剧情摘要","ending":null}。characterProfiles 只为首次登场的新具名角色或档案未补全的已有角色返回；每份档案必须绑定实际登场 beat。角色 attributes 必须逐项完整复用【当前 User 属性】中的全部属性 id，数量和 id 完全一致，只由你为每项选择 0–100 整数值；禁止新增、删除、改名或输出其他属性。剧情新角色 initialAffinity 必须为 30–70；无名路人不要建档。已登记人物必须复用原 id，禁止同名重复建档。单场数值变化只能为 -10 到 10。`;
+        if (phase === 'prologue') {
+            return `你是中文养成文游的主笔。根据设定生成一次完整序章。序章必须有 8–14 条可逐条显示的内容，旁白与人物对话交错，对话必须有 speakerName 和稳定 speakerId；玩家角色只能使用主演快照中的真实姓名，禁止称为 U、User 或“玩家”。所有非 User 角色第一次实际登场都要按契约提供身份档案。只负责建立世界、人物关系和开局事件，不提供选项、不进行属性结算、不产生结局。\n\n${common}\n\n${schema}\n序章的 choices 必须是空数组，outcome 中所有变化为 0，ending 必须为 null。`;
+        }
+        const previousChoice = choice ? `玩家刚刚选择：${choice.text}（id=${choice.id}）` : '这是第一章的第一个场景，没有上一选择。';
+        const canEnd = run.sceneNumber >= 8 || phase === 'epilogue';
+        return `你是中文养成文游的主笔。生成下一个完整场景包：严格 12–18 条旁白/对话和 2–4 个差异明确的行动选项。先在 outcome 中结算上一选择，再写新场景。选项可以设置属性或好感度门槛，但必须至少有一个无门槛或按当前数值可满足的选项。所有对话必须使用稳定 speakerId；所有非 User 角色第一次实际登场都要按契约提供身份档案。玩家角色只能使用主演快照中的真实姓名，禁止称为 U、User 或“玩家”。如果玩家输入了不合理的自定义行动，应写出符合设定的失败尝试，不能扭曲世界规则。人物必须遵守人设，剧情要推进而非复述。${canEnd ? '如果剧情、属性和关系已经形成完整收束，可以返回自然结局；否则 ending 为 null。' : '主线不足 8 个场景，ending 必须为 null。'}\n\n${common}\n\n【本次输入】\n${previousChoice}\n\n${schema}\n${phase === 'epilogue' ? '这是结局后的番外，不要重复解锁同一个结局。' : ''}`;
+    }
+
+    hasApiConfig() {
+        const config = typeof window.getApiConfig === 'function' ? window.getApiConfig() : (window.apiConfig || {});
+        return !!(config?.endpoint && config?.apiKey && config?.model);
+    }
+
+    async requestJson(prompt) {
+        const config = typeof window.getApiConfig === 'function' ? window.getApiConfig() : (window.apiConfig || {});
+        const endpoint = window.u2Api?.resolveChatCompletionsEndpoint?.(config.endpoint || '') || '';
+        if (!endpoint || !config.apiKey || !config.model) throw new Error('请先在设置中完成 API 配置');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 90000);
+        try {
+            const headers = window.u2Api?.buildApiHeaders
+                ? window.u2Api.buildApiHeaders(config, { 'X-U2-Silent-Errors': '1' })
+                : { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config.apiKey}`, 'X-U2-Silent-Errors': '1' };
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    model: config.model,
+                    temperature: Number.isFinite(Number(config.temperature)) ? Number(config.temperature) : 0.8,
+                    messages: [{ role: 'user', content: prompt }],
+                    response_format: { type: 'json_object' }
+                }),
+                signal: controller.signal
+            });
+            if (!response.ok) {
+                const detail = window.u2Api?.readApiError ? await window.u2Api.readApiError(response) : null;
+                throw new Error(detail?.message || `API 请求失败（HTTP ${response.status}）`);
+            }
+            const data = await response.json();
+            const content = data?.choices?.[0]?.message?.content ?? data?.choices?.[0]?.text ?? '';
+            return Array.isArray(content) ? content.map(item => item?.text || item || '').join('') : String(content || '');
+        } catch (error) {
+            if (error?.name === 'AbortError') throw new Error('剧情生成超时，请重试');
+            throw error;
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+
+    setBusy(busy, message = '') {
+        this.isBusy = !!busy;
+        this.view.classList.toggle('is-generating', this.isBusy);
+        this.view.querySelectorAll('#netflix-start-game-button, [data-choice-id], [data-training-choice-id], [data-location-id], [data-action="enter-main-game"], [data-action="continue-epilogue"], [data-action="submit-custom-choice"]').forEach(button => { button.disabled = this.isBusy; });
+        if (this.generationOverlay) {
+            this.generationOverlay.classList.toggle('is-active', this.isBusy && this.gameView.classList.contains('is-active'));
+            this.generationOverlay.setAttribute('aria-hidden', String(!(this.isBusy && this.gameView.classList.contains('is-active'))));
+            if (this.isBusy) this.generationTitle.textContent = message || '正在生成剧情…';
+        }
+    }
+
+    normalizeSceneForRun(raw, phase, run) {
+        return this.core.resolvePlayerSpeakerNames(this.core.normalizeScenePayload(raw, { phase, cast: run.cast, attributes: run.attributes }), run.cast);
+    }
+
+    showPendingGame(run, title, detail) {
+        this.setupView.classList.remove('is-active');
+        this.setupView.setAttribute('aria-hidden', 'true');
+        this.gameView.classList.add('is-active');
+        this.gameView.setAttribute('aria-hidden', 'false');
+        this.gameView.classList.remove('is-training');
+        this.gameBackdrop.style.backgroundImage = run.setup.coverUrl ? `url("${String(run.setup.coverUrl).replace(/["\\]/g, '\\$&')}")` : '';
+        this.gameTitle.textContent = run.setup.title;
+        this.sceneHeading.innerHTML = '<span>NEW STORY</span><strong>故事即将开始</strong>';
+        this.gameStage.innerHTML = '';
+        this.gameMenuButton.hidden = true;
+        this.generationTitle.textContent = title || '正在生成剧情';
+        this.generationDetail.textContent = detail || '正在建立世界与人物关系，请稍候。';
+    }
+
+    hidePendingGame(restoreSetup = false) {
+        this.gameView.classList.remove('is-active', 'is-training');
+        this.gameView.setAttribute('aria-hidden', 'true');
+        if (restoreSetup) {
+            this.setupView.classList.add('is-active');
+            this.setupView.setAttribute('aria-hidden', 'false');
+        }
+    }
+
+    createLogEntry(scene, selectedChoice = null) {
+        return {
+            id: scene.id,
+            title: scene.title,
+            phase: scene.phase,
+            beats: this.core.clone(scene.beats),
+            characterProfiles: this.core.clone(scene.characterProfiles || []),
+            selectedChoice: selectedChoice ? { id: selectedChoice.id, text: selectedChoice.text } : null,
+            createdAt: scene.createdAt || Date.now()
+        };
+    }
+
+    async enterMainGame() {
+        if (this.isBusy || !this.state.activeRun) return;
+        const current = this.core.clone(this.state.activeRun);
+        this.setBusy(true, '正在进入第一章…');
+        this.generationDetail.textContent = '正在根据序章生成第一个主线场景。';
+        try {
+            const raw = await this.requestJson(this.buildScenePrompt(current, 'main', null));
+            const scene = this.normalizeSceneForRun(raw, 'main', current);
+            current.cast = this.core.mergeCharacterProfiles(current.cast, scene.characterProfiles, { sceneId: scene.id, seenAt: scene.createdAt });
+            let next = this.core.applyOutcome(current, scene.outcome);
+            scene.choices = this.core.ensureUnlockedChoice(scene.choices, next.attributes, next.cast);
+            next.phase = scene.ending ? 'ending' : 'main';
+            next.sceneNumber = 1;
+            next.beatIndex = 0;
+            next.currentScene = scene;
+            next.storySummary = scene.storySummary || next.storySummary;
+            next.storyLog.push(this.createLogEntry(scene));
+            next.updatedAt = Date.now();
+            this.state.activeRun = next;
+            this.recordEnding(scene.ending, next);
+            await this.updateAutoSave(true);
+            this.renderGame();
+        } catch (error) {
+            console.error('[Netflix] first chapter generation failed:', error);
+            this.toast(error?.message || '第一章生成失败，请重试');
+            this.renderGame();
+        } finally {
+            this.setBusy(false);
+        }
+    }
+
+    async chooseStoryOption(choiceId, providedChoice = null) {
+        if (this.isBusy || !this.state.activeRun) return;
+        const run = this.state.activeRun;
+        const choice = providedChoice || (run.currentScene?.choices || []).find(item => item.id === choiceId);
+        if (!choice) return;
+        const status = this.core.getRequirementStatus(choice, run.attributes, run.cast);
+        if (!status.unlocked) return this.toast('当前属性或好感度不足');
+        const pending = this.core.clone(run);
+        this.pendingRequestChoice = choice;
+        this.setBusy(true, '选择已经送达，正在续写…');
+        this.generationDetail.textContent = '选择尚未结算，请勿重复点击。';
+        try {
+            const phase = pending.phase === 'epilogue' ? 'epilogue' : 'main';
+            const raw = await this.requestJson(this.buildScenePrompt(pending, phase, choice));
+            const scene = this.normalizeSceneForRun(raw, phase, pending);
+            pending.cast = this.core.mergeCharacterProfiles(pending.cast, scene.characterProfiles, { sceneId: scene.id, seenAt: scene.createdAt });
+            let next = this.core.applyOutcome(pending, scene.outcome);
+            scene.choices = this.core.ensureUnlockedChoice(scene.choices, next.attributes, next.cast);
+            next.phase = scene.ending ? 'ending' : phase;
+            next.sceneNumber += 1;
+            next.beatIndex = 0;
+            next.lastChoice = { id: choice.id, text: choice.text };
+            const previousLog = next.storyLog[next.storyLog.length - 1];
+            if (previousLog) previousLog.selectedChoice = { id: choice.id, text: choice.text };
+            next.currentScene = scene;
+            next.storySummary = scene.storySummary || next.storySummary;
+            next.storyLog.push(this.createLogEntry(scene));
+            next.updatedAt = Date.now();
+            this.state.activeRun = next;
+            this.customChoiceOpen = false;
+            this.recordEnding(scene.ending, next);
+            await this.updateAutoSave(true);
+            this.renderGame();
+        } catch (error) {
+            console.error('[Netflix] story continuation failed:', error);
+            this.toast(error?.message || '剧情生成失败，选择尚未结算');
+            this.renderGame();
+        } finally {
+            this.pendingRequestChoice = null;
+            this.setBusy(false);
+        }
+    }
+
+    async continueEpilogue() {
+        if (this.isBusy || !this.state.activeRun) return;
+        const pending = this.core.clone(this.state.activeRun);
+        pending.phase = 'epilogue';
+        const choice = { id: 'continue-epilogue', text: '从当前结局继续番外', requirements: { attributes: {}, affinities: {} } };
+        this.setBusy(true, '正在生成结局后的故事…');
+        this.generationDetail.textContent = '正在延续当前结局与人物关系。';
+        try {
+            const raw = await this.requestJson(this.buildScenePrompt(pending, 'epilogue', choice));
+            const scene = this.normalizeSceneForRun(raw, 'epilogue', pending);
+            pending.cast = this.core.mergeCharacterProfiles(pending.cast, scene.characterProfiles, { sceneId: scene.id, seenAt: scene.createdAt });
+            let next = this.core.applyOutcome(pending, scene.outcome);
+            scene.ending = null;
+            if (scene.choices.length < 2) {
+                scene.choices = [
+                    { id: 'epilogue-forward', text: '顺着眼前的生活继续前行', requirements: { attributes: {}, affinities: {} } },
+                    { id: 'epilogue-reflect', text: '回望过去，再做一次新的决定', requirements: { attributes: {}, affinities: {} } }
+                ];
+            }
+            scene.choices = this.core.ensureUnlockedChoice(scene.choices, next.attributes, next.cast);
+            next.phase = 'epilogue';
+            next.sceneNumber += 1;
+            next.beatIndex = 0;
+            next.currentScene = scene;
+            next.storySummary = scene.storySummary || next.storySummary;
+            next.storyLog.push(this.createLogEntry(scene));
+            this.state.activeRun = next;
+            await this.updateAutoSave(true);
+            this.renderGame();
+        } catch (error) {
+            console.error('[Netflix] epilogue generation failed:', error);
+            this.toast(error?.message || '番外生成失败');
+            this.renderGame();
+        } finally {
+            this.setBusy(false);
+        }
+    }
+
+    recordEnding(ending, run) {
+        if (!ending) return;
+        const record = { ...ending, runId: run.id, storyTitle: run.setup.title, sceneNumber: run.sceneNumber, unlockedAt: Date.now() };
+        const exists = this.state.unlockedEndings.some(item => item.id === record.id && item.storyTitle === record.storyTitle);
+        if (!exists) this.state.unlockedEndings.unshift(record);
+    }
+
+    openGame() {
+        this.setupView.classList.remove('is-active');
+        this.setupView.setAttribute('aria-hidden', 'true');
+        this.gameView.classList.add('is-active');
+        this.gameView.setAttribute('aria-hidden', 'false');
+        this.renderGame();
+    }
+
+    renderGame() {
+        const run = this.state.activeRun;
+        if (!run?.currentScene) return;
+        if (run.viewMode === 'training') {
+            this.renderTraining();
+            return;
+        }
+        this.gameView.classList.remove('is-training');
+        this.trainingView.setAttribute('aria-hidden', 'true');
+        const scene = run.currentScene;
+        const beat = scene.beats[Math.min(run.beatIndex, scene.beats.length - 1)];
+        this.gameBackdrop.style.backgroundImage = run.setup.coverUrl ? `url("${String(run.setup.coverUrl).replace(/["\\]/g, '\\$&')}")` : '';
+        this.gameTitle.textContent = run.setup.title;
+        this.sceneHeading.innerHTML = `<span>${run.phase === 'prologue' ? 'PROLOGUE' : (run.phase === 'epilogue' ? 'AFTER STORY' : `SCENE ${String(run.sceneNumber).padStart(2, '0')}`)}</span><strong>${this.escapeHtml(scene.title)}</strong>`;
+        this.gameMenuButton.hidden = run.phase === 'prologue';
+        if (run.beatIndex < scene.beats.length) {
+            const identityActor = this.prepareIdentityCard(run, 'story', scene, run.beatIndex);
+            if (identityActor) {
+                this.renderStage(this.renderIdentityCardMarkup(identityActor));
+                return;
+            }
+            this.renderStage(`<button type="button" class="netflix-dialogue-box ${beat.kind === 'narration' ? 'is-narration' : ''}" data-action="advance-dialogue">
+                ${beat.kind === 'dialogue' ? `<span class="netflix-speaker-name">${this.escapeHtml(beat.speakerName)}</span>` : '<span class="netflix-narration-label">旁白</span>'}
+                <span class="netflix-dialogue-text">${this.escapeHtml(beat.text)}</span>
+                <span class="netflix-dialogue-progress">${run.beatIndex + 1} / ${scene.beats.length}<i class="fas fa-chevron-down"></i></span>
+            </button>`);
+            return;
+        }
+        if (run.phase === 'prologue') {
+            this.renderStage(`<div class="netflix-scene-complete"><span>PROLOGUE COMPLETE</span><h2>序章结束</h2><p>故事的世界已经展开，接下来每个选择都会改变属性、关系与最终结局。</p><button type="button" class="netflix-primary-button" data-action="enter-main-game"><i class="fas fa-play"></i> 进入第一章</button></div>`);
+            return;
+        }
+        if (scene.ending) {
+            this.renderStage(`<div class="netflix-ending-panel"><span>${this.escapeHtml(scene.ending.type)}</span><h2>${this.escapeHtml(scene.ending.title)}</h2><p>${this.escapeHtml(scene.ending.summary)}</p><div><button type="button" class="netflix-secondary-button" data-action="open-load">读档</button><button type="button" class="netflix-primary-button" data-action="continue-epilogue">继续番外</button></div></div>`);
+            return;
+        }
+        const choices = this.core.ensureUnlockedChoice(scene.choices, run.attributes, run.cast);
+        scene.choices = choices;
+        const training = this.core.normalizeTraining(run.training);
+        run.training = training;
+        const trainingSpent = training.cycleSceneNumber === run.sceneNumber && training.actionPoints <= 0;
+        const customForm = this.customChoiceOpen ? `<div class="netflix-custom-choice-form"><textarea id="netflix-custom-choice-input" maxlength="200" placeholder="描述你想采取的行动……"></textarea><div><button type="button" data-action="toggle-custom-choice">取消</button><button type="button" class="netflix-primary-button" data-action="submit-custom-choice">确认行动</button></div></div>` : '';
+        const auxiliary = `<div class="netflix-choice-auxiliary"><button type="button" data-action="toggle-custom-choice"><i class="fas fa-pen"></i><span><strong>自定义行动</strong><small>输入自己的选择</small></span></button>${run.phase === 'main' ? `<button type="button" data-action="enter-training" ${trainingSpent ? 'disabled' : ''}><i class="fas fa-map-marked-alt"></i><span><strong>进入养成</strong><small>${trainingSpent ? '本日行动力已用完' : '探索地图并提升能力'}</small></span></button>` : ''}</div>`;
+        this.renderStage(`<div class="netflix-choice-panel"><span>YOUR CHOICE</span><h2>你准备怎么做？</h2><div>${choices.map((choice, index) => this.renderChoice(choice, index, run)).join('')}</div>${auxiliary}${customForm}</div>`);
+        if (this.customChoiceOpen) requestAnimationFrame(() => this.view.querySelector('#netflix-custom-choice-input')?.focus({ preventScroll: true }));
+    }
+
+    renderStage(html) {
+        this.gameStage.innerHTML = html;
+        const element = this.gameStage.firstElementChild;
+        if (element) {
+            element.classList.add('netflix-stage-entering');
+            element.addEventListener('animationend', () => element.classList.remove('netflix-stage-entering'), { once: true });
+        }
+    }
+
+    prepareIdentityCard(run, scope, content, beatIndex) {
+        const beat = content?.beats?.[beatIndex];
+        if (!beat) return null;
+        const scopeId = String(content.id || '');
+        const pending = run.pendingIdentityCard;
+        if (pending && pending.scope === scope && pending.scopeId === scopeId && pending.beatIndex === beatIndex) {
+            const pendingActor = run.cast.find(actor => actor.id === pending.characterId);
+            if (pendingActor && pendingActor.type !== 'user' && !pendingActor.acquainted && pendingActor.deferredSceneId !== scopeId) return pendingActor;
+            run.pendingIdentityCard = null;
+        }
+        const ids = [];
+        (content.characterProfiles || []).forEach(profile => {
+            if (profile.triggerBeatId === beat.id && !ids.includes(profile.id)) ids.push(profile.id);
+        });
+        if (beat.kind === 'dialogue' && beat.speakerId && !ids.includes(beat.speakerId)) ids.push(beat.speakerId);
+        const actor = ids.map(id => run.cast.find(item => item.id === id)).find(item => (
+            item && item.type !== 'user' && item.profileComplete && !item.acquainted && item.deferredSceneId !== scopeId
+        ));
+        if (!actor) return null;
+        run.pendingIdentityCard = { characterId: actor.id, scope, scopeId, beatIndex };
+        run.updatedAt = Date.now();
+        this.updateAutoSave(false);
+        return actor;
+    }
+
+    renderIdentityCardMarkup(actor) {
+        const attributes = (actor.characterAttributes || []).map(attribute => `<div><span>${this.escapeHtml(attribute.name)}</span><b>${attribute.value}</b><i><em style="width:${attribute.value}%"></em></i></div>`).join('');
+        return `<article class="netflix-identity-card" aria-label="${this.escapeAttr(actor.name)}的身份卡">
+            <span class="netflix-identity-eyebrow">NEW CHARACTER</span>
+            <header>${this.renderAvatarMarkup(actor)}<div><small>${this.escapeHtml(actor.identity)}</small><h2>${this.escapeHtml(actor.name)}</h2><p>${this.escapeHtml(actor.occupation)} · ${this.escapeHtml(actor.faction)}</p></div></header>
+            <p class="netflix-identity-persona">${this.escapeHtml(actor.persona)}</p>
+            <div class="netflix-identity-traits">${attributes}</div>
+            <div class="netflix-identity-actions"><button type="button" data-action="defer-character">暂不结识</button><button type="button" class="netflix-primary-button" data-action="acquaint-character"><i class="fas fa-handshake"></i> 结识</button></div>
+        </article>`;
+    }
+
+    async resolveIdentityCard(acquaint) {
+        const run = this.state.activeRun;
+        const pending = run?.pendingIdentityCard;
+        if (this.isBusy || !pending) return;
+        const actor = run.cast.find(item => item.id === pending.characterId && item.type !== 'user');
+        if (!actor) return;
+        if (acquaint) {
+            actor.acquainted = true;
+            actor.acquaintedAt = Date.now();
+            actor.acquaintedSceneId = pending.scopeId;
+            actor.deferredSceneId = '';
+        } else {
+            actor.deferredSceneId = pending.scopeId;
+        }
+        run.pendingIdentityCard = null;
+        run.updatedAt = Date.now();
+        await this.updateAutoSave(true);
+        this.renderGame();
+    }
+
+    renderChoice(choice, index, run) {
+        const status = this.core.getRequirementStatus(choice, run.attributes, run.cast);
+        const requirementLabels = [
+            ...Object.entries(choice.requirements?.attributes || {}).map(([id, min]) => `${this.findAttributeName(id, run)} ${min}`),
+            ...Object.entries(choice.requirements?.affinities || {}).map(([id, min]) => `${this.findActorName(id, run)}好感 ${min}`)
+        ];
+        return `<button type="button" data-choice-id="${this.escapeAttr(choice.id)}" ${status.unlocked ? '' : 'disabled'}><b>${String.fromCharCode(65 + index)}</b><span><strong>${this.escapeHtml(choice.text)}</strong>${requirementLabels.length ? `<small class="${status.unlocked ? '' : 'is-locked'}"><i class="fas ${status.unlocked ? 'fa-check-circle' : 'fa-lock'}"></i> ${this.escapeHtml(requirementLabels.join(' · '))}</small>` : '<small><i class="fas fa-unlock"></i> 无门槛</small>'}</span></button>`;
+    }
+
+    findAttributeName(id, run = this.state.activeRun) {
+        return run?.attributes?.find(item => item.id === id)?.name || id;
+    }
+
+    findActorName(id, run = this.state.activeRun) {
+        return run?.cast?.find(item => item.id === id)?.name || id;
+    }
+
+    advanceDialogue() {
+        if (this.isBusy || this.isTransitioning || !this.state.activeRun?.currentScene) return;
+        const commit = () => {
+            const run = this.state.activeRun;
+            if (!run?.currentScene) return;
+            if (run.beatIndex < run.currentScene.beats.length) run.beatIndex += 1;
+            run.updatedAt = Date.now();
+            this.updateAutoSave(false);
+            this.renderGame();
+        };
+        if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || this.state.uiSettings?.reduceMotion) return commit();
+        this.isTransitioning = true;
+        this.gameStage.firstElementChild?.classList.add('netflix-stage-leaving');
+        setTimeout(() => {
+            commit();
+            setTimeout(() => { this.isTransitioning = false; }, 170);
+        }, 90);
+    }
+
+    toggleCustomChoice() {
+        if (this.isBusy) return;
+        this.customChoiceOpen = !this.customChoiceOpen;
+        this.renderGame();
+    }
+
+    submitCustomChoice() {
+        if (this.isBusy || !this.state.activeRun) return;
+        const input = this.view.querySelector('#netflix-custom-choice-input');
+        const text = String(input?.value || '').trim().slice(0, 200);
+        if (!text) return this.toast('请输入自定义行动');
+        const choice = { id: `custom-${Date.now()}`, text, requirements: { attributes: {}, affinities: {} }, isCustom: true };
+        this.chooseStoryOption(choice.id, choice);
+    }
+
+    async enterTraining() {
+        const run = this.state.activeRun;
+        if (this.isBusy || !run || run.phase !== 'main' || run.currentScene?.ending || run.beatIndex < run.currentScene.beats.length) return;
+        const pending = this.core.clone(run);
+        pending.training = this.core.normalizeTraining(pending.training);
+        if (pending.training.cycleSceneNumber !== pending.sceneNumber) {
+            pending.training.day += 1;
+            pending.training.actionPoints = 3;
+            pending.training.cycleSceneNumber = pending.sceneNumber;
+            pending.training.currentEvent = null;
+            pending.training.eventBeatIndex = 0;
+        }
+        if (pending.training.actionPoints <= 0) return this.toast('本日行动力已用完，请先推进主线');
+        pending.storyReturnPoint = { sceneId: pending.currentScene.id, beatIndex: pending.beatIndex };
+        if (!pending.training.map) {
+            this.setBusy(true, '正在生成养成地图…');
+            this.generationDetail.textContent = '正在把世界观转换为可探索地点。';
+            try {
+                pending.training.map = await this.requestTrainingMap(pending);
+            } catch (error) {
+                console.error('[Netflix] training map generation failed:', error);
+                this.toast(error?.message || '地图生成失败，请重试');
+                return;
+            } finally {
+                this.setBusy(false);
+            }
+        }
+        pending.viewMode = 'training';
+        this.state.activeRun = pending;
+        this.customChoiceOpen = false;
+        await this.updateAutoSave(true);
+        this.resetMapView(false);
+        this.renderTraining();
+    }
+
+    async requestTrainingMap(run) {
+        const raw = await this.requestJson(this.buildMapPrompt(run));
+        return this.core.normalizeMapPayload(raw);
+    }
+
+    buildMapPrompt(run) {
+        const setup = run.setup || {};
+        const books = (setup.worldBooks || []).map(book => `《${book.name}》${book.content}`).join('\n') || '无';
+        const attributes = (run.attributes || []).map(item => `${item.id}=${item.name}`).join('、');
+        const cast = (run.cast || []).filter(actor => actor.type === 'user' || (actor.acquainted && actor.companionEligible)).map(actor => `${actor.id}=${actor.name}`).join('、');
+        return `你是中文养成文游的地图设计师。根据以下资料生成一张可长期探索的互动节点地图。只返回合法 JSON，不要 Markdown。\n\n标题：${setup.title}\n世界观：${setup.worldview}\n故事前提：${setup.premise}\n当前剧情：${run.storySummary || '序章之后'}\n世界书：${books}\n属性 id：${attributes}\n主演 id：${cast}\n\n严格结构：{"map":{"id":"英文id","name":"地图名","description":"地图整体说明","nodes":[{"id":"英文唯一id","name":"地点名","description":"地点介绍","type":"地点类型","icon":"Font Awesome 图标类名，如 fa-school","x":5到95的整数,"y":8到92的整数,"focusAttributes":["属性id"],"featuredCastIds":["主演id"]}],"edges":[{"from":"地点id","to":"地点id"}]}}。nodes 必须 6–10 个，分布不能重叠；edges 必须全部引用有效节点并让地图整体连通。`;
+    }
+
+    buildTrainingEventPrompt(run, location) {
+        const training = run.training;
+        const companion = run.cast.find(actor => actor.id === training.companionId && actor.type !== 'user');
+        const familiarity = training.familiarityByLocation[location.id] || 0;
+        const attributes = run.attributes.map(item => `${item.id}（${item.name}）=${item.value}`).join('；');
+        const cast = run.cast.map(actor => `${actor.id} | ${actor.name}${actor.type === 'user' ? ' | 玩家本人' : ` | ${actor.acquainted ? '已结识' : '未结识'} | 好感度${actor.affinity}`} | ${actor.persona || '未填写'}${actor.profileComplete ? '' : ' | 档案待补全'}`).join('\n');
+        return `你是中文养成文游的事件设计师。为一次地点行动生成完整小剧情。只返回合法 JSON，不要 Markdown。\n\n作品：${run.setup.title}\n世界观：${run.setup.worldview}\n主线摘要：${run.storySummary}\n地点：${location.name}（${location.type}）\n地点说明：${location.description}\n熟悉度：${familiarity}/5\n同行角色：${companion ? `${companion.id} | ${companion.name} | ${companion.persona}` : '独自行动'}\n当前属性：${attributes}\n已登记人物：\n${cast}\n已有事件标记：${run.flags.join('、') || '无'}\n最近事件，严禁重复冲突和桥段：\n${training.recentEventSummaries.slice(-12).join('\n') || '无'}\n\n严格结构：{"event":{"id":"英文id","locationId":"${location.id}","title":"事件标题","summary":"事件摘要","beats":[{"id":"beat-1","kind":"narration","text":"旁白"},{"id":"beat-2","kind":"dialogue","speakerId":"稳定角色id","speakerName":"显示姓名","text":"对话"}],"characterProfiles":[{"id":"角色稳定id","triggerBeatId":"实际登场beat id","name":"姓名","identity":"身份定位","occupation":"职业","faction":"阵营","persona":"完整人设","attributes":[{"id":"开局User属性id","value":50}],"initialAffinity":50,"companionEligible":false}],"choices":[{"id":"a","text":"行动选项","outcome":{"attributeDeltas":{"属性id":0},"affinityDeltas":{"已登记角色id":0},"flags":["事件标记"],"summary":"选择结果摘要"}},{"id":"b","text":"另一行动","outcome":{"attributeDeltas":{},"affinityDeltas":{},"flags":[],"summary":"选择结果摘要"}}]}}。beats 必须 3–6 条，choices 必须恰好 2 个。首次实际登场的新具名角色或档案待补全角色必须提供 characterProfiles；角色 attributes 必须逐项完整复用“当前属性”中的全部属性 id，数量和 id 完全一致，只选择每项 0–100 整数值，禁止新增、删除、改名或输出其他属性；新角色初始好感 30–70，无名路人不要建档，已登记人物必须复用原 id。每个数值变化只能为 -5 到 5；不能产生结局。玩家角色必须显示快照姓名，禁止称为 U、User 或“玩家”。`;
+    }
+
+    renderTraining() {
+        const run = this.state.activeRun;
+        if (!run?.training?.map) return;
+        const training = run.training;
+        this.gameView.classList.add('is-training');
+        this.trainingView.setAttribute('aria-hidden', 'false');
+        this.trainingDay.textContent = `DAY ${String(Math.max(1, training.day)).padStart(2, '0')}`;
+        this.trainingTitle.textContent = training.map.name;
+        this.renderTrainingHud(run);
+        this.renderMap(run);
+        this.renderTrainingEvent(run);
+    }
+
+    renderTrainingHud(run) {
+        const training = run.training;
+        const companions = run.cast.filter(actor => actor.type !== 'user' && actor.acquainted && actor.companionEligible);
+        const recommended = this.getRecommendedLocationIds(run);
+        const objective = recommended.size ? `根据当前锁定选项，推荐 ${recommended.size} 个地点` : '自由探索，寻找新的剧情标记';
+        this.trainingHud.innerHTML = `<div class="netflix-training-status"><span><i class="fas fa-bolt"></i> 行动力 <b>${training.actionPoints}/3</b></span><span><i class="fas fa-bullseye"></i> ${this.escapeHtml(objective)}</span></div><div class="netflix-training-toolbar"><div class="netflix-companion-picker"><span>同行</span><button type="button" data-action="select-companion" data-companion-id="" class="${training.companionId ? '' : 'is-active'}">独自</button>${companions.map(actor => `<button type="button" data-action="select-companion" data-companion-id="${this.escapeAttr(actor.id)}" class="${training.companionId === actor.id ? 'is-active' : ''}">${this.escapeHtml(actor.name)}</button>`).join('')}</div><div><button type="button" data-action="toggle-map-layout" class="${this.mapEditMode ? 'is-active' : ''}"><i class="fas fa-arrows-alt"></i> ${this.mapEditMode ? '完成布局' : '调整位置'}</button><button type="button" data-action="open-map-editor"><i class="fas fa-edit"></i> 编辑地图</button></div></div>`;
+    }
+
+    getRecommendedLocationIds(run) {
+        const missingAttributes = new Set();
+        const missingCast = new Set();
+        (run.currentScene?.choices || []).forEach(choice => {
+            this.core.getRequirementStatus(choice, run.attributes, run.cast).missing.forEach(item => {
+                if (item.kind === 'attribute') missingAttributes.add(item.id);
+                if (item.kind === 'affinity') missingCast.add(item.id);
+            });
+        });
+        return new Set((run.training?.map?.nodes || []).filter(node => node.focusAttributes.some(id => missingAttributes.has(id)) || node.featuredCastIds.some(id => missingCast.has(id))).map(node => node.id));
+    }
+
+    renderMap(run) {
+        const map = run.training.map;
+        const recommended = this.getRecommendedLocationIds(run);
+        const byId = new Map(map.nodes.map(node => [node.id, node]));
+        const lines = map.edges.map(edge => {
+            const from = byId.get(edge.from);
+            const to = byId.get(edge.to);
+            if (!from || !to) return '';
+            return `<line x1="${from.x}%" y1="${from.y}%" x2="${to.x}%" y2="${to.y}%"></line>`;
+        }).join('');
+        this.mapCanvas.innerHTML = `<svg class="netflix-map-routes" aria-hidden="true">${lines}</svg>${map.nodes.map(node => {
+            const familiarity = run.training.familiarityByLocation[node.id] || 0;
+            return `<button type="button" class="netflix-map-node ${recommended.has(node.id) ? 'is-recommended' : ''} ${this.mapEditMode ? 'is-editing' : ''}" data-location-id="${this.escapeAttr(node.id)}" style="left:${node.x}%;top:${node.y}%" aria-label="${this.escapeAttr(node.name)}，熟悉度 ${familiarity}"><i class="fas ${this.escapeAttr(node.icon)}"></i><span><strong>${this.escapeHtml(node.name)}</strong><small>${this.escapeHtml(node.type)} · 熟悉 ${familiarity}/5</small></span>${recommended.has(node.id) ? '<em>推荐</em>' : ''}</button>`;
+        }).join('')}`;
+        this.applyMapTransform();
+    }
+
+    async openTrainingLocation(locationId) {
+        const run = this.state.activeRun;
+        if (this.mapEditMode || this.mapDragMoved || this.isBusy || !run?.training?.map || run.viewMode !== 'training') return;
+        if (run.training.currentEvent || run.training.eventResult) return;
+        if (run.training.actionPoints <= 0) return this.toast('本日行动力已用完');
+        const location = run.training.map.nodes.find(node => node.id === locationId);
+        if (!location) return;
+        const pending = this.core.clone(run);
+        this.setBusy(true, `正在探索${location.name}…`);
+        this.generationDetail.textContent = '正在生成不会重复的地点小剧情。';
+        try {
+            const raw = await this.requestJson(this.buildTrainingEventPrompt(pending, location));
+            let event = this.core.normalizeTrainingEventPayload(raw, location.id, { cast: pending.cast, attributes: pending.attributes });
+            const resolved = this.core.resolvePlayerSpeakerNames({ beats: event.beats }, pending.cast);
+            if (resolved?.beats) event = { ...event, beats: resolved.beats };
+            pending.cast = this.core.mergeCharacterProfiles(pending.cast, event.characterProfiles, { sceneId: event.id, seenAt: event.createdAt });
+            pending.training.currentEvent = event;
+            pending.training.eventBeatIndex = 0;
+            pending.training.eventResult = null;
+            this.state.activeRun = pending;
+            await this.updateAutoSave(true);
+            this.renderTraining();
+        } catch (error) {
+            console.error('[Netflix] training event generation failed:', error);
+            this.toast(error?.message || '地点剧情生成失败，请重试');
+        } finally {
+            this.setBusy(false);
+        }
+    }
+
+    renderTrainingEvent(run) {
+        const training = run.training;
+        const event = training.currentEvent;
+        const result = training.eventResult;
+        if (!event && !result) {
+            this.trainingEvent.classList.remove('is-active');
+            this.trainingEvent.setAttribute('aria-hidden', 'true');
+            this.trainingEvent.innerHTML = '';
+            return;
+        }
+        if (result) {
+            const attributeChanges = (result.attributeChanges || []).map(change => `<div><span>${this.escapeHtml(change.name)}</span><b class="${change.delta > 0 ? 'is-positive' : 'is-negative'}">${change.delta > 0 ? '+' : ''}${change.delta}</b><small>${change.before} → ${change.after}</small></div>`).join('');
+            const affinityChanges = (result.affinityChanges || []).map(change => `<div><span>${this.escapeHtml(change.name)}好感</span><b class="${change.delta > 0 ? 'is-positive' : 'is-negative'}">${change.delta > 0 ? '+' : ''}${change.delta}</b><small>${change.before} → ${change.after}</small></div>`).join('');
+            const changes = `${attributeChanges}${affinityChanges}` || '<p class="netflix-training-result-empty">本次行动没有改变属性或好感度。</p>';
+            const flags = (result.flags || []).length ? `<div class="netflix-training-result-flags"><span>获得事件标记</span>${result.flags.map(flag => `<b>${this.escapeHtml(flag)}</b>`).join('')}</div>` : '';
+            const content = `<div class="netflix-training-result"><span>ACTION RESULT</span><h2>行动结算</h2><strong>${this.escapeHtml(result.choiceText)}</strong><p>${this.escapeHtml(result.summary || '这次行动已经结束。')}</p><div class="netflix-training-result-values">${changes}</div>${flags}<button type="button" class="netflix-primary-button" data-action="dismiss-training-result">返回地图 · 剩余 ${result.actionPoints} 点行动力</button></div>`;
+            this.trainingEvent.innerHTML = `<div class="netflix-training-event-card">${content}</div>`;
+            this.trainingEvent.classList.add('is-active');
+            this.trainingEvent.setAttribute('aria-hidden', 'false');
+            return;
+        }
+        const beat = event.beats[Math.min(training.eventBeatIndex, event.beats.length - 1)];
+        let content;
+        if (training.eventBeatIndex < event.beats.length) {
+            const identityActor = this.prepareIdentityCard(run, 'training', event, training.eventBeatIndex);
+            content = identityActor
+                ? this.renderIdentityCardMarkup(identityActor)
+                : `<button type="button" class="netflix-training-dialogue ${beat.kind === 'narration' ? 'is-narration' : ''}" data-action="advance-training-event">${beat.kind === 'dialogue' ? `<span>${this.escapeHtml(beat.speakerName)}</span>` : '<span>旁白</span>'}<strong>${this.escapeHtml(beat.text)}</strong><small>${training.eventBeatIndex + 1} / ${event.beats.length} <i class="fas fa-chevron-down"></i></small></button>`;
+        } else {
+            content = `<div class="netflix-training-event-choices"><span>EVENT CHOICE</span><h2>${this.escapeHtml(event.title)}</h2>${event.choices.map((choice, index) => `<button type="button" data-training-choice-id="${this.escapeAttr(choice.id)}"><b>${String.fromCharCode(65 + index)}</b><strong>${this.escapeHtml(choice.text)}</strong></button>`).join('')}</div>`;
+        }
+        this.trainingEvent.innerHTML = `<div class="netflix-training-event-card">${content}</div>`;
+        this.trainingEvent.classList.add('is-active');
+        this.trainingEvent.setAttribute('aria-hidden', 'false');
+    }
+
+    advanceTrainingEvent() {
+        const run = this.state.activeRun;
+        if (this.isBusy || this.isTransitioning || !run?.training?.currentEvent) return;
+        const commit = () => {
+            run.training.eventBeatIndex = Math.min(run.training.currentEvent.beats.length, run.training.eventBeatIndex + 1);
+            this.updateAutoSave(false);
+            this.renderTrainingEvent(run);
+        };
+        if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || this.state.uiSettings?.reduceMotion) return commit();
+        this.isTransitioning = true;
+        this.trainingEvent.firstElementChild?.classList.add('netflix-stage-leaving');
+        setTimeout(() => {
+            commit();
+            this.trainingEvent.firstElementChild?.classList.add('netflix-stage-entering');
+            setTimeout(() => { this.isTransitioning = false; }, 170);
+        }, 90);
+    }
+
+    async resolveTrainingChoice(choiceId) {
+        const run = this.state.activeRun;
+        const event = run?.training?.currentEvent;
+        if (this.isBusy || !event || run.training.eventBeatIndex < event.beats.length) return;
+        const choice = event.choices.find(item => item.id === choiceId);
+        if (!choice) return;
+        const before = this.core.clone(run);
+        let next = this.core.applyTrainingOutcome(run, choice.outcome);
+        const training = next.training;
+        training.actionPoints = Math.max(0, training.actionPoints - 1);
+        training.familiarityByLocation[event.locationId] = Math.min(5, (training.familiarityByLocation[event.locationId] || 0) + 1);
+        const summary = choice.outcome.summary || event.summary || `${event.title}：${choice.text}`;
+        training.eventLog.push({ ...this.core.clone(event), selectedChoice: { id: choice.id, text: choice.text }, resolvedAt: Date.now() });
+        training.eventLog = training.eventLog.slice(-200);
+        training.recentEventSummaries.push(summary);
+        training.recentEventSummaries = training.recentEventSummaries.slice(-12);
+        const beforeAttributes = new Map((before.attributes || []).map(attribute => [attribute.id, attribute]));
+        const beforeCast = new Map((before.cast || []).map(actor => [actor.id, actor]));
+        training.eventResult = {
+            eventId: event.id,
+            title: event.title,
+            choiceText: choice.text,
+            summary,
+            attributeChanges: (next.attributes || []).map(attribute => {
+                const previous = beforeAttributes.get(attribute.id);
+                return previous && previous.value !== attribute.value ? { id: attribute.id, name: attribute.name, before: previous.value, after: attribute.value, delta: attribute.value - previous.value } : null;
+            }).filter(Boolean),
+            affinityChanges: (next.cast || []).map(actor => {
+                const previous = beforeCast.get(actor.id);
+                return actor.type !== 'user' && previous && previous.affinity !== actor.affinity ? { id: actor.id, name: actor.name, before: previous.affinity, after: actor.affinity, delta: actor.affinity - previous.affinity } : null;
+            }).filter(Boolean),
+            flags: [...(choice.outcome.flags || [])],
+            actionPoints: training.actionPoints,
+            resolvedAt: Date.now()
+        };
+        training.currentEvent = null;
+        training.eventBeatIndex = 0;
+        next.updatedAt = Date.now();
+        this.state.activeRun = next;
+        await this.updateAutoSave(true);
+        this.renderTraining();
+    }
+
+    async dismissTrainingResult() {
+        const run = this.state.activeRun;
+        if (this.isBusy || !run?.training?.eventResult) return;
+        run.training.eventResult = null;
+        run.updatedAt = Date.now();
+        await this.updateAutoSave(true);
+        this.renderTraining();
+    }
+
+    closeTrainingEvent() {
+        if (this.state.activeRun?.training?.currentEvent) this.toast('请先读完并选择本次行动结果');
+        else if (this.state.activeRun?.training?.eventResult) this.toast('请先确认本次行动结算');
+    }
+
+    selectTrainingCompanion(id) {
+        const run = this.state.activeRun;
+        if (!run?.training || this.isBusy) return;
+        const valid = !id || run.cast.some(actor => actor.id === id && actor.type !== 'user' && actor.acquainted && actor.companionEligible);
+        if (!valid) return;
+        run.training.companionId = id || '';
+        this.updateAutoSave(false);
+        this.renderTrainingHud(run);
+    }
+
+    continueStory() {
+        const run = this.state.activeRun;
+        if (this.isBusy || !run) return;
+        if (run.training?.currentEvent) return this.toast('请先完成当前地点事件');
+        if (run.training?.eventResult) return this.toast('请先确认本次行动结算');
+        run.viewMode = 'story';
+        if (run.storyReturnPoint) run.beatIndex = this.core.clampInt(run.storyReturnPoint.beatIndex, 0, run.currentScene.beats.length, run.beatIndex);
+        run.storyReturnPoint = null;
+        this.mapEditMode = false;
+        this.updateAutoSave(false);
+        this.renderGame();
+    }
+
+    continueContext() {
+        this.closeSheet(this.menuSheet);
+        if (this.state.activeRun?.viewMode === 'training') this.continueStory();
+    }
+
+    openMapEditor() {
+        const map = this.state.activeRun?.training?.map;
+        if (!map || this.isBusy) return;
+        this.mapEditorDraft = this.core.clone(map);
+        this.renderMapEditor();
+        this.openSheet(this.mapEditorSheet);
+    }
+
+    renderMapEditor() {
+        const map = this.mapEditorDraft;
+        if (!map) return;
+        const edgeText = map.edges.map(edge => `${edge.from} > ${edge.to}`).join('\n');
+        this.mapEditorBody.innerHTML = `<label class="netflix-field"><span>地图名称</span><input type="text" maxlength="40" data-map-field="name" value="${this.escapeAttr(map.name)}"></label><label class="netflix-field"><span>整体说明</span><textarea maxlength="320" data-map-field="description">${this.escapeHtml(map.description || '')}</textarea></label><div class="netflix-map-editor-heading"><h3>地点 ${map.nodes.length}/12</h3><button type="button" data-action="add-map-node" ${map.nodes.length >= 12 ? 'disabled' : ''}><i class="fas fa-plus"></i> 添加地点</button></div><div class="netflix-map-editor-nodes">${map.nodes.map(node => `<article data-map-node-editor="${this.escapeAttr(node.id)}"><header><strong>${this.escapeHtml(node.name)}</strong><button type="button" data-action="delete-map-node" data-map-node-id="${this.escapeAttr(node.id)}" ${map.nodes.length <= 4 ? 'disabled' : ''} aria-label="删除地点"><i class="fas fa-trash-alt"></i></button></header><div><label><span>名称</span><input type="text" maxlength="30" data-node-field="name" value="${this.escapeAttr(node.name)}"></label><label><span>类型</span><input type="text" maxlength="20" data-node-field="type" value="${this.escapeAttr(node.type)}"></label><label class="is-wide"><span>介绍</span><textarea maxlength="240" data-node-field="description">${this.escapeHtml(node.description)}</textarea></label><label><span>X 位置</span><input type="number" min="5" max="95" data-node-field="x" value="${node.x}"></label><label><span>Y 位置</span><input type="number" min="8" max="92" data-node-field="y" value="${node.y}"></label><label class="is-wide"><span>关联属性 ID（逗号分隔）</span><input type="text" data-node-field="focusAttributes" value="${this.escapeAttr(node.focusAttributes.join(','))}"></label><label class="is-wide"><span>关联主演 ID（逗号分隔）</span><input type="text" data-node-field="featuredCastIds" value="${this.escapeAttr(node.featuredCastIds.join(','))}"></label></div></article>`).join('')}</div><label class="netflix-field"><span>地点连线（每行：地点ID &gt; 地点ID）</span><textarea data-map-field="edges" spellcheck="false">${this.escapeHtml(edgeText)}</textarea></label><div class="netflix-map-editor-actions"><button type="button" class="netflix-secondary-button" data-action="regenerate-map"><i class="fas fa-sync-alt"></i> 重新生成</button><button type="button" class="netflix-primary-button" data-action="save-map-editor"><i class="fas fa-save"></i> 保存地图</button></div>`;
+    }
+
+    collectMapEditorDraft() {
+        if (!this.mapEditorDraft) return null;
+        const draft = this.core.clone(this.mapEditorDraft);
+        const root = this.mapEditorBody;
+        draft.name = root.querySelector('[data-map-field="name"]')?.value || draft.name;
+        draft.description = root.querySelector('[data-map-field="description"]')?.value || '';
+        draft.nodes = [...root.querySelectorAll('[data-map-node-editor]')].map(card => {
+            const original = draft.nodes.find(node => node.id === card.dataset.mapNodeEditor);
+            const read = field => card.querySelector(`[data-node-field="${field}"]`)?.value;
+            return {
+                ...original,
+                name: read('name'),
+                type: read('type'),
+                description: read('description'),
+                x: read('x'),
+                y: read('y'),
+                focusAttributes: String(read('focusAttributes') || '').split(',').map(value => value.trim()).filter(Boolean),
+                featuredCastIds: String(read('featuredCastIds') || '').split(',').map(value => value.trim()).filter(Boolean)
+            };
+        });
+        draft.edges = String(root.querySelector('[data-map-field="edges"]')?.value || '').split(/\r?\n/).map(line => line.split(/>|→/).map(value => value.trim())).filter(parts => parts.length === 2).map(([from, to]) => ({ from, to }));
+        return draft;
+    }
+
+    addMapNode() {
+        const draft = this.collectMapEditorDraft();
+        if (!draft || draft.nodes.length >= 12) return;
+        const id = `location-${Date.now().toString(36)}`;
+        const previous = draft.nodes[draft.nodes.length - 1];
+        draft.nodes.push({ id, name: '新地点', description: '填写这个地点的环境与用途。', type: '剧情地点', icon: 'fa-map-marker-alt', x: 50, y: 50, focusAttributes: [], featuredCastIds: [] });
+        if (previous) draft.edges.push({ from: previous.id, to: id });
+        this.mapEditorDraft = draft;
+        this.renderMapEditor();
+    }
+
+    deleteMapNode(id) {
+        const draft = this.collectMapEditorDraft();
+        if (!draft || draft.nodes.length <= 4) return;
+        draft.nodes = draft.nodes.filter(node => node.id !== id);
+        draft.edges = draft.edges.filter(edge => edge.from !== id && edge.to !== id);
+        this.mapEditorDraft = draft;
+        this.renderMapEditor();
+    }
+
+    async saveMapEditor() {
+        const run = this.state.activeRun;
+        if (!run?.training || this.isBusy) return;
+        try {
+            const map = this.core.normalizeMapPayload({ map: this.collectMapEditorDraft() }, { manual: true });
+            run.training.map = map;
+            const ids = new Set(map.nodes.map(node => node.id));
+            run.training.familiarityByLocation = Object.entries(run.training.familiarityByLocation).reduce((result, [id, value]) => {
+                if (ids.has(id)) result[id] = value;
+                return result;
+            }, {});
+            await this.updateAutoSave(true);
+            this.closeSheet(this.mapEditorSheet);
+            this.renderTraining();
+            this.toast('地图已保存');
+        } catch (error) {
+            this.toast(error?.message || '地图信息不完整');
+        }
+    }
+
+    async regenerateMap() {
+        const run = this.state.activeRun;
+        if (this.isBusy || !run || !window.confirm('重新生成会替换地点、连线和熟悉度，已获得的属性与事件记录会保留。是否继续？')) return;
+        this.closeSheet(this.mapEditorSheet);
+        const pending = this.core.clone(run);
+        this.setBusy(true, '正在重新生成地图…');
+        this.generationDetail.textContent = '正在重建地点与路线，原有数值不会改变。';
+        try {
+            pending.training.map = await this.requestTrainingMap(pending);
+            pending.training.familiarityByLocation = {};
+            pending.training.currentEvent = null;
+            pending.training.eventBeatIndex = 0;
+            this.state.activeRun = pending;
+            await this.updateAutoSave(true);
+            this.resetMapView(false);
+            this.renderTraining();
+        } catch (error) {
+            console.error('[Netflix] map regeneration failed:', error);
+            this.toast(error?.message || '地图重新生成失败');
+        } finally {
+            this.setBusy(false);
+        }
+    }
+
+    toggleMapLayout() {
+        if (this.isBusy) return;
+        this.mapEditMode = !this.mapEditMode;
+        if (!this.mapEditMode) this.updateAutoSave(false);
+        this.renderTraining();
+    }
+
+    applyMapTransform() {
+        if (!this.mapCanvas) return;
+        const { x, y, scale } = this.mapTransform;
+        this.mapCanvas.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`;
+    }
+
+    zoomMap(delta) {
+        this.mapTransform.scale = Math.max(0.75, Math.min(1.6, this.mapTransform.scale + delta));
+        this.applyMapTransform();
+    }
+
+    resetMapView(render = true) {
+        this.mapTransform = { x: 0, y: 0, scale: 1 };
+        if (render) this.applyMapTransform();
+    }
+
+    handleMapWheel(event) {
+        if (this.state.activeRun?.viewMode !== 'training') return;
+        event.preventDefault();
+        this.zoomMap(event.deltaY > 0 ? -0.1 : 0.1);
+    }
+
+    handleMapPointerDown(event) {
+        if (this.state.activeRun?.viewMode !== 'training' || this.isBusy) return;
+        this.mapViewport.setPointerCapture?.(event.pointerId);
+        this.mapPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        const node = event.target.closest('[data-location-id]');
+        if (this.mapPointers.size === 2) {
+            const points = [...this.mapPointers.values()];
+            this.mapGesture = { mode: 'pinch', distance: Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y), scale: this.mapTransform.scale };
+        } else {
+            this.mapGesture = { mode: this.mapEditMode && node ? 'node' : 'pan', startX: event.clientX, startY: event.clientY, originX: this.mapTransform.x, originY: this.mapTransform.y, nodeId: node?.dataset.locationId || '', moved: false };
+        }
+    }
+
+    handleMapPointerMove(event) {
+        if (!this.mapPointers.has(event.pointerId) || !this.mapGesture) return;
+        this.mapPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (this.mapPointers.size >= 2) {
+            const points = [...this.mapPointers.values()];
+            const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+            if (this.mapGesture.mode !== 'pinch') this.mapGesture = { mode: 'pinch', distance, scale: this.mapTransform.scale };
+            this.mapTransform.scale = Math.max(0.75, Math.min(1.6, this.mapGesture.scale * (distance / Math.max(1, this.mapGesture.distance))));
+            this.applyMapTransform();
+            this.mapDragMoved = true;
+            return;
+        }
+        const dx = event.clientX - this.mapGesture.startX;
+        const dy = event.clientY - this.mapGesture.startY;
+        if (Math.abs(dx) + Math.abs(dy) > 5) this.mapGesture.moved = this.mapDragMoved = true;
+        if (this.mapGesture.mode === 'pan') {
+            this.mapTransform.x = this.mapGesture.originX + dx;
+            this.mapTransform.y = this.mapGesture.originY + dy;
+            this.applyMapTransform();
+        } else if (this.mapGesture.mode === 'node') {
+            const node = this.state.activeRun?.training?.map?.nodes.find(item => item.id === this.mapGesture.nodeId);
+            if (!node) return;
+            const rect = this.mapCanvas.getBoundingClientRect();
+            node.x = this.core.clampInt(((event.clientX - rect.left) / Math.max(1, rect.width)) * 100, 5, 95, node.x);
+            node.y = this.core.clampInt(((event.clientY - rect.top) / Math.max(1, rect.height)) * 100, 8, 92, node.y);
+            const element = [...this.mapCanvas.querySelectorAll('[data-location-id]')].find(item => item.dataset.locationId === node.id);
+            if (element) { element.style.left = `${node.x}%`; element.style.top = `${node.y}%`; }
+        }
+    }
+
+    handleMapPointerUp(event) {
+        if (!this.mapPointers.has(event.pointerId)) return;
+        const movedNode = this.mapGesture?.mode === 'node' && this.mapGesture.moved;
+        this.mapPointers.delete(event.pointerId);
+        if (this.mapPointers.size === 1) {
+            const point = [...this.mapPointers.values()][0];
+            this.mapGesture = { mode: 'pan', startX: point.x, startY: point.y, originX: this.mapTransform.x, originY: this.mapTransform.y, moved: true };
+        } else if (!this.mapPointers.size) {
+            this.mapGesture = null;
+            if (movedNode) {
+                this.renderMap(this.state.activeRun);
+                this.updateAutoSave(false);
+            }
+            setTimeout(() => { this.mapDragMoved = false; }, 0);
+        }
+    }
+
+    createSnapshot(run = this.state.activeRun) {
+        if (!run?.currentScene) return null;
+        return this.core.normalizeSnapshot({
+            id: `save-${Date.now()}`,
+            title: run.setup.title,
+            phase: run.phase,
+            sceneNumber: run.sceneNumber,
+            beatIndex: run.beatIndex,
+            savedAt: Date.now(),
+            run: this.core.clone(run)
+        });
+    }
+
+    async updateAutoSave(flush = false) {
+        const snapshot = this.createSnapshot();
+        if (!snapshot) return false;
+        this.state.activeRun = this.core.clone(snapshot.run);
+        this.state.saveSlots.auto = snapshot;
+        return this.saveState({ flush });
+    }
+
+    openSaves(mode = 'load') {
+        if (this.isBusy) return this.toast('剧情生成期间暂不能操作存档');
+        this.saveModalMode = mode === 'save' ? 'save' : 'load';
+        this.saveTitle.textContent = this.saveModalMode === 'save' ? '保存进度' : '读取进度';
+        this.renderSaveSlots();
+        this.closeSheet(this.menuSheet);
+        this.openSheet(this.saveSheet);
+    }
+
+    renderSaveSlots() {
+        const auto = this.state.saveSlots.auto;
+        const slots = this.state.saveSlots.manual;
+        this.saveList.innerHTML = `
+            <section class="netflix-save-group"><h3>自动存档</h3>${this.renderSaveSlot(auto, 'auto', -1)}</section>
+            <section class="netflix-save-group"><h3>手动存档</h3>${slots.map((snapshot, index) => this.renderSaveSlot(snapshot, 'manual', index)).join('')}</section>`;
+    }
+
+    renderSaveSlot(snapshot, kind, index) {
+        const label = kind === 'auto' ? 'AUTO' : `SLOT ${index + 1}`;
+        if (!snapshot) {
+            return `<article class="netflix-save-slot is-empty"><span>${label}</span><div><strong>空存档</strong><small>还没有故事记录</small></div>${this.saveModalMode === 'save' && kind === 'manual' && this.state.activeRun ? `<button type="button" data-action="save-slot" data-slot-index="${index}">保存</button>` : ''}</article>`;
+        }
+        const savedTime = new Date(snapshot.savedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const phase = snapshot.run?.viewMode === 'training' ? `养成 DAY ${snapshot.run.training?.day || 1}` : (snapshot.phase === 'prologue' ? '序章' : (snapshot.phase === 'ending' ? '结局' : (snapshot.phase === 'epilogue' ? '番外' : `场景 ${snapshot.sceneNumber}`)));
+        return `<article class="netflix-save-slot"><span>${label}</span><div><strong>${this.escapeHtml(snapshot.title)}</strong><small>${phase} · 对话 ${snapshot.beatIndex + 1} · ${savedTime}</small></div><div class="netflix-save-actions">${this.saveModalMode === 'save' && kind === 'manual' ? `<button type="button" data-action="save-slot" data-slot-index="${index}" aria-label="覆盖存档"><i class="fas fa-save"></i></button>` : `<button type="button" data-action="load-slot" data-slot-kind="${kind}" data-slot-index="${index}" aria-label="读取存档"><i class="fas fa-play"></i></button>`}${kind === 'manual' ? `<button type="button" class="is-danger" data-action="delete-save" data-slot-index="${index}" aria-label="删除存档"><i class="fas fa-trash-alt"></i></button>` : ''}</div></article>`;
+    }
+
+    async writeManualSave(index) {
+        if (this.isBusy || !this.state.activeRun || index < 0 || index >= this.core.MANUAL_SLOT_COUNT) return;
+        if (this.state.saveSlots.manual[index] && !window.confirm(`覆盖手动存档 ${index + 1}？`)) return;
+        this.state.saveSlots.manual[index] = this.createSnapshot();
+        const saved = await this.saveState({ flush: true });
+        if (saved) this.toast(`已保存到槽位 ${index + 1}`);
+        this.renderSaveSlots();
+        this.renderProfile();
+    }
+
+    async loadSave(kind, index) {
+        if (this.isBusy) return;
+        const snapshot = kind === 'auto' ? this.state.saveSlots.auto : this.state.saveSlots.manual[index];
+        if (!snapshot) return;
+        if (this.state.activeRun && !window.confirm(`读取“${snapshot.title}”？当前进度会由自动档保存后切换。`)) return;
+        if (this.state.activeRun) await this.updateAutoSave(true);
+        this.state.activeRun = this.core.clone(snapshot.run);
+        this.state.saveSlots.auto = this.createSnapshot(this.state.activeRun);
+        await this.saveState({ flush: true });
+        this.closeSheet(this.saveSheet);
+        this.closeSheet(this.menuSheet);
+        this.closeSetup();
+        this.openGame();
+        this.toast('存档已读取');
+    }
+
+    async deleteManualSave(index) {
+        if (index < 0 || index >= this.core.MANUAL_SLOT_COUNT || !this.state.saveSlots.manual[index]) return;
+        if (!window.confirm(`删除手动存档 ${index + 1}？删除后无法恢复。`)) return;
+        this.state.saveSlots.manual[index] = null;
+        await this.saveState({ flush: true });
+        this.renderSaveSlots();
+        this.renderProfile();
+    }
+
+    openGameMenu() {
+        if (this.isBusy || this.state.activeRun?.phase === 'prologue') return;
+        const training = this.state.activeRun?.viewMode === 'training';
+        const label = this.menuContinue?.querySelector('span');
+        if (label) label.textContent = training ? '继续剧情' : '继续游戏';
+        this.openSheet(this.menuSheet);
+    }
+
+    showAttributes() {
+        const run = this.state.activeRun;
+        if (!run) return;
+        this.infoTitle.textContent = 'User 属性';
+        this.infoBody.innerHTML = `<section class="netflix-stats-section"><div class="netflix-stat-list">${run.attributes.map(attribute => `<div><span>${this.escapeHtml(attribute.name)}</span><b>${attribute.value}</b><i><em style="width:${attribute.value}%"></em></i></div>`).join('')}</div></section>`;
+        this.closeSheet(this.menuSheet);
+        this.openSheet(this.infoSheet);
+    }
+
+    showRelations(closeMenu = true) {
+        const run = this.state.activeRun;
+        if (!run) return;
+        const relations = run.cast.filter(actor => actor.type !== 'user' && actor.acquainted);
+        this.infoTitle.textContent = '关系';
+        this.infoBody.innerHTML = relations.length ? `<div class="netflix-relation-list">${relations.map(actor => `<button type="button" data-action="show-character-detail" data-character-id="${this.escapeAttr(actor.id)}">${this.renderAvatarMarkup(actor)}<span><strong>${this.escapeHtml(actor.name)}</strong><small>${this.escapeHtml(actor.identity || '档案待补充')}</small></span><b><small>好感</small>${actor.affinity}</b><i class="fas fa-chevron-right"></i></button>`).join('')}</div>` : '<div class="netflix-empty-state">还没有结识任何角色。角色首次登场时，可以通过身份卡选择结识。</div>';
+        if (closeMenu) this.closeSheet(this.menuSheet);
+        this.openSheet(this.infoSheet);
+    }
+
+    showCharacterDetail(characterId) {
+        const run = this.state.activeRun;
+        const actor = run?.cast?.find(item => item.id === characterId && item.type !== 'user' && item.acquainted);
+        if (!actor) return;
+        const firstMet = actor.acquaintedAt ? new Date(actor.acquaintedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '旧存档关系';
+        const attributes = actor.characterAttributes?.length
+            ? actor.characterAttributes.map(attribute => `<div><span>${this.escapeHtml(attribute.name)}</span><b>${attribute.value}</b><i><em style="width:${attribute.value}%"></em></i></div>`).join('')
+            : '<div class="netflix-character-profile-empty">属性档案待补充，角色下次登场时会自动完善。</div>';
+        this.infoTitle.textContent = actor.name;
+        this.infoBody.innerHTML = `<article class="netflix-character-profile"><button type="button" class="netflix-info-back" data-action="back-to-relations"><i class="fas fa-chevron-left"></i> 返回关系</button><header>${this.renderAvatarMarkup(actor)}<div><span>${this.escapeHtml(actor.identity || '档案待补充')}</span><h3>${this.escapeHtml(actor.name)}</h3><p>${this.escapeHtml(actor.occupation || '未知职业')} · ${this.escapeHtml(actor.faction || '未知阵营')}</p></div></header><p>${this.escapeHtml(actor.persona || '暂无人物介绍')}</p><section><div class="netflix-character-affinity"><span>好感度</span><b>${actor.affinity}</b><i><em style="width:${actor.affinity}%"></em></i></div><h4>角色属性</h4><div class="netflix-character-traits">${attributes}</div></section><footer><span><i class="fas fa-handshake"></i> ${this.escapeHtml(actor.acquaintedSceneId || '已有关系')} · ${firstMet}</span><span><i class="fas fa-walking"></i> ${actor.companionEligible ? '可在养成中同行' : '暂不可同行'}</span></footer></article>`;
+    }
+
+    showHistory() {
+        const run = this.state.activeRun;
+        if (!run) return;
+        this.infoTitle.textContent = '剧情回看';
+        const story = (run.storyLog || []).slice().reverse().map(entry => `<article><span>${this.escapeHtml(entry.phase === 'prologue' ? '序章' : entry.title)}</span>${entry.beats.map(beat => `<p>${beat.speakerName ? `<b>${this.escapeHtml(beat.speakerName)}</b>` : ''}${this.escapeHtml(beat.text)}</p>`).join('')}${entry.selectedChoice ? `<div><i class="fas fa-angle-right"></i> ${this.escapeHtml(entry.selectedChoice.text)}</div>` : ''}</article>`).join('');
+        const training = (run.training?.eventLog || []).slice().reverse().map(entry => `<article><span>养成 · ${this.escapeHtml(entry.title)}</span>${entry.beats.map(beat => `<p>${beat.speakerName ? `<b>${this.escapeHtml(beat.speakerName)}</b>` : ''}${this.escapeHtml(beat.text)}</p>`).join('')}${entry.selectedChoice ? `<div><i class="fas fa-angle-right"></i> ${this.escapeHtml(entry.selectedChoice.text)}</div>` : ''}</article>`).join('');
+        this.infoBody.innerHTML = `<div class="netflix-history-list">${story}${training}</div>`;
+        this.closeSheet(this.menuSheet);
+        this.openSheet(this.infoSheet);
+    }
+
+    showEndings() {
+        this.infoTitle.textContent = '结局收藏';
+        this.infoBody.innerHTML = this.state.unlockedEndings.length ? `<div class="netflix-ending-list">${this.state.unlockedEndings.map(ending => `<article><span>${this.escapeHtml(ending.type)}</span><h3>${this.escapeHtml(ending.title)}</h3><p>${this.escapeHtml(ending.summary)}</p><small>${this.escapeHtml(ending.storyTitle || '')} · ${new Date(ending.unlockedAt).toLocaleDateString('zh-CN')}</small></article>`).join('')}</div>` : '<div class="netflix-empty-state">还没有解锁结局。每一个选择都会把故事推向不同方向。</div>';
+        this.openSheet(this.infoSheet);
+    }
+
+    showWorldBooksInfo() {
+        const books = this.getWorldBooks();
+        this.infoTitle.textContent = '世界书';
+        this.infoBody.innerHTML = books.length ? `<div class="netflix-book-list">${books.map(book => `<article><i class="fas fa-book"></i><span><strong>${this.escapeHtml(book.name || '未命名世界书')}</strong><small>${Array.isArray(book.entries) ? book.entries.length : 0} 条词条</small></span></article>`).join('')}</div><p class="netflix-info-note">世界书会在初始化游戏时选择，并随存档保存独立文本快照。</p>` : '<div class="netflix-empty-state">暂无世界书，请先在系统设置中创建。</div>';
+        this.openSheet(this.infoSheet);
+    }
+
+    restartGame() {
+        if (this.isBusy || !this.state.activeRun) return;
+        if (!window.confirm('重新开始会覆盖自动档，手动存档不会受影响。是否继续？')) return;
+        const setup = this.state.activeRun.setup;
+        this.setupDraft = {
+            sourceId: setup.sourceId,
+            title: setup.title,
+            category: setup.category,
+            coverUrl: setup.coverUrl,
+            worldview: setup.worldview,
+            premise: setup.premise,
+            worldBookIds: (setup.worldBooks || []).map(book => book.id),
+            cast: this.core.clone(setup.cast),
+            attributes: this.core.createDefaultAttributes()
+        };
+        this.state.activeRun = null;
+        this.state.saveSlots.auto = null;
+        this.saveState({ flush: true });
+        this.closeSheet(this.menuSheet);
+        this.gameView.classList.remove('is-active');
+        this.gameView.setAttribute('aria-hidden', 'true');
+        this.renderSetup();
+        this.setupView.classList.add('is-active');
+        this.setupView.setAttribute('aria-hidden', 'false');
+    }
+
+    returnToNetflix() {
+        if (this.isBusy) return;
+        if (this.state.activeRun) this.updateAutoSave(true);
+        this.closeSheet(this.menuSheet);
+        this.closeSheet(this.saveSheet);
+        this.closeSheet(this.infoSheet);
+        this.closeSheet(this.mapEditorSheet);
+        this.gameView.classList.remove('is-active');
+        this.gameView.setAttribute('aria-hidden', 'true');
+        this.setupView.classList.remove('is-active');
+        this.setupView.setAttribute('aria-hidden', 'true');
+        this.renderHome();
+        this.renderProfile();
+    }
+
+    upsertRecent(setup) {
+        const item = this.normalizeCatalogItem({
+            id: setup.sourceId,
+            title: setup.title,
+            category: setup.category,
+            summary: setup.premise,
+            coverUrl: setup.coverUrl,
+            cast: setup.cast.filter(actor => actor.type !== 'user')
+        }, setup.sourceId);
+        const catalog = this.normalizeCatalog(this.state.homeCatalog);
+        catalog.recent = [item, ...catalog.recent.filter(existing => existing.id !== item.id)].slice(0, 8);
+        this.state.homeCatalog = catalog;
+    }
+
+    openSheet(sheet) {
+        if (!sheet) return;
+        sheet.classList.add('is-active');
+        sheet.setAttribute('aria-hidden', 'false');
+    }
+
+    closeSheet(sheet) {
+        if (!sheet) return;
+        sheet.classList.remove('is-active');
+        sheet.setAttribute('aria-hidden', 'true');
+    }
+
+    toast(message) {
+        if (typeof window.showToast === 'function') window.showToast(message);
+        else console.warn('[Netflix]', message);
     }
 
     escapeHtml(value = '') {
-        return String(value)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
+        return String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
     }
 
     escapeAttr(value = '') {
         return this.escapeHtml(value).replace(/`/g, '&#96;');
     }
 
-    getUserState() {
-        if (typeof window.getUserState === 'function') return window.getUserState();
-        if (!window.userState || typeof window.userState !== 'object') {
-            window.userState = { name: '', phone: '', persona: '', avatarUrl: null };
-        }
-        return window.userState;
-    }
-
-    getDisplayName(user = this.getUserState()) {
-        return user.name || user.realName || 'User';
-    }
-
-    renderAvatar(container, avatarUrl, sizeClass = '') {
-        if (!container) return;
-        const className = sizeClass ? ` class="${sizeClass}"` : '';
-        if (avatarUrl) {
-            container.innerHTML = `<img src="${avatarUrl}" alt=""${className}>`;
-        } else {
-            container.innerHTML = '<i class="fas fa-user"></i>';
-        }
-    }
-
-    renderUserProfile() {
-        const user = this.getUserState();
-        const name = this.getDisplayName(user);
-        const avatarUrl = user.avatarUrl || user.avatar || '';
-        const followers = user.followers || user.fans || 0;
-        const subscriptions = user.subscriptions || user.subs || 0;
-
-        this.renderAvatar(this.headerAvatar, avatarUrl);
-        this.renderAvatar(this.view.querySelector('#netflix-profile-avatar'), avatarUrl);
-        this.renderAvatar(this.view.querySelector('.netflix-nav-avatar'), avatarUrl);
-
-        const profileName = this.view.querySelector('#netflix-profile-name');
-        const profileFollowers = this.view.querySelector('#netflix-profile-followers');
-        const profileSubs = this.view.querySelector('#netflix-profile-subs');
-        if (profileName) profileName.textContent = name;
-        if (profileFollowers) profileFollowers.textContent = followers;
-        if (profileSubs) profileSubs.textContent = subscriptions;
-    }
-
-    openProfileSheet() {
-        const user = this.getUserState();
-        this.editAvatarDataUrl = user.avatarUrl || user.avatar || '';
-        if (this.editNameInput) this.editNameInput.value = this.getDisplayName(user);
-        if (this.editPersonaInput) this.editPersonaInput.value = user.persona || user.signature || '';
-        this.renderEditAvatar();
-        if (this.profileSheet) this.profileSheet.classList.add('active');
-    }
-
-    closeProfileSheet() {
-        if (this.profileSheet) this.profileSheet.classList.remove('active');
-    }
-
-    renderEditAvatar() {
-        if (!this.editAvatarPreview || !this.editAvatarTrigger) return;
-        const icon = this.editAvatarTrigger.querySelector('i');
-        if (this.editAvatarDataUrl) {
-            this.editAvatarPreview.src = this.editAvatarDataUrl;
-            this.editAvatarPreview.style.display = 'block';
-            if (icon) icon.style.display = 'none';
-        } else {
-            this.editAvatarPreview.removeAttribute('src');
-            this.editAvatarPreview.style.display = 'none';
-            if (icon) icon.style.display = 'block';
-        }
-    }
-
-    handleAvatarFile(event) {
-        const file = event.target.files && event.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-            this.editAvatarDataUrl = reader.result || '';
-            this.renderEditAvatar();
-        };
-        reader.readAsDataURL(file);
-        event.target.value = '';
-    }
-
-    saveProfile() {
-        const user = this.getUserState();
-        const nextName = this.editNameInput ? this.editNameInput.value.trim() : '';
-        const nextPersona = this.editPersonaInput ? this.editPersonaInput.value.trim() : '';
-
-        user.name = nextName || 'User';
-        user.persona = nextPersona;
-        user.avatarUrl = this.editAvatarDataUrl || null;
-        window.userState = user;
-
-        this.syncCurrentAccount(user);
-        this.persistUserState(user);
-        this.renderUserProfile();
-        this.closeProfileSheet();
-
-        if (typeof window.showToast === 'function') {
-            window.showToast('资料已保存');
-        }
-    }
-
-    syncCurrentAccount(user) {
-        if (typeof window.getAccounts !== 'function' || typeof window.getCurrentAccountId !== 'function') return;
-        const accounts = window.getAccounts();
-        const currentAccountId = window.getCurrentAccountId();
-        if (!Array.isArray(accounts) || currentAccountId == null) return;
-
-        const account = accounts.find(item => String(item.id) === String(currentAccountId));
-        if (!account) return;
-        account.name = user.name;
-        account.persona = user.persona;
-        account.signature = user.persona;
-        account.avatarUrl = user.avatarUrl;
-    }
-
-    persistUserState(user) {
-        try {
-            if (window.StorageManager && typeof window.StorageManager.save === 'function') {
-                window.StorageManager.save('u2_userState', user);
-                if (typeof window.getAccounts === 'function') {
-                    window.StorageManager.save('u2_accounts', window.getAccounts());
-                }
-            }
-        } catch (error) {
-            console.warn('Failed to persist Netflix user state:', error);
-        }
-
-        if (typeof window.syncUIs === 'function') window.syncUIs();
-        if (typeof window.saveGlobalData === 'function') window.saveGlobalData();
-    }
-
-    switchTab(tabName = 'home') {
-        const activeItem = this.navItems.find(item => item.getAttribute('data-tab') === tabName) || this.navItems[0];
-        if (!activeItem) return;
-
-        this.navItems.forEach(nav => nav.classList.remove('active'));
-        activeItem.classList.add('active');
-
-        this.tabPanels.forEach(panel => {
-            panel.classList.toggle('active', panel.getAttribute('data-panel') === tabName);
-        });
-
-        if (tabName === 'profile' || tabName === 'create') {
-            this.renderUserProfile();
-            this.renderWorks();
-        }
-        if (tabName === 'home') {
-            this.renderHomeCatalog();
-        }
-        if (this.content) this.content.scrollTop = 0;
-        this.updateNavIndicator(activeItem);
-    }
-
-    updateNavIndicator(activeItem = null) {
-        if (!this.navIndicator) return;
-        const target = activeItem || this.view.querySelector('.netflix-nav-item.active');
-        const nav = this.view.querySelector('.netflix-bottom-nav');
-        if (!target || !nav) return;
-
-        const navRect = nav.getBoundingClientRect();
-        const activeRect = target.getBoundingClientRect();
-        const offsetLeft = activeRect.left - navRect.left - 5;
-
-        this.navIndicator.style.width = `${activeRect.width}px`;
-        this.navIndicator.style.transform = `translateX(${offsetLeft}px)`;
-    }
-
     open() {
         if (!this.view) return;
+        this.isOpen = true;
         this.view.style.display = 'flex';
         this.view.classList.add('active');
-        this.isOpen = true;
         this.switchTab('home');
-        setTimeout(() => this.updateNavIndicator(), 0);
-        document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#000000');
     }
 
     close() {
-        if (!this.view) return;
+        if (this.isBusy) return this.toast('剧情生成中，请稍候');
+        if (this.state.activeRun) this.updateAutoSave(true);
+        this.isOpen = false;
         this.view.classList.remove('active');
         this.view.style.display = 'none';
-        this.closeProfileSheet();
-        this.closeSettingsSheet();
-        this.closeWorldBookSheet();
-        this.closeHomeSearchSheet(true);
-        this.closeActorPicker();
-        this.closeWorkDetail();
-        this.closePlaybackSheet();
-        this.isOpen = false;
-        document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#ffffff');
     }
 }
 
 function initializeNetflixApp() {
     try {
         window.netflixApp = new NetflixApp();
-        if (window.globalDataReadyPromise && typeof window.globalDataReadyPromise.then === 'function') {
+        if (window.globalDataReadyPromise?.then) {
             window.netflixDataReadyPromise = window.globalDataReadyPromise.then(() => {
-                window.netflixApp?.refreshFromPersistedState();
+                if (!window.netflixApp) return false;
+                window.netflixApp.state = window.netflixApp.loadState();
+                window.netflixApp.renderHome();
+                window.netflixApp.renderProfile();
                 return true;
-            }).catch((error) => {
-                console.warn('Netflix global data recovery failed:', error);
+            }).catch(error => {
+                console.warn('[Netflix] durable state recovery failed:', error);
                 return false;
             });
         } else {
@@ -3730,7 +2062,7 @@ function initializeNetflixApp() {
         }
     } catch (error) {
         document.documentElement.dataset.netflixInitError = error?.stack || error?.message || String(error);
-        console.error('Netflix app initialization failed:', error);
+        console.error('[Netflix] initialization failed:', error);
     }
 }
 

@@ -475,18 +475,18 @@
             e.preventDefault();
             e.stopPropagation();
 
-            if (!window.u2MinimaxTts || typeof window.u2MinimaxTts.speakTextCached !== 'function') {
-                if (window.showToast) window.showToast('Minimax 语音不可用');
+            if (!window.u2Tts || typeof window.u2Tts.speakTextCached !== 'function') {
+                if (window.showToast) window.showToast('TTS 不可用');
                 return;
             }
 
             btn.style.opacity = '0.55';
             btn.style.pointerEvents = 'none';
             try {
-                await window.u2MinimaxTts.speakTextCached(text, friend, message);
+                await window.u2Tts.speakTextCached(text, friend, message);
             } catch (error) {
                 console.error('Call voice playback failed', error);
-                if (window.showToast) window.showToast('语音播放失败');
+                if (window.showToast) window.showToast(window.u2Tts?.getUserErrorMessage?.(error) || '语音播放失败');
             } finally {
                 btn.style.opacity = '1';
                 btn.style.pointerEvents = 'auto';
@@ -1139,7 +1139,10 @@ ${recentMessages}`;
         let senderFriend = null;
         
         if (!isSelf && groupCallTarget) {
-            const friend = window.imData.friends.find(f => f.id === senderId);
+            const groupMembers = window.imChat?.getGroupMemberFriends
+                ? window.imChat.getGroupMemberFriends(groupCallTarget)
+                : [];
+            const friend = groupMembers.find(member => String(member.id) === String(senderId));
             if (friend) {
                 senderName = friend.nickname;
                 senderAvatar = friend.avatarUrl;
@@ -1170,8 +1173,11 @@ ${recentMessages}`;
         }
 
         if (text && messagesArea) {
+            const canPlayTts = !isSelf
+                && !!senderFriend
+                && !!window.u2Tts?.canSpeakForFriend?.(senderFriend);
             messagesArea.appendChild(createCallNovelLine(formatCallLineText(text), {
-                voiceButton: isSelf ? null : createCallVoiceButton(text, message, senderFriend || groupCallTarget),
+                voiceButton: canPlayTts ? createCallVoiceButton(text, message, senderFriend) : null,
                 callTurnId: turnId,
                 callLineType: 'text',
                 speakerName: senderName,

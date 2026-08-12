@@ -360,7 +360,9 @@
     }
 
     function getGroupMemberCount(group) {
-        const memberCount = Array.isArray(group?.members) ? group.members.length : 0;
+        const memberCount = typeof window.imChat?.getGroupMemberFriends === 'function'
+            ? window.imChat.getGroupMemberFriends(group).length
+            : new Set((Array.isArray(group?.members) ? group.members : []).map(memberId => String(memberId))).size;
         return memberCount + (isLeftGroup(group) ? 0 : 1);
     }
 
@@ -1485,20 +1487,34 @@ async function openChatTab(friend) {
         if (mainActions) mainActions.style.display = 'flex';
 
         const recallAction = msgContextMenu.querySelector('[data-action="recall"]');
+        const speakAction = msgContextMenu.querySelector('[data-action="speak"]');
+        const activeFriend = window.imData.currentActiveFriend;
+        const messageId = row.getAttribute('data-message-id');
+        const messageTimestamp = row.getAttribute('data-timestamp');
+        const targetMessage = activeFriend && Array.isArray(activeFriend.messages)
+            ? activeFriend.messages.find(message => {
+                if (!message) return false;
+                if (messageId && String(message.id) === String(messageId)) return true;
+                return messageTimestamp && String(message.timestamp) === String(messageTimestamp);
+            })
+            : null;
         if (recallAction) {
-            const activeFriend = window.imData.currentActiveFriend;
-            const messageId = row.getAttribute('data-message-id');
-            const messageTimestamp = row.getAttribute('data-timestamp');
-            const targetMessage = activeFriend && Array.isArray(activeFriend.messages)
-                ? activeFriend.messages.find(message => {
-                    if (!message) return false;
-                    if (messageId && String(message.id) === String(messageId)) return true;
-                    return messageTimestamp && String(message.timestamp) === String(messageTimestamp);
-                })
-                : null;
             const canRecall = row.classList.contains('user-row')
                 && !!window.imApp?.isRecallableUserMessage?.(targetMessage);
             recallAction.style.display = canRecall ? 'flex' : 'none';
+        }
+        if (speakAction) {
+            const groupTtsMessage = targetMessage || {
+                role: row.classList.contains('user-row') ? 'user' : 'assistant',
+                speaker: row.getAttribute('data-speaker') || '',
+                speakerMemberId: row.getAttribute('data-speaker-member-id') || null,
+                senderAvatarUrl: row.getAttribute('data-sender-avatar-url') || ''
+            };
+            const canSpeakGroupMessage = activeFriend?.type === 'group'
+                && !!window.u2Tts?.canSpeakMessage?.(activeFriend, groupTtsMessage);
+            speakAction.style.display = activeFriend?.type === 'group'
+                ? (canSpeakGroupMessage ? 'flex' : 'none')
+                : 'flex';
         }
         
         msgContextOverlay.style.display = 'flex';

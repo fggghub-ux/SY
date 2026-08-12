@@ -257,7 +257,7 @@
     padding: 0;
     background: transparent;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 9px;
 }
 
@@ -510,6 +510,77 @@
 .pay-scan-qrcode i { color: var(--pay-ink); font-size: 146px; }
 .pay-scan-refresh { margin-top: 18px; color: var(--pay-muted); font-size: 11px; font-weight: 650; }
 
+.pay-transfer-in-container {
+    width: min(100%, 420px);
+    padding: 24px;
+    border-radius: 28px;
+    background: var(--pay-surface);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, .18);
+}
+
+.pay-transfer-in-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.pay-transfer-in-header small { display: block; color: var(--pay-accent); font-size: 9px; font-weight: 800; letter-spacing: .18em; }
+.pay-transfer-in-header span { display: block; margin-top: 4px; font-size: 18px; font-weight: 780; }
+.pay-transfer-in-header button { width: 44px; height: 44px; border-radius: 14px; background: var(--pay-bg); color: var(--pay-muted); cursor: pointer; }
+
+.pay-transfer-in-target {
+    margin: 22px 0 14px;
+    color: var(--pay-muted);
+    font-size: 13px;
+}
+
+.pay-transfer-in-target select {
+    max-width: 100%;
+    margin-left: 4px;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--pay-ink);
+    font: inherit;
+    font-weight: 750;
+    cursor: pointer;
+}
+
+.pay-transfer-in-field { display: block; }
+.pay-transfer-in-field > span { display: block; margin-bottom: 8px; color: var(--pay-muted); font-size: 12px; font-weight: 700; }
+.pay-transfer-in-field > div {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px;
+    border-radius: 16px;
+    background: var(--pay-bg);
+    box-shadow: inset 0 0 0 1px var(--pay-line);
+}
+
+.pay-transfer-in-field small { color: var(--pay-ink); font-size: 22px; font-weight: 780; }
+.pay-transfer-in-field input {
+    width: 100%;
+    min-width: 0;
+    height: 58px;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--pay-ink);
+    font: 780 25px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-variant-numeric: tabular-nums;
+}
+
+.pay-transfer-in-field input::placeholder { color: #aeaeb2; font-size: 16px; font-weight: 500; }
+.pay-transfer-in-hint { margin: 10px 0 20px; color: var(--pay-muted); font-size: 11px; line-height: 1.45; }
+
+.pay-transfer-in-actions { display: grid; grid-template-columns: 1fr 1.25fr; gap: 10px; }
+.pay-transfer-in-actions button { min-height: 50px; border-radius: 16px; cursor: pointer; font-size: 14px; font-weight: 750; }
+.pay-transfer-in-actions button[type="button"] { background: var(--pay-bg); color: var(--pay-muted); }
+.pay-transfer-in-actions button[type="submit"] { background: var(--pay-accent); color: #fff; }
+
 .pay-view .bottom-sheet-overlay {
     background: rgba(0, 0, 0, .34);
 }
@@ -558,6 +629,20 @@
 .pay-bank-card.bank-card-blue { background: #3a3a3c; }
 .pay-bank-card.family-sheet-card { background: #48484a; color: #ffffff; }
 .pay-bank-card.is-current { border-color: #aeaeb2; box-shadow: inset 0 0 0 1px #aeaeb2; }
+
+.pay-family-card-unbind {
+    position: absolute;
+    right: 16px;
+    top: 16px;
+    min-height: 32px;
+    padding: 0 10px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, .16) !important;
+    color: #ffffff !important;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+}
 
 .pay-bank-name { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 750; }
 .pay-bank-type { margin-top: 5px; color: rgba(255, 255, 255, .58); font-size: 11px; }

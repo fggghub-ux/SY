@@ -104,9 +104,7 @@ function processNotificationQueue() {
         notificationBanner.style.transform = 'translate(-50%, -150%)'; // Hidden initially
         notificationBanner.style.width = 'calc(100% - 32px)';
         notificationBanner.style.maxWidth = '360px'; // Keep it tight like a mobile banner
-        notificationBanner.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
-        notificationBanner.style.backdropFilter = 'blur(20px)';
-        notificationBanner.style.webkitBackdropFilter = 'blur(20px)';
+        notificationBanner.style.backgroundColor = '#ffffff';
         notificationBanner.style.borderRadius = '40px'; // Deep capsule pill shape
         notificationBanner.style.boxShadow = '0 10px 30px rgba(0,0,0,0.1), inset 0 1px 1px rgba(255,255,255,1)';
         notificationBanner.style.display = 'flex';

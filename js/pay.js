@@ -155,6 +155,13 @@
     const btnFamily = document.getElementById('pay-action-family');
     const familySheet = document.getElementById('pay-family-sheet');
     const familyListEl = document.getElementById('pay-family-list');
+    const btnTransferIn = document.getElementById('pay-action-transfer-in');
+    const transferInModal = document.getElementById('pay-transfer-in-modal');
+    const transferInForm = document.getElementById('pay-transfer-in-form');
+    const transferInAmountInput = document.getElementById('pay-transfer-in-amount');
+    const transferInTargetEl = document.getElementById('pay-transfer-in-target');
+    const transferInClose = document.getElementById('pay-transfer-in-close');
+    const transferInCancel = document.getElementById('pay-transfer-in-cancel');
     let payUiRendered = false;
 
     // --- App Launch/Close ---
@@ -240,6 +247,17 @@
                         <div class="pay-bank-number">${c.number}</div>
                         <div class="pay-bank-logo">${c.logo}</div>
                     `;
+
+                    const unbindBtn = document.createElement('button');
+                    unbindBtn.type = 'button';
+                    unbindBtn.className = 'pay-family-card-unbind';
+                    unbindBtn.textContent = '解绑';
+                    unbindBtn.setAttribute('aria-label', `解绑${c.name}`);
+                    unbindBtn.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                        confirmRemoveFamilyCard(c);
+                    });
+                    el.appendChild(unbindBtn);
                     
                     el.addEventListener('click', () => {
                         currentCardId = c.id;
@@ -365,6 +383,75 @@
         return cards.some(c => c.id === 'family_' + friendId);
     };
 
+    function removeFamilyCard(cardId) {
+        const cardIndex = cards.findIndex(c => c.id === cardId && c.type === 'family');
+        if (cardIndex < 0) return false;
+
+        cards.splice(cardIndex, 1);
+        if (!cards.some(c => c.id === currentCardId)) {
+            currentCardId = cards.find(c => c.type === 'bank')?.id || cards[0]?.id || 'bank_1';
+        }
+        savePayData();
+        renderPayUI();
+        return true;
+    }
+
+    window.removeFamilyCard = removeFamilyCard;
+
+    function confirmRemoveFamilyCard(card) {
+        const doRemove = () => {
+            if (!removeFamilyCard(card.id)) return;
+            if (window.showToast) window.showToast('亲属卡已解绑');
+        };
+
+        if (typeof window.showCustomModal === 'function') {
+            window.showCustomModal({
+                title: '解绑亲属卡',
+                message: `解绑后将删除${card.name}，且无法恢复。`,
+                confirmText: '解绑',
+                cancelText: '取消',
+                isDestructive: true,
+                onConfirm: doRemove
+            });
+        } else if (window.confirm(`解绑后将删除${card.name}，且无法恢复。`)) {
+            doRemove();
+        }
+    }
+
+    function openTransferInModal() {
+        const bankCards = cards.filter(card => card.type === 'bank');
+        if (bankCards.length === 0 || !transferInModal) {
+            if (window.showToast) window.showToast('暂无可转入的银行卡');
+            return;
+        }
+
+        const currentCard = getCurrentCard();
+        const selectedBankCard = currentCard?.type === 'bank'
+            ? currentCard
+            : bankCards[0];
+        if (transferInTargetEl) {
+            transferInTargetEl.innerHTML = '';
+            bankCards.forEach(card => {
+                const option = document.createElement('option');
+                option.value = card.id;
+                option.textContent = `${card.name} ${card.number || ''}`.trim();
+                option.selected = card.id === selectedBankCard.id;
+                transferInTargetEl.appendChild(option);
+            });
+        }
+        if (transferInAmountInput) transferInAmountInput.value = '';
+        transferInModal.classList.add('active');
+        transferInModal.setAttribute('aria-hidden', 'false');
+        setTimeout(() => transferInAmountInput?.focus(), 80);
+    }
+
+    function closeTransferInModal() {
+        if (!transferInModal) return;
+        transferInModal.classList.remove('active');
+        transferInModal.setAttribute('aria-hidden', 'true');
+        if (transferInForm) transferInForm.reset();
+    }
+
     // --- Modals Logic ---
     if (btnScan && scanModal) {
         btnScan.addEventListener('click', () => {
@@ -375,6 +462,50 @@
     if (scanClose && scanModal) {
         scanClose.addEventListener('click', () => {
             scanModal.classList.remove('active');
+        });
+    }
+
+    if (btnTransferIn) {
+        btnTransferIn.addEventListener('click', openTransferInModal);
+    }
+
+    if (transferInClose) {
+        transferInClose.addEventListener('click', closeTransferInModal);
+    }
+
+    if (transferInCancel) {
+        transferInCancel.addEventListener('click', closeTransferInModal);
+    }
+
+    if (transferInModal) {
+        transferInModal.addEventListener('mousedown', (event) => {
+            if (event.target === transferInModal) closeTransferInModal();
+        });
+    }
+
+    if (transferInForm) {
+        transferInForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            const amount = Number(transferInAmountInput?.value);
+            if (!Number.isFinite(amount) || amount <= 0) {
+                if (window.showToast) window.showToast('请输入大于 0 的转入金额');
+                transferInAmountInput?.focus();
+                return;
+            }
+
+            const targetCardId = transferInTargetEl?.value;
+            const targetCard = cards.find(card => card.id === targetCardId && card.type === 'bank');
+            if (!targetCard) {
+                if (window.showToast) window.showToast('请选择银行卡');
+                return;
+            }
+
+            const success = window.addPayTransaction(amount, '账户转入', 'income', targetCard.id);
+            if (!success) {
+                if (window.showToast) window.showToast('转入失败，请重试');
+                return;
+            }
+            closeTransferInModal();
         });
     }
 

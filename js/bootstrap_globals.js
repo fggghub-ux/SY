@@ -144,13 +144,24 @@
         }]))
     };
 
-    const defaultMinimaxConfig = {
-        region: 'cn',
-        customEndpointEnabled: false,
-        endpoint: '',
-        apiKey: '',
-        groupId: '',
-        ttsModel: 'speech-02-hd'
+    const TTS_PROVIDER_IDS = Object.freeze([
+        'minimax',
+        'openai',
+        'openai-compatible',
+        'elevenlabs',
+        'azure',
+        'google',
+        'aws-polly',
+        'volcengine',
+        'dashscope',
+        'tencent',
+        'baidu',
+        'xfyun'
+    ]);
+
+    const defaultTtsConfig = {
+        activeProvider: 'minimax',
+        providers: {}
     };
 
     const defaultUserState = {
@@ -222,11 +233,42 @@
         };
     }
 
-    function normalizeMinimaxConfig(value) {
-        return {
-            ...defaultMinimaxConfig,
-            ...(value && typeof value === 'object' ? value : {})
-        };
+    function normalizeTtsConfig(value) {
+        const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+        const isLegacyMinimaxConfig = !source.providers && [
+            'region',
+            'customEndpointEnabled',
+            'endpoint',
+            'apiKey',
+            'groupId',
+            'ttsModel'
+        ].some((key) => Object.prototype.hasOwnProperty.call(source, key));
+        const legacyMinimax = isLegacyMinimaxConfig ? source : {};
+        const sourceProviders = source.providers && typeof source.providers === 'object' ? source.providers : {};
+        const providers = {};
+        TTS_PROVIDER_IDS.forEach((provider) => {
+            const saved = sourceProviders[provider] && typeof sourceProviders[provider] === 'object'
+                ? sourceProviders[provider]
+                : {};
+            providers[provider] = { ...saved };
+        });
+        if (isLegacyMinimaxConfig) {
+            const region = legacyMinimax.region === 'intl' ? 'intl' : 'cn';
+            providers.minimax = {
+                region,
+                endpoint: legacyMinimax.customEndpointEnabled
+                    ? String(legacyMinimax.endpoint || '').trim()
+                    : (region === 'intl' ? 'https://api.minimax.io' : 'https://api.minimax.chat'),
+                apiKey: String(legacyMinimax.apiKey || '').trim(),
+                groupId: String(legacyMinimax.groupId || '').trim(),
+                model: String(legacyMinimax.ttsModel || '').trim(),
+                models: []
+            };
+        }
+        const activeProvider = TTS_PROVIDER_IDS.includes(source.activeProvider)
+            ? source.activeProvider
+            : 'minimax';
+        return { ...defaultTtsConfig, activeProvider, providers };
     }
 
     function normalizeImageGenerationConfig(value) {
@@ -334,7 +376,9 @@
     window.visionConfig = normalizeVisionConfig(
         window.visionConfig || safeLoad('u2_visionConfig', defaultVisionConfig)
     );
-    window.minimaxConfig = normalizeMinimaxConfig(window.minimaxConfig || safeLoad('u2_minimaxConfig', defaultMinimaxConfig));
+    const storedTtsConfig = safeLoad('u2_ttsConfig', null);
+    const storedLegacyMinimaxConfig = safeLoad('u2_minimaxConfig', null);
+    window.ttsConfig = normalizeTtsConfig(window.ttsConfig || storedTtsConfig || storedLegacyMinimaxConfig);
     window.userState = {
         ...defaultUserState,
         ...(window.userState && typeof window.userState === 'object' ? window.userState : resolveUserStateFromAccounts())
@@ -378,9 +422,9 @@
         };
     };
 
-    window.getMinimaxConfig = function getMinimaxConfig() {
-        window.minimaxConfig = normalizeMinimaxConfig(window.minimaxConfig || safeLoad('u2_minimaxConfig', defaultMinimaxConfig));
-        return window.minimaxConfig;
+    window.getTtsConfig = function getTtsConfig() {
+        window.ttsConfig = normalizeTtsConfig(window.ttsConfig || safeLoad('u2_ttsConfig', storedLegacyMinimaxConfig));
+        return window.ttsConfig;
     };
 
     window.getUserState = function getUserState() {

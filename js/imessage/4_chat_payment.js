@@ -22,14 +22,29 @@ async function commitPaymentFriendChange(friendOrId, mutator, options = {}) {
 
 function getGroupMemberFriends(group) {
         if (!group || group.type !== 'group' || !Array.isArray(group.members)) return [];
+        const resolvedIds = new Set();
         return group.members
             .map(memberRef => {
+                const normalizedRef = String(memberRef == null ? '' : memberRef).trim();
+                if (!normalizedRef) return null;
                 return window.imData.friends.find(item => {
-                    if (!item || item.type === 'group' || item.type === 'official') return false;
-                    return String(item.id) === String(memberRef) || item.nickname === memberRef;
-                });
+                    if (!item || (item.type !== 'char' && item.type !== 'npc')) return false;
+                    return String(item.id) === normalizedRef
+                        || String(item.nickname || '').trim() === normalizedRef
+                        || String(item.realName || '').trim() === normalizedRef;
+                }) || null;
             })
-            .filter(Boolean);
+            .filter(member => {
+                if (!member) return false;
+                const memberId = String(member.id);
+                if (resolvedIds.has(memberId)) return false;
+                resolvedIds.add(memberId);
+                return true;
+            });
+    }
+
+    function getCanonicalGroupMemberIds(group) {
+        return getGroupMemberFriends(group).map(member => String(member.id));
     }
 
 function normalizeGroupSpeaker(group, rawSpeakerName, speakerMemberId = null) {
@@ -1199,6 +1214,7 @@ async function claimIncomingTransfer(friend, msg, options = {}) {
     }
 
     window.imChat.getGroupMemberFriends = getGroupMemberFriends;
+    window.imChat.getCanonicalGroupMemberIds = getCanonicalGroupMemberIds;
     window.imChat.normalizeGroupSpeaker = normalizeGroupSpeaker;
     window.imChat.getGroupMessageSpeaker = getGroupMessageSpeaker;
     window.imChat.getSafeGroupSpeaker = getSafeGroupSpeaker;

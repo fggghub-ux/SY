@@ -52,13 +52,13 @@
     <link rel="stylesheet" href="css/global.css?v=20260721-mobile-input-layout-v1-android-focus-scope-v1&assistive=20260801-no-blur-v3&home-swipe=20260801-scrollend-v2&no-glass=20260803-v1">
     <link rel="stylesheet" href="css/login.css?v=20260731-login-gate-focus-v2">
     <link rel="stylesheet" href="css/home.css?v=20260731-ios-swipe-icon-flicker-v1&layout=20260801-fixed-grid-v1&performance=20260801-v1">
-    <link rel="stylesheet" href="css/worldbook.css?no-glass=20260803-v1">
-    <link rel="stylesheet" href="css/imessage.css?v=20260721-status-prompt-v3-group-poll-v3&cot=20260725-single-chat-cot-v1&status=20260802-three-line-thought-v1&cotui=20260725-pill-v1&link=20260726-light-link-theatre-v1&relationship=20260801-static-preview-v3&android-keyboard=20260801-v1&group-user-avatar=20260802-v1&game=20260803-anonymous-qa-v7-context-layout&image-assets=20260803-v1&offline-stream-performance=20260805-v1&vector-memory=20260807-local-v1&theme-import-android-v1&moment-visibility=20260811-v1">
-    <link rel="stylesheet" href="css/pay.css?v=20260714-ios-neutral-v1">
+    <link rel="stylesheet" href="css/worldbook.css?no-glass=20260803-v1&notes-ios26=20260812-v6">
+    <link rel="stylesheet" href="css/imessage.css?v=20260721-status-prompt-v3-group-poll-v3&cot=20260725-single-chat-cot-v1&status=20260802-three-line-thought-v1&cotui=20260725-pill-v1&link=20260726-light-link-theatre-v1&relationship=20260801-static-preview-v3&android-keyboard=20260801-v1&group-user-avatar=20260802-v1&game=20260803-anonymous-qa-v7-context-layout&image-assets=20260803-v1&offline-stream-performance=20260805-v1&vector-memory=20260807-local-v1&theme-import-android-v1&moment-visibility=20260811-v1&offline-summary-archive=20260811-v1&offline-meeting-delete=20260811-v1&offline-summary-memory=20260811-v1&offline-chat-rename=20260811-v1">
+    <link rel="stylesheet" href="css/pay.css?v=20260812-pay-transfer-bank-v1">
     <link rel="stylesheet" href="css/bstage.css?v=20260721-mobile-input-layout-v1-android-focus-scope-v1&no-glass=20260803-v1">
     <link rel="stylesheet" href="css/tiktok.css?v=20260721-mobile-input-layout-v1">
     <link rel="stylesheet" href="css/shopping.css">
-    <link rel="stylesheet" href="css/x.css?v=20260702-x-dm-reply-batch-v8">
+    <link rel="stylesheet" href="css/x.css?v=20260811-x-dm-imessage-context-v1">
     
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -66,9 +66,9 @@
     <link rel="stylesheet" href="css/loves.css?v=20260719-friend-phone-bilingual-v8&no-glass=20260803-v1&moment-language=20260806-v1">
     <link rel="stylesheet" href="css/library.css?v=20260715-reader-streaming-v1">
     <!-- App Styles -->
-    <link rel="stylesheet" href="css/settings.css?v=20260721-mobile-input-layout-v1-notification-sound-v1&performance=20260801-v2&api-model-picker=20260803-v1&api-open-performance=20260805-v1&about-modal-focus=20260807-v1">
+    <link rel="stylesheet" href="css/settings.css?v=20260721-mobile-input-layout-v1&performance=20260801-v2&api-model-picker=20260803-v1&api-open-performance=20260805-v1&about-modal-focus=20260807-v1&data-management-fullscreen=20260812-v2">
     <link rel="stylesheet" href="css/youtube.css?v=20260717-char-lottery-consistency-v18&no-glass=20260803-v1">
-    <link rel="stylesheet" href="css/netflix.css">
+    <link rel="stylesheet" href="css/netflix.css?v=20260811-character-relations-v3">
 </head>
 <body>
     <!-- 启动保护屏：仿 iOS 开机白底带 u2phone 标识 -->
@@ -1773,52 +1773,82 @@
                         </div>
                     </div>
 
-          <!-- Offline Tavern View -->
-          <div class="app-view offline-tavern-view" id="offline-tavern-view">
-              <div class="offline-tavern-header">
-                  <div class="offline-tavern-back" id="offline-tavern-close-btn">
+          <!-- Offline Chat View -->
+          <div class="app-view offline-chat-view" id="offline-chat-view">
+              <div class="offline-chat-header">
+                  <div class="offline-chat-back" id="offline-chat-close-btn">
                       <i class="fas fa-chevron-left"></i>
                   </div>
                   
-                  <div class="offline-tavern-settings" id="offline-tavern-settings-btn">
+                  <div class="offline-chat-settings" id="offline-chat-settings-btn">
                       <i class="fas fa-cog"></i>
                   </div>
               </div>
-              <div class="offline-tavern-content" id="offline-tavern-content">
+              <div class="offline-chat-content" id="offline-chat-content">
                   <!-- 聊天气泡将在这里动态渲染 -->
               </div>
-              <div class="offline-tavern-input-area">
-                  <div class="offline-tavern-input-bar">
-                      <div class="offline-tavern-attachment" id="offline-tavern-attachment-btn">
+              <div class="offline-chat-input-area">
+                  <div class="offline-chat-input-bar">
+                      <div class="offline-chat-attachment" id="offline-chat-attachment-btn">
                           <i class="fas fa-paperclip"></i>
                       </div>
-                      <textarea class="offline-tavern-input" id="offline-tavern-input" placeholder="输入你想做的事或说的话..."></textarea>
-                      <div class="offline-tavern-send" id="offline-tavern-send-btn">
+                      <textarea class="offline-chat-input" id="offline-chat-input" placeholder="输入你想做的事或说的话..."></textarea>
+                      <div class="offline-chat-send" id="offline-chat-send-btn">
                           <i class="fas fa-arrow-up"></i>
                       </div>
                   </div>
               </div>
               
-              <!-- Offline Tavern Action Menu -->
-              <div class="bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay" id="offline-tavern-action-sheet" style="z-index: 1050; display: none; background: rgba(0,0,0,0.4); justify-content: center; align-items: center;">
+              <!-- Offline Chat Action Menu -->
+               <div class="bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay" id="offline-chat-action-sheet" style="z-index: 1050; display: none; background: rgba(0,0,0,0.4); justify-content: center; align-items: center;">
                   <div class="bottom-sheet wb-centered-modal-card wb-group-modal-card" style="border-radius: 14px; overflow: hidden; max-width: 300px; padding: 0; transform: translateY(0); margin-bottom: 0;">
-                      <div class="moment-action-sheet-item" id="offline-tavern-end-btn" style="color: #007aff; background: #fff; padding: 16px; text-align: center; font-size: 17px; font-weight: 600; cursor: pointer; border-bottom: 1px solid #f2f2f7;">
+                      <div class="moment-action-sheet-item" id="offline-chat-end-btn" style="color: #007aff; background: #fff; padding: 16px; text-align: center; font-size: 17px; font-weight: 600; cursor: pointer; border-bottom: 1px solid #f2f2f7;">
                           结束见面
                       </div>
-                      <div class="moment-action-sheet-item" id="offline-tavern-clear-btn" style="color: #ff3b30; background: #fff; padding: 16px; text-align: center; font-size: 17px; font-weight: 500; cursor: pointer; border-bottom: 1px solid #f2f2f7;">
+                      <div class="moment-action-sheet-item" id="offline-chat-clear-btn" style="color: #ff3b30; background: #fff; padding: 16px; text-align: center; font-size: 17px; font-weight: 500; cursor: pointer; border-bottom: 1px solid #f2f2f7;">
                           清空聊天记录
                       </div>
-                      <div class="bottom-sheet-cancel" id="offline-tavern-action-cancel" style="background: #fff; padding: 16px 20px; text-align: center; font-size: 17px; font-weight: 600; color: #007aff; cursor: pointer; margin-top: 0;">
+                      <div class="bottom-sheet-cancel" id="offline-chat-action-cancel" style="background: #fff; padding: 16px 20px; text-align: center; font-size: 17px; font-weight: 600; color: #007aff; cursor: pointer; margin-top: 0;">
                           取消
-                      </div>
-                  </div>
-              </div>
+                    </div>
+                </div>
+                </div>
+                <div class="bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay" id="offline-chat-summary-sheet" style="z-index: 1060; display: none; background: rgba(0,0,0,0.4); justify-content: center; align-items: center;">
+                   <section class="bottom-sheet wb-centered-modal-card offline-summary-modal" role="dialog" aria-modal="true" aria-labelledby="offline-summary-modal-title">
+                       <div class="sheet-handle"></div>
+                       <div class="sheet-title" id="offline-summary-modal-title">结束见面</div>
+                       <div class="offline-summary-modal-content">
+                           <label class="offline-summary-field" for="offline-summary-api-select">
+                               <span>线下总结 API</span>
+                               <select id="offline-summary-api-select" aria-label="选择线下总结 API"></select>
+                           </label>
+                           <label class="offline-summary-field" for="offline-summary-prompt-input">
+                               <span>自定义线下总结提示词</span>
+                               <textarea id="offline-summary-prompt-input" rows="5" placeholder="补充希望总结特别关注的内容；留空则使用内置规则"></textarea>
+                           </label>
+                           <div class="offline-summary-field">
+                               <span>总结楼层</span>
+                               <div class="offline-summary-floor-range">
+                                   <input id="offline-summary-start-floor" type="number" min="1" step="1" inputmode="numeric" aria-label="总结起始楼层">
+                                   <span>至</span>
+                                   <input id="offline-summary-end-floor" type="number" min="1" step="1" inputmode="numeric" aria-label="总结结束楼层">
+                               </div>
+                               <small id="offline-summary-range-hint">仅总结可选择连续的未归档楼层；结束见面会自动覆盖所有未归档楼层。</small>
+                           </div>
+                           <div class="offline-summary-modal-actions">
+                               <button type="button" id="offline-summary-cancel-btn" class="offline-summary-secondary">取消</button>
+                               <button type="button" id="offline-summary-only-btn" class="offline-summary-secondary">仅总结</button>
+                               <button type="button" id="offline-summary-end-btn" class="offline-summary-primary">结束见面</button>
+                           </div>
+                       </div>
+                   </section>
+           </div>
           </div>
 
-          <!-- Offline Tavern Settings Fullscreen View -->
-          <div class="app-view offline-settings-view" id="offline-tavern-settings-sheet" style="z-index: 1050;">
+          <!-- Offline Chat Settings Fullscreen View -->
+          <div class="app-view offline-settings-view" id="offline-chat-settings-sheet" style="z-index: 1050;">
               <header class="offline-settings-header">
-                  <button type="button" class="offline-settings-back" id="offline-tavern-settings-back-btn" aria-label="返回" title="返回">
+                  <button type="button" class="offline-settings-back" id="offline-chat-settings-back-btn" aria-label="返回" title="返回">
                       <i class="fas fa-chevron-left"></i>
                   </button>
                   <div class="offline-settings-heading">
@@ -1828,7 +1858,7 @@
                   <div class="offline-settings-header-spacer" aria-hidden="true"></div>
               </header>
               <div class="offline-settings-tabs-wrap">
-                  <div class="offline-settings-tabs" id="offline-tavern-settings-tabs" role="tablist" aria-label="线下设定">
+                  <div class="offline-settings-tabs" id="offline-chat-settings-tabs" role="tablist" aria-label="线下设定">
                       <button type="button" class="active" data-offline-settings-tab="prompts" role="tab" aria-selected="true"><span>提示词</span><small>PRESETS</small></button>
                       <button type="button" data-offline-settings-tab="regex" role="tab" aria-selected="false"><span>正则</span><small>RULES</small></button>
                       <button type="button" data-offline-settings-tab="theme" role="tab" aria-selected="false"><span>主题</span><small>THEME</small></button>
@@ -1836,14 +1866,14 @@
               </div>
               <main class="offline-settings-content">
                   <div class="offline-settings-content-inner">
-                      <section id="offline-tavern-prompts-panel" class="offline-settings-panel active" role="tabpanel">
-                          <div id="offline-tavern-settings-list" class="offline-settings-list"></div>
+                      <section id="offline-chat-prompts-panel" class="offline-settings-panel active" role="tabpanel">
+                          <div id="offline-chat-settings-list" class="offline-settings-list"></div>
                       </section>
-                      <section id="offline-tavern-regex-panel" class="offline-settings-panel" role="tabpanel" hidden>
-                          <div id="offline-tavern-regex-list" class="offline-settings-list"></div>
+                      <section id="offline-chat-regex-panel" class="offline-settings-panel" role="tabpanel" hidden>
+                          <div id="offline-chat-regex-list" class="offline-settings-list"></div>
                       </section>
-                      <section id="offline-tavern-theme-panel" class="offline-settings-panel" role="tabpanel" hidden>
-                          <div id="offline-tavern-theme-list" class="offline-settings-list"></div>
+                      <section id="offline-chat-theme-panel" class="offline-settings-panel" role="tabpanel" hidden>
+                          <div id="offline-chat-theme-list" class="offline-settings-list"></div>
                       </section>
                   </div>
               </main>
@@ -2498,9 +2528,9 @@
                         <div class="settings-text">生图配置</div>
                         <i class="fas fa-chevron-right arrow"></i>
                     </div>
-                    <div class="settings-item" id="minimax-config-btn">
+                    <div class="settings-item" id="tts-config-btn">
                         <div class="settings-icon" style="background-color: #ff9500;"><i class="fas fa-volume-up"></i></div>
-                        <div class="settings-text">Minimax</div>
+                        <div class="settings-text">TTS 配置</div>
                         <i class="fas fa-chevron-right arrow"></i>
                     </div>
                     <div class="settings-item" id="world-book-main-btn">
@@ -2579,174 +2609,124 @@
             </div>
         </div>
 
-        <!-- World Book View (Fullscreen Files App Style) -->
-        <div class="app-view world-book-files-view" id="world-book-view" style="z-index: 520;">
+        <!-- World Book View: iOS Notes-style folders, books, and editor -->
+        <div class="app-view world-book-files-view wb-notes-view" id="world-book-view" style="z-index: 520;">
             <input type="file" id="wb-import-file" accept=".txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display: none;">
 
-            <div class="wb-files-page wb-files-main-page active" id="wb-files-main-page">
-                <div class="wb-files-nav">
-                    <button class="wb-nav-btn" id="world-book-back-btn" type="button" aria-label="返回">
-                        <i class="fas fa-chevron-left"></i>
-                    </button>
-                    <div class="wb-files-nav-title">世界书</div>
-                    <div class="wb-files-nav-actions">
-                        <button class="wb-nav-btn" id="world-book-add-btn" type="button" aria-label="新增">
-                            <i class="fas fa-plus"></i>
-                        </button>
+            <section class="wb-files-page wb-files-main-page active" id="wb-files-main-page" aria-label="世界书文件夹">
+                <header class="wb-notes-nav">
+                    <button class="wb-nav-btn wb-nav-back" id="world-book-back-btn" type="button" aria-label="返回"><i class="fas fa-chevron-left"></i></button>
+                    <div class="wb-notes-nav-actions">
+                        <button class="wb-nav-text-btn" id="wb-folder-edit-btn" type="button">编辑</button>
+                        <button class="wb-nav-round-btn" id="wb-folder-add-btn" type="button" aria-label="新建分组"><i class="far fa-folder-plus"></i></button>
                     </div>
+                </header>
+                <div class="wb-notes-scroll wb-main-scroll">
+                    <h1 class="wb-notes-title">文件夹</h1>
+                    <div class="wb-notes-section-title">世界书</div>
+                    <div id="wb-folder-list" class="wb-notes-list" aria-live="polite"></div>
                 </div>
+                <footer class="wb-notes-bottom-bar">
+                    <label class="wb-notes-search" for="wb-search-input"><i class="fas fa-search"></i><input id="wb-search-input" type="search" placeholder="搜索世界书和词条" autocomplete="off"></label>
+                    <button class="wb-notes-compose-btn" id="wb-main-add-book-btn" type="button" aria-label="新建世界书"><i class="far fa-pen-to-square"></i></button>
+                </footer>
+                <div id="wb-search-results" class="wb-search-results" hidden></div>
+            </section>
 
-                <div class="wb-files-content">
-                    <div class="wb-files-large-title">浏览</div>
-
-                    <div class="world-book-popup-tabs">
-                        <div class="wb-segment-control">
-                            <div class="wb-segment-btn active" data-tab="all">全部</div>
-                            <div class="wb-segment-btn" data-tab="global">全局</div>
-                            <div class="wb-segment-btn" data-tab="local">局部</div>
-                        </div>
+            <section class="wb-files-page wb-files-group-page" id="wb-files-group-page" aria-label="分组内世界书">
+                <header class="wb-notes-nav">
+                    <button class="wb-nav-btn wb-nav-back wb-nav-labeled" id="wb-group-back-btn" type="button" aria-label="返回文件夹"><i class="fas fa-chevron-left"></i><span>文件夹</span></button>
+                    <div class="wb-notes-nav-actions">
+                        <button class="wb-nav-round-btn" id="wb-group-more-btn" type="button" aria-label="分组操作"><i class="fas fa-ellipsis"></i></button>
                     </div>
-
-                    <div class="wb-tab-content active" id="wb-tab-all">
-                        <div id="wb-all-list" class="wb-files-folder-grid"></div>
-                    </div>
-
-                    <div class="wb-tab-content" id="wb-tab-global" style="display: none;">
-                        <div id="wb-global-list" class="wb-files-list"></div>
-                    </div>
-
-                    <div class="wb-tab-content" id="wb-tab-local" style="display: none;">
-                        <div id="wb-local-list" class="wb-files-list"></div>
-                    </div>
+                </header>
+                <div class="wb-notes-scroll wb-group-scroll">
+                    <h1 class="wb-notes-title" id="wb-group-large-title">分组</h1>
+                    <p class="wb-group-count-line" id="wb-group-count-line"></p>
+                    <div id="wb-group-book-list" class="wb-notes-list wb-group-book-list" aria-live="polite"></div>
                 </div>
+                <footer class="wb-notes-bottom-bar wb-group-bottom-bar">
+                    <span></span><button class="wb-notes-compose-btn" id="wb-group-add-book-btn" type="button" aria-label="新建世界书"><i class="far fa-pen-to-square"></i></button>
+                </footer>
+                <div id="wb-group-more-menu" class="wb-context-menu" hidden></div>
+            </section>
 
-                <div id="wb-add-menu" class="wb-add-menu" style="display: none;">
-                    <div class="wb-menu-item" id="wb-add-group-btn">
-                        <i class="fas fa-folder-plus"></i>
-                        <span>添加分组</span>
-                    </div>
-                    <div class="wb-menu-item" id="wb-add-book-btn">
-                        <i class="fas fa-book-medical"></i>
-                        <span>添加世界书</span>
-                    </div>
-                    <div class="wb-menu-item" id="wb-import-menu-btn">
-                        <i class="fas fa-file-import"></i>
-                        <span>导入世界书</span>
-                    </div>
+            <section class="wb-files-page wb-files-editor-page" id="wb-files-editor-page" aria-label="编辑世界书">
+                <header class="wb-notes-nav wb-editor-nav">
+                    <button class="wb-nav-btn wb-nav-back wb-nav-labeled" id="wb-editor-back-btn" type="button" aria-label="返回世界书"><i class="fas fa-chevron-left"></i><span id="wb-editor-back-label">世界书</span></button>
+                    <button class="wb-nav-text-btn wb-editor-done-btn" id="wb-editor-done-btn" type="button">完成</button>
+                </header>
+                <div class="wb-notes-scroll wb-editor-scroll">
+                    <input class="wb-editor-title-input" id="add-book-name-input" type="text" placeholder="世界书名称" maxlength="100" aria-label="世界书名称">
+                    <label class="wb-editor-group-row" for="add-book-group-input"><span>分组</span><select id="add-book-group-input" class="wb-native-select" aria-label="世界书分组"></select><i class="fas fa-chevron-right"></i></label>
+                    <div class="wb-editor-section-head"><span>词条</span><button id="add-book-entry-btn" type="button"><i class="fas fa-plus"></i> 添加词条</button></div>
+                    <div id="wb-entries-list-container" class="wb-editor-entry-list"></div>
+                    <section class="wb-book-settings-section">
+                        <div class="wb-book-settings-title">世界书设置</div>
+                        <label class="wb-book-setting-row" for="wb-editor-global-toggle"><span><strong>全局启用</strong><small>向所有支持世界书的内容生成注入</small></span><input id="wb-editor-global-toggle" class="wb-global-toggle" type="checkbox"><i class="wb-ios-switch" aria-hidden="true"></i></label>
+                        <button class="wb-delete-book-btn" id="delete-world-book-btn" type="button" hidden>删除世界书</button>
+                    </section>
                 </div>
-            </div>
-
-            <div class="wb-files-page wb-files-group-page" id="wb-files-group-page">
-                <div class="wb-files-nav">
-                    <button class="wb-nav-btn" id="wb-group-back-btn" type="button" aria-label="返回世界书">
-                        <i class="fas fa-chevron-left"></i>
-                        <span>浏览</span>
-                    </button>
-                    <div class="wb-files-nav-title" id="wb-group-page-title">分组</div>
-                    <div class="wb-files-nav-actions">
-                        <button class="wb-nav-btn wb-group-delete-nav-btn" id="wb-group-delete-current-btn" type="button" aria-label="删除分组">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                        <button class="wb-nav-btn" id="wb-group-add-book-btn" type="button" aria-label="添加世界书">
-                            <i class="fas fa-plus"></i>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="wb-files-content">
-                    <div class="wb-files-large-title" id="wb-group-large-title">分组</div>
-                    <div id="wb-group-book-list" class="wb-files-list wb-group-book-list"></div>
-                </div>
-            </div>
+            </section>
         </div>
 
-        <!-- Add Group Modal (Centered) -->
-        <div class="bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay" id="add-group-overlay" style="z-index: 620;">
+        <!-- Add / rename group -->
+        <div class="bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay" id="wb-group-name-overlay" style="z-index: 620;">
             <div class="wb-centered-modal-card wb-group-modal-card">
                 <div class="wb-centered-modal-header">
-                    <div class="wb-centered-modal-title">添加分组</div>
+                    <div class="wb-centered-modal-title" id="wb-group-name-modal-title">新建文件夹</div>
                 </div>
                 
                 <div class="wb-centered-modal-body">
                     <div class="form-group fully-rounded wb-modal-form" style="margin: 0 0 18px;">
                         <div class="form-item">
-                            <label style="width: 76px;">分组名称</label>
-                            <input type="text" id="add-group-name-input" placeholder="输入分组名称">
+                            <label style="width: 76px;">名称</label>
+                            <input type="text" id="wb-group-name-input" placeholder="输入文件夹名称" maxlength="80">
                         </div>
                     </div>
                     <div class="wb-modal-actions">
-                        <div class="sheet-action wb-secondary-action" id="cancel-add-group-btn">取消</div>
-                        <div class="sheet-action confirm-action wb-primary-action" id="confirm-add-group-btn">确认</div>
+                        <button class="sheet-action wb-secondary-action" id="wb-group-name-cancel-btn" type="button">取消</button>
+                        <button class="sheet-action confirm-action wb-primary-action" id="wb-group-name-confirm-btn" type="button">确认</button>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Add / Edit Book Bottom Sheet -->
-        <div class="bottom-sheet-overlay detail-sheet-overlay wb-book-sheet-overlay" id="add-book-overlay" style="z-index: 630;">
-            <div class="bottom-sheet wb-book-bottom-sheet wb-book-modal-card">
-                <div class="sheet-handle"></div>
-                <div class="wb-book-sheet-header wb-book-modal-header">
-                    <div class="sheet-title wb-centered-modal-title">添加世界书</div>
-                    <div id="wb-edit-actions" style="display: none; justify-content: flex-end; gap: 20px; padding: 0;">
-                        <input type="file" id="wb-import-file-legacy" accept=".txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display: none;">
-                    </div>
-                </div>
-                
-                <div class="detail-sheet-content wb-book-sheet-content wb-centered-modal-body wb-book-modal-body">
-                    <div class="form-group fully-rounded wb-modal-form" style="flex-shrink: 0; margin: 0;">
-                        <div class="form-item">
-                            <label style="width: 84px;">世界书名字</label>
-                            <input type="text" id="add-book-name-input" placeholder="输入世界书名称">
-                        </div>
-                        <div class="form-item">
-                            <label style="width: 84px;" for="add-book-group-input">分组</label>
-                            <select id="add-book-group-input" class="wb-native-select">
-                            </select>
-                        </div>
-                    </div>
+        <!-- Data Management View -->
+        <div class="app-view data-management-view" id="data-management-sheet" style="z-index: 520;">
+            <header class="data-management-header">
+                <button type="button" class="data-management-back" id="data-management-close-btn" aria-label="返回数据管理上一页">
+                    <i class="fas fa-chevron-left" aria-hidden="true"></i>
+                </button>
+                <h2>数据管理</h2>
+                <span class="data-management-header-spacer" aria-hidden="true"></span>
+            </header>
 
-                    <div class="wb-entry-toolbar" style="margin: 20px 0 5px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
-                        <span style="font-size: 15px; font-weight: 600; color: #8e8e93;">词条管理</span>
-                        <div id="add-book-entry-btn" style="color: #fff; width: 28px; height: 28px; border-radius: 14px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
-                            <i class="fas fa-plus" style="font-size: 14px;"></i>
-                        </div>
+            <div class="data-management-content">
+                <section class="data-storage-summary" aria-labelledby="data-storage-summary-title">
+                    <div class="data-storage-summary-heading">
+                        <span id="data-storage-summary-title">应用数据</span>
+                        <strong id="storage-total-usage">正在统计</strong>
                     </div>
-                    
-                    <div id="wb-entries-list-container" style="display: flex; flex-direction: column; gap: 10px; margin: 5px 0 10px; flex: 1; min-height: 0; overflow-y: auto; padding-right: 2px;">
-                        <!-- Injected by JS -->
+                    <p class="data-storage-summary-description" id="storage-summary-description">正在读取应用中的实际数据</p>
+                    <div class="data-storage-usage-bar" id="storage-usage-bar" role="img" aria-label="应用数据分类占用"></div>
+                    <div class="data-storage-legend" id="storage-usage-legend" aria-label="数据分类图例"></div>
+                </section>
+
+                <section class="data-management-section" aria-labelledby="storage-category-title">
+                    <div class="data-management-section-heading">
+                        <h3 id="storage-category-title">数据分类</h3>
+                        <span>按大小</span>
                     </div>
-
-                    <div class="sheet-action confirm-action wb-primary-action" id="confirm-add-book-btn" style="margin: 16px 0 0; flex-shrink: 0;">确认</div>
-                    
-                    <div class="sheet-action confirm-action wb-danger-action" id="delete-world-book-btn" style="margin: 10px 0 0; flex-shrink: 0; display: none;">删除世界书</div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Book Group Picker Modal (Layered on top of Add Book) -->
-        <div class="bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay" id="book-group-picker-sheet" style="z-index: 640;">
-            <div class="wb-centered-modal-card wb-group-modal-card">
-                <div class="wb-centered-modal-header">
-                    <div class="wb-centered-modal-title">选择分组</div>
-                </div>
-
-                <div class="wb-centered-modal-body">
-                    <div class="account-list" id="book-group-list" style="margin: 0 0 18px;">
-                        <!-- Groups injected here -->
+                    <div class="data-management-list storage-category-list" id="storage-category-list" role="list" aria-live="polite">
+                        <div class="storage-category-empty">正在统计数据分类…</div>
                     </div>
-                    <div class="sheet-action confirm-action wb-secondary-action" id="close-book-group-picker-btn" style="margin: 0;">取消</div>
-                </div>
-            </div>
-        </div>
+                </section>
 
-        <!-- Data Management Sheet -->
-        <div class="bottom-sheet-overlay detail-sheet-overlay" id="data-management-sheet">
-            <div class="bottom-sheet data-management-bottom-sheet">
-                <div class="sheet-handle"></div>
-                <div class="sheet-title">数据管理</div>
-
-                <div class="detail-sheet-content data-management-content">
+                <section class="data-management-section" aria-labelledby="storage-health-title">
+                    <div class="data-management-section-heading">
+                        <h3 id="storage-health-title">存储状态</h3>
+                    </div>
                     <div class="storage-health-card" id="storage-health-card">
                         <div class="storage-health-head">
                             <span class="storage-health-dot" id="storage-health-dot"></span>
@@ -2757,31 +2737,26 @@
                             <span id="storage-health-last-save">最后保存：-</span>
                         </div>
                         <div class="storage-health-warning" id="storage-health-warning" hidden></div>
-                        <div class="storage-health-breakdown" id="storage-health-breakdown"></div>
                         <div class="storage-health-compaction" id="storage-health-compaction"></div>
                         <div class="storage-health-actions">
                             <button type="button" id="storage-clean-cache-btn">优化存储</button>
-                            <button type="button" id="storage-retry-btn">重试保存</button>
+                            <button type="button" id="storage-retry-btn" hidden>重试保存</button>
                         </div>
                     </div>
-                    <div class="data-import-preview" id="data-import-preview" style="display: none;">
-                        <div class="data-import-preview-title">待导入备份</div>
-                        <div class="data-import-preview-file" id="data-import-file-name"></div>
-                        <div class="data-import-preview-grid">
-                            <div><span id="data-import-version">-</span><small>版本</small></div>
-                            <div><span id="data-import-records">-</span><small>记录</small></div>
-                            <div><span id="data-import-assets">-</span><small>资源</small></div>
-                            <div><span id="data-import-size">-</span><small>大小</small></div>
-                        </div>
-                    </div>
+                </section>
 
-                    <div class="data-management-actions">
+                <section class="data-management-section" aria-labelledby="data-transfer-title">
+                    <div class="data-management-section-heading">
+                        <h3 id="data-transfer-title">数据迁移</h3>
+                    </div>
+                    <div class="data-management-list data-management-actions">
                         <button type="button" class="data-management-action" id="export-data-btn">
                             <span class="data-management-action-icon success"><i class="fas fa-file-export"></i></span>
                             <span class="data-management-action-copy">
                                 <strong>导出完整备份</strong>
                                 <small>生成可回导的 JSON 文件</small>
                             </span>
+                            <i class="fas fa-chevron-right data-management-action-chevron" aria-hidden="true"></i>
                         </button>
                         <button type="button" class="data-management-action" id="import-data-btn">
                             <span class="data-management-action-icon warning"><i class="fas fa-file-import"></i></span>
@@ -2789,26 +2764,45 @@
                                 <strong>导入并完整替换</strong>
                                 <small>导入前会先预览备份内容</small>
                             </span>
+                            <i class="fas fa-chevron-right data-management-action-chevron" aria-hidden="true"></i>
                         </button>
                         <input type="file" id="import-data-file" accept=".json" style="display:none;">
+                        <div class="data-import-preview" id="data-import-preview" style="display: none;">
+                            <div class="data-import-preview-title">待导入备份</div>
+                            <div class="data-import-preview-file" id="data-import-file-name"></div>
+                            <div class="data-import-preview-grid">
+                                <div><span id="data-import-version">-</span><small>版本</small></div>
+                                <div><span id="data-import-records">-</span><small>记录</small></div>
+                                <div><span id="data-import-assets">-</span><small>资源</small></div>
+                                <div><span id="data-import-size">-</span><small>大小</small></div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="data-management-section" aria-labelledby="data-safety-title">
+                    <div class="data-management-section-heading">
+                        <h3 id="data-safety-title">账户与数据</h3>
+                    </div>
+                    <div class="data-management-list data-management-actions">
                         <button type="button" class="data-management-action danger" id="clear-data-btn">
                             <span class="data-management-action-icon danger"><i class="fas fa-trash-alt"></i></span>
                             <span class="data-management-action-copy">
                                 <strong>清空用户数据</strong>
                                 <small>保留登录授权，重启后恢复默认状态</small>
                             </span>
+                            <i class="fas fa-chevron-right data-management-action-chevron" aria-hidden="true"></i>
                         </button>
                         <button type="button" class="data-management-action" id="u2-auth-sign-out-btn">
-                            <span class="data-management-action-icon"><i class="fas fa-arrow-right-from-bracket"></i></span>
+                            <span class="data-management-action-icon neutral"><i class="fas fa-arrow-right-from-bracket"></i></span>
                             <span class="data-management-action-copy">
                                 <strong>退出登录</strong>
                                 <small>保留本机数据，下次使用账号密码登录</small>
                             </span>
+                            <i class="fas fa-chevron-right data-management-action-chevron" aria-hidden="true"></i>
                         </button>
                     </div>
-
-                    <button type="button" class="sheet-action data-management-close-action" id="data-management-close-btn">关闭</button>
-                </div>
+                </section>
             </div>
         </div>
 
@@ -3213,53 +3207,65 @@
             </div>
         </div>
 
-        <div class="bottom-sheet-overlay detail-sheet-overlay" id="minimax-config-sheet" style="z-index: 505;">
+        <div class="bottom-sheet-overlay detail-sheet-overlay" id="tts-config-sheet" style="z-index: 505;">
             <div class="bottom-sheet" style="max-height: 85%;">
                 <div class="sheet-handle"></div>
-                <div class="sheet-title">Minimax</div>
+                <div class="sheet-title">TTS 配置</div>
 
                 <div class="detail-sheet-content" style="padding-bottom: 20px;">
                     <div class="form-group fully-rounded" style="margin-bottom: 20px;">
                         <div class="form-item">
-                            <label style="width: 100px; white-space: nowrap;">版本</label>
-                            <select id="minimax-region-select" style="flex: 1; border: none; text-align: right; direction: rtl; appearance: none; background: transparent; color: var(--blue-color); outline: none; font-size: 16px; min-width: 0;">
-                                <option value="cn">国内版</option>
-                                <option value="intl">海外版</option>
+                            <label style="width: 112px; white-space: nowrap;">服务商</label>
+                            <select id="tts-provider-select" style="flex: 1; border: none; text-align: right; direction: rtl; appearance: none; background: transparent; color: var(--blue-color); outline: none; font-size: 16px; min-width: 0;">
+                                <option value="minimax">MiniMax</option>
+                                <option value="openai">OpenAI</option>
+                                <option value="openai-compatible">OpenAI 兼容中转站</option>
+                                <option value="elevenlabs">ElevenLabs</option>
+                                <option value="azure">Azure Speech</option>
+                                <option value="google">Google Cloud TTS</option>
+                                <option value="aws-polly">AWS Polly</option>
+                                <option value="volcengine">火山引擎 / 豆包语音</option>
+                                <option value="dashscope">阿里云 DashScope</option>
+                                <option value="tencent">腾讯云 TTS</option>
+                                <option value="baidu">百度智能云 TTS</option>
+                                <option value="xfyun">讯飞 TTS</option>
                             </select>
                             <i class="fas fa-chevron-right arrow" style="margin-left: 5px; color: #c7c7cc; pointer-events: none;"></i>
-                        </div>
-                        <div class="form-item" style="justify-content: space-between; border-bottom: none;">
-                            <label style="width: auto; white-space: nowrap; flex: 1; margin-right: 10px; color: #000; font-size: 16px;">自定义地址</label>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="minimax-custom-endpoint-toggle">
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="form-group fully-rounded" id="minimax-custom-endpoint-group" style="display: none; margin-bottom: 20px;">
-                        <div class="form-item" style="border-bottom: none;">
-                            <label style="width: 100px; white-space: nowrap;">接口地址</label>
-                            <input type="text" id="minimax-endpoint-input" placeholder="https://api.minimax.chat">
                         </div>
                     </div>
 
                     <div class="form-group fully-rounded" style="margin-bottom: 20px;">
                         <div class="form-item">
-                            <label style="width: 100px; white-space: nowrap;">User Key</label>
-                            <input type="password" id="minimax-key-input" placeholder="填写 Minimax API Key">
+                            <label style="width: 112px; white-space: nowrap;">接口地址</label>
+                            <input type="url" id="tts-endpoint-input" inputmode="url" autocomplete="off" placeholder="https://api.example.com">
                         </div>
                         <div class="form-item">
-                            <label style="width: 100px; white-space: nowrap;">Group ID</label>
-                            <input type="text" id="minimax-group-id-input" placeholder="填写 Group ID">
+                            <label id="tts-key-label" style="width: 112px; white-space: nowrap;">API 密钥</label>
+                            <input type="password" id="tts-key-input" autocomplete="off" placeholder="填写 API 密钥">
+                        </div>
+                        <div id="tts-provider-extra-fields"></div>
+                        <div class="form-item">
+                            <label id="tts-model-select-label" style="width: 112px; white-space: nowrap;">已获取模型</label>
+                            <select id="tts-model-select" aria-label="选择已获取模型" style="flex: 1; border: none; text-align: right; direction: rtl; appearance: none; background: transparent; color: var(--blue-color); outline: none; font-size: 16px; min-width: 0;">
+                                <option value="">暂无已获取模型</option>
+                            </select>
+                            <i class="fas fa-chevron-right arrow" style="margin-left: 5px; color: #c7c7cc; pointer-events: none;"></i>
                         </div>
                         <div class="form-item" style="border-bottom: none;">
-                            <label style="width: 100px; white-space: nowrap;">TTS 模型</label>
-                            <input type="text" id="minimax-tts-model-input" placeholder="speech-02-hd">
+                            <label id="tts-model-label" style="width: 112px; white-space: nowrap;">TTS 模型</label>
+                            <input type="text" id="tts-model-input" autocomplete="off" placeholder="拉取后选择，或手动填写">
+                        </div>
+                    </div>
+                    <div id="tts-endpoint-hint" style="margin: 0 26px 20px; color: #8e8e93; font-size: 12px; line-height: 1.5;"></div>
+
+                    <div class="form-group fully-rounded" style="margin-bottom: 20px;">
+                        <div class="settings-item fully-rounded-item" id="fetch-tts-models-btn" style="justify-content: flex-start; border-bottom: none;">
+                            <div class="settings-icon action-icon-blue"><i class="fas fa-cloud-download-alt"></i></div>
+                            <div class="settings-text" style="color: var(--blue-color); font-weight: 500; text-align: left;">获取模型/音色列表</div>
                         </div>
                     </div>
 
-                    <div class="sheet-action confirm-action" id="confirm-minimax-btn" style="background-color: #1c1c1e; color: #fff;">保存 Minimax 设置</div>
+                    <div class="sheet-action confirm-action" id="confirm-tts-btn" style="background-color: #1c1c1e; color: #fff;">保存 TTS 设置</div>
                 </div>
             </div>
         </div>
@@ -4022,7 +4028,7 @@
                             <span data-u2-i18n="imessage.translate">Translate</span>
                             <i class="fas fa-language" style="font-size: 16px; color: #8e8e93;"></i>
                         </div>
-                        <div class="msg-menu-item" data-action="speak">
+                        <div class="msg-menu-item" data-action="speak" aria-label="播放语音" title="播放语音">
                             <span>语音</span>
                             <i class="fas fa-volume-up" style="font-size: 16px; color: #8e8e93;"></i>
                         </div>
@@ -4443,6 +4449,20 @@
                                     <span class="slider"></span>
                                 </label>
                             </div>
+                            <div class="form-item" style="justify-content: space-between; border-bottom: 1px solid var(--separator-color);">
+                                <label style="width: auto; font-size: 17px; color: #000; padding-left: 0;">允许角色私聊</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="group-member-private-chats-toggle" checked="">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <div class="form-item" style="justify-content: space-between; border-bottom: 1px solid var(--separator-color);">
+                                <label style="width: auto; font-size: 17px; color: #000; padding-left: 0;">允许角色与角色的好友私聊</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="group-member-friend-private-chats-toggle" checked="">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
                             <div class="form-item" style="justify-content: space-between; border-bottom: 1px solid var(--separator-color); cursor: pointer;" id="group-memory-shortterm-btn">
                                 <label style="width: auto; font-size: 17px; color: #000; padding-left: 0;">短期记忆</label>
                                 <div style="display: flex; align-items: center; gap: 8px; color: #8e8e93;">
@@ -4606,6 +4626,10 @@
                             <span class="pay-action-icon"><i class="fas fa-users"></i></span>
                             <span class="pay-action-copy"><strong>亲属卡</strong><small>FAMILY</small></span>
                         </button>
+                        <button type="button" class="pay-action-btn" id="pay-action-transfer-in">
+                            <span class="pay-action-icon"><i class="fas fa-arrow-down"></i></span>
+                            <span class="pay-action-copy"><strong>转入</strong><small>ADD MONEY</small></span>
+                        </button>
                     </div>
 
                     <!-- 账单明细区 -->
@@ -4648,6 +4672,28 @@
                         <i class="fas fa-sync-alt"></i> 每分钟自动刷新
                     </div>
                 </div>
+            </div>
+
+            <!-- 转入金额弹窗 -->
+            <div class="pay-modal-overlay" id="pay-transfer-in-modal" aria-hidden="true">
+                <form class="pay-transfer-in-container" id="pay-transfer-in-form">
+                    <div class="pay-transfer-in-header">
+                        <div><small>ADD MONEY</small><span>转入账户</span></div>
+                        <button type="button" id="pay-transfer-in-close" aria-label="关闭转入"><i class="fas fa-times"></i></button>
+                    </div>
+                    <label class="pay-transfer-in-target" for="pay-transfer-in-target">转入至
+                        <select id="pay-transfer-in-target" aria-label="选择转入银行卡"></select>
+                    </label>
+                    <label class="pay-transfer-in-field" for="pay-transfer-in-amount">
+                        <span>转入金额</span>
+                        <div><small>¥</small><input id="pay-transfer-in-amount" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="请输入金额" autocomplete="off" required></div>
+                    </label>
+                    <p class="pay-transfer-in-hint">仅可转入银行卡，亲属卡不支持转入。</p>
+                    <div class="pay-transfer-in-actions">
+                        <button type="button" id="pay-transfer-in-cancel">取消</button>
+                        <button type="submit">确认转入</button>
+                    </div>
+                </form>
             </div>
 
             <!-- 模拟卡包弹窗 -->
@@ -4867,20 +4913,20 @@
                             <div class="settings-group fully-rounded" style="margin: 10px 16px;">
                                 <div class="settings-item" style="justify-content: space-between; cursor: default;">
                                     <div class="settings-icon" style="background-color: #ff9500;"><i class="fas fa-volume-up"></i></div>
-                                    <div class="settings-text">Minimax 语音</div>
+                                    <div class="settings-text">TTS</div>
                                     <label class="toggle-switch">
-                                        <input type="checkbox" id="chat-minimax-enabled-toggle">
+                                        <input type="checkbox" id="chat-tts-enabled-toggle">
                                         <span class="slider"></span>
                                     </label>
                                 </div>
-                                <div id="chat-minimax-settings-body" style="display: none;">
+                                <div id="chat-tts-settings-body" style="display: none;">
                                     <div class="form-item">
                                         <label style="width: 100px; white-space: nowrap;">语音 ID</label>
-                                        <input type="text" id="chat-minimax-voice-id-input" placeholder="默认音色">
+                                        <input type="text" id="chat-tts-voice-id-input" placeholder="填写服务商音色 ID">
                                     </div>
                                     <div class="form-item" style="border-bottom: none;">
                                         <label style="width: 100px; white-space: nowrap;">语速</label>
-                                        <input type="number" id="chat-minimax-speed-input" min="0.5" max="2" step="0.1" value="1" style="text-align: right; padding-right: 5px;">
+                                        <input type="number" id="chat-tts-speed-input" min="0.5" max="2" step="0.1" value="1" style="text-align: right; padding-right: 5px;">
                                     </div>
                                 </div>
                             </div>
@@ -7086,105 +7132,7 @@
             <!-- ========================================== -->
             <!-- NETFLIX APP VIEW -->
             <!-- ========================================== -->
-            <div class="app-view netflix-view" id="netflix-view" style="display: none; background: #000; flex-direction: column; position: absolute; inset: 0; z-index: 1000; color: #fff;">
-                <!-- Header (Transparent & Sticky) -->
-                <div class="netflix-header" id="netflix-header">
-                    <div class="netflix-logo" style="color: #E50914; font-size: 28px; font-weight: 900; letter-spacing: -1px; cursor: pointer;" onclick="window.netflixApp && window.netflixApp.close();">
-                        N
-                    </div>
-                    <div class="netflix-header-right">
-                        <i class="fas fa-search"></i>
-                        <div class="netflix-avatar"><i class="fas fa-user"></i></div>
-                    </div>
-                </div>
-
-                <!-- Scrollable Content -->
-                <div class="netflix-content" id="netflix-content">
-                    <div class="netflix-tab-panel active" data-panel="home">
-                    <!-- Hero Banner -->
-                    <div class="netflix-hero-banner">
-                        <div class="netflix-hero-img-wrapper">
-                            <!-- Placeholder image using gradient for hero -->
-                            <div class="netflix-hero-placeholder" style="background: linear-gradient(to bottom, #444, #111); width: 100%; height: 100%;"></div>
-                            <div class="netflix-hero-fade"></div>
-                        </div>
-                        <div class="netflix-hero-info">
-                            <div class="netflix-tags">
-                                <span>情感</span> • <span>剧情</span> • <span>动人</span>
-                            </div>
-                            <div class="netflix-hero-actions">
-                                <div class="netflix-btn netflix-btn-play">
-                                    <i class="fas fa-play"></i> 播放
-                                </div>
-                                <div class="netflix-btn netflix-btn-add">
-                                    <i class="fas fa-plus"></i> <span>我的列表</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Row 1 -->
-                    <div class="netflix-row">
-                        <h2 class="netflix-row-title">世界书</h2>
-                        <div class="netflix-row-scroll">
-                            <div class="netflix-card">
-                                <div class="netflix-card-img" style="background: #333;"></div>
-                                <div class="netflix-progress-bar"><div class="netflix-progress-fill" style="width: 40%;"></div></div>
-                            </div>
-                            <div class="netflix-card">
-                                <div class="netflix-card-img" style="background: #444;"></div>
-                                <div class="netflix-progress-bar"><div class="netflix-progress-fill" style="width: 80%;"></div></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Row 2 -->
-                    <div class="netflix-row" style="padding-bottom: 80px;">
-                        <h2 class="netflix-row-title">为你推荐</h2>
-                        <div class="netflix-row-scroll">
-                            <div class="netflix-card vertical"><div class="netflix-card-img" style="background: #555;"></div></div>
-                            <div class="netflix-card vertical"><div class="netflix-card-img" style="background: #666;"></div></div>
-                            <div class="netflix-card vertical"><div class="netflix-card-img" style="background: #777;"></div></div>
-                            <div class="netflix-card vertical"><div class="netflix-card-img" style="background: #888;"></div></div>
-                        </div>
-                    </div>
-                    </div>
-
-                    <div class="netflix-tab-panel netflix-empty-panel" data-panel="games">
-                        <div class="netflix-empty-icon"><i class="fas fa-plus"></i></div>
-                        <h2>游戏</h2>
-                        <p>添加 Netflix 游戏内容</p>
-                    </div>
-
-                    <div class="netflix-tab-panel netflix-profile-panel" data-panel="profile">
-                        <div class="netflix-profile-avatar"><i class="fas fa-user"></i></div>
-                        <h2>我的 Netflix</h2>
-                        <p>你的片单、下载和观看记录会出现在这里</p>
-                        <div class="netflix-profile-list">
-                            <div><i class="fas fa-plus"></i><span>我的列表</span></div>
-                            <div><i class="fas fa-clock"></i><span>世界书</span></div>
-                            <div><i class="fas fa-download"></i><span>下载</span></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Floating Bottom Nav -->
-                <div class="netflix-bottom-nav">
-                    <div class="netflix-nav-indicator"></div>
-                    <div class="netflix-nav-item active" data-tab="home">
-                        <i class="fas fa-home"></i>
-                        <span>首页</span>
-                    </div>
-                    <div class="netflix-nav-item" data-tab="games">
-                        <i class="fas fa-plus"></i>
-                        <span>游戏</span>
-                    </div>
-                    <div class="netflix-nav-item" data-tab="profile">
-                        <div class="netflix-nav-avatar"><i class="fas fa-user"></i></div>
-                        <span>我的 Netflix</span>
-                    </div>
-                </div>
-            </div>
+            <div class="app-view netflix-view" id="netflix-view" style="display: none; flex-direction: column; position: absolute; inset: 0; z-index: 1000;"></div>
 
             <!-- ========================================== -->
             <!-- LOVES APP VIEW -->
@@ -8322,52 +8270,52 @@
     <script src="storage.js?v=20260710-storage-v7-cache1"></script>
     <script src="js/lazy_vendor_loader.js?v=20260803-v1"></script>
     <script src="js/app_state_bridge.js?v=20260710-bstage-chat-recovery-v1"></script>
-    <script src="js/bootstrap_globals.js?v=20260721-fetch-abort-v1&error-copy=20260801-zh-v1&api=20260803-unified-v1&provider-adapters=20260807-v1&image-generation=20260807-model-cache-v1&image-understanding=20260811-v1&vector-memory=20260807-local-v1"></script>
+    <script src="js/bootstrap_globals.js?v=20260721-fetch-abort-v1&error-copy=20260801-zh-v1&api=20260803-unified-v1&provider-adapters=20260807-v1&image-generation=20260807-model-cache-v1&image-understanding=20260811-v1&vector-memory=20260807-local-v1&tts=20260811-v2"></script>
     <script src="js/image_generation.js?v=20260807-model-cache-v1"></script>
     <script src="js/image_understanding.js?v=20260811-v1"></script>
     <script src="js/export_file.js?v=20260718-ios-pwa-export-v1"></script>
-    <script src="js/about_info_modal.js?v=20260811-latest-changelog-notice-v1"></script>
-    <script src="js/login.js?v=20260801-resume-recovery-v1&changelog-notice=20260811-v1"></script>
+    <script src="js/about_info_modal.js?v=20260812-changelog-v1"></script>
+    <script src="js/login.js?v=20260801-resume-recovery-v1&changelog-notice=20260812-v1"></script>
 <script src="js/mobile_input_compat.js?v=20260713-bstage-enter-v1-android-focus-scope-v1&guard=20260801-v3&theme-import-android-v1&enter-blur=20260807-v1&global-scope=20260807-v1&call-viewport-owner=20260811-v1&bottom-sheet-y=20260811-v1"></script>
     <script src="js/background_activity.js"></script>
     <script src="js/system_notifications.js?v=20260721-storage-hydration-v1-custom-sound-v1&image-assets=20260803-v1"></script>
     
     <!-- 引入 iMessage 模块分段代码 -->
     <script src="js/imessage/game.js?v=20260803-anonymous-qa-v7-context-layout&startup-queue=20260804-v1"></script>
-    <script src="js/imessage/data_utils.js?v=20260713-offline-memory-v1-sticker-manifest-v2-memory-event-time-v1-offline-handoff-v2&single-chat-info=20260803-v1&schedule-routine=20260804-v1"></script>
-    <script src="js/imessage/2_core.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&cotcopy=20260727-v2&observer=20260730-v1&open-performance=20260802-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&group-user-avatar=20260802-v1&image-generation=20260803-artist-prompt-v6&single-chat-info=20260803-v1&offline-handoff=20260803-v2&cot-default=20260803-v3&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v2&vendor-lazy=20260803-v1&startup-queue=20260804-v1&schedule-routine=20260804-v1&context-window=20260804-v1&local-vector-memory=20260807-v1&group-identity-css-v1&service-id-v1&friend-commit=20260808-v1&x-dm-context=20260811-v2"></script>
+    <script src="js/imessage/data_utils.js?v=20260713-offline-memory-v1-sticker-manifest-v2-memory-event-time-v1-offline-handoff-v2&single-chat-info=20260803-v1&schedule-routine=20260804-v1&summary-error=20260811-v1"></script>
+    <script src="js/imessage/2_core.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&cotcopy=20260727-v2&observer=20260730-v1&open-performance=20260802-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&group-user-avatar=20260802-v1&image-generation=20260803-artist-prompt-v6&single-chat-info=20260803-v1&offline-handoff=20260803-v2&cot-default=20260803-v3&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v2&vendor-lazy=20260803-v1&startup-queue=20260804-v1&schedule-routine=20260804-v1&context-window=20260804-v1&local-vector-memory=20260807-v1&group-identity-css-v1&service-id-v1&x-dm-context=20260811-v2&x-social-post-context=20260811-v2&offline-summary-settings=20260811-v1&time-aware-context=20260811-v1&offline-chat-rename=20260811-v1&group-private-chat-permissions=20260812-v1"></script>
     <script src="js/imessage/vector_memory.js?v=20260807-local-vector-memory-v1"></script>
     <script src="js/imessage/3_contacts.js?v=20260718-friend-profile-import-v1&render-cache=20260801-v1&vendor-lazy=20260803-v1&startup-queue=20260804-v1"></script>
-    <script src="js/imessage/3_groups.js?v=20260718-group-poll-v4-group-memory-editor-v1&observer=20260730-v1&render-cache=20260801-v1&user-avatar=20260802-v1&group-auto-translation=20260803-v1&startup-queue=20260804-v1&context-limit=20260804-v1&group-identity-css-v1"></script>
+    <script src="js/imessage/3_groups.js?v=20260718-group-poll-v4-group-memory-editor-v1&observer=20260730-v1&render-cache=20260801-v1&user-avatar=20260802-v1&group-auto-translation=20260803-v1&startup-queue=20260804-v1&context-limit=20260804-v1&group-identity-css-v1&member-sync-private-permissions=20260812-v1"></script>
     <script src="js/imessage/4_chat_common.js?v=image-assets-20260803-v1&auto-image=20260807-v1&startup-queue=20260804-v1"></script>
     <script src="js/imessage/4_chat_status.js?v=20260716-status-prompt-v2&paging=20260801-button-only-v1&startup-queue=20260804-v1"></script>
-    <script src="js/imessage/4_chat_payment.js?v=20260725-single-chat-cot-v1&startup-queue=20260804-v1&group-identity-css-v1"></script>
-    <script src="js/imessage/4_chat_bubbles.js?v=20260725-single-chat-cot-v1-avatar-pill-v1-link-theatre-js-v1&group-user-avatar=20260802-v1&open-performance=20260802-v1&image-assets=20260803-v1&startup-queue=20260804-v1&group-identity-css-v1"></script>
+    <script src="js/imessage/4_chat_payment.js?v=20260725-single-chat-cot-v1&startup-queue=20260804-v1&group-identity-css-v1&group-member-resolution=20260812-v1"></script>
+    <script src="js/imessage/4_chat_bubbles.js?v=20260725-single-chat-cot-v1-avatar-pill-v1-link-theatre-js-v1&group-user-avatar=20260802-v1&open-performance=20260802-v1&image-assets=20260803-v1&startup-queue=20260804-v1&group-identity-css-v1&tts=20260811-group-v2&offline-meeting-delete=20260811-v1"></script>
     <script src="js/imessage/chat_search.js?v=20260718-chat-history-search-v2&keyboard-guard=20260801-v1&startup-queue=20260804-v1"></script>
     <script src="js/imessage/chat_favorites.js?v=20260723-chat-favorites-v3&startup-queue=20260804-v1"></script>
-    <script src="js/imessage/minimax_tts.js?v=20260810-language-boost-v1"></script>
-    <script src="js/imessage/4_chat_ai.js?v=20260724-single-chat-prompt-v8-single-chat-cot-v1&cot=20260802-single-chat-cot-full-analysis-v2&online=20260801-persona-entries-v1&observer=20260730-v1&performance=20260801-v1&api=20260803-nonstream-v1&auto-image=20260807-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&single-chat-info=20260803-v1&offline-handoff=20260803-v2&context-dedupe=20260803-v1&nonstream=20260803-v2&group-auto-translation=20260803-v1&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v5&image-assets=20260803-v1&startup-queue=20260804-v1&psychology-priority=20260804-v1&schedule-routine=20260804-v1&sleep-status=20260804-v1&system-merge=20260804-v1&context-trace=20260804-v1&message-count-hard-limit=20260807-v1&x-dm-context=20260811-v1"></script>
+    <script src="js/imessage/tts.js?v=20260811-tts-minimax-audio-payload-v3"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260724-single-chat-prompt-v8-single-chat-cot-v1&cot=20260802-single-chat-cot-full-analysis-v2&online=20260801-persona-entries-v1&observer=20260730-v1&performance=20260801-v1&api=20260803-nonstream-v1&auto-image=20260807-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&single-chat-info=20260803-v1&offline-handoff=20260803-v2&context-dedupe=20260803-v1&nonstream=20260803-v2&group-auto-translation=20260803-v1&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v5&image-assets=20260803-v1&startup-queue=20260804-v1&psychology-priority=20260804-v1&schedule-routine=20260804-v1&sleep-status=20260804-v1&system-merge=20260804-v1&context-trace=20260804-v1&message-count-hard-limit=20260807-v1&x-dm-context=20260811-v1&safari-compat=20260811-v1&time-aware-context=20260811-v1&group-private-chat-permissions=20260812-v1"></script>
     <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
     <script src="js/imessage/offline_reasoning.js?v=20260718-offline-cot-v1"></script>
-    <script src="js/imessage/4_chat_sheet.js?v=20260718-offline-cot-v1-chat-image-send-v1&cotui=20260725-pill-v1&api=20260804-offline-stream-v1&image-generation=20260807-presets-v1&chat-runtime-performance=20260803-v1&image-assets=20260803-v1&startup-queue=20260804-v1&offline-stream-performance=20260805-v2&group-identity-css-v1"></script>
+    <script src="js/imessage/4_chat_sheet.js?v=20260718-offline-cot-v1-chat-image-send-v1&cotui=20260725-pill-v1&api=20260804-offline-stream-v1&image-generation=20260807-presets-v1&chat-runtime-performance=20260803-v1&image-assets=20260803-v1&startup-queue=20260804-v1&offline-stream-performance=20260805-v2&group-identity-css-v1&tts=20260811-v1&recap-summary-archive=20260811-v1&recap-order-delete=20260811-v1&offline-summary-memory=20260811-v1&offline-clear-confirm=20260811-v1&offline-chat-rename=20260811-v1&offline-dialogue-render=20260811-v1&sticker-name-cards=20260812-v1"></script>
     <script src="js/imessage/4_chat_link.js?v=20260726-light-link-theatre-v1&api=20260803-unified-v1&startup-queue=20260804-v1&group-identity-css-v1"></script>
     <script src="js/imessage/4_chat_list.js?chat-runtime-performance=20260803-v1&startup-queue=20260804-v1"></script>
-    <script src="js/imessage/4_chat_interface.js?v=20260715-chat-context-menu-offline-retry-v1&observer=20260730-v1&android-keyboard=20260802-v1&open-performance=20260802-v1&chat-runtime-performance=20260803-v1&startup-queue=20260804-v1"></script>
-    <script src="js/imessage/4_chat_voice_call.js?v=20260725-call-keyboard-minimize-v2-minimized-context-v1&api=20260803-unified-v1&group-layout=20260803-v1&group-identity-css-v1&oppo-edge-anchor=20260811-v1"></script>
-    <script src="js/imessage/4_chat_main.js?v=20260715-chat-context-menu-offline-retry-v1&single-chat-info=20260803-v1&startup-queue=20260804-v1"></script>
-    <script src="js/imessage/5_settings.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v3&chat-bg=20260729-race-reset-v1&relationship=20260801-static-preview-v3&auto-translation=20260801-v1&status-prompt=20260802-v1&style-cache=20260802-v1&api=20260803-unified-v1&single-chat-info=20260803-v1&startup-queue=20260804-v1&context-persistence=20260804-v1&local-vector-memory=20260807-v1&x-dm-context=20260811-v2"></script>
+    <script src="js/imessage/4_chat_interface.js?v=20260715-chat-context-menu-offline-retry-v1&observer=20260730-v1&android-keyboard=20260802-v1&open-performance=20260802-v1&chat-runtime-performance=20260803-v1&startup-queue=20260804-v1&group-tts=20260811-v2&group-member-count=20260812-v1"></script>
+    <script src="js/imessage/4_chat_voice_call.js?v=20260725-call-keyboard-minimize-v2-minimized-context-v1&api=20260803-unified-v1&group-layout=20260803-v1&group-identity-css-v1&oppo-edge-anchor=20260811-v1&tts=20260811-group-v2"></script>
+    <script src="js/imessage/4_chat_main.js?v=20260715-chat-context-menu-offline-retry-v1&single-chat-info=20260803-v1&startup-queue=20260804-v1&tts=20260811-group-v3"></script>
+    <script src="js/imessage/5_settings.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v3&chat-bg=20260729-race-reset-v1&relationship=20260801-static-preview-v3&auto-translation=20260801-v1&status-prompt=20260802-v1&style-cache=20260802-v1&api=20260803-unified-v1&single-chat-info=20260803-v1&startup-queue=20260804-v1&context-persistence=20260804-v1&local-vector-memory=20260807-v1&x-dm-context=20260811-v2&x-social-post-context=20260811-v1&summary-error=20260811-v1&tts=20260811-v1"></script>
     <script src="js/imessage/6_moments.js?v=20260718-moments-target-reply-v1&auto-translation=20260801-v1&api=20260803-unified-v1&startup-queue=20260804-v1&group-identity-css-v1&current-account-avatar-v1&moment-visibility=20260811-v1&relationship-engagement=20260811-v1"></script>
 
     <!-- 引入其他应用模块 -->
-    <script src="js/pay.js?v=20260710-storage-ready-v1&open-performance=20260801-v1&startup-queue=20260804-v1"></script>
+    <script src="js/pay.js?v=20260710-storage-ready-v1&open-performance=20260801-v1&startup-queue=20260804-v1&pay-transfer-bank=20260812-v1"></script>
     <script src="js/bstage.js?v=20260725-android-keyboard-actions-v2&subscribers=20260730-cap-compact-v1&keyboard-guard=20260801-v1&api=20260803-unified-v1&provider=20260807-v1&image-assets=20260803-v1&startup-queue=20260804-v1"></script>
     <!-- 引入世界书核心模块脚本 -->
     <script src="js/builtin_worldbook.js?v=20260713-disable-override-limit-v2"></script>
-    <script src="js/worldbook.js?v=20260801-import-txt-docx-only-v1&vendor-lazy=20260803-v1&startup-queue=20260804-v1&lazy-render=20260805-v1"></script>
+    <script src="js/worldbook.js?v=20260801-import-txt-docx-only-v1&vendor-lazy=20260803-v1&startup-queue=20260804-v1&lazy-render=20260805-v1&notes-ios26=20260812-v6"></script>
     <!-- 引入核心 UI 管理与设置模块脚本 -->
-    <script src="js/ui.js"></script>
+    <script src="js/ui.js?v=20260811-no-glass-v1"></script>
     <script src="js/ui_translation.js?v=20260807-global-ui-zh-v1"></script>
-    <script src="js/settings.js?v=20260718-ios-pwa-export-v1-notification-sync-v1-custom-notification-sound-v1-api-presets-accessor-v1&global-font-scale=20260801-v3&theme-source=20260802-status-center-v1&assistive=20260801-drag-settle-v3&home-theme=20260731-widgets-v1&app-icon-alpha=20260731-v1&backup=20260803-sticker-skip-v3&api=20260803-config-v2-model-search&provider-picker=20260807-v1&image-generation=20260807-model-select-v1&image-understanding=20260811-v1&startup-queue=20260804-v1&api-open-performance=20260805-v1&vector-memory=20260807-local-v1&group-identity-css-v1&theme-import-android-v1&moments-account-hydration=20260806-v1&global-ui-zh-v1"></script>
+    <script src="js/settings.js?v=20260718-ios-pwa-export-v1-notification-sync-v1-custom-notification-sound-v1-api-presets-accessor-v1&global-font-scale=20260801-v3&theme-source=20260802-status-center-v1&assistive=20260801-drag-settle-v3&home-theme=20260731-widgets-v1&app-icon-alpha=20260731-v1&backup=20260803-sticker-skip-v3&api=20260803-config-v2-model-search&provider-picker=20260807-v1&image-generation=20260807-model-select-v1&image-understanding=20260811-v1&startup-queue=20260804-v1&api-open-performance=20260805-v1&vector-memory=20260807-local-v1&group-identity-css-v1&theme-import-android-v1&moments-account-hydration=20260806-v1&global-ui-zh-v1&tts=20260811-v1&data-management-fullscreen=20260812-v1"></script>
     <script src="js/library.js?v=20260715-reader-streaming-v1&open-performance=20260801-v1&vendor-lazy=20260803-v1&startup-queue=20260804-v1"></script>
     <script src="js/loves.js?v=20260719-friend-phone-bilingual-v13-android-focus-scope-v1&open-performance=20260801-v1&api=20260803-unified-v1&image-assets=20260803-v1&startup-queue=20260804-v1&moment-language=20260806-v1&android-comment-focus=20260807-v1"></script>
     <script src="js/tiktok/2_core.js?v=20260712-tiktok-feed-cleanup-v1&open-performance=20260801-v1&startup-queue=20260804-v1"></script>
@@ -8381,9 +8329,10 @@
     <script src="js/youtube/6_community.js?v=20260801-dm-generation-fix-v19&worldbook=20260729-global-bound-only-v2&api=20260803-unified-v1&composer-focus=20260811-v1"></script>
     <script src="js/youtube/7_trending.js?worldbook=20260729-global-bound-only-v2&api=20260803-unified-v1"></script>
     <script src="js/youtube/8_user_live.js?v=20260717-char-lottery-consistency-v18&worldbook=20260729-global-bound-only-v2&api=20260803-unified-v1"></script>
-    <script src="js/netflix.js?v=20260710-storage-ready-v2&open-performance=20260801-v1&api=20260803-unified-v1&startup-queue=20260804-v1"></script>
+    <script src="js/netflix_game_core.js?v=20260811-character-relations-v3"></script>
+    <script src="js/netflix.js?v=20260811-character-relations-v3&open-performance=20260801-v1&api=20260803-unified-v1&startup-queue=20260804-v1"></script>
     <script src="js/shopping.js?v=20260710-storage-ready-v1&performance=20260801-v2&api=20260803-unified-v1&startup-queue=20260804-v1"></script>
-    <script src="js/xapp.js?v=20260710-storage-v7-cache1&worldbook=20260729-global-bound-char-v1&api=20260803-unified-v1&image-understanding=20260811-v1&startup-queue=20260804-v1"></script>
+    <script src="js/xapp.js?v=20260710-storage-v7-cache1&worldbook=20260729-global-bound-char-v1&api=20260803-unified-v1&image-understanding=20260811-v1&startup-queue=20260804-v1&dm-imessage-context=20260811-v1&dm-role-context=20260811-v1"></script>
     <script src="js/home_desktop.js?v=20260710-storage-ready-v1&theme-widgets=20260731-v1&image-assets=20260804-v1&eager-images=20260804-v1&splash-gate=20260804-v1"></script>
     <script src="js/home_widget_panel_enhance.js"></script>
     <!-- 引入主逻辑脚本 -->

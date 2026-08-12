@@ -293,12 +293,13 @@ window.imApp.normalizeOfflineThemeState = function(theme) {
         return /^#[0-9a-fA-F]{6}$/.test(color) ? color.toUpperCase() : fallback;
     };
     const customCss = typeof source.customCss === 'string' ? source.customCss : '';
+    const migratedCustomCss = customCss.replaceAll('offline-tavern', 'offline-chat');
 
     return {
         narrativeColor: normalizeColor(source.narrativeColor, defaults.narrativeColor),
         dialogueColor: normalizeColor(source.dialogueColor, defaults.dialogueColor),
-        customCss,
-        customCssEnabled: !!customCss.trim(),
+        customCss: migratedCustomCss,
+        customCssEnabled: !!migratedCustomCss.trim(),
         activePresetId: String(source.activePresetId || '').trim()
     };
 };
@@ -802,6 +803,10 @@ window.imApp.normalizeFriendData = function(friend) {
     normalized.showTimestamp = !!normalized.showTimestamp;
     normalized.timeAware = normalized.timeAware !== false;
     normalized.allowRoleRecall = normalized.allowRoleRecall !== false;
+    // Group-derived private conversations are enabled by default so existing groups
+    // keep their current behavior until the owner explicitly turns either off.
+    normalized.allowGroupMemberPrivateChats = isGroupChat && normalized.allowGroupMemberPrivateChats !== false;
+    normalized.allowGroupMemberFriendPrivateChats = isGroupChat && normalized.allowGroupMemberFriendPrivateChats !== false;
     normalized.autoExpandTranslation = normalized.autoExpandTranslation === true;
     normalized.showGroupUserAvatar = isGroupChat && normalized.showGroupUserAvatar === true;
     const cotDefaultVersion = Number(normalized.cotDefaultVersion) || 0;
@@ -843,6 +848,10 @@ window.imApp.normalizeFriendData = function(friend) {
     normalized.botEnabled = !!normalized.botEnabled;
     // offlineMeetEnabled is deprecated
     normalized.offlineRegexScripts = Array.isArray(normalized.offlineRegexScripts) ? normalized.offlineRegexScripts : [];
+    normalized.offlineSummarySettings = {
+        apiPresetId: String(normalized.offlineSummarySettings?.apiPresetId || '').trim(),
+        prompt: String(normalized.offlineSummarySettings?.prompt || '').trim().slice(0, 12000)
+    };
     normalized.linkedAccountBot = window.imApp.normalizeLinkedAccountBot(normalized.linkedAccountBot);
     normalized.linkedAccountChats = window.imApp.normalizeLinkedAccountChats(normalized.linkedAccountChats);
 
@@ -1124,15 +1133,16 @@ window.imApp.getRecentContextMessages = function(friend) {
         : allMessages.slice(-contextLimit);
 };
 
-window.imApp.formatOfflineMeetingRecordForContext = function(message) {
+window.imApp.formatOfflineMeetingRecordForContext = function(message, options = {}) {
     if (!message || message.type !== 'offline_meeting_record') return '';
+    const includeTime = options?.includeTime !== false;
     const dateText = String(message.dateText || '').trim() || '未知';
     const title = String(message.title || '').trim() || '见面记录';
     const summary = String(message.summary || message.content || '').trim();
     if (!summary) return '';
     return [
         '<offline_meeting>',
-        `<ended_at>${dateText}</ended_at>`,
+        includeTime ? `<ended_at>${dateText}</ended_at>` : '',
         `<title>${title}</title>`,
         `<summary>${summary}</summary>`,
         '</offline_meeting>'
@@ -1140,6 +1150,7 @@ window.imApp.formatOfflineMeetingRecordForContext = function(message) {
 };
 
 window.imApp.buildOfflineMeetingContext = function(friend, options = {}) {
+    const includeTime = options?.includeTime !== false;
     const excludedRecord = options && typeof options === 'object'
         ? options.excludeRecord
         : null;
@@ -1156,7 +1167,7 @@ window.imApp.buildOfflineMeetingContext = function(friend, options = {}) {
     };
     const records = window.imApp.getRecentContextMessages(friend)
         .filter(message => message?.type === 'offline_meeting_record' && !isExcludedRecord(message))
-        .map(window.imApp.formatOfflineMeetingRecordForContext)
+        .map(message => window.imApp.formatOfflineMeetingRecordForContext(message, { includeTime }))
         .filter(Boolean);
     if (records.length === 0) return '';
     return `<offline_meeting_context>\n${records.join('\n')}\n</offline_meeting_context>\nUse these completed face-to-face meeting summaries as known history for the current online chat.`;
@@ -1541,6 +1552,7 @@ window.imApp.buildLinkedAccountMemoryContext = function(friend, options = {}) {
     if (linkedChats.length === 0) return '';
 
     const charName = normalizedFriend.nickname || normalizedFriend.realName || 'Char';
+    const includeTime = options?.includeTime !== false;
     const maxMessagesPerFriend = Math.max(1, Number(options.maxMessagesPerFriend) || 4);
     const formatLinkedMessageTime = (timestamp) => {
         const value = Number(timestamp) || 0;
@@ -1573,7 +1585,8 @@ window.imApp.buildLinkedAccountMemoryContext = function(friend, options = {}) {
         } else {
             recentMessages.forEach(message => {
                 const speaker = message.role === 'char' ? charName : displayName;
-                lines.push(`[${formatLinkedMessageTime(message.timestamp)}] ${speaker}: ${message.text || ''}`);
+                const timePrefix = includeTime ? `[${formatLinkedMessageTime(message.timestamp)}] ` : '';
+                lines.push(`${timePrefix}${speaker}: ${message.text || ''}`);
             });
         }
     });
@@ -1633,6 +1646,7 @@ window.imApp.buildXDirectMessageMemoryContext = function(friend, options = {}) {
     if (!mountedThread) return '';
 
     const requestedLimit = Number(options.maxMessages);
+    const includeTime = options?.includeTime !== false;
     const limit = Number.isFinite(requestedLimit)
         ? Math.max(1, Math.min(50, Math.floor(requestedLimit)))
         : mount.limit;
@@ -1658,7 +1672,64 @@ window.imApp.buildXDirectMessageMemoryContext = function(friend, options = {}) {
         const text = sanitize(rawText).trim();
         if (!text) return '';
         const speaker = message.source === 'user' || message.sender === 'user' ? 'User' : xCharName;
-        return `[${formatTime(message.createdAt || message.timestamp)}] ${speaker}: ${text}`;
+        const timePrefix = includeTime ? `[${formatTime(message.createdAt || message.timestamp)}] ` : '';
+        return `${timePrefix}${speaker}: ${text}`;
+    };
+    const xState = typeof window.getAppState === 'function'
+        ? window.getAppState('x')
+        : window.__xFallbackState;
+    const directMessages = Array.isArray(xState?.xDirectMessages) ? xState.xDirectMessages : [];
+    const allXPosts = Array.isArray(xState?.xGeneratedPosts) ? xState.xGeneratedPosts : [];
+    const rawMountedThread = directMessages.find(item => String(item?.id || '') === String(mountedThread.id)) || {};
+    const normalizeIdentity = value => String(value == null ? '' : value)
+        .split('·')[0]
+        .trim()
+        .replace(/^@/, '')
+        .toLocaleLowerCase();
+    const getPostTimestamp = post => Number(post?.createdAt || post?.timestamp || post?.publishedAt || 0) || 0;
+    const getPostText = post => String(post?.text || post?.content || '').trim();
+    const getPostAuthorHandle = post => normalizeIdentity(post?.handle || post?.authorHandle || post?.accountHandle);
+    const getPostAuthorName = post => String(post?.authorName || post?.name || post?.displayName || '').trim();
+    const currentUserHandle = normalizeIdentity(xState?.xData?.handle);
+    const mountedCharHandle = normalizeIdentity(mountedThread.handle);
+    const mountedCharName = String(mountedThread.name || '').trim().toLocaleLowerCase();
+    const isCurrentUserPost = post => {
+        const authorId = String(post?.authorId || post?.accountId || '').trim();
+        if (authorId === 'me' || authorId === 'user:self' || authorId === 'current-user') return true;
+        const authorHandle = getPostAuthorHandle(post);
+        return Boolean(currentUserHandle && authorHandle && currentUserHandle === authorHandle);
+    };
+    const isMountedCharPost = post => {
+        const authorId = String(post?.authorId || post?.profileOwnerId || post?.accountId || '').trim();
+        if (authorId && authorId === String(mountedThread.id)) return true;
+        const authorHandle = getPostAuthorHandle(post);
+        if (mountedCharHandle && authorHandle && mountedCharHandle === authorHandle) return true;
+        return !authorHandle && !!mountedCharName
+            && getPostAuthorName(post).toLocaleLowerCase() === mountedCharName;
+    };
+    const formatPost = (post, ownerLabel) => {
+        const text = sanitize(getPostText(post)).trim();
+        if (!text) return '';
+        const topic = sanitize(post?.topicTag || '').trim();
+        const timePrefix = includeTime ? `[${formatTime(getPostTimestamp(post))}] ` : '';
+        return `${timePrefix}${ownerLabel} posted on X${topic ? ` (${topic})` : ''}: ${text}`;
+    };
+    const collectRecentPosts = (posts, ownerLabel) => {
+        const seen = new Set();
+        return (Array.isArray(posts) ? posts : [])
+            .slice()
+            .filter(post => getPostText(post))
+            .sort((left, right) => getPostTimestamp(right) - getPostTimestamp(left))
+            .filter(post => {
+                const key = String(post?.id || '') || `${getPostTimestamp(post)}:${getPostText(post)}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            })
+            .slice(0, limit)
+            .sort((left, right) => getPostTimestamp(left) - getPostTimestamp(right))
+            .map(post => formatPost(post, ownerLabel))
+            .filter(Boolean);
     };
     const recentMessages = mountedThread.messages
         .slice()
@@ -1666,10 +1737,16 @@ window.imApp.buildXDirectMessageMemoryContext = function(friend, options = {}) {
         .slice(-limit)
         .map(formatMessage)
         .filter(Boolean);
+    const recentUserPosts = collectRecentPosts(allXPosts.filter(isCurrentUserPost), 'User');
+    const charProfilePosts = [
+        ...(Array.isArray(rawMountedThread.profilePosts) ? rawMountedThread.profilePosts : []),
+        ...allXPosts.filter(isMountedCharPost)
+    ];
+    const recentCharPosts = collectRecentPosts(charProfilePosts, `Current Char (${xCharName})`);
 
-    if (recentMessages.length === 0) return '';
+    if (recentMessages.length === 0 && recentUserPosts.length === 0 && recentCharPosts.length === 0) return '';
 
-    return `<mounted_x_direct_message_context>\nSource: a manually mounted X private-message conversation. This is prior cross-platform context, not a message sent in the current iMessage thread.\nMounted X thread: ${sanitize(xCharName)}${mountedThread.handle ? ` (${sanitize(mountedThread.handle)})` : ''}\nUse it only to maintain continuity with User. Do not say other characters saw it, and do not present it as an iMessage bubble.\nCurrent iMessage Char: ${sanitize(charName)}\nRecent X private messages:\n${recentMessages.join('\n')}\n</mounted_x_direct_message_context>`;
+    return `<mounted_x_direct_message_context>\nSource: mounted X app social context for the same Char. This is prior cross-platform context, not a message sent in the current iMessage thread.\nMounted X thread: ${sanitize(xCharName)}${mountedThread.handle ? ` (${sanitize(mountedThread.handle)})` : ''}\nUse it only to maintain continuity with User. Do not say other characters saw it, and do not present any of this as an iMessage bubble.\nCurrent iMessage Char: ${sanitize(charName)}\n\n<x_private_direct_messages>\nScope: prior one-to-one private X direct messages between User and the current Char. These are neither public posts nor iMessage bubbles.\n${recentMessages.length ? recentMessages.join('\n') : 'None'}\n</x_private_direct_messages>\n\n<x_user_public_posts>\nScope: User's public X posts.\nOwnership hard rule: every post in this block was authored and publicly posted by User, not by you (the current Char). Never claim, imply, remember, or refer to any of these posts as your own.\n${recentUserPosts.length ? recentUserPosts.join('\n') : 'None'}\n</x_user_public_posts>\n\n<x_current_char_own_public_posts>\nScope: the current Char's own public X profile posts.\nOwnership hard rule: every post in this block was authored and publicly posted by you, the current Char. Treat it as your own public content; do not deny authorship or describe it as User's or someone else's post.\n${recentCharPosts.length ? recentCharPosts.join('\n') : 'None'}\n</x_current_char_own_public_posts>\n</mounted_x_direct_message_context>`;
 };
 
 window.imApp.getMomentMessages = function() {
@@ -4097,6 +4174,11 @@ window.imApp.getImessageUiState = function() {
     const safeState = rawState && typeof rawState === 'object' ? rawState : {};
     const uiState = safeState.uiState && typeof safeState.uiState === 'object' ? safeState.uiState : {};
 
+    const hasLegacyOfflineThemeCss = (theme) => (
+        typeof theme?.customCss === 'string' && theme.customCss.includes('offline-tavern')
+    );
+    const needsOfflineThemeCssMigration = hasLegacyOfflineThemeCss(uiState.offlineTheme)
+        || (Array.isArray(uiState.offlineThemePresets) && uiState.offlineThemePresets.some(hasLegacyOfflineThemeCss));
     const offlineThemePresets = window.imApp.normalizeOfflineThemePresets(uiState.offlineThemePresets);
     const offlineTheme = window.imApp.normalizeOfflineThemeState(uiState.offlineTheme);
     if (offlineTheme.activePresetId && !offlineThemePresets.some(preset => preset.id === offlineTheme.activePresetId)) {
@@ -4108,6 +4190,7 @@ window.imApp.getImessageUiState = function() {
         offlineTheme,
         offlineThemePresets,
         hasOfflineTheme: !!(uiState.offlineTheme && typeof uiState.offlineTheme === 'object'),
+        needsOfflineThemeCssMigration,
         offlinePrompts: Array.isArray(uiState.offlinePrompts) ? uiState.offlinePrompts : [],
         offlinePromptPresets: Array.isArray(uiState.offlinePromptPresets) ? uiState.offlinePromptPresets : [],
         offlinePromptActivePresetId: String(uiState.offlinePromptActivePresetId || '').trim(),
@@ -4213,6 +4296,10 @@ window.imApp.initializeData = async function() {
         window.imData.offlinePromptPresets = Array.isArray(globalUiState.offlinePromptPresets) ? globalUiState.offlinePromptPresets : [];
         window.imData.offlinePromptActivePresetId = String(globalUiState.offlinePromptActivePresetId || '').trim();
         window.imData.offlinePromptsInitialized = globalUiState.offlinePromptsInitialized === true;
+
+        if (globalUiState.needsOfflineThemeCssMigration && window.imApp.saveImessageUiState) {
+            window.imApp.saveImessageUiState();
+        }
 
         window.imData.ready = true;
 
@@ -6540,19 +6627,19 @@ window.addEventListener('pagehide', () => {
 
             memoryLocationSheetContent.innerHTML = `
                 <div class="memory-sheet-title">社交帐号</div>
-                <div style="margin:0 0 12px; padding:12px 14px; border-radius:14px; background:#f7f7fa; color:#636366; font-size:13px; line-height:1.5;">
-                    当前 Char 对应的 X 私信会作为单聊参考，不会合并两端聊天记录。
-                </div>
+                    <div style="margin:0 0 12px; padding:12px 14px; border-radius:14px; background:#f7f7fa; color:#636366; font-size:13px; line-height:1.5;">
+                        开启后会参考同一 Char 的 X 私信、User 最近发布的 X 帖子，以及 Char 自己主页的 X 帖子；不会合并到 iMessage 聊天记录中。
+                    </div>
                 <div class="memory-short-list" style="gap:10px;">
                     <label style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; border-radius:14px; background:#f7f7fa;">
-                        <span style="display:flex; flex-direction:column; min-width:0; gap:3px;"><strong style="font-size:15px; color:#111;">X 私信</strong><small style="font-size:12px; color:#8e8e93; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${selected ? escapeMemoryHtml(selectedLabel) : (selectedIsMissing ? '原会话已不存在' : '暂无对应私信')}</small></span>
+                        <span style="display:flex; flex-direction:column; min-width:0; gap:3px;"><strong style="font-size:15px; color:#111;">X 社交帐号</strong><small style="font-size:12px; color:#8e8e93; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${selected ? `${escapeMemoryHtml(selectedLabel)} · 私信、User 帖子与 Char 主页帖子` : (selectedIsMissing ? '原会话已不存在' : '暂无对应私信')}</small></span>
                         <span style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
-                            <input id="memory-x-dm-limit" type="number" min="1" max="50" step="1" value="${mount.limit}" aria-label="X 私信上下文条数" style="width:48px; height:32px; border:1px solid #e5e5ea; border-radius:9px; background:#fff; color:#111; font-size:14px; text-align:center;">
-                            <span style="font-size:13px; color:#8e8e93; margin-left:-6px;">条</span>
-                            <input id="memory-x-dm-enabled" type="checkbox" aria-label="开启 X 私信上下文" ${mount.enabled ? 'checked' : ''} ${selected ? '' : 'disabled'}>
+                            <input id="memory-x-dm-limit" type="number" min="1" max="50" step="1" value="${mount.limit}" aria-label="X 社交帐号每类上下文条数" style="width:48px; height:32px; border:1px solid #e5e5ea; border-radius:9px; background:#fff; color:#111; font-size:14px; text-align:center;">
+                            <span style="font-size:13px; color:#8e8e93; margin-left:-6px;">条/类</span>
+                            <input id="memory-x-dm-enabled" type="checkbox" aria-label="开启 X 社交帐号上下文" ${mount.enabled ? 'checked' : ''} ${selected ? '' : 'disabled'}>
                         </span>
                     </label>
-                    ${candidates.length === 0 ? '<div class="memory-short-empty">未找到当前 Char 对应的 X 私信。请先在 X 中从 iMessage 导入该 Char 并创建私信。</div>' : ''}
+                    ${candidates.length === 0 ? '<div class="memory-short-empty">未找到当前 Char 对应的 X 私信。请先在 X 中从 iMessage 导入该 Char 并创建私信，才能挂载社交帐号上下文。</div>' : ''}
                 </div>
             `;
 
@@ -6562,7 +6649,7 @@ window.addEventListener('pagehide', () => {
                     targetFriend.memory.xDirectMessageMount = window.imApp.normalizeXDirectMessageMount(nextMount);
                 }, { silent: true, syncActive: true, syncSettings: true });
                 if (!saved) {
-                    if (window.showToast) window.showToast('X 私信上下文保存失败');
+                    if (window.showToast) window.showToast('X 社交帐号上下文保存失败');
                     return false;
                 }
                 window.dispatchEvent(new CustomEvent('u2:memory-entries-updated', {

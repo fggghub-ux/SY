@@ -337,6 +337,75 @@
         };
     }
 
+    function classifySummaryRequestFailure(input = {}) {
+        const status = Math.max(0, Math.round(Number(input?.status) || 0));
+        const kind = String(input?.kind || '').trim().toLowerCase();
+        const detail = String(input?.message || input?.detail || '').toLowerCase();
+        const withStatus = (message) => ({
+            code,
+            status,
+            message: `${message}${status > 0 ? `（HTTP ${status}）` : ''}`
+        });
+        const isContextLimit = status === 413 || (
+            status === 400 && /(?:context(?:[_\s-]?length)?|maximum context|too many tokens|token limit|prompt is too long|input is too long|request (?:body|entity|payload) too large|payload too large|上下文|令牌|请求体|载荷|内容过长|文本过长)/i.test(detail)
+        );
+        let code = 'unknown';
+
+        if (kind === 'persistence') {
+            code = 'persistence_failed';
+            return withStatus('总结已生成，但保存到本地失败');
+        }
+        if (kind === 'settings_persistence') {
+            code = 'settings_persistence_failed';
+            return withStatus('摘要设置保存失败');
+        }
+        if (kind === 'response_format') {
+            code = 'invalid_response';
+            return withStatus('摘要接口返回格式不兼容');
+        }
+        if (kind === 'network') {
+            code = 'network_failed';
+            return withStatus('无法连接摘要 API，请检查网络或跨域设置');
+        }
+        if (isContextLimit) {
+            code = 'context_limit';
+            return withStatus('本批对话过长，请降低总结轮数后重试');
+        }
+        if (status === 401) {
+            code = 'unauthorized';
+            return withStatus('摘要 API 密钥无效或未授权');
+        }
+        if (status === 403) {
+            code = 'forbidden';
+            return withStatus('当前摘要接口或模型没有权限');
+        }
+        if (status === 404) {
+            code = 'not_found';
+            return withStatus('摘要 API 地址或模型不可用');
+        }
+        if (status === 408 || status === 504) {
+            code = 'timeout';
+            return withStatus('摘要请求超时，请稍后重试');
+        }
+        if (status === 429) {
+            code = 'rate_limited';
+            return withStatus('摘要请求过于频繁或额度不足');
+        }
+        if (status >= 500 && status <= 599) {
+            code = 'server_error';
+            return withStatus('摘要 API 服务暂时异常，请稍后重试');
+        }
+        if (status === 400) {
+            code = 'bad_request';
+            return withStatus('摘要请求参数无效，请检查摘要 API 配置');
+        }
+        if (status > 0) {
+            code = 'http_error';
+            return withStatus('摘要 API 请求失败');
+        }
+        return withStatus('摘要生成失败，请稍后重试');
+    }
+
     function removeShortTermSummaryEntry(entries, entryId) {
         const safeEntries = Array.isArray(entries) ? entries : [];
         return safeEntries.filter(entry => !entry || String(entry.id) !== String(entryId));
@@ -539,6 +608,7 @@
         normalizeScheduleEvent,
         normalizeSchedule,
         getSummaryBatch,
+        classifySummaryRequestFailure,
         removeShortTermSummaryEntry,
         isSuccessfulOnlineAssistantReply,
         resolvePendingOfflineHandoff,

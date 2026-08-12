@@ -65,21 +65,25 @@
     function persistSettingsData() {
         syncUserStateFromCurrentAccount();
         if (!window.appStorage?.commitDomain) return Promise.resolve(false);
-        return window.appStorage.commitDomain('settings', (draft) => ({
-            ...draft,
-            userState: clonePlainData(userState),
-            accounts: clonePlainData(accounts),
-            currentAccountId,
-            apiConfig: clonePlainData(apiConfig),
-            vectorMemoryConfig: clonePlainData(vectorMemoryConfig),
-            visionConfig: clonePlainData(visionConfig),
-            imageGenerationConfig: clonePlainData(imageGenerationConfig),
-            minimaxConfig: clonePlainData(minimaxConfig),
-            apiPresets: clonePlainData(apiPresets),
-            fetchedModels: clonePlainData(fetchedModels),
-            assistiveBallSettings: clonePlainData(assistiveBallSettings),
-            themeState: clonePlainData(themeState)
-        }), { critical: true, reason: 'settings-update' }).catch((error) => {
+        return window.appStorage.commitDomain('settings', (draft) => {
+            const nextDraft = {
+                ...draft,
+                userState: clonePlainData(userState),
+                accounts: clonePlainData(accounts),
+                currentAccountId,
+                apiConfig: clonePlainData(apiConfig),
+                vectorMemoryConfig: clonePlainData(vectorMemoryConfig),
+                visionConfig: clonePlainData(visionConfig),
+                imageGenerationConfig: clonePlainData(imageGenerationConfig),
+                ttsConfig: clonePlainData(ttsConfig),
+                apiPresets: clonePlainData(apiPresets),
+                fetchedModels: clonePlainData(fetchedModels),
+                assistiveBallSettings: clonePlainData(assistiveBallSettings),
+                themeState: clonePlainData(themeState)
+            };
+            delete nextDraft.minimaxConfig;
+            return nextDraft;
+        }, { critical: true, reason: 'settings-update' }).catch((error) => {
             console.warn('Failed to persist settings:', error);
             return false;
         });
@@ -106,14 +110,9 @@
     let visionConfig = window.u2ImageUnderstanding
         ? window.u2ImageUnderstanding.normalizeConfig(window.visionConfig)
         : (window.getVisionConfig ? window.getVisionConfig() : (window.visionConfig || { activeProvider: 'gemini', providers: {} }));
-    let minimaxConfig = {
-        region: 'cn',
-        customEndpointEnabled: false,
-        endpoint: '',
-        apiKey: '',
-        groupId: '',
-        ttsModel: 'speech-02-hd'
-    };
+    let ttsConfig = window.u2Tts
+        ? window.u2Tts.getConfig()
+        : (window.getTtsConfig ? window.getTtsConfig() : (window.ttsConfig || { activeProvider: 'minimax', providers: {} }));
     let apiPresets = [];
     let fetchedModels = [];
     window.getApiPresets = function getApiPresets() {
@@ -207,6 +206,7 @@
         }
 
         let migratedImessageCssPresets = false;
+        let migratedTtsConfig = false;
         if (savedSettings && typeof savedSettings === 'object') {
             apiConfig = { ...apiConfig, ...(savedSettings.apiConfig || {}) };
             apiConfig = window.u2Api.sanitizeApiConfig(apiConfig);
@@ -226,7 +226,10 @@
             visionConfig = window.u2ImageUnderstanding
                 ? window.u2ImageUnderstanding.normalizeConfig(savedSettings.visionConfig || visionConfig)
                 : (savedSettings.visionConfig || visionConfig);
-            minimaxConfig = { ...minimaxConfig, ...(savedSettings.minimaxConfig || {}) };
+            migratedTtsConfig = !savedSettings.ttsConfig && !!savedSettings.minimaxConfig;
+            ttsConfig = window.u2Tts
+                ? window.u2Tts.normalizeConfig(savedSettings.ttsConfig || savedSettings.minimaxConfig || ttsConfig)
+                : (savedSettings.ttsConfig || savedSettings.minimaxConfig || ttsConfig);
             apiPresets = Array.isArray(savedSettings.apiPresets) ? savedSettings.apiPresets : [];
             fetchedModels = Array.isArray(savedSettings.fetchedModels) ? savedSettings.fetchedModels : [];
             assistiveBallSettings = {
@@ -292,7 +295,7 @@
         window.u2ThemeState = themeState;
         window.u2UiTranslation?.setEnabled(themeState.uiChineseEnabled);
 
-        if (migratedImessageCssPresets) {
+        if (migratedImessageCssPresets || migratedTtsConfig) {
             await persistSettingsData();
         }
         // Expose globally for other modules if needed
@@ -300,10 +303,10 @@
         window.vectorMemoryConfig = vectorMemoryConfig;
         window.visionConfig = visionConfig;
         window.imageGenerationConfig = imageGenerationConfig;
-        if (window.u2MinimaxTts && typeof window.u2MinimaxTts.setConfig === 'function') {
-            minimaxConfig = window.u2MinimaxTts.setConfig({ ...(window.u2MinimaxTts.DEFAULT_CONFIG || {}), ...minimaxConfig });
+        if (window.u2Tts && typeof window.u2Tts.setConfig === 'function') {
+            ttsConfig = window.u2Tts.setConfig(ttsConfig);
         } else {
-            window.minimaxConfig = minimaxConfig;
+            window.ttsConfig = ttsConfig;
         }
         window.userState = userState;
         exposeAccountGlobals();
@@ -377,12 +380,16 @@
             notificationSoundActions: document.getElementById('notification-sound-actions'),
             notificationSoundPreviewBtn: document.getElementById('notification-sound-preview-btn'),
             notificationSoundRemoveBtn: document.getElementById('notification-sound-remove-btn'),
-            minimaxRegion: document.getElementById('minimax-region-select'),
-            minimaxCustomEndpoint: document.getElementById('minimax-custom-endpoint-toggle'),
-            minimaxEndpoint: document.getElementById('minimax-endpoint-input'),
-            minimaxKey: document.getElementById('minimax-key-input'),
-            minimaxGroupId: document.getElementById('minimax-group-id-input'),
-            minimaxTtsModel: document.getElementById('minimax-tts-model-input'),
+            ttsProvider: document.getElementById('tts-provider-select'),
+            ttsEndpoint: document.getElementById('tts-endpoint-input'),
+            ttsApiKey: document.getElementById('tts-key-input'),
+            ttsModel: document.getElementById('tts-model-input'),
+            ttsModelSelect: document.getElementById('tts-model-select'),
+            ttsKeyLabel: document.getElementById('tts-key-label'),
+            ttsModelLabel: document.getElementById('tts-model-label'),
+            ttsModelSelectLabel: document.getElementById('tts-model-select-label'),
+            ttsExtraFields: document.getElementById('tts-provider-extra-fields'),
+            ttsEndpointHint: document.getElementById('tts-endpoint-hint'),
             presetName: document.getElementById('preset-name-input')
         };
 
@@ -392,7 +399,7 @@
         UI.overlays.vectorMemoryConfig = document.getElementById('vector-memory-config-sheet');
         UI.overlays.visionConfig = document.getElementById('vision-config-sheet');
         UI.overlays.imageGenerationConfig = document.getElementById('image-generation-config-sheet');
-        UI.overlays.minimaxConfig = document.getElementById('minimax-config-sheet');
+        UI.overlays.ttsConfig = document.getElementById('tts-config-sheet');
         UI.overlays.savePreset = document.getElementById('save-preset-name-sheet');
         UI.overlays.loadPreset = document.getElementById('load-preset-list-sheet');
         UI.overlays.assistiveBallSettings = document.getElementById('assistive-ball-settings-sheet');
@@ -5916,59 +5923,190 @@
             });
         }
 
-        function syncMinimaxCustomEndpointVisibility() {
-            const endpointGroup = document.getElementById('minimax-custom-endpoint-group');
-            const enabled = !!(UI.inputs.minimaxCustomEndpoint && UI.inputs.minimaxCustomEndpoint.checked);
-            if (endpointGroup) endpointGroup.style.display = enabled ? 'block' : 'none';
+        let tempTtsConfig = window.u2Tts
+            ? window.u2Tts.normalizeConfig(ttsConfig)
+            : clonePlainData(ttsConfig);
+
+        function getActiveTtsDraft() {
+            const provider = tempTtsConfig.activeProvider;
+            return { provider, ...(tempTtsConfig.providers?.[provider] || {}) };
         }
 
-        function syncMinimaxInputs() {
-            if (window.u2MinimaxTts && typeof window.u2MinimaxTts.getConfig === 'function') {
-                minimaxConfig = window.u2MinimaxTts.getConfig();
-            }
-            if (UI.inputs.minimaxRegion) UI.inputs.minimaxRegion.value = minimaxConfig.region || 'cn';
-            if (UI.inputs.minimaxCustomEndpoint) UI.inputs.minimaxCustomEndpoint.checked = !!minimaxConfig.customEndpointEnabled;
-            if (UI.inputs.minimaxEndpoint) UI.inputs.minimaxEndpoint.value = minimaxConfig.endpoint || '';
-            if (UI.inputs.minimaxKey) UI.inputs.minimaxKey.value = minimaxConfig.apiKey || '';
-            if (UI.inputs.minimaxGroupId) UI.inputs.minimaxGroupId.value = minimaxConfig.groupId || '';
-            if (UI.inputs.minimaxTtsModel) UI.inputs.minimaxTtsModel.value = minimaxConfig.ttsModel || 'speech-02-hd';
-            syncMinimaxCustomEndpointVisibility();
-        }
-
-        const minimaxConfigBtn = document.getElementById('minimax-config-btn');
-        if (minimaxConfigBtn && UI.overlays.minimaxConfig) {
-            minimaxConfigBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                syncMinimaxInputs();
-                openView(UI.overlays.minimaxConfig);
+        function commitTtsInputsToDraft() {
+            const provider = tempTtsConfig.activeProvider;
+            if (!provider || !tempTtsConfig.providers?.[provider]) return;
+            const draft = tempTtsConfig.providers[provider];
+            draft.endpoint = String(UI.inputs.ttsEndpoint?.value || '').trim();
+            draft.apiKey = String(UI.inputs.ttsApiKey?.value || '').trim();
+            draft.model = String(UI.inputs.ttsModel?.value || '').trim();
+            UI.inputs.ttsExtraFields?.querySelectorAll('[data-tts-field]').forEach((input) => {
+                draft[input.dataset.ttsField] = String(input.value || '').trim();
             });
         }
 
-        if (UI.inputs.minimaxCustomEndpoint) {
-            UI.inputs.minimaxCustomEndpoint.addEventListener('change', syncMinimaxCustomEndpointVisibility);
+        function renderTtsModelSelect(config) {
+            const select = UI.inputs.ttsModelSelect;
+            if (!select) return;
+            const models = Array.isArray(config?.models) ? config.models : [];
+            select.replaceChildren();
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = models.length ? '选择已获取项目' : '暂无已获取项目';
+            select.appendChild(placeholder);
+            models.forEach((model) => {
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                select.appendChild(option);
+            });
+            select.value = models.includes(String(config?.model || '').trim()) ? String(config.model).trim() : '';
+            select.disabled = models.length === 0;
         }
 
-        const confirmMinimaxBtn = document.getElementById('confirm-minimax-btn');
-        if (confirmMinimaxBtn) {
-            confirmMinimaxBtn.addEventListener('click', () => {
-                minimaxConfig = {
-                    region: UI.inputs.minimaxRegion ? UI.inputs.minimaxRegion.value : 'cn',
-                    customEndpointEnabled: !!(UI.inputs.minimaxCustomEndpoint && UI.inputs.minimaxCustomEndpoint.checked),
-                    endpoint: UI.inputs.minimaxEndpoint ? UI.inputs.minimaxEndpoint.value.trim() : '',
-                    apiKey: UI.inputs.minimaxKey ? UI.inputs.minimaxKey.value.trim() : '',
-                    groupId: UI.inputs.minimaxGroupId ? UI.inputs.minimaxGroupId.value.trim() : '',
-                    ttsModel: UI.inputs.minimaxTtsModel ? (UI.inputs.minimaxTtsModel.value.trim() || 'speech-02-hd') : 'speech-02-hd'
-                };
-
-                if (window.u2MinimaxTts && typeof window.u2MinimaxTts.setConfig === 'function') {
-                    minimaxConfig = window.u2MinimaxTts.setConfig(minimaxConfig);
+        function renderTtsExtraFields(provider, config) {
+            const holder = UI.inputs.ttsExtraFields;
+            if (!holder) return;
+            holder.replaceChildren();
+            const definition = window.u2Tts?.getProviderDefinition?.(provider);
+            (definition?.fields || []).forEach((field, index, fields) => {
+                const row = document.createElement('div');
+                row.className = 'form-item';
+                if (index === fields.length - 1) row.style.borderBottom = 'none';
+                const label = document.createElement('label');
+                label.style.width = '112px';
+                label.style.whiteSpace = 'nowrap';
+                label.textContent = field.label;
+                row.appendChild(label);
+                let input;
+                if (field.type === 'select') {
+                    input = document.createElement('select');
+                    input.style.cssText = 'flex:1; border:none; text-align:right; direction:rtl; appearance:none; background:transparent; color:var(--blue-color); outline:none; font-size:16px; min-width:0;';
+                    (field.options || []).forEach(([value, labelText]) => {
+                        const option = document.createElement('option');
+                        option.value = value;
+                        option.textContent = labelText;
+                        input.appendChild(option);
+                    });
                 } else {
-                    window.minimaxConfig = minimaxConfig;
+                    input = document.createElement('input');
+                    input.type = field.type || 'text';
+                    input.autocomplete = 'off';
+                    input.placeholder = field.placeholder || `填写${field.label}`;
                 }
+                input.dataset.ttsField = field.key;
+                input.value = config[field.key] || '';
+                input.addEventListener('input', commitTtsInputsToDraft);
+                input.addEventListener('change', commitTtsInputsToDraft);
+                row.appendChild(input);
+                holder.appendChild(row);
+            });
+        }
 
-                saveGlobalData();
-                closeView(UI.overlays.minimaxConfig);
-                showToast('Minimax 设置已保存');
+        function renderTtsInputs() {
+            const provider = tempTtsConfig.activeProvider || 'minimax';
+            const config = tempTtsConfig.providers?.[provider] || {};
+            const definition = window.u2Tts?.getProviderDefinition?.(provider);
+            if (UI.inputs.ttsProvider) UI.inputs.ttsProvider.value = provider;
+            if (UI.inputs.ttsEndpoint) UI.inputs.ttsEndpoint.value = config.endpoint || '';
+            if (UI.inputs.ttsApiKey) UI.inputs.ttsApiKey.value = config.apiKey || '';
+            if (UI.inputs.ttsModel) UI.inputs.ttsModel.value = config.model || '';
+            if (UI.inputs.ttsKeyLabel) UI.inputs.ttsKeyLabel.textContent = definition?.keyLabel || 'API 密钥';
+            const modelLabel = definition?.modelLabel || 'TTS 模型';
+            if (UI.inputs.ttsModelLabel) UI.inputs.ttsModelLabel.textContent = modelLabel;
+            if (UI.inputs.ttsModelSelectLabel) UI.inputs.ttsModelSelectLabel.textContent = `已获取${modelLabel}`;
+            if (UI.inputs.ttsEndpointHint) {
+                UI.inputs.ttsEndpointHint.textContent = `${definition?.label || 'TTS'}：模型或音色列表仅从当前服务商在线拉取，不提供内置候选。`;
+            }
+            renderTtsExtraFields(provider, config);
+            renderTtsModelSelect(config);
+        }
+
+        const ttsConfigBtn = document.getElementById('tts-config-btn');
+        if (ttsConfigBtn && UI.overlays.ttsConfig) {
+            ttsConfigBtn.addEventListener('click', (event) => {
+                event.stopPropagation();
+                if (!window.u2Tts) {
+                    showToast('TTS 模块尚未加载，请刷新后重试');
+                    return;
+                }
+                ttsConfig = window.u2Tts.getConfig();
+                tempTtsConfig = window.u2Tts.normalizeConfig(ttsConfig);
+                renderTtsInputs();
+                openView(UI.overlays.ttsConfig);
+            });
+        }
+
+        UI.inputs.ttsProvider?.addEventListener('change', () => {
+            commitTtsInputsToDraft();
+            tempTtsConfig.activeProvider = UI.inputs.ttsProvider.value;
+            renderTtsInputs();
+        });
+        [UI.inputs.ttsEndpoint, UI.inputs.ttsApiKey].forEach((input) => {
+            input?.addEventListener('input', commitTtsInputsToDraft);
+            input?.addEventListener('change', commitTtsInputsToDraft);
+        });
+        UI.inputs.ttsModel?.addEventListener('input', () => {
+            commitTtsInputsToDraft();
+            const models = getActiveTtsDraft().models || [];
+            if (UI.inputs.ttsModelSelect) UI.inputs.ttsModelSelect.value = models.includes(UI.inputs.ttsModel.value.trim()) ? UI.inputs.ttsModel.value.trim() : '';
+        });
+        UI.inputs.ttsModel?.addEventListener('change', commitTtsInputsToDraft);
+        UI.inputs.ttsModelSelect?.addEventListener('change', () => {
+            const model = String(UI.inputs.ttsModelSelect.value || '').trim();
+            if (!model || !UI.inputs.ttsModel) return;
+            UI.inputs.ttsModel.value = model;
+            commitTtsInputsToDraft();
+        });
+
+        const fetchTtsModelsBtn = document.getElementById('fetch-tts-models-btn');
+        if (fetchTtsModelsBtn) {
+            fetchTtsModelsBtn.addEventListener('click', async () => {
+                const originalHtml = fetchTtsModelsBtn.innerHTML;
+                try {
+                    if (!window.u2Tts) throw new Error('TTS 模块尚未加载，请刷新后重试');
+                    commitTtsInputsToDraft();
+                    const draft = getActiveTtsDraft();
+                    fetchTtsModelsBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><div class="settings-text" style="color:var(--blue-color);">正在获取模型…</div>';
+                    fetchTtsModelsBtn.style.pointerEvents = 'none';
+                    const models = await window.u2Tts.fetchModels(draft);
+                    tempTtsConfig.providers[draft.provider].models = models.slice();
+                    renderTtsModelSelect(tempTtsConfig.providers[draft.provider]);
+                    showToast(`成功获取 ${models.length} 个${window.u2Tts.getProviderDefinition(draft.provider)?.modelIsVoice ? '音色' : '模型'}`);
+                } catch (error) {
+                    console.error('Fetch TTS Models Error:', error);
+                    showToast(error?.message || '获取 TTS 模型失败');
+                } finally {
+                    fetchTtsModelsBtn.innerHTML = originalHtml;
+                    fetchTtsModelsBtn.style.pointerEvents = '';
+                }
+            });
+        }
+
+        const confirmTtsBtn = document.getElementById('confirm-tts-btn');
+        if (confirmTtsBtn) {
+            confirmTtsBtn.addEventListener('click', async () => {
+                const previousConfig = ttsConfig;
+                try {
+                    if (!window.u2Tts) throw new Error('TTS 模块尚未加载，请刷新后重试');
+                    commitTtsInputsToDraft();
+                    const activeConfig = getActiveTtsDraft();
+                    window.u2Tts.validateActiveConfig(activeConfig);
+                    confirmTtsBtn.classList.add('is-busy');
+                    confirmTtsBtn.style.pointerEvents = 'none';
+                    ttsConfig = window.u2Tts.setConfig(tempTtsConfig);
+                    const persisted = await saveGlobalData();
+                    if (!persisted) throw new Error('TTS 配置未能写入本地存储，请重试');
+                    closeView(UI.overlays.ttsConfig);
+                    showToast(`${window.u2Tts.getProviderName(activeConfig.provider)} TTS 已保存`);
+                } catch (error) {
+                    ttsConfig = previousConfig;
+                    window.ttsConfig = previousConfig;
+                    console.error('Save TTS Config Error:', error);
+                    showToast(error?.message || 'TTS 配置保存失败');
+                } finally {
+                    confirmTtsBtn.classList.remove('is-busy');
+                    confirmTtsBtn.style.pointerEvents = '';
+                }
             });
         }
 
@@ -6396,10 +6534,22 @@
             const storageHealthPersistence = document.getElementById('storage-health-persistence');
             const storageHealthLastSave = document.getElementById('storage-health-last-save');
             const storageHealthWarning = document.getElementById('storage-health-warning');
-            const storageHealthBreakdown = document.getElementById('storage-health-breakdown');
             const storageHealthCompaction = document.getElementById('storage-health-compaction');
             const storageCleanCacheBtn = document.getElementById('storage-clean-cache-btn');
             const storageRetryBtn = document.getElementById('storage-retry-btn');
+            const storageTotalUsage = document.getElementById('storage-total-usage');
+            const storageSummaryDescription = document.getElementById('storage-summary-description');
+            const storageUsageBar = document.getElementById('storage-usage-bar');
+            const storageUsageLegend = document.getElementById('storage-usage-legend');
+            const storageCategoryList = document.getElementById('storage-category-list');
+            const storageCategoryColors = {
+                'iMessage': '#ff3b30',
+                'X': '#0a84ff',
+                '图片资源': '#ff9500',
+                '书库': '#af52de',
+                '应用状态': '#34c759',
+                '冗余历史': '#8e8e93'
+            };
 
             function stopLegacy(e) {
                 e.preventDefault();
@@ -6439,6 +6589,98 @@
                 }
             }
 
+            function getStorageGroups(health) {
+                return Object.entries(health?.breakdown?.logicalGroups || health?.breakdown?.groups || {})
+                    .map(([name, value]) => ({
+                        name,
+                        bytes: Math.max(0, Number(value?.bytes) || 0),
+                        count: Math.max(0, Number(value?.count) || 0)
+                    }))
+                    .filter((group) => group.bytes > 0)
+                    .sort((a, b) => b.bytes - a.bytes);
+            }
+
+            function getStorageCategoryColor(name) {
+                return storageCategoryColors[name] || '#c7c7cc';
+            }
+
+            function renderStorageUsage(health) {
+                const groups = getStorageGroups(health);
+                const totalBytes = Math.max(0, Number(health?.breakdown?.logicalBytes) || 0);
+                const total = totalBytes || groups.reduce((sum, group) => sum + group.bytes, 0);
+
+                if (storageTotalUsage) {
+                    storageTotalUsage.textContent = `已使用 ${formatBytesForUi(total)}`;
+                }
+                if (storageSummaryDescription) {
+                    storageSummaryDescription.textContent = total > 0
+                        ? '根据当前应用内保存的数据实时统计'
+                        : '当前还没有可统计的应用数据';
+                }
+                if (storageUsageBar) {
+                    storageUsageBar.replaceChildren();
+                    groups.forEach((group) => {
+                        const segment = document.createElement('span');
+                        const percentage = total > 0 ? (group.bytes / total) * 100 : 0;
+                        segment.className = 'data-storage-usage-segment';
+                        segment.style.width = `${percentage}%`;
+                        segment.style.backgroundColor = getStorageCategoryColor(group.name);
+                        segment.title = `${group.name} ${formatBytesForUi(group.bytes)}`;
+                        storageUsageBar.appendChild(segment);
+                    });
+                    storageUsageBar.setAttribute('aria-label', groups.length
+                        ? `应用数据已使用 ${formatBytesForUi(total)}，${groups.map((group) => `${group.name} ${formatBytesForUi(group.bytes)}`).join('，')}`
+                        : '当前没有可统计的应用数据');
+                }
+                if (storageUsageLegend) {
+                    storageUsageLegend.replaceChildren();
+                    groups.forEach((group) => {
+                        const item = document.createElement('span');
+                        const dot = document.createElement('i');
+                        const label = document.createElement('span');
+                        item.className = 'data-storage-legend-item';
+                        dot.className = 'data-storage-color-dot';
+                        dot.style.backgroundColor = getStorageCategoryColor(group.name);
+                        label.textContent = `${group.name} ${formatBytesForUi(group.bytes)}`;
+                        item.append(dot, label);
+                        storageUsageLegend.appendChild(item);
+                    });
+                }
+                if (storageCategoryList) {
+                    storageCategoryList.replaceChildren();
+                    if (!groups.length) {
+                        const empty = document.createElement('div');
+                        empty.className = 'storage-category-empty';
+                        empty.textContent = '暂无可统计的应用数据';
+                        storageCategoryList.appendChild(empty);
+                        return;
+                    }
+                    groups.forEach((group) => {
+                        const row = document.createElement('div');
+                        const dot = document.createElement('span');
+                        const copy = document.createElement('span');
+                        const name = document.createElement('strong');
+                        const detail = document.createElement('small');
+                        const size = document.createElement('span');
+                        const chevron = document.createElement('i');
+                        row.className = 'storage-category-row';
+                        row.setAttribute('role', 'listitem');
+                        dot.className = 'storage-category-color-dot';
+                        dot.style.backgroundColor = getStorageCategoryColor(group.name);
+                        copy.className = 'storage-category-copy';
+                        name.textContent = group.name;
+                        detail.textContent = group.count > 0 ? `${group.count} 条记录` : '应用数据';
+                        size.className = 'storage-category-size';
+                        size.textContent = formatBytesForUi(group.bytes);
+                        chevron.className = 'fas fa-chevron-right storage-category-chevron';
+                        chevron.setAttribute('aria-hidden', 'true');
+                        copy.append(name, detail);
+                        row.append(dot, copy, size, chevron);
+                        storageCategoryList.appendChild(row);
+                    });
+                }
+            }
+
             async function refreshStorageHealth() {
                 if (!window.appStorage?.getStorageHealth) return;
                 const health = await window.appStorage.getStorageHealth();
@@ -6460,25 +6702,12 @@
                     storageHealthLastSave.textContent = `最后保存：${formatDateForUi(health.lastCommitAt)}`;
                 }
                 if (storageHealthWarning) {
-                    let warning = health.lastError ? `错误：${health.lastError}` : '';
+                    const warning = health.lastError ? `错误：${health.lastError}` : '';
                     storageHealthWarning.textContent = warning;
                     storageHealthWarning.hidden = !warning;
                 }
-                if (storageHealthBreakdown) {
-                    storageHealthBreakdown.replaceChildren();
-                    const groups = Object.entries(health.breakdown?.logicalGroups || health.breakdown?.groups || {})
-                        .filter(([, value]) => Number(value?.bytes) > 0)
-                        .sort((a, b) => Number(b[1]?.bytes || 0) - Number(a[1]?.bytes || 0));
-                    groups.forEach(([name, value]) => {
-                        const row = document.createElement('div');
-                        const label = document.createElement('span');
-                        const size = document.createElement('strong');
-                        label.textContent = name;
-                        size.textContent = formatBytesForUi(value.bytes);
-                        row.append(label, size);
-                        storageHealthBreakdown.appendChild(row);
-                    });
-                }
+                if (storageRetryBtn) storageRetryBtn.hidden = health.status !== 'error';
+                renderStorageUsage(health);
                 if (storageHealthCompaction) {
                     const cleaned = health.lastCacheCleanup;
                     const compacted = health.lastCompaction;

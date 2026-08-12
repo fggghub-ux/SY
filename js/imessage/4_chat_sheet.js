@@ -16,11 +16,13 @@
         'cot_scene_planning',
         'cot_literary_guidance',
         'cot_language_check',
+        'cot_read_previous_recap_haru',
         'cot_output_audit',
         'cot_after'
     ]);
     const OFFLINE_CHAT_HISTORY_PROMPT_ID = 'chat_history';
-    const OFFLINE_TAVERN_PROMPT_ORDER = [
+    const OFFLINE_SUMMARY_MESSAGE_TYPE = 'offline_summary';
+    const OFFLINE_CHAT_PROMPT_ORDER = [
         'role_identity',
         'data_zone',
         'memory_system',
@@ -36,12 +38,14 @@
         'style_baimiao',
         'style_green_apple',
         'barrage_comments',
+        'offline_recap_haru',
         'format_rules',
         'player_choices',
         'cot_before',
         'cot_scene_planning',
         'cot_literary_guidance',
         'cot_language_check',
+        'cot_read_previous_recap_haru',
         'cot_output_audit',
         'cot_after'
     ];
@@ -88,14 +92,14 @@ async function commitSheetFriendChange(friendOrId, mutator, options = {}) {
         if (!activeFriend || activeFriend.type === 'group' || String(activeFriend.id) !== String(requestedId)) return false;
         const friend = window.imApp?.getFriendById?.(requestedId) || activeFriend;
         const profile = getOfflineEffectiveUserProfile(friend);
-        const contentArea = document.getElementById('offline-tavern-content');
+        const contentArea = document.getElementById('offline-chat-content');
         if (!contentArea) return false;
 
-        contentArea.querySelectorAll('.offline-tavern-bubble.user').forEach((bubble) => {
-            const nameEl = bubble.querySelector('.offline-tavern-name');
+        contentArea.querySelectorAll('.offline-chat-bubble.user').forEach((bubble) => {
+            const nameEl = bubble.querySelector('.offline-chat-name');
             if (nameEl) nameEl.textContent = profile.name;
 
-            const avatarEl = bubble.querySelector('.offline-tavern-avatar');
+            const avatarEl = bubble.querySelector('.offline-chat-avatar');
             if (avatarEl) {
                 avatarEl.replaceChildren();
                 if (profile.avatarUrl) {
@@ -110,17 +114,17 @@ async function commitSheetFriendChange(friendOrId, mutator, options = {}) {
                 }
             }
 
-            const header = bubble.querySelector('.offline-tavern-bubble-header');
-            let signEl = bubble.querySelector('.offline-tavern-sign');
+            const header = bubble.querySelector('.offline-chat-bubble-header');
+            let signEl = bubble.querySelector('.offline-chat-sign');
             if (!profile.signature) {
                 signEl?.remove();
             } else if (signEl) {
                 signEl.textContent = profile.signature;
             } else if (header) {
                 signEl = document.createElement('div');
-                signEl.className = 'offline-tavern-sign';
+                signEl.className = 'offline-chat-sign';
                 signEl.textContent = profile.signature;
-                const nameContainer = header.querySelector('.offline-tavern-name-container');
+                const nameContainer = header.querySelector('.offline-chat-name-container');
                 header.insertBefore(signEl, nameContainer?.nextSibling || header.firstChild);
             }
         });
@@ -388,7 +392,7 @@ function createAttachmentSheet(page) {
                                 </div>
                                 <div class="attachment-more-listen-label">一起听</div>
                             </div>
-                            <div class="attachment-more-offline-entry" id="open-offline-taverns-btn">
+                            <div class="attachment-more-offline-entry" id="open-offline-chats-btn">
                                 <div class="attachment-more-offline-icon">
                                     <i class="fas fa-people-arrows"></i>
                                 </div>
@@ -514,19 +518,35 @@ function createAttachmentSheet(page) {
                             gap: 10px;
                         }
                         .sheet-sticker-item {
-                            aspect-ratio: 1;
                             border: none;
                             border-radius: 14px;
                             background: #f7f7fa;
                             padding: 7px;
                             cursor: pointer;
                             overflow: hidden;
+                            min-width: 0;
+                            display: flex;
+                            flex-direction: column;
+                            gap: 5px;
+                            align-items: stretch;
                         }
                         .sheet-sticker-item img {
                             width: 100%;
-                            height: 100%;
+                            aspect-ratio: 1;
                             object-fit: contain;
                             display: block;
+                            min-height: 0;
+                        }
+                        .sheet-sticker-name {
+                            display: block;
+                            min-width: 0;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                            white-space: nowrap;
+                            color: #3a3a3c;
+                            font-size: 11px;
+                            line-height: 1.2;
+                            text-align: center;
                         }
                     </style>
                     
@@ -778,6 +798,35 @@ function createAttachmentSheet(page) {
 
         const isOfflineBarrageSectionHeading = (line) => isOfflineSectionHeading(line, ['弹幕', '弹幕评论', '观众弹幕']);
         const isOfflineChoiceSectionHeading = (line) => isOfflineSectionHeading(line, ['选项', '玩家选项', '后续选项', '可选行动', '选择']);
+        const isOfflineRecapSectionHeading = (line) => isOfflineSectionHeading(line, ['回顾']);
+
+        // Keep 【回顾】 out of the choice/barrage parsers. The original assistant
+        // message still retains it for the next turn's COT prompt and context.
+        const extractOfflineRecapBlock = (value) => {
+            const keptLines = [];
+            const recapLines = [];
+            let capturing = false;
+            let found = false;
+            String(value || '').replace(/\r\n/g, '\n').split('\n').forEach((line) => {
+                if (isOfflineRecapSectionHeading(line)) {
+                    capturing = true;
+                    found = true;
+                    recapLines.push('【回顾】');
+                    return;
+                }
+                if (capturing && (isOfflineBarrageSectionHeading(line) || isOfflineChoiceSectionHeading(line))) {
+                    capturing = false;
+                    keptLines.push(line);
+                    return;
+                }
+                if (capturing) recapLines.push(line);
+                else keptLines.push(line);
+            });
+            return {
+                cleanText: keptLines.join('\n').replace(/\n{3,}/g, '\n\n').trim(),
+                recap: found ? recapLines.join('\n').replace(/\n{3,}/g, '\n\n').trim() : ''
+            };
+        };
 
         const normalizeOfflineListLine = (value) => String(value || '')
             .replace(/<[^>]+>/g, '')
@@ -985,7 +1034,8 @@ function createAttachmentSheet(page) {
             text = offlineReasoning
                 ? offlineReasoning.normalizeResponse(text, '').content
                 : text.replace(/<\s*think(?:ing)?\s*>[\s\S]*?<\s*\/\s*think(?:ing)?\s*>/gi, '').trim();
-            text = parseOfflineBarrageBlocks(text).cleanText;
+            const recapExtraction = extractOfflineRecapBlock(text);
+            text = parseOfflineBarrageBlocks(recapExtraction.cleanText).cleanText;
             text = parseOfflineChoiceBlocks(text).cleanText;
             text = text.replace(/<speech\b([^>]*)>([\s\S]*?)<\/speech>/gi, (_, attrText, innerText) => {
                 const attrs = parseOfflineTagAttributes(attrText);
@@ -998,12 +1048,13 @@ function createAttachmentSheet(page) {
                 return getOfflineSpeechDisplayText(attrs.original || attrs.text || '', attrs.translation || attrs.zh || attrs.cn || '');
             });
             text = text.replace(/<\/?paragraph\b[^>]*>/gi, '\n\n');
-            return text.replace(/<[^>]+>/g, '').replace(/\n{3,}/g, '\n\n').trim();
+            const plainText = text.replace(/<[^>]+>/g, '').replace(/\n{3,}/g, '\n\n').trim();
+            return [plainText, recapExtraction.recap].filter(Boolean).join('\n\n').trim();
         };
 
         const renderOfflinePlainTextWithFallbackSpeech = (value, speechItems, enableVoice, allowFallbackSpeech, language) => {
             const text = String(value || '');
-            if (!enableVoice || !allowFallbackSpeech) {
+            if (!allowFallbackSpeech) {
                 return escapeSheetHtml(text).replace(/\n/g, '<br>');
             }
 
@@ -1016,8 +1067,12 @@ function createAttachmentSheet(page) {
                 if (!bilingual.original) continue;
                 html += escapeSheetHtml(text.slice(lastIndex, match.index)).replace(/\n/g, '<br>');
                 const speechIndex = speechItems.length;
-                speechItems.push(bilingual);
-                html += `<span class="offline-tavern-speech offline-tavern-dialogue is-playable" data-offline-speech-index="${speechIndex}" role="button" tabindex="0" title="播放语音" aria-label="播放这段对话" aria-busy="false">${escapeSheetHtml(match[0])}</span>`;
+                if (enableVoice) speechItems.push(bilingual);
+                const playableClass = enableVoice ? ' is-playable' : '';
+                const playableAttrs = enableVoice
+                    ? ` data-offline-speech-index="${speechIndex}" role="button" tabindex="0" title="播放语音" aria-label="播放这段对话" aria-busy="false"`
+                    : '';
+                html += `<span class="offline-chat-speech offline-chat-dialogue${playableClass}"${playableAttrs}>${escapeSheetHtml(match[0])}</span>`;
                 lastIndex = match.index + match[0].length;
             }
             html += escapeSheetHtml(text.slice(lastIndex)).replace(/\n/g, '<br>');
@@ -1049,7 +1104,7 @@ function createAttachmentSheet(page) {
                     const playableAttrs = enableVoice
                         ? ` data-offline-speech-index="${speechIndex}" role="button" tabindex="0" title="播放语音" aria-label="播放这段对话" aria-busy="false"`
                         : '';
-                    html += `<span class="offline-tavern-speech offline-tavern-dialogue${playableClass}"${playableAttrs}>${escapeSheetHtml(displayText)}</span>`;
+                    html += `<span class="offline-chat-speech offline-chat-dialogue${playableClass}"${playableAttrs}>${escapeSheetHtml(displayText)}</span>`;
                 }
                 lastIndex = match.index + match[0].length;
             }
@@ -1058,11 +1113,14 @@ function createAttachmentSheet(page) {
             return html;
         };
 
-        const buildOfflineTavernTextHtml = (value, options = {}) => {
+        const isTtsEnabledForFriend = (friend) => !!window.u2Tts?.resolveFriendTtsSettings?.(friend)?.enabled;
+
+        const buildOfflineChatTextHtml = (value, options = {}) => {
             const messageId = options.messageId ? String(options.messageId) : '';
             const enableVoice = options.enableVoice !== false;
             const enableBarrage = !!options.enableBarrage;
             const enableChoices = !!options.enableChoices;
+            const enableRecap = !!options.enableRecap;
             const language = options.language || 'zh';
             const text = String(value == null ? '' : value).replace(/\r\n/g, '\n').trim();
             if (!text) {
@@ -1075,7 +1133,10 @@ function createAttachmentSheet(page) {
             }
 
             const speechItems = [];
-            const { cleanText, barragesByParagraph, plainBarrageSections } = parseOfflineBarrageBlocks(text);
+            const recapExtraction = enableRecap
+                ? extractOfflineRecapBlock(text)
+                : { cleanText: text, recap: '' };
+            const { cleanText, barragesByParagraph, plainBarrageSections } = parseOfflineBarrageBlocks(recapExtraction.cleanText);
             const choiceParseResult = parseOfflineChoiceBlocks(cleanText);
             const choices = choiceParseResult.choices;
             const normalizedText = choiceParseResult.cleanText
@@ -1099,16 +1160,19 @@ function createAttachmentSheet(page) {
             const paragraphHtml = paragraphs
                 .map((part, index) => {
                     const paragraphHtml = renderOfflineParagraphText(part, speechItems, enableVoice, language);
-                    return `<div class="offline-tavern-paragraph-wrap"><p class="offline-tavern-paragraph">${paragraphHtml}</p></div>`;
+                    return `<div class="offline-chat-paragraph-wrap"><p class="offline-chat-paragraph">${paragraphHtml}</p></div>`;
                 })
                 .join('');
             const barrageButtonHtml = enableBarrage && allBarrageItems.length > 0
-                ? `<button type="button" class="offline-tavern-barrage-btn offline-tavern-barrage-final-btn" data-offline-barrage-index="0" title="查看弹幕" aria-label="查看弹幕"><i class="fas fa-comment-dots"></i><span>${allBarrageItems.length}</span></button>`
+                ? `<button type="button" class="offline-chat-barrage-btn offline-chat-barrage-final-btn" data-offline-barrage-index="0" title="查看弹幕" aria-label="查看弹幕"><i class="fas fa-comment-dots"></i><span>${allBarrageItems.length}</span></button>`
                 : '';
             const choiceHtml = enableChoices && choices.length > 0
-                ? `<div class="offline-tavern-choice-list">${choices.map((choice, index) => `<button type="button" class="offline-tavern-choice-btn" data-offline-choice-index="${index}"><span class="offline-tavern-choice-index">${index + 1}</span><span class="offline-tavern-choice-text">${escapeSheetHtml(choice)}</span></button>`).join('')}</div>`
+                ? `<div class="offline-chat-choice-list">${choices.map((choice, index) => `<button type="button" class="offline-chat-choice-btn" data-offline-choice-index="${index}"><span class="offline-chat-choice-index">${index + 1}</span><span class="offline-chat-choice-text">${escapeSheetHtml(choice)}</span></button>`).join('')}</div>`
                 : '';
-            const html = paragraphHtml + barrageButtonHtml + choiceHtml;
+            const recapHtml = recapExtraction.recap
+                ? `<section class="offline-chat-recap"><div class="offline-chat-recap-title">【回顾】</div><div class="offline-chat-recap-content">${escapeSheetHtml(recapExtraction.recap.replace(/^【回顾】\s*/, '')).replace(/\n/g, '<br>')}</div></section>`
+                : '';
+            const html = paragraphHtml + barrageButtonHtml + choiceHtml + recapHtml;
 
             if (messageId) {
                 offlineSpeechRuntimeStore.set(messageId, speechItems);
@@ -1119,11 +1183,11 @@ function createAttachmentSheet(page) {
         const OFFLINE_ACTIVE_NOTICE_KIND = 'offline_meeting_active';
         const OFFLINE_MEETING_RECORD_TYPE = 'offline_meeting_record';
 
-        const bindOfflineTavernTextControls = (bubbleDiv, message, friend, floor) => {
+        const bindOfflineChatTextControls = (bubbleDiv, message, friend, floor) => {
             if (!bubbleDiv || !message?.id) return;
             const messageId = String(message.id);
 
-            bubbleDiv.querySelectorAll('.offline-tavern-speech.is-playable').forEach((speechEl) => {
+            bubbleDiv.querySelectorAll('.offline-chat-speech.is-playable').forEach((speechEl) => {
                 if (speechEl.dataset.bound === 'true') return;
                 speechEl.dataset.bound = 'true';
 
@@ -1137,18 +1201,18 @@ function createAttachmentSheet(page) {
                     const originalText = String(speech?.original || '').trim();
                     if (!originalText) return;
 
-                    if (!window.u2MinimaxTts || typeof window.u2MinimaxTts.speakTextCached !== 'function') {
-                        if (window.showToast) window.showToast('Minimax 语音不可用');
+                    if (!window.u2Tts || typeof window.u2Tts.speakTextCached !== 'function') {
+                        if (window.showToast) window.showToast('TTS 不可用');
                         return;
                     }
 
                     speechEl.classList.add('is-loading');
                     speechEl.setAttribute('aria-busy', 'true');
                     try {
-                        await window.u2MinimaxTts.speakTextCached(originalText, friend, speech);
+                        await window.u2Tts.speakTextCached(originalText, friend, speech);
                     } catch (error) {
                         console.error('Offline speech playback failed', error);
-                        if (window.showToast) window.showToast('语音播放失败');
+                        if (window.showToast) window.showToast(window.u2Tts?.getUserErrorMessage?.(error) || '语音播放失败');
                     } finally {
                         speechEl.classList.remove('is-loading');
                         speechEl.setAttribute('aria-busy', 'false');
@@ -1167,7 +1231,7 @@ function createAttachmentSheet(page) {
                 });
             });
 
-            bubbleDiv.querySelectorAll('.offline-tavern-barrage-btn').forEach((button) => {
+            bubbleDiv.querySelectorAll('.offline-chat-barrage-btn').forEach((button) => {
                 if (button.dataset.bound === 'true') return;
                 button.dataset.bound = 'true';
                 button.addEventListener('click', (event) => {
@@ -1183,7 +1247,7 @@ function createAttachmentSheet(page) {
                 });
             });
 
-            bubbleDiv.querySelectorAll('.offline-tavern-choice-btn').forEach((button) => {
+            bubbleDiv.querySelectorAll('.offline-chat-choice-btn').forEach((button) => {
                 if (button.dataset.bound === 'true') return;
                 button.dataset.bound = 'true';
                 button.addEventListener('click', (event) => {
@@ -1192,13 +1256,13 @@ function createAttachmentSheet(page) {
                     const choiceIndex = Number(button.getAttribute('data-offline-choice-index')) || 0;
                     const choices = offlineChoiceRuntimeStore.get(messageId) || [];
                     const choiceText = String(choices[choiceIndex] || '').trim();
-                    const input = document.getElementById('offline-tavern-input');
+                    const input = document.getElementById('offline-chat-input');
                     if (!choiceText || !input) return;
                     input.value = choiceText;
                     input.focus();
                     input.dispatchEvent(new Event('input', { bubbles: true }));
-                    const view = document.getElementById('offline-tavern-view');
-                    const contentArea = document.getElementById('offline-tavern-content');
+                    const view = document.getElementById('offline-chat-view');
+                    const contentArea = document.getElementById('offline-chat-content');
                     if (view && contentArea) contentArea.scrollTop = contentArea.scrollHeight;
                 });
             });
@@ -1214,7 +1278,7 @@ function createAttachmentSheet(page) {
             return prompts.some(prompt => prompt.id === 'player_choices' && (prompt.alwaysEnabled || prompt.enabled));
         };
 
-        const createOfflineTavernId = (prefix = 'offline') => {
+        const createOfflineChatId = (prefix = 'offline') => {
             if (window.imChat?.createMessageId) return window.imChat.createMessageId(prefix);
             return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         };
@@ -1249,14 +1313,18 @@ function createAttachmentSheet(page) {
             return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${pad(date.getHours())}:${pad(date.getMinutes())}`;
         };
 
+        const isOfflineSummaryMessage = (message) => message?.type === OFFLINE_SUMMARY_MESSAGE_TYPE;
+
         const cloneOfflineMeetingMessages = (messages) => (Array.isArray(messages) ? messages : []).map((message, index) => {
-            const role = message?.role === 'assistant' ? 'assistant' : 'user';
+            const isSummary = isOfflineSummaryMessage(message);
+            const role = isSummary ? 'system' : (message?.role === 'assistant' ? 'assistant' : 'user');
             const parsed = role === 'assistant' && offlineReasoning
                 ? offlineReasoning.normalizeResponse(message?.content || '', message?.reasoning || '')
                 : { content: String(message?.content || ''), reasoning: '' };
             return {
-                id: message?.id || createOfflineTavernId(role === 'assistant' ? 'offline-ai' : 'offline-user'),
+                id: message?.id || createOfflineChatId(isSummary ? 'offline-summary' : (role === 'assistant' ? 'offline-ai' : 'offline-user')),
                 role,
+                type: isSummary ? OFFLINE_SUMMARY_MESSAGE_TYPE : undefined,
                 content: parsed.content,
                 reasoning: role === 'assistant' && parsed.reasoning ? parsed.reasoning : undefined,
                 timestamp: Number(message?.timestamp) || Date.now() + index,
@@ -1266,13 +1334,41 @@ function createAttachmentSheet(page) {
                 generationError: message?.generationState === 'failed' && message?.generationError
                     ? String(message.generationError)
                     : undefined,
-                offlineRegexAppliedRevisions: offlineRegexEngine?.normalizeAppliedRevisions(message?.offlineRegexAppliedRevisions) || {}
+                offlineRegexAppliedRevisions: offlineRegexEngine?.normalizeAppliedRevisions(message?.offlineRegexAppliedRevisions) || {},
+                archivedBySummaryId: !isSummary && message?.archivedBySummaryId ? String(message.archivedBySummaryId) : '',
+                sourceMessageIds: isSummary && Array.isArray(message?.sourceMessageIds)
+                    ? message.sourceMessageIds.map(id => String(id || '')).filter(Boolean)
+                    : [],
+                sourceFloorStart: isSummary ? Math.max(1, Math.round(Number(message?.sourceFloorStart) || 1)) : 0,
+                sourceFloorEnd: isSummary ? Math.max(1, Math.round(Number(message?.sourceFloorEnd) || 1)) : 0
             };
         });
+
+        const getOfflineDialogueRows = (messages) => {
+            let floor = 0;
+            return (Array.isArray(messages) ? messages : []).reduce((rows, message) => {
+                if (isOfflineSummaryMessage(message) || (message?.role !== 'user' && message?.role !== 'assistant')) return rows;
+                floor += 1;
+                rows.push({ message, floor });
+                return rows;
+            }, []);
+        };
+
+        const getOfflineMessageFloor = (messages, messageId) => getOfflineDialogueRows(messages)
+            .find(row => String(row.message?.id || '') === String(messageId || ''))?.floor || 1;
+
+        const getOfflineUnarchivedDialogueRows = (messages) => getOfflineDialogueRows(messages)
+            .filter(row => !row.message?.archivedBySummaryId);
+
+        const getOfflineSummarySourceMessages = (messages, summaryMessage) => {
+            const sourceIds = new Set((summaryMessage?.sourceMessageIds || []).map(String));
+            return getOfflineDialogueRows(messages).filter(row => sourceIds.has(String(row.message?.id || '')));
+        };
 
         const serializeOfflineMessagesForCompare = (messages) => JSON.stringify((messages || []).map(message => ({
             id: message.id,
             role: message.role,
+            type: message.type || '',
             content: message.content,
             reasoning: message.reasoning || '',
             timestamp: message.timestamp,
@@ -1280,7 +1376,11 @@ function createAttachmentSheet(page) {
             updatedAt: message.updatedAt || '',
             generationState: message.generationState || '',
             generationError: message.generationError || '',
-            offlineRegexAppliedRevisions: message.offlineRegexAppliedRevisions || {}
+            offlineRegexAppliedRevisions: message.offlineRegexAppliedRevisions || {},
+            archivedBySummaryId: message.archivedBySummaryId || '',
+            sourceMessageIds: message.sourceMessageIds || [],
+            sourceFloorStart: message.sourceFloorStart || 0,
+            sourceFloorEnd: message.sourceFloorEnd || 0
         })));
 
         const getOfflineRegexScripts = (activeFriend) => offlineRegexEngine
@@ -1324,7 +1424,7 @@ function createAttachmentSheet(page) {
                 const startedAt = Number(session?.startedAt) || (messages[0]?.timestamp || Date.now() + index);
                 const endedAt = Number(session?.endedAt) || startedAt;
                 return {
-                    id: session?.id || createOfflineTavernId('offline-session'),
+                    id: session?.id || createOfflineChatId('offline-session'),
                     startedAt,
                     endedAt,
                     messages,
@@ -1367,9 +1467,9 @@ function createAttachmentSheet(page) {
 
             const activeNotices = activeFriend.messages.filter(message => message?.type === 'system_notice' && message.noticeKind === OFFLINE_ACTIVE_NOTICE_KIND);
             const now = Date.now();
-            const sessionId = activeFriend.offlineCurrentSessionId || createOfflineTavernId('offline-session');
+            const sessionId = activeFriend.offlineCurrentSessionId || createOfflineChatId('offline-session');
             const baseNotice = {
-                id: activeNotices[0]?.id || createOfflineTavernId('notice'),
+                id: activeNotices[0]?.id || createOfflineChatId('notice'),
                 role: 'system',
                 type: 'system_notice',
                 noticeKind: OFFLINE_ACTIVE_NOTICE_KIND,
@@ -1551,7 +1651,7 @@ function createAttachmentSheet(page) {
             return true;
         };
 
-        const confirmDeleteOfflineMeetingSession = (activeFriend, session, button = null) => {
+        const confirmDeleteOfflineMeetingSession = (activeFriend, session, button = null, options = {}) => {
             const runDelete = async () => {
                 if (button) {
                     button.disabled = true;
@@ -1560,6 +1660,7 @@ function createAttachmentSheet(page) {
                 try {
                     const saved = await deleteOfflineMeetingSession(activeFriend, session);
                     if (window.showToast) window.showToast(saved ? '见面记录已删除' : '删除见面记录失败');
+                    if (saved && typeof options.onDeleted === 'function') options.onDeleted();
                 } catch (error) {
                     console.error('Delete offline meeting session failed', error);
                     if (window.showToast) window.showToast('删除见面记录失败');
@@ -1585,6 +1686,25 @@ function createAttachmentSheet(page) {
             if (window.confirm('确定彻底删除这条见面记录吗？这会同时清理聊天上下文，无法恢复。')) {
                 runDelete();
             }
+        };
+
+        imChat.confirmDeleteOfflineMeetingRecord = (friend, record, button = null, options = {}) => {
+            const friendId = friend?.id ?? window.imData?.currentActiveFriend?.id;
+            const activeFriend = friendId != null
+                ? (window.imApp?.getFriendById?.(friendId)
+                    || (window.imData?.friends || []).find(item => String(item?.id) === String(friendId))
+                    || friend)
+                : null;
+            const sessionId = String(record?.offlineSessionId || '');
+            const session = sessionId && Array.isArray(activeFriend?.offlineMeetingSessions)
+                ? activeFriend.offlineMeetingSessions.find(item => String(item?.id || '') === sessionId)
+                : null;
+            if (!activeFriend || !session) {
+                if (window.showToast) window.showToast('见面记录已不存在');
+                return false;
+            }
+            confirmDeleteOfflineMeetingSession(activeFriend, session, button, options);
+            return true;
         };
 
         const getActiveLinkedAccountsFriend = () => {
@@ -2027,7 +2147,7 @@ function createAttachmentSheet(page) {
                     button.type = 'button';
                     button.className = 'sheet-sticker-item';
                     button.title = sticker.name || '';
-                    button.innerHTML = `<img src="${escapeSheetHtml(sticker.url)}" alt="${escapeSheetHtml(sticker.name || 'Sticker')}">`;
+                    button.innerHTML = `<img src="${escapeSheetHtml(sticker.url)}" alt="${escapeSheetHtml(sticker.name || 'Sticker')}"><span class="sheet-sticker-name">${escapeSheetHtml(sticker.name || 'Sticker')}</span>`;
                     button.addEventListener('click', async () => {
                         closeSheet();
                         await window.imChat.sendStickerMessage({
@@ -2511,12 +2631,12 @@ function createAttachmentSheet(page) {
             const rawReasoning = String(reasoning || '').trim();
             if (!rawReasoning) return '';
             return `
-                <section class="offline-tavern-thinking${expanded ? ' is-expanded' : ''}" data-offline-thinking>
-                    <button type="button" class="offline-tavern-thinking-toggle" aria-expanded="${expanded ? 'true' : 'false'}">
-                        <span class="offline-tavern-thinking-label"><span>COT</span></span>
-                        <i class="fas fa-chevron-down offline-tavern-thinking-icon" aria-hidden="true"></i>
+                <section class="offline-chat-thinking${expanded ? ' is-expanded' : ''}" data-offline-thinking>
+                    <button type="button" class="offline-chat-thinking-toggle" aria-expanded="${expanded ? 'true' : 'false'}">
+                        <span class="offline-chat-thinking-label"><span>COT</span></span>
+                        <i class="fas fa-chevron-down offline-chat-thinking-icon" aria-hidden="true"></i>
                     </button>
-                    <div class="offline-tavern-thinking-content" data-raw-thinking="${escapeSheetHtml(rawReasoning)}"${expanded ? '' : ' hidden'}>${escapeSheetHtml(rawReasoning)}</div>
+                    <div class="offline-chat-thinking-content" data-raw-thinking="${escapeSheetHtml(rawReasoning)}"${expanded ? '' : ' hidden'}>${escapeSheetHtml(rawReasoning)}</div>
                 </section>
             `;
         };
@@ -2524,15 +2644,15 @@ function createAttachmentSheet(page) {
         const setOfflineThinkingExpanded = (bubble, expanded) => {
             const panel = bubble?.querySelector?.('[data-offline-thinking]');
             if (!panel) return;
-            const toggle = panel.querySelector('.offline-tavern-thinking-toggle');
-            const content = panel.querySelector('.offline-tavern-thinking-content');
+            const toggle = panel.querySelector('.offline-chat-thinking-toggle');
+            const content = panel.querySelector('.offline-chat-thinking-content');
             panel.classList.toggle('is-expanded', !!expanded);
             if (toggle) toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
             if (content) content.hidden = !expanded;
         };
 
         const bindOfflineThinkingToggle = (bubble) => {
-            const toggle = bubble?.querySelector?.('.offline-tavern-thinking-toggle');
+            const toggle = bubble?.querySelector?.('.offline-chat-thinking-toggle');
             if (!toggle || toggle.dataset.bound === 'true') return;
             toggle.dataset.bound = 'true';
             toggle.addEventListener('click', (event) => {
@@ -2543,7 +2663,7 @@ function createAttachmentSheet(page) {
         };
 
         const renderOfflineThinkingState = (bubble, reasoning, options = {}) => {
-            const body = bubble?.querySelector?.('.offline-tavern-bubble-body');
+            const body = bubble?.querySelector?.('.offline-chat-bubble-body');
             if (!body) return null;
             const rawReasoning = String(reasoning || '').trim();
             let panel = body.querySelector('[data-offline-thinking]');
@@ -2556,7 +2676,7 @@ function createAttachmentSheet(page) {
                 panel = body.querySelector('[data-offline-thinking]');
                 bindOfflineThinkingToggle(bubble);
             }
-            const content = panel?.querySelector('.offline-tavern-thinking-content');
+            const content = panel?.querySelector('.offline-chat-thinking-content');
             if (content) {
                 content.setAttribute('data-raw-thinking', rawReasoning);
                 content.textContent = rawReasoning;
@@ -2565,27 +2685,27 @@ function createAttachmentSheet(page) {
             return panel;
         };
 
-        const isOfflineTavernNearBottom = (contentArea, threshold = 96) => {
+        const isOfflineChatNearBottom = (contentArea, threshold = 96) => {
             if (!contentArea) return false;
             return contentArea.scrollHeight - contentArea.scrollTop - contentArea.clientHeight <= threshold;
         };
 
-        const scrollOfflineTavernToBottom = (contentArea) => {
+        const scrollOfflineChatToBottom = (contentArea) => {
             if (contentArea) contentArea.scrollTop = contentArea.scrollHeight;
         };
 
-        const getOfflineTavernActionButtonsHtml = (isUser, actionsDisabled = false) => {
+        const getOfflineChatActionButtonsHtml = (isUser, actionsDisabled = false) => {
             if (actionsDisabled) return '';
             return `
-                <div class="offline-tavern-bubble-actions">
-                    <button type="button" class="offline-tavern-action-btn" data-offline-action="edit" title="编辑" aria-label="编辑"><i class="fas fa-pen"></i></button>
-                    ${!isUser ? '<button type="button" class="offline-tavern-action-btn" data-offline-action="reroll" title="重回" aria-label="重回"><i class="fas fa-redo"></i></button>' : ''}
-                    <button type="button" class="offline-tavern-action-btn danger" data-offline-action="delete" title="删除" aria-label="删除"><i class="fas fa-trash"></i></button>
+                <div class="offline-chat-bubble-actions">
+                    <button type="button" class="offline-chat-action-btn" data-offline-action="edit" title="编辑" aria-label="编辑"><i class="fas fa-pen"></i></button>
+                    ${!isUser ? '<button type="button" class="offline-chat-action-btn" data-offline-action="reroll" title="重回" aria-label="重回"><i class="fas fa-redo"></i></button>' : ''}
+                    <button type="button" class="offline-chat-action-btn danger" data-offline-action="delete" title="删除" aria-label="删除"><i class="fas fa-trash"></i></button>
                 </div>
             `;
         };
 
-        const bindOfflineTavernBubbleActions = (bubbleDiv, message) => {
+        const bindOfflineChatBubbleActions = (bubbleDiv, message) => {
             if (!bubbleDiv || !message?.id) return;
             bubbleDiv.querySelectorAll('[data-offline-action]').forEach((button) => {
                 if (button.dataset.bound === 'true') return;
@@ -2601,25 +2721,25 @@ function createAttachmentSheet(page) {
             });
         };
 
-        const enableOfflineTavernBubbleActions = (bubbleDiv, message) => {
-            const footer = bubbleDiv?.querySelector?.('.offline-tavern-bubble-footer');
+        const enableOfflineChatBubbleActions = (bubbleDiv, message) => {
+            const footer = bubbleDiv?.querySelector?.('.offline-chat-bubble-footer');
             if (!footer || !message?.id) return;
-            footer.querySelector('.offline-tavern-bubble-actions')?.remove();
-            footer.insertAdjacentHTML('beforeend', getOfflineTavernActionButtonsHtml(message.role === 'user'));
-            bindOfflineTavernBubbleActions(bubbleDiv, message);
+            footer.querySelector('.offline-chat-bubble-actions')?.remove();
+            footer.insertAdjacentHTML('beforeend', getOfflineChatActionButtonsHtml(message.role === 'user'));
+            bindOfflineChatBubbleActions(bubbleDiv, message);
         };
 
-        const renderOfflineTavernBubble = (messageOrText, isUser = true, options = {}) => {
-            const contentArea = document.getElementById('offline-tavern-content');
+        const renderOfflineChatBubble = (messageOrText, isUser = true, options = {}) => {
+            const contentArea = document.getElementById('offline-chat-content');
             if (!contentArea) return null;
 
             const friend = window.imData.currentActiveFriend;
-            if (!options.skipTheme) applyOfflineTavernTheme(friend);
+            if (!options.skipTheme) applyOfflineChatTheme(friend);
             const rawMessage = messageOrText && typeof messageOrText === 'object'
                 ? messageOrText
                 : { role: isUser ? 'user' : 'assistant', content: String(messageOrText || ''), timestamp: Date.now() };
             const message = {
-                id: rawMessage.id || createOfflineTavernId(rawMessage.role === 'assistant' ? 'offline-ai' : 'offline-user'),
+                id: rawMessage.id || createOfflineChatId(rawMessage.role === 'assistant' ? 'offline-ai' : 'offline-user'),
                 role: rawMessage.role === 'assistant' ? 'assistant' : 'user',
                 content: String(rawMessage.content || ''),
                 reasoning: rawMessage.role === 'assistant' ? String(rawMessage.reasoning || '') : '',
@@ -2644,13 +2764,13 @@ function createAttachmentSheet(page) {
                 : `#${floor} · ${message.tokens || estimateOfflineTextTokens(message.content)} tokens · ${timeText}`;
 
             const bubbleDiv = document.createElement('div');
-            bubbleDiv.className = `offline-tavern-bubble ${isUser ? 'user' : 'ai'}`;
+            bubbleDiv.className = `offline-chat-bubble ${isUser ? 'user' : 'ai'}`;
             bubbleDiv.setAttribute('data-message-id', message.id);
             bubbleDiv.setAttribute('data-floor', String(floor));
             
-            let avatarHtml = `<div class="offline-tavern-avatar"><i class="fas fa-user"></i></div>`;
+            let avatarHtml = `<div class="offline-chat-avatar"><i class="fas fa-user"></i></div>`;
             if (userAvatar) {
-                avatarHtml = `<div class="offline-tavern-avatar"><img src="${escapeSheetHtml(userAvatar)}" alt="avatar"></div>`;
+                avatarHtml = `<div class="offline-chat-avatar"><img src="${escapeSheetHtml(userAvatar)}" alt="avatar"></div>`;
             }
 
             // reasoning 与正文分开渲染；旧标签消息在这里仍可兼容解析。
@@ -2661,52 +2781,53 @@ function createAttachmentSheet(page) {
             const displayText = applyOfflineRegexText(friend, parsedMessage.content, message.role, depth, 'display');
             const displayThinking = rawThinking ? buildOfflineThinkingHtml(rawThinking, false) : '';
 
-            const actionButtonsHtml = getOfflineTavernActionButtonsHtml(isUser, actionsDisabled);
+            const actionButtonsHtml = getOfflineChatActionButtonsHtml(isUser, actionsDisabled);
 
             bubbleDiv.innerHTML = `
-                <div class="offline-tavern-bubble-header">
+                <div class="offline-chat-bubble-header">
                     ${avatarHtml}
-                    <div class="offline-tavern-name-container">
-                        <span class="offline-tavern-name">${escapeSheetHtml(userName)}</span>
+                    <div class="offline-chat-name-container">
+                        <span class="offline-chat-name">${escapeSheetHtml(userName)}</span>
                     </div>
-                    ${userSign ? `<div class="offline-tavern-sign">${escapeSheetHtml(userSign)}</div>` : ''}
+                    ${userSign ? `<div class="offline-chat-sign">${escapeSheetHtml(userSign)}</div>` : ''}
                 </div>
-                <div class="offline-tavern-bubble-body">
+                <div class="offline-chat-bubble-body">
                     ${displayThinking}
-                    <div class="offline-tavern-bubble-text" ${displayText ? '' : 'style="display:none;"'}>${buildOfflineTavernTextHtml(displayText, {
+                    <div class="offline-chat-bubble-text" ${displayText ? '' : 'style="display:none;"'}>${buildOfflineChatTextHtml(displayText, {
                         messageId: message.id,
-                        enableVoice: !isUser,
+                        enableVoice: !isUser && isTtsEnabledForFriend(friend),
                         enableBarrage: enableBarrageForMessage,
                         enableChoices: enableChoicesForMessage,
+                        enableRecap: !isUser,
                         language: friend?.language || 'zh'
                     })}</div>
-                    <div class="offline-tavern-bubble-footer">
-                        <div class="offline-tavern-bubble-meta">${escapeSheetHtml(metaText)}</div>
+                    <div class="offline-chat-bubble-footer">
+                        <div class="offline-chat-bubble-meta">${escapeSheetHtml(metaText)}</div>
                         ${actionButtonsHtml}
                     </div>
                 </div>
             `;
 
             bindOfflineThinkingToggle(bubbleDiv);
-            bindOfflineTavernBubbleActions(bubbleDiv, message);
-            bindOfflineTavernTextControls(bubbleDiv, { ...message, content: displayText, reasoning: rawThinking || undefined }, friend, floor);
+            bindOfflineChatBubbleActions(bubbleDiv, message);
+            bindOfflineChatTextControls(bubbleDiv, { ...message, content: displayText, reasoning: rawThinking || undefined }, friend, floor);
 
             const container = options.container || contentArea;
             container.appendChild(bubbleDiv);
-            if (options.scroll !== false && container === contentArea) scrollOfflineTavernToBottom(contentArea);
+            if (options.scroll !== false && container === contentArea) scrollOfflineChatToBottom(contentArea);
             return bubbleDiv;
         };
 
         const createStreamingBubble = (initialText = '', isUser = false, options = {}) => {
             const message = {
-                id: options.id || createOfflineTavernId(isUser ? 'offline-user' : 'offline-ai'),
+                id: options.id || createOfflineChatId(isUser ? 'offline-user' : 'offline-ai'),
                 role: isUser ? 'user' : 'assistant',
                 content: initialText,
                 reasoning: options.reasoning || '',
                 timestamp: options.timestamp || Date.now(),
                 tokens: options.tokens || 0
             };
-            const bubbleDiv = renderOfflineTavernBubble(message, isUser, {
+            const bubbleDiv = renderOfflineChatBubble(message, isUser, {
                 floor: options.floor,
                 depth: options.depth,
                 actionsDisabled: true
@@ -2730,8 +2851,8 @@ function createAttachmentSheet(page) {
             };
 
             const renderStreamingState = () => {
-                const contentArea = document.getElementById('offline-tavern-content');
-                const shouldFollowBottom = isOfflineTavernNearBottom(contentArea);
+                const contentArea = document.getElementById('offline-chat-content');
+                const shouldFollowBottom = isOfflineChatNearBottom(contentArea);
                 const currentParsed = offlineReasoning
                     ? offlineReasoning.normalizeResponse(currentContent, currentNativeReasoning, { streaming: !generationFinished })
                     : { content: currentContent, reasoning: currentNativeReasoning, incomplete: false };
@@ -2747,20 +2868,21 @@ function createAttachmentSheet(page) {
                     ? applyOfflineStreamingRegexText(activeFriend, parsed.content, message.role, depth)
                     : String(parsed.content || '');
                 renderOfflineThinkingState(bubbleDiv, parsed.reasoning, { expanded: !generationFinished });
-                const textEl = bubbleDiv.querySelector('.offline-tavern-bubble-text');
+                const textEl = bubbleDiv.querySelector('.offline-chat-bubble-text');
                 if (textEl) {
                     if (displayText) {
                         textEl.style.display = '';
                         textEl.classList.toggle('is-streaming', !generationFinished);
                         if (generationFinished) {
-                            textEl.innerHTML = buildOfflineTavernTextHtml(displayText, {
+                            textEl.innerHTML = buildOfflineChatTextHtml(displayText, {
                                 messageId: message.id,
-                                enableVoice: !isUser,
+                                enableVoice: !isUser && isTtsEnabledForFriend(activeFriend),
                                 enableBarrage: !isUser && isOfflineBarragePromptEnabled(activeFriend),
                                 enableChoices: !isUser && isOfflineChoicesPromptEnabled(activeFriend),
+                                enableRecap: !isUser,
                                 language: activeFriend?.language || 'zh'
                             });
-                            bindOfflineTavernTextControls(bubbleDiv, { ...message, content: parsed.content, reasoning: parsed.reasoning }, activeFriend, Number(options.floor) || 1);
+                            bindOfflineChatTextControls(bubbleDiv, { ...message, content: parsed.content, reasoning: parsed.reasoning }, activeFriend, Number(options.floor) || 1);
                         } else {
                             textEl.textContent = displayText;
                         }
@@ -2770,7 +2892,7 @@ function createAttachmentSheet(page) {
                     }
                 }
 
-                if (shouldFollowBottom) scrollOfflineTavernToBottom(contentArea);
+                if (shouldFollowBottom) scrollOfflineChatToBottom(contentArea);
                 return parsed;
             };
 
@@ -2818,12 +2940,12 @@ function createAttachmentSheet(page) {
                 },
                 setTokens: (tokens) => {
                     const safeTokens = Math.max(0, Number(tokens) || 0);
-                    const metaEl = bubbleDiv.querySelector('.offline-tavern-bubble-meta');
+                    const metaEl = bubbleDiv.querySelector('.offline-chat-bubble-meta');
                     if (metaEl) {
                         metaEl.textContent = `#${Number(options.floor) || 1} · ${safeTokens || estimateOfflineTextTokens(currentContent)} tokens · ${formatOfflineBubbleTime(message.timestamp)}`;
                     }
                 },
-                enableActions: (finalMessage) => enableOfflineTavernBubbleActions(bubbleDiv, finalMessage || message),
+                enableActions: (finalMessage) => enableOfflineChatBubbleActions(bubbleDiv, finalMessage || message),
                 getResult: () => {
                     const parsed = offlineReasoning
                         ? offlineReasoning.normalizeResponse(currentContent, currentNativeReasoning)
@@ -2867,7 +2989,7 @@ function createAttachmentSheet(page) {
             const needsNewSession = activeFriend.offlineMeetingActive !== true || !activeFriend.offlineCurrentSessionId;
             if (needsNewSession) {
                 const now = Date.now();
-                const sessionId = activeFriend.offlineCurrentSessionId || createOfflineTavernId('offline-session');
+                const sessionId = activeFriend.offlineCurrentSessionId || createOfflineChatId('offline-session');
                 const startedAt = Number(activeFriend.offlineMeetingStartedAt) || now;
                 const currentMessages = Array.isArray(activeFriend.offlineMessages) ? activeFriend.offlineMessages : [];
                 const saved = await commitSheetFriendChange(activeFriend.id, (targetFriend) => {
@@ -2889,27 +3011,132 @@ function createAttachmentSheet(page) {
             if (sessions.length === 0) return;
             const button = document.createElement('button');
             button.type = 'button';
-            button.className = 'offline-tavern-history-card';
+            button.className = 'offline-chat-history-card';
             button.innerHTML = `<i class="fas fa-history"></i><span>查看历史见面</span>`;
             button.addEventListener('click', () => renderOfflineHistoryList(activeFriend));
             contentArea.appendChild(button);
         };
 
+        const getOfflineSummaryShortTermMemory = (activeFriend, summaryId) => {
+            const sourceId = String(summaryId || '');
+            if (!sourceId) return null;
+            const entries = Array.isArray(activeFriend?.memory?.shortTermEntries)
+                ? activeFriend.memory.shortTermEntries
+                : [];
+            return entries.find(entry => (
+                String(entry?.sourceType || '') === 'offline_segment_summary'
+                && String(entry?.sourceId || '') === sourceId
+            )) || null;
+        };
+
+        const addOfflineSummaryToShortTermMemory = async (activeFriend, summaryMessage) => {
+            const summaryId = String(summaryMessage?.id || '');
+            const summaryText = String(summaryMessage?.content || '').trim();
+            if (!activeFriend?.id || !summaryId || !summaryText) throw new Error('Offline summary is unavailable');
+            if (typeof window.imApp?.applyGeneratedShortTermMemory !== 'function') {
+                throw new Error('Short-term memory service is unavailable');
+            }
+
+            const startFloor = Math.max(1, Number(summaryMessage.sourceFloorStart) || 1);
+            const endFloor = Math.max(startFloor, Number(summaryMessage.sourceFloorEnd) || startFloor);
+            const summaryTime = Number(summaryMessage.timestamp) || Date.now();
+            let savedMemory = null;
+            const saved = await commitSheetFriendChange(activeFriend.id, (targetFriend) => {
+                savedMemory = window.imApp.applyGeneratedShortTermMemory(targetFriend, {
+                    id: `offline-summary-memory-${summaryId}`,
+                    title: `线下总结 ${startFloor}-${endFloor}楼`,
+                    time: formatOfflineMeetingDate(summaryTime),
+                    event: summaryText,
+                    memoryPoints: `线下见面第 ${startFloor}-${endFloor} 楼的分段总结`,
+                    memoryTags: ['线下见面', '线下总结'],
+                    triggerKeywords: ['线下见面', '线下总结'],
+                    raw: summaryText,
+                    sourceType: 'offline_segment_summary',
+                    sourceId: summaryId
+                }, {
+                    now: summaryTime,
+                    updateSummaryCursor: false
+                });
+                window.imApp.clearFriendRuntimeMessageContext?.(targetFriend);
+            }, { silent: true, metaOnly: true });
+            if (!saved || !savedMemory) throw new Error('Failed to save offline summary memory');
+            window.dispatchEvent?.(new CustomEvent('u2:memory-entries-updated', {
+                detail: { friendId: String(activeFriend.id), action: 'create', sourceType: 'offline_segment_summary', sourceId: summaryId }
+            }));
+            return savedMemory;
+        };
+
+        const renderOfflineSummaryCard = (container, activeFriend, summaryMessage, allMessages) => {
+            if (!container || !summaryMessage) return null;
+            const sourceRows = getOfflineSummarySourceMessages(allMessages, summaryMessage);
+            const startFloor = Number(summaryMessage.sourceFloorStart) || sourceRows[0]?.floor || 1;
+            const endFloor = Number(summaryMessage.sourceFloorEnd) || sourceRows[sourceRows.length - 1]?.floor || startFloor;
+            const identityContext = getOfflineIdentityContext(activeFriend);
+            const existingMemory = getOfflineSummaryShortTermMemory(activeFriend, summaryMessage.id);
+            const sourceTranscript = sourceRows.map(({ message, floor }) => {
+                const speaker = message.role === 'assistant' ? identityContext.charName : identityContext.userName;
+                return `#${floor} ${speaker}：${stripOfflineDecorativeMarkup(message.content)}`;
+            }).join('\n\n');
+            const card = document.createElement('details');
+            card.className = 'offline-chat-summary-card';
+            card.setAttribute('data-summary-id', String(summaryMessage.id || ''));
+            card.innerHTML = `
+                <summary class="offline-chat-summary-card-head">
+                    <span><i class="fas fa-file-lines"></i> 线下总结</span>
+                    <small>第 ${startFloor}–${endFloor} 楼 · 已归档</small>
+                </summary>
+                <div class="offline-chat-summary-card-content">${escapeSheetHtml(summaryMessage.content || '').replace(/\n/g, '<br>')}</div>
+                <div class="offline-chat-summary-memory-action">
+                    <button type="button" class="offline-chat-summary-memory-btn" ${existingMemory ? 'disabled' : ''}>${existingMemory ? '已加入短期记忆' : '加入短期记忆'}</button>
+                </div>
+                <details class="offline-chat-summary-source">
+                    <summary>查看已归档原楼层（不会再作为上下文）</summary>
+                    <div>${sourceTranscript ? escapeSheetHtml(sourceTranscript).replace(/\n/g, '<br>') : '原楼层不可用'}</div>
+                </details>
+            `;
+            const memoryButton = card.querySelector('.offline-chat-summary-memory-btn');
+            if (memoryButton && !existingMemory) {
+                memoryButton.addEventListener('click', async () => {
+                    if (memoryButton.disabled) return;
+                    memoryButton.disabled = true;
+                    try {
+                        await addOfflineSummaryToShortTermMemory(activeFriend, summaryMessage);
+                        memoryButton.textContent = '已加入短期记忆';
+                        if (window.showToast) window.showToast('已加入线上短期记忆');
+                    } catch (error) {
+                        console.error('Failed to add offline summary to short-term memory', error);
+                        memoryButton.disabled = false;
+                        if (window.showToast) window.showToast('加入短期记忆失败，请重试');
+                    }
+                });
+            }
+            container.appendChild(card);
+            return card;
+        };
+
         function renderOfflineCurrentMessages(activeFriend, options = {}) {
-            const contentArea = document.getElementById('offline-tavern-content');
+            const contentArea = document.getElementById('offline-chat-content');
             if (!contentArea || !activeFriend) return;
             contentArea.innerHTML = '';
-            const titleEl = document.querySelector('#offline-tavern-view .offline-tavern-title');
+            const titleEl = document.querySelector('#offline-chat-view .offline-chat-title');
             if (titleEl) titleEl.textContent = '线下';
-            applyOfflineTavernTheme(activeFriend);
+            applyOfflineChatTheme(activeFriend);
             const fragment = document.createDocumentFragment();
             renderOfflineHistoryButton(fragment, activeFriend);
 
             const messages = normalizeOfflineMessagesForFriend(activeFriend);
-            messages.forEach((message, index) => {
-                renderOfflineTavernBubble(message, message.role === 'user', {
-                    floor: index + 1,
-                    depth: messages.length - 1 - index,
+            const visibleRows = getOfflineUnarchivedDialogueRows(messages);
+            const visibleRowIndexById = new Map(visibleRows.map((row, index) => [String(row.message.id || ''), index]));
+            messages.forEach((message) => {
+                if (isOfflineSummaryMessage(message)) {
+                    renderOfflineSummaryCard(fragment, activeFriend, message, messages);
+                    return;
+                }
+                if (message.archivedBySummaryId) return;
+                const rowIndex = visibleRowIndexById.get(String(message.id || ''));
+                renderOfflineChatBubble(message, message.role === 'user', {
+                    floor: getOfflineMessageFloor(messages, message.id),
+                    depth: rowIndex == null ? 0 : visibleRows.length - 1 - rowIndex,
                     container: fragment,
                     scroll: false,
                     skipTheme: true
@@ -2918,32 +3145,32 @@ function createAttachmentSheet(page) {
 
             if (messages.length === 0 && normalizeOfflineMeetingSessions(activeFriend).length === 0) {
                 const placeholder = document.createElement('div');
-                placeholder.className = 'offline-tavern-placeholder';
+                placeholder.className = 'offline-chat-placeholder';
                 placeholder.textContent = '开始一次线下见面';
                 fragment.appendChild(placeholder);
             }
             contentArea.appendChild(fragment);
-            if (options.scroll !== false) scrollOfflineTavernToBottom(contentArea);
+            if (options.scroll !== false) scrollOfflineChatToBottom(contentArea);
         }
 
         function renderOfflineHistoryList(activeFriend) {
-            const contentArea = document.getElementById('offline-tavern-content');
+            const contentArea = document.getElementById('offline-chat-content');
             if (!contentArea || !activeFriend) return;
             const sessions = normalizeOfflineMeetingSessions(activeFriend).slice().sort((a, b) => Number(b.endedAt) - Number(a.endedAt));
             contentArea.innerHTML = '';
-            const titleEl = document.querySelector('#offline-tavern-view .offline-tavern-title');
+            const titleEl = document.querySelector('#offline-chat-view .offline-chat-title');
             if (titleEl) titleEl.textContent = '历史见面';
 
             const backBtn = document.createElement('button');
             backBtn.type = 'button';
-            backBtn.className = 'offline-tavern-history-back';
+            backBtn.className = 'offline-chat-history-back';
             backBtn.innerHTML = '<i class="fas fa-chevron-left"></i> 返回当前见面';
             backBtn.addEventListener('click', () => renderOfflineCurrentMessages(activeFriend));
             contentArea.appendChild(backBtn);
 
             if (sessions.length === 0) {
                 const placeholder = document.createElement('div');
-                placeholder.className = 'offline-tavern-placeholder';
+                placeholder.className = 'offline-chat-placeholder';
                 placeholder.textContent = '还没有历史见面';
                 contentArea.appendChild(placeholder);
                 return;
@@ -2951,31 +3178,31 @@ function createAttachmentSheet(page) {
 
             sessions.forEach((session) => {
                 const card = document.createElement('div');
-                card.className = 'offline-tavern-history-session';
+                card.className = 'offline-chat-history-session';
                 card.setAttribute('role', 'button');
                 card.tabIndex = 0;
                 const summary = String(session.summary || session.rawSummary || '').trim();
                 card.innerHTML = `
-                    <button type="button" class="offline-tavern-history-delete" aria-label="删除见面记录" title="删除见面记录"><i class="fas fa-trash"></i></button>
-                    <div class="offline-tavern-history-title">${escapeSheetHtml(session.title || '见面记录')}</div>
-                    <div class="offline-tavern-history-meta">${escapeSheetHtml(session.dateText || formatOfflineMeetingDate(session.endedAt))} · ${session.messages.length} 楼</div>
-                    ${summary ? `<div class="offline-tavern-history-summary">${escapeSheetHtml(summary)}</div>` : ''}
+                    <button type="button" class="offline-chat-history-delete" aria-label="删除见面记录" title="删除见面记录"><i class="fas fa-trash"></i></button>
+                    <div class="offline-chat-history-title">${escapeSheetHtml(session.title || '见面记录')}</div>
+                    <div class="offline-chat-history-meta">${escapeSheetHtml(session.dateText || formatOfflineMeetingDate(session.endedAt))} · ${session.messages.length} 楼</div>
+                    ${summary ? `<div class="offline-chat-history-summary">${escapeSheetHtml(summary)}</div>` : ''}
                 `;
                 const openSession = () => renderOfflineHistoricalSession(activeFriend, session);
                 card.addEventListener('click', (event) => {
                     const targetEl = event.target instanceof Element ? event.target : null;
-                    if (targetEl?.closest('.offline-tavern-history-delete')) return;
+                    if (targetEl?.closest('.offline-chat-history-delete')) return;
                     openSession();
                 });
                 card.addEventListener('keydown', (event) => {
                     const targetEl = event.target instanceof Element ? event.target : null;
-                    if (targetEl?.closest('.offline-tavern-history-delete')) return;
+                    if (targetEl?.closest('.offline-chat-history-delete')) return;
                     if (event.key === 'Enter' || event.key === ' ') {
                         event.preventDefault();
                         openSession();
                     }
                 });
-                const deleteBtn = card.querySelector('.offline-tavern-history-delete');
+                const deleteBtn = card.querySelector('.offline-chat-history-delete');
                 if (deleteBtn) {
                     deleteBtn.addEventListener('click', (event) => {
                         event.preventDefault();
@@ -2988,34 +3215,34 @@ function createAttachmentSheet(page) {
         }
 
         function renderOfflineHistoricalSummary(activeFriend, session) {
-            const contentArea = document.getElementById('offline-tavern-content');
+            const contentArea = document.getElementById('offline-chat-content');
             if (!contentArea || !session) return;
 
             const card = document.createElement('div');
-            card.className = 'offline-tavern-history-detail-summary';
+            card.className = 'offline-chat-history-detail-summary';
             const summaryText = String(session.summary || session.rawSummary || '').trim();
             card.innerHTML = `
-                <div class="offline-tavern-history-detail-summary-head">
+                <div class="offline-chat-history-detail-summary-head">
                     <div>
-                        <div class="offline-tavern-history-detail-summary-title">见面总结</div>
-                        <div class="offline-tavern-history-detail-summary-meta">${escapeSheetHtml(session.dateText || formatOfflineMeetingDate(session.endedAt))}</div>
+                        <div class="offline-chat-history-detail-summary-title">见面总结</div>
+                        <div class="offline-chat-history-detail-summary-meta">${escapeSheetHtml(session.dateText || formatOfflineMeetingDate(session.endedAt))}</div>
                     </div>
-                    <button type="button" class="offline-tavern-history-summary-edit" aria-label="编辑总结" title="编辑总结"><i class="fas fa-pen"></i></button>
+                    <button type="button" class="offline-chat-history-summary-edit" aria-label="编辑总结" title="编辑总结"><i class="fas fa-pen"></i></button>
                 </div>
-                <div class="offline-tavern-history-detail-summary-text">${summaryText ? escapeSheetHtml(summaryText) : '暂无总结'}</div>
-                <textarea class="offline-tavern-history-summary-textarea" aria-label="见面总结">${escapeSheetHtml(summaryText)}</textarea>
-                <div class="offline-tavern-history-summary-actions">
-                    <button type="button" class="offline-tavern-history-summary-cancel">取消</button>
-                    <button type="button" class="offline-tavern-history-summary-save">保存</button>
+                <div class="offline-chat-history-detail-summary-text">${summaryText ? escapeSheetHtml(summaryText) : '暂无总结'}</div>
+                <textarea class="offline-chat-history-summary-textarea" aria-label="见面总结">${escapeSheetHtml(summaryText)}</textarea>
+                <div class="offline-chat-history-summary-actions">
+                    <button type="button" class="offline-chat-history-summary-cancel">取消</button>
+                    <button type="button" class="offline-chat-history-summary-save">保存</button>
                 </div>
             `;
 
-            const textEl = card.querySelector('.offline-tavern-history-detail-summary-text');
-            const textarea = card.querySelector('.offline-tavern-history-summary-textarea');
-            const actionsEl = card.querySelector('.offline-tavern-history-summary-actions');
-            const editBtn = card.querySelector('.offline-tavern-history-summary-edit');
-            const cancelBtn = card.querySelector('.offline-tavern-history-summary-cancel');
-            const saveBtn = card.querySelector('.offline-tavern-history-summary-save');
+            const textEl = card.querySelector('.offline-chat-history-detail-summary-text');
+            const textarea = card.querySelector('.offline-chat-history-summary-textarea');
+            const actionsEl = card.querySelector('.offline-chat-history-summary-actions');
+            const editBtn = card.querySelector('.offline-chat-history-summary-edit');
+            const cancelBtn = card.querySelector('.offline-chat-history-summary-cancel');
+            const saveBtn = card.querySelector('.offline-chat-history-summary-save');
             let isEditing = false;
 
             const setEditing = (editing) => {
@@ -3068,24 +3295,32 @@ function createAttachmentSheet(page) {
         }
 
         function renderOfflineHistoricalSession(activeFriend, session) {
-            const contentArea = document.getElementById('offline-tavern-content');
+            const contentArea = document.getElementById('offline-chat-content');
             if (!contentArea || !session) return;
             contentArea.innerHTML = '';
-            const titleEl = document.querySelector('#offline-tavern-view .offline-tavern-title');
+            const titleEl = document.querySelector('#offline-chat-view .offline-chat-title');
             if (titleEl) titleEl.textContent = session.title || '历史见面';
 
             const backBtn = document.createElement('button');
             backBtn.type = 'button';
-            backBtn.className = 'offline-tavern-history-back';
+            backBtn.className = 'offline-chat-history-back';
             backBtn.innerHTML = '<i class="fas fa-chevron-left"></i> 返回历史见面';
             backBtn.addEventListener('click', () => renderOfflineHistoryList(activeFriend));
             contentArea.appendChild(backBtn);
 
             const messages = cloneOfflineMeetingMessages(session.messages || []);
-            messages.forEach((message, index) => {
-                renderOfflineTavernBubble(message, message.role === 'user', {
-                    floor: index + 1,
-                    depth: messages.length - 1 - index,
+            const visibleRows = getOfflineUnarchivedDialogueRows(messages);
+            const visibleRowIndexById = new Map(visibleRows.map((row, index) => [String(row.message.id || ''), index]));
+            messages.forEach((message) => {
+                if (isOfflineSummaryMessage(message)) {
+                    renderOfflineSummaryCard(contentArea, activeFriend, message, messages);
+                    return;
+                }
+                if (message.archivedBySummaryId) return;
+                const rowIndex = visibleRowIndexById.get(String(message.id || ''));
+                renderOfflineChatBubble(message, message.role === 'user', {
+                    floor: getOfflineMessageFloor(messages, message.id),
+                    depth: rowIndex == null ? 0 : visibleRows.length - 1 - rowIndex,
                     readOnly: true
                 });
             });
@@ -3094,24 +3329,24 @@ function createAttachmentSheet(page) {
         }
 
         function ensureOfflineBarrageView() {
-            let view = document.getElementById('offline-tavern-barrage-view');
+            let view = document.getElementById('offline-chat-barrage-view');
             if (view) return view;
 
             view = document.createElement('div');
-            view.id = 'offline-tavern-barrage-view';
-            view.className = 'offline-tavern-barrage-view';
+            view.id = 'offline-chat-barrage-view';
+            view.className = 'offline-chat-barrage-view';
             view.innerHTML = `
-                <div class="offline-tavern-barrage-header">
-                    <button type="button" class="offline-tavern-barrage-close" id="offline-tavern-barrage-close-btn" aria-label="返回"><i class="fas fa-chevron-left"></i></button>
-                    <div class="offline-tavern-barrage-title" id="offline-tavern-barrage-title">弹幕</div>
-                    <div class="offline-tavern-barrage-spacer"></div>
+                <div class="offline-chat-barrage-header">
+                    <button type="button" class="offline-chat-barrage-close" id="offline-chat-barrage-close-btn" aria-label="返回"><i class="fas fa-chevron-left"></i></button>
+                    <div class="offline-chat-barrage-title" id="offline-chat-barrage-title">弹幕</div>
+                    <div class="offline-chat-barrage-spacer"></div>
                 </div>
-                <div class="offline-tavern-barrage-list" id="offline-tavern-barrage-list"></div>
+                <div class="offline-chat-barrage-list" id="offline-chat-barrage-list"></div>
             `;
             document.body.appendChild(view);
-            applyOfflineTavernTheme(window.imData.currentActiveFriend);
+            applyOfflineChatTheme(window.imData.currentActiveFriend);
 
-            const closeBtn = view.querySelector('#offline-tavern-barrage-close-btn');
+            const closeBtn = view.querySelector('#offline-chat-barrage-close-btn');
             if (closeBtn) {
                 closeBtn.addEventListener('click', () => {
                     view.classList.remove('active');
@@ -3125,8 +3360,8 @@ function createAttachmentSheet(page) {
 
         function openOfflineBarrageView({ floor = 1, paragraphIndex = 0, barrages = [] } = {}) {
             const view = ensureOfflineBarrageView();
-            const titleEl = view.querySelector('#offline-tavern-barrage-title');
-            const listEl = view.querySelector('#offline-tavern-barrage-list');
+            const titleEl = view.querySelector('#offline-chat-barrage-title');
+            const listEl = view.querySelector('#offline-chat-barrage-list');
             const cleanBarrages = (Array.isArray(barrages) ? barrages : [])
                 .filter(item => item && item.text)
                 .map(item => ({
@@ -3141,13 +3376,13 @@ function createAttachmentSheet(page) {
             if (listEl) {
                 listEl.innerHTML = cleanBarrages.length > 0
                     ? cleanBarrages.map(item => `
-                        <div class="offline-tavern-barrage-row">
-                            <span class="offline-tavern-barrage-name">${escapeSheetHtml(item.name)}</span>
-                            <span class="offline-tavern-barrage-text">${escapeSheetHtml(item.text)}</span>
-                            <span class="offline-tavern-barrage-likes"><i class="fas fa-thumbs-up"></i>${item.likes}</span>
+                        <div class="offline-chat-barrage-row">
+                            <span class="offline-chat-barrage-name">${escapeSheetHtml(item.name)}</span>
+                            <span class="offline-chat-barrage-text">${escapeSheetHtml(item.text)}</span>
+                            <span class="offline-chat-barrage-likes"><i class="fas fa-thumbs-up"></i>${item.likes}</span>
                         </div>
                     `).join('')
-                    : '<div class="offline-tavern-barrage-empty">暂无弹幕</div>';
+                    : '<div class="offline-chat-barrage-empty">暂无弹幕</div>';
                 listEl.scrollTop = 0;
             }
 
@@ -3163,10 +3398,10 @@ function createAttachmentSheet(page) {
             const index = messages.findIndex(message => String(message.id) === String(messageId));
             if (index < 0) return;
 
-            const bubble = Array.from(document.querySelectorAll('.offline-tavern-bubble'))
+            const bubble = Array.from(document.querySelectorAll('.offline-chat-bubble'))
                 .find(item => String(item.getAttribute('data-message-id') || '') === String(messageId));
-            const textEl = bubble ? bubble.querySelector('.offline-tavern-bubble-text') : null;
-            const actionsEl = bubble ? bubble.querySelector('.offline-tavern-bubble-actions') : null;
+            const textEl = bubble ? bubble.querySelector('.offline-chat-bubble-text') : null;
+            const actionsEl = bubble ? bubble.querySelector('.offline-chat-bubble-actions') : null;
             if (!bubble || !textEl || textEl.dataset.editing === 'true') return;
 
             const originalText = messages[index].content || '';
@@ -3178,16 +3413,16 @@ function createAttachmentSheet(page) {
             textEl.dataset.editing = 'true';
             textEl.style.display = '';
             if (measuredHeight > 0) textEl.style.minHeight = `${measuredHeight}px`;
-            textEl.innerHTML = `<textarea class="offline-tavern-inline-editor">${escapeSheetHtml(originalText)}</textarea>`;
+            textEl.innerHTML = `<textarea class="offline-chat-inline-editor">${escapeSheetHtml(originalText)}</textarea>`;
 
             if (actionsEl) {
                 actionsEl.innerHTML = `
-                    <button type="button" class="offline-tavern-action-btn" data-inline-edit-action="save" title="保存" aria-label="保存"><i class="fas fa-check"></i></button>
-                    <button type="button" class="offline-tavern-action-btn" data-inline-edit-action="cancel" title="取消" aria-label="取消"><i class="fas fa-times"></i></button>
+                    <button type="button" class="offline-chat-action-btn" data-inline-edit-action="save" title="保存" aria-label="保存"><i class="fas fa-check"></i></button>
+                    <button type="button" class="offline-chat-action-btn" data-inline-edit-action="cancel" title="取消" aria-label="取消"><i class="fas fa-times"></i></button>
                 `;
             }
 
-            const textarea = textEl.querySelector('.offline-tavern-inline-editor');
+            const textarea = textEl.querySelector('.offline-chat-inline-editor');
             const restore = () => {
                 textEl.dataset.editing = 'false';
                 textEl.innerHTML = originalHtml;
@@ -3196,7 +3431,7 @@ function createAttachmentSheet(page) {
                 textEl.querySelectorAll('[data-bound]').forEach((control) => {
                     delete control.dataset.bound;
                 });
-                bindOfflineTavernTextControls(bubble, messages[index], activeFriend, index + 1);
+                bindOfflineChatTextControls(bubble, messages[index], activeFriend, index + 1);
                 if (actionsEl) {
                     actionsEl.innerHTML = originalActionsHtml;
                     actionsEl.querySelectorAll('[data-offline-action]').forEach((button) => {
@@ -3347,7 +3582,18 @@ function createAttachmentSheet(page) {
             });
 
             cloneOfflineMeetingMessages(offlineMessages).forEach((message) => {
-                if (message.content) {
+                if (isOfflineSummaryMessage(message) && message.content) {
+                    const startFloor = Number(message.sourceFloorStart) || 1;
+                    const endFloor = Number(message.sourceFloorEnd) || startFloor;
+                    combined.push({
+                        role: 'system',
+                        content: `<offline_segment_summary floors="${startFloor}-${endFloor}">\n${message.content}\n</offline_segment_summary>`,
+                        timestamp: Number(message.timestamp) || 0,
+                        isOffline: true
+                    });
+                    return;
+                }
+                if (!message.archivedBySummaryId && message.content) {
                     combined.push({
                         role: message.role === 'assistant' ? 'assistant' : 'user',
                         content: message.content,
@@ -3665,11 +3911,57 @@ function createAttachmentSheet(page) {
             const { userName, charName } = getOfflineIdentityContext(activeFriend);
             const normalizedMessages = cloneOfflineMeetingMessages(messages);
             return normalizedMessages.map((message, index) => {
+                if (isOfflineSummaryMessage(message)) {
+                    const startFloor = Number(message.sourceFloorStart) || 1;
+                    const endFloor = Number(message.sourceFloorEnd) || startFloor;
+                    return `【已归档线下总结｜第 ${startFloor}–${endFloor} 楼】\n${message.content}`;
+                }
+                if (message.archivedBySummaryId) return '';
                 const speaker = message.role === 'assistant' ? charName : userName;
-                const depth = normalizedMessages.length - 1 - index;
+                const visibleMessages = normalizedMessages.filter(item => !isOfflineSummaryMessage(item) && !item.archivedBySummaryId);
+                const depth = Math.max(0, visibleMessages.length - 1 - visibleMessages.findIndex(item => String(item.id) === String(message.id)));
                 const promptContent = applyOfflineRegexText(activeFriend, message.content, message.role, depth, 'prompt');
                 return `#${index + 1} ${speaker}: ${stripOfflineDecorativeMarkup(promptContent)}`;
-            }).join('\n\n');
+            }).filter(Boolean).join('\n\n');
+        };
+
+        const normalizeOfflineSummarySettings = (source) => ({
+            apiPresetId: String(source?.apiPresetId || '').trim(),
+            prompt: String(source?.prompt || '').trim().slice(0, 12000)
+        });
+
+        const getOfflineSummarySettings = (friend) => normalizeOfflineSummarySettings(friend?.offlineSummarySettings);
+
+        const getOfflineSummaryApiPresets = () => {
+            const presets = typeof window.getApiPresets === 'function' ? window.getApiPresets() : [];
+            return Array.isArray(presets) ? presets : [];
+        };
+
+        const resolveOfflineSummaryApiConfig = (settings = {}) => {
+            const selectedId = String(settings?.apiPresetId || '').trim();
+            const selectedPreset = selectedId
+                ? getOfflineSummaryApiPresets().find(preset => String(preset?.id || '') === selectedId)
+                : null;
+            if (selectedPreset) {
+                return {
+                    endpoint: selectedPreset.endpoint || '',
+                    apiKey: selectedPreset.apiKey || '',
+                    model: selectedPreset.model || '',
+                    temperature: selectedPreset.temperature ?? selectedPreset.temp ?? 0.7,
+                    presetId: selectedId
+                };
+            }
+            const current = window.getApiConfig ? window.getApiConfig() : (window.apiConfig || {});
+            return { ...current, presetId: '' };
+        };
+
+        const persistOfflineSummarySettings = async (activeFriend, settings) => {
+            const normalizedSettings = normalizeOfflineSummarySettings(settings);
+            const saved = await commitSheetFriendChange(activeFriend?.id || activeFriend, (targetFriend) => {
+                targetFriend.offlineSummarySettings = normalizedSettings;
+            }, { silent: true, metaOnly: true });
+            if (!saved) throw new Error('Failed to persist offline summary settings');
+            return normalizedSettings;
         };
 
         const formatOfflineExistingMemories = (activeFriend) => {
@@ -3687,8 +3979,8 @@ function createAttachmentSheet(page) {
             ].join('\n')).join('\n\n');
         };
 
-        const requestOfflineMeetingSummary = async (activeFriend, messages) => {
-            const currentApiConfig = window.getApiConfig ? window.getApiConfig() : (window.apiConfig || {});
+        const requestOfflineMeetingSummary = async (activeFriend, messages, options = {}) => {
+            const currentApiConfig = options.apiConfig || resolveOfflineSummaryApiConfig(options.settings || getOfflineSummarySettings(activeFriend));
             if (!currentApiConfig.endpoint || !currentApiConfig.apiKey) {
                 throw new Error('API config missing');
             }
@@ -3699,6 +3991,10 @@ function createAttachmentSheet(page) {
             const charName = identityContext.charName;
             const transcript = formatOfflineMeetingTranscript(activeFriend, messages);
             const existingMemories = formatOfflineExistingMemories(activeFriend);
+            const customSummaryPrompt = String(options.settings?.prompt || getOfflineSummarySettings(activeFriend).prompt || '').trim();
+            const customSummaryInstructions = customSummaryPrompt
+                ? `\n<user_summary_instructions>\n${customSummaryPrompt}\n</user_summary_instructions>\n除 JSON 结构、第三人称 Char 限定视角、群聊公开范围与隐私规则外，总结内容的重点、取舍、语言和表达必须服从以上自定义要求。\n`
+                : '';
             const groupPrivacyRules = identityContext.isGroup
                 ? `
 - meetingSummary 和 shortTermMemory 都只能使用本次群体线下见面中公开发生的内容。
@@ -3707,7 +4003,7 @@ function createAttachmentSheet(page) {
                 : `
 - shortTermMemory.event 要作为 ${charName} 自己的短期记忆，使用 Char 第一人称视角。
 - 不得进入 User 或其他人的私密内心，只能写 Char 观察、经历或能合理推断的事。`;
-            const artifactPrompt = `请把下方已结束的${identityContext.isGroup ? '群体线下见面' : '线下见面'}同时整理成“线上见面总结”和“短期记忆”。
+            const artifactPrompt = `请把下方已结束的${identityContext.isGroup ? '群体线下见面' : '线下见面'}同时整理成“线上见面总结”和“短期记忆”。${customSummaryInstructions}
 
 User 名称：${identityContext.userName}
 Char：${charName}
@@ -3748,7 +4044,7 @@ ${transcript}`;
                 },
                 body: JSON.stringify({
                     model: currentApiConfig.model || '',
-                    temperature: parseFloat(currentApiConfig.temperature) || 0.5,
+                    temperature: parseFloat(currentApiConfig.temperature ?? currentApiConfig.temp) || 0.5,
                     stream: false,
                     messages: [
                         {
@@ -3770,13 +4066,109 @@ ${transcript}`;
             return data.choices?.[0]?.message?.content || data.choices?.[0]?.text || '';
         };
 
-        async function endOfflineMeeting(endButton = null) {
+        const requestOfflineSegmentSummary = async (activeFriend, sourceRows, options = {}) => {
+            const currentApiConfig = options.apiConfig || resolveOfflineSummaryApiConfig(options.settings || getOfflineSummarySettings(activeFriend));
+            if (!currentApiConfig.endpoint || !currentApiConfig.apiKey) throw new Error('API config missing');
+            const rows = Array.isArray(sourceRows) ? sourceRows : [];
+            if (rows.length === 0) throw new Error('No offline floors selected');
+            const endpoint = window.u2Api.resolveChatCompletionsEndpoint(currentApiConfig.endpoint);
+            const identityContext = getOfflineIdentityContext(activeFriend);
+            const customPrompt = String(options.settings?.prompt || getOfflineSummarySettings(activeFriend).prompt || '').trim();
+            const transcript = rows.map(({ message, floor }, index) => {
+                const speaker = message.role === 'assistant' ? identityContext.charName : identityContext.userName;
+                const depth = rows.length - 1 - index;
+                const content = stripOfflineDecorativeMarkup(applyOfflineRegexText(activeFriend, message.content, message.role, depth, 'prompt'));
+                return `#${floor} ${speaker}: ${content}`;
+            }).join('\n\n');
+            const groupRule = identityContext.isGroup
+                ? '只能总结本次群体线下见面里公开发生的内容；不得写入、推断或复述任何私聊或秘密联系内容。'
+                : `只写 ${identityContext.charName} 看到、听到、说出、做出、注意到或能合理推断的事情，不得进入 User 的私密内心。`;
+            const customBlock = customPrompt
+                ? `\n<user_summary_instructions>\n${customPrompt}\n</user_summary_instructions>\n在不违背隐私规则的前提下，内容重点、取舍、语言和表达必须服从这份自定义要求。\n`
+                : '';
+            const prompt = `请为下方线下见面的指定楼层生成一份可作为后续上下文的简明总结。${customBlock}
+User：${identityContext.userName}
+Char：${identityContext.charName}
+
+规则：
+- ${groupRule}
+- 保留关键事件、关系或情绪变化、约定、未决事项与必要的时间顺序。
+- 只输出总结正文，不要 JSON、Markdown、标题前后解释或“总结如下”。
+
+指定线下楼层：
+${transcript}`;
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${currentApiConfig.apiKey}` },
+                body: JSON.stringify({
+                    model: currentApiConfig.model || '',
+                    temperature: parseFloat(currentApiConfig.temperature ?? currentApiConfig.temp) || 0.5,
+                    stream: false,
+                    messages: [
+                        { role: 'system', content: '只输出可直接作为线下剧情上下文的总结正文。' },
+                        { role: 'user', content: prompt }
+                    ]
+                })
+            });
+            if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+            const data = await response.json();
+            const rawSummary = data.choices?.[0]?.message?.content || data.choices?.[0]?.text || '';
+            const summary = offlineReasoning
+                ? offlineReasoning.normalizeResponse(rawSummary, '').content.trim()
+                : String(rawSummary || '').trim();
+            if (!summary) throw new Error('Offline segment summary is empty');
+            return summary;
+        };
+
+        const resolveOfflineSummaryRange = (messages, startFloor, endFloor) => {
+            const start = Math.max(1, Math.round(Number(startFloor) || 0));
+            const end = Math.max(start, Math.round(Number(endFloor) || 0));
+            const rows = getOfflineDialogueRows(messages);
+            const selectedRows = rows.filter(row => row.floor >= start && row.floor <= end);
+            if (!selectedRows.length || selectedRows[0].floor !== start || selectedRows[selectedRows.length - 1].floor !== end) {
+                throw new Error('Summary floor range is invalid');
+            }
+            if (selectedRows.some(row => row.message.archivedBySummaryId)) {
+                throw new Error('Selected floors are already summarized');
+            }
+            return selectedRows;
+        };
+
+        const summarizeOfflineFloors = async (activeFriend, startFloor, endFloor, settings = {}) => {
+            const messages = normalizeOfflineMessagesForFriend(activeFriend);
+            const selectedRows = resolveOfflineSummaryRange(messages, startFloor, endFloor);
+            const normalizedSettings = await persistOfflineSummarySettings(activeFriend, settings);
+            const apiConfig = resolveOfflineSummaryApiConfig(normalizedSettings);
+            const summary = await requestOfflineSegmentSummary(activeFriend, selectedRows, { settings: normalizedSettings, apiConfig });
+            const summaryId = createOfflineChatId('offline-summary');
+            const summaryMessage = {
+                id: summaryId,
+                role: 'system',
+                type: OFFLINE_SUMMARY_MESSAGE_TYPE,
+                content: summary,
+                sourceMessageIds: selectedRows.map(row => String(row.message.id)),
+                sourceFloorStart: selectedRows[0].floor,
+                sourceFloorEnd: selectedRows[selectedRows.length - 1].floor,
+                timestamp: Date.now()
+            };
+            const selectedIds = new Set(summaryMessage.sourceMessageIds);
+            const nextMessages = messages.map(message => selectedIds.has(String(message.id || ''))
+                ? { ...message, archivedBySummaryId: summaryId }
+                : message
+            ).concat(summaryMessage);
+            await persistOfflineMessages(activeFriend, nextMessages);
+            const latestFriend = window.imApp?.getFriendById?.(activeFriend.id) || activeFriend;
+            renderOfflineCurrentMessages(latestFriend);
+            return summaryMessage;
+        };
+
+        async function endOfflineMeeting(endButton = null, options = {}) {
             const activeFriend = window.imData.currentActiveFriend;
-            if (!activeFriend) return;
+            if (!activeFriend) return false;
             const messages = normalizeOfflineMessagesForFriend(activeFriend);
             if (messages.length === 0) {
                 if (window.showToast) window.showToast('没有可结束的见面内容');
-                return;
+                return false;
             }
             const endedAt = Date.now();
 
@@ -3788,7 +4180,11 @@ ${transcript}`;
 
             try {
                 if (window.showToast) window.showToast('正在生成见面总结...');
-                const rawSummary = await requestOfflineMeetingSummary(activeFriend, messages);
+                const normalizedSettings = await persistOfflineSummarySettings(activeFriend, options.settings || getOfflineSummarySettings(activeFriend));
+                const rawSummary = await requestOfflineMeetingSummary(activeFriend, messages, {
+                    settings: normalizedSettings,
+                    apiConfig: resolveOfflineSummaryApiConfig(normalizedSettings)
+                });
                 const identityContext = getOfflineIdentityContext(activeFriend);
                 const dateText = formatOfflineMeetingDate(endedAt);
                 const parsed = window.imDataUtils?.parseOfflineMeetingArtifacts
@@ -3805,7 +4201,7 @@ ${transcript}`;
                 if (window.imApp?.ensureFriendMessagesLoaded) {
                     await window.imApp.ensureFriendMessagesLoaded(activeFriend);
                 }
-                const sessionId = activeFriend.offlineCurrentSessionId || createOfflineTavernId('offline-session');
+                const sessionId = activeFriend.offlineCurrentSessionId || createOfflineChatId('offline-session');
                 const meetingSummary = parsed.meetingSummary;
                 const session = {
                     id: sessionId,
@@ -3827,7 +4223,7 @@ ${transcript}`;
                 };
                 const recordContent = [dateText, meetingSummary.title, meetingSummary.summary].filter(Boolean).join('\n\n');
                 const recordMsg = {
-                    id: createOfflineTavernId('meeting'),
+                    id: createOfflineChatId('meeting'),
                     role: 'system',
                     type: OFFLINE_MEETING_RECORD_TYPE,
                     offlineSessionId: sessionId,
@@ -3895,12 +4291,14 @@ ${transcript}`;
                         ? '见面记录已生成，短期记忆使用基础版本'
                         : '见面记录与短期记忆已生成');
                 }
+                return true;
             } catch (error) {
                 console.error('End offline meeting failed', error);
                 if (window.showToast) {
                     const isPersistenceFailure = /Failed to (save|persist) offline meeting/.test(String(error?.message || ''));
                     window.showToast(isPersistenceFailure ? '见面记录保存失败，当前记录已保留' : '结束见面失败，请检查 API 配置或网络');
                 }
+                return false;
             } finally {
                 if (endButton) {
                     endButton.dataset.busy = 'false';
@@ -3917,11 +4315,11 @@ ${transcript}`;
             const targetIndex = messages.findIndex(message => String(message.id) === String(messageId));
             if (targetIndex < 0 || messages[targetIndex].role !== 'assistant') return;
             const originalMessage = messages[targetIndex];
-            const bubble = Array.from(document.querySelectorAll('.offline-tavern-bubble'))
+            const bubble = Array.from(document.querySelectorAll('.offline-chat-bubble'))
                 .find(item => String(item.getAttribute('data-message-id') || '') === String(messageId));
-            const textEl = bubble ? bubble.querySelector('.offline-tavern-bubble-text') : null;
-            const metaEl = bubble ? bubble.querySelector('.offline-tavern-bubble-meta') : null;
-            const actionsEl = bubble ? bubble.querySelector('.offline-tavern-bubble-actions') : null;
+            const textEl = bubble ? bubble.querySelector('.offline-chat-bubble-text') : null;
+            const metaEl = bubble ? bubble.querySelector('.offline-chat-bubble-meta') : null;
+            const actionsEl = bubble ? bubble.querySelector('.offline-chat-bubble-actions') : null;
             const originalHtml = textEl ? textEl.innerHTML : '';
             const originalDisplay = textEl ? textEl.style.display : '';
             const originalMeta = metaEl ? metaEl.textContent : '';
@@ -3945,20 +4343,20 @@ ${transcript}`;
                 renderOfflineThinkingState(bubble, parsed.reasoning, { expanded: streaming && !!parsed.reasoning });
                 textEl.style.display = '';
                 textEl.innerHTML = displayText
-                    ? buildOfflineTavernTextHtml(displayText, {
+                    ? buildOfflineChatTextHtml(displayText, {
                         messageId,
-                        enableVoice: true,
+                        enableVoice: isTtsEnabledForFriend(activeFriend),
                         enableBarrage: isOfflineBarragePromptEnabled(activeFriend),
                         enableChoices: isOfflineChoicesPromptEnabled(activeFriend),
                         language: activeFriend?.language || 'zh'
                     })
-                    : '<div class="offline-tavern-reroll-placeholder">正在重新思考...</div>';
-                bindOfflineTavernTextControls(bubble, {
+                    : '<div class="offline-chat-reroll-placeholder">正在重新思考...</div>';
+                bindOfflineChatTextControls(bubble, {
                     ...originalMessage,
                     content: displayText,
                     timestamp: rerollTimestamp
                 }, activeFriend, targetIndex + 1);
-                const contentArea = document.getElementById('offline-tavern-content');
+                const contentArea = document.getElementById('offline-chat-content');
                 if (contentArea) {
                     const bubbleTop = bubble.offsetTop;
                     if (bubbleTop < contentArea.scrollTop || bubbleTop > contentArea.scrollTop + contentArea.clientHeight - 120) {
@@ -4011,7 +4409,7 @@ ${transcript}`;
                 renderOfflineThinkingState(bubble, '');
                 textEl.dataset.rerolling = 'true';
                 textEl.style.display = '';
-                textEl.innerHTML = '<div class="offline-tavern-reroll-placeholder">正在重新思考...</div>';
+                textEl.innerHTML = '<div class="offline-chat-reroll-placeholder">正在重新思考...</div>';
             }
 
             try {
@@ -4042,7 +4440,7 @@ ${transcript}`;
                     textEl.querySelectorAll('[data-bound]').forEach((control) => {
                         delete control.dataset.bound;
                     });
-                    bindOfflineTavernTextControls(bubble, originalMessage, activeFriend, targetIndex + 1);
+                    bindOfflineChatTextControls(bubble, originalMessage, activeFriend, targetIndex + 1);
                 }
                 if (metaEl) metaEl.textContent = originalMeta;
                 renderOfflineCurrentMessages(activeFriend);
@@ -4066,28 +4464,28 @@ ${transcript}`;
             }
         }
 
-        const openOfflineTavernView = async () => {
+        const openOfflineChatView = async () => {
             closeSheet();
-            const tavernView = document.getElementById('offline-tavern-view');
-            if (tavernView) {
+            const chatView = document.getElementById('offline-chat-view');
+            if (chatView) {
                 // 恢复普通模式界面
-                const inputArea = tavernView.querySelector('.offline-tavern-input-area');
+                const inputArea = chatView.querySelector('.offline-chat-input-area');
                 if (inputArea) inputArea.style.display = '';
                 
-                const titleEl = tavernView.querySelector('.offline-tavern-title');
+                const titleEl = chatView.querySelector('.offline-chat-title');
                 if (titleEl) titleEl.textContent = '线下';
                 
-                const settingsBtn = tavernView.querySelector('.offline-tavern-settings');
+                const settingsBtn = chatView.querySelector('.offline-chat-settings');
                 if (settingsBtn) settingsBtn.style.display = '';
             
-                tavernView.style.display = 'flex';
+                chatView.style.display = 'flex';
                 // Trigger reflow to ensure display:flex is applied before adding active class for animation
-                void tavernView.offsetWidth; 
-                tavernView.classList.add('active');
+                void chatView.offsetWidth; 
+                chatView.classList.add('active');
 
                 const activeFriend = window.imData.currentActiveFriend;
                 if (activeFriend) {
-                    applyOfflineTavernTheme(activeFriend);
+                    applyOfflineChatTheme(activeFriend);
                     await ensureOfflineMeetingState(activeFriend);
                     renderOfflineCurrentMessages(activeFriend);
                 }
@@ -4437,6 +4835,55 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
                 deletable: false
             },
             {
+                id: 'offline_recap_haru',
+                name: '线下回顾byHaru',
+                enabled: false,
+                presetVersion: 2,
+                content: `AI 必须在每轮正文回复的末尾，严格维护并更新【回顾】模块。
+
+【继承与更新硬性法则】（重点）
+在生成【回顾】前，你必须读取上一轮回复末尾的所有【回顾】内容：
+1. **内容继承**：你必须原样保留上一轮已有的所有“短期回顾”条目（1 到 N 条），绝对不能遗漏或删减！
+2. **递增追加**：在继承的历史条目下方，追加 1 条当轮产生的新回顾。
+3. **计数更新**：若上一轮是（N/10），本轮标题必须更新为（N+1/10）。严禁每轮都重新重置为（1/10）！
+
+【回顾板块格式要求】
+在所有正文内容结束后，添加独立标题行：
+【回顾】
+标题下方分为“短期回顾”和“长期回顾”两个独立板块。
+
+【短期回顾机制】
+1. 标识格式：短期回顾（x/10）
+2. 单条字数：严格控制在 20-50 字之间。
+3. 满额归档重置（当达到 10/10 时）：
+- 当上一轮短期回顾已达到（10/10）时，在当前轮次触发归档。
+- 归档操作：将旧的 10 条短期回顾中具备纪念意义的核心事件，提炼融合为 1 条约 200 字的“长期回顾”，永久追加到【长期回顾】板块。
+- 重置操作：清空旧的 10 条短期回顾，仅保留当前轮次生成的新回顾，计数重置为：短期回顾（1/10）。
+
+【长期回顾机制】
+1. 标识格式：长期回顾（永久）
+2. 永久保留：归档生成的长期回顾一旦写入，后续每轮必须原样完整保留，不可删除。
+
+【多轮演化示范】（必须严格遵守此递增逻辑）
+▶ 第一轮输出示例：
+【回顾】
+短期回顾（1/10）：
+1. 在星月湖公园长椅上，将祖传的银色怀表送给了对方，并约定每年初雪在此相见。（36字）
+2. 下一条接上
+长期回顾：
+无
+▶ 第二轮输出示例（必须原样继承第1条，并追加第2条，计数变为2/10）：
+【回顾】
+短期回顾（2/10）：
+1. （上一条）在星月湖公园长椅上，将祖传的银色怀表送给了对方，并约定每年初雪在此相见。（36字）
+2. 共同在路边救助并领养了一只白色的三花幼猫，给它取名“奶油”。（28字）
+3. 下一条接上直到10
+长期记忆：
+无`,
+                editable: true,
+                deletable: false
+            },
+            {
                 id: 'cot_before',
                 name: 'COT前',
                 enabled: true,
@@ -4483,6 +4930,20 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
                 deletable: false
             },
             {
+                id: 'cot_read_previous_recap_haru',
+                name: 'cot-读取上轮回顾byHaru',
+                enabled: false,
+                presetVersion: 1,
+                content: `是否读取了上一轮线下回复中的所有回顾里的内容：
+[记忆机制自查]
+1. 历史回顾继承：检查是否已完整读取上一条回复中的所有“短期回顾”与“长期回顾”？必须将其原封不动地复制保留在当轮的【回顾】模块中。
+2. 满额检测与状态转换：
+- 若上一条短期回顾未满（N < 10）：在继承的短期回顾下方，以 (N+1)/10 的格式追加当轮产生的新短期回顾（字数 20-50 字）。
+- 若上一条短期回顾已满（10/10）：触发归档！清空旧的 10 条短期回顾，将这 10 条的核心事件提炼总结成 1 条新的长期回顾（约 200 字），追加至原有【长期回顾】末尾；同时生成当轮唯一的 1 条新短期回顾，格式重置为 1/10。`,
+                editable: true,
+                deletable: false
+            },
+            {
                 id: 'cot_after',
                 name: 'COT后',
                 enabled: true,
@@ -4514,7 +4975,7 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
 
         const orderOfflinePromptsForHistoryAnchor = (prompts) => {
             const source = Array.isArray(prompts) ? prompts : [];
-            const canonicalIds = new Set(OFFLINE_TAVERN_PROMPT_ORDER);
+            const canonicalIds = new Set(OFFLINE_CHAT_PROMPT_ORDER);
             const builtInById = new Map();
             const customBuckets = new Map();
             let precedingBuiltInId = '';
@@ -4536,11 +4997,22 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
             });
 
             const ordered = [...(customBuckets.get('') || [])];
-            OFFLINE_TAVERN_PROMPT_ORDER.forEach((id) => {
+            OFFLINE_CHAT_PROMPT_ORDER.forEach((id) => {
                 const prompt = builtInById.get(id);
                 if (prompt) ordered.push(prompt);
                 ordered.push(...(customBuckets.get(id) || []));
             });
+            return ordered;
+        };
+
+        const moveOfflineRecapBeforeFormatRules = (prompts) => {
+            const ordered = Array.isArray(prompts) ? prompts.slice() : [];
+            const recapIndex = ordered.findIndex(prompt => prompt?.id === 'offline_recap_haru');
+            const formatIndex = ordered.findIndex(prompt => prompt?.id === 'format_rules');
+            if (recapIndex < 0 || formatIndex < 0 || recapIndex === formatIndex - 1) return ordered;
+            const [recapPrompt] = ordered.splice(recapIndex, 1);
+            const nextFormatIndex = ordered.findIndex(prompt => prompt?.id === 'format_rules');
+            ordered.splice(nextFormatIndex, 0, recapPrompt);
             return ordered;
         };
 
@@ -4552,7 +5024,7 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
 
             const normalized = [];
             const usedIds = new Set();
-            const modularCotIds = ['cot_scene_planning', 'cot_literary_guidance', 'cot_language_check', 'cot_output_audit'];
+            const modularCotIds = ['cot_scene_planning', 'cot_literary_guidance', 'cot_language_check', 'cot_read_previous_recap_haru', 'cot_output_audit'];
             const fullCotIds = ['cot_before', ...modularCotIds, 'cot_after'];
             const sourceIds = new Set(source.map((rawPrompt, index) => {
                 const prompt = rawPrompt && typeof rawPrompt === 'object' ? rawPrompt : {};
@@ -4562,6 +5034,9 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
             const historyAnchorOrderVersion = Math.max(0, Number(
                 source.find(prompt => prompt?.id === OFFLINE_CHAT_HISTORY_PROMPT_ID)?.presetVersion
             ) || 0);
+            const recapOrderVersion = Math.max(0, Number(
+                source.find(prompt => prompt?.id === 'offline_recap_haru')?.presetVersion
+            ) || 0);
 
             const appendMigratedCotPrompts = (cotIds, enabled) => {
                 cotIds.forEach(cotId => {
@@ -4569,7 +5044,7 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
                     const cotDefault = defaultById.get(cotId);
                     if (!cotDefault) return;
                     const cotPrompt = cloneOfflinePrompt(cotDefault);
-                    cotPrompt.enabled = enabled;
+                    cotPrompt.enabled = cotId === 'cot_read_previous_recap_haru' ? false : enabled;
                     normalized.push(cotPrompt);
                     usedIds.add(cotId);
                 });
@@ -4647,6 +5122,9 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
                     if (defaultPrompt.id === 'style_green_apple') {
                         const styleIndex = normalized.findIndex(prompt => prompt.id === 'style_baimiao');
                         normalized.splice(styleIndex >= 0 ? styleIndex + 1 : normalized.length, 0, missingPrompt);
+                    } else if (defaultPrompt.id === 'offline_recap_haru') {
+                        const formatIndex = normalized.findIndex(prompt => prompt.id === 'format_rules');
+                        normalized.splice(formatIndex >= 0 ? formatIndex : normalized.length, 0, missingPrompt);
                     } else if (modularCotIds.includes(defaultPrompt.id)) {
                         const cotAfterIndex = normalized.findIndex(prompt => prompt.id === 'cot_after');
                         normalized.splice(cotAfterIndex >= 0 ? cotAfterIndex : normalized.length, 0, missingPrompt);
@@ -4660,9 +5138,12 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
             // The anchor version marks configurations that already completed the
             // current one-time ordering migration. After that, the visible user order
             // is authoritative and normalization must not move entries again.
-            return historyAnchorOrderVersion >= 3
+            const orderedPrompts = historyAnchorOrderVersion >= 3
                 ? normalized
                 : orderOfflinePromptsForHistoryAnchor(normalized);
+            return recapOrderVersion >= 2
+                ? orderedPrompts
+                : moveOfflineRecapBeforeFormatRules(orderedPrompts);
         };
 
         const serializeOfflinePrompts = (prompts) => JSON.stringify((prompts || []).map(prompt => cloneOfflinePrompt(prompt)));
@@ -4817,81 +5298,81 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
                 customCssEnabled: false,
                 activePresetId: ''
             });
-        const OFFLINE_THEME_SCOPE = ':is(#offline-tavern-view, #offline-tavern-barrage-view)';
+        const OFFLINE_THEME_SCOPE = ':is(#offline-chat-view, #offline-chat-barrage-view)';
         const OFFLINE_THEME_SOURCE_TEMPLATE = `/* 线下界面真实可编辑源码
    :scope 会自动限定到线下主界面和弹幕详情页，不会影响其他应用。 */
 
 :scope {
-  --offline-tavern-narrative-color: #111111;
-  --offline-tavern-dialogue-color: #8B8B8B;
+  --offline-chat-narrative-color: #111111;
+  --offline-chat-dialogue-color: #8B8B8B;
   background: #ffffff;
   color: #111111;
 }
 
 /* 顶栏 */
-.offline-tavern-header {
+.offline-chat-header {
   background: rgba(255, 255, 255, 0.94);
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 }
-.offline-tavern-back,
-.offline-tavern-settings {
+.offline-chat-back,
+.offline-chat-settings {
   color: #111111;
 }
-.offline-tavern-title {
+.offline-chat-title {
   color: #111111;
   font-weight: 700;
 }
 
 /* 消息列表与楼层 */
-.offline-tavern-content {
+.offline-chat-content {
   background: #ffffff;
 }
-.offline-tavern-floor {
+.offline-chat-floor {
   color: #8e8e93;
 }
-.offline-tavern-bubble {
+.offline-chat-bubble {
   border-bottom: 1px solid #eeeeee;
 }
-.offline-tavern-bubble.user {
+.offline-chat-bubble.user {
   background: #fafafa;
 }
-.offline-tavern-bubble.ai {
+.offline-chat-bubble.ai {
   background: #ffffff;
 }
-.offline-tavern-bubble-header,
-.offline-tavern-bubble-body,
-.offline-tavern-bubble-footer {
+.offline-chat-bubble-header,
+.offline-chat-bubble-body,
+.offline-chat-bubble-footer {
   color: inherit;
 }
-.offline-tavern-avatar {
+.offline-chat-avatar {
   border-radius: 50%;
   background: #f2f2f7;
 }
-.offline-tavern-avatar img {
+.offline-chat-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
-.offline-tavern-name-container,
-.offline-tavern-name {
+.offline-chat-name-container,
+.offline-chat-name {
   color: #111111;
 }
-.offline-tavern-sign,
-.offline-tavern-bubble-meta {
+.offline-chat-sign,
+.offline-chat-bubble-meta {
   color: #8e8e93;
 }
 
 /* 正文、思考、对话和段落 */
-.offline-tavern-bubble-text,
-.offline-tavern-paragraph-wrap,
-.offline-tavern-paragraph {
-  color: var(--offline-tavern-narrative-color);
+.offline-chat-bubble-text,
+.offline-chat-paragraph-wrap,
+.offline-chat-paragraph {
+  color: var(--offline-chat-narrative-color);
 }
-.offline-tavern-dialogue,
-.offline-tavern-speech {
-  color: var(--offline-tavern-dialogue-color);
+.offline-chat-dialogue,
+.offline-chat-speech {
+  color: var(--offline-chat-dialogue-color);
 }
-.offline-tavern-thinking {
+.offline-chat-thinking {
   width: fit-content;
   max-width: 100%;
   margin-bottom: 8px;
@@ -4902,11 +5383,11 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
   text-align: left;
   box-sizing: border-box;
 }
-.offline-tavern-thinking.is-expanded {
+.offline-chat-thinking.is-expanded {
   width: 100%;
   border-radius: 20px;
 }
-.offline-tavern-thinking-toggle {
+.offline-chat-thinking-toggle {
   width: 100%;
   min-height: 36px;
   padding: 7px 12px;
@@ -4920,23 +5401,23 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
   font: inherit;
   cursor: pointer;
 }
-.offline-tavern-thinking-label {
+.offline-chat-thinking-label {
   display: inline-flex;
   align-items: center;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
 }
-.offline-tavern-thinking-icon {
+.offline-chat-thinking-icon {
   flex: 0 0 auto;
   color: #8e8e93;
   font-size: 11px;
   transition: transform 0.2s ease;
 }
-.offline-tavern-thinking.is-expanded .offline-tavern-thinking-icon {
+.offline-chat-thinking.is-expanded .offline-chat-thinking-icon {
   transform: rotate(180deg);
 }
-.offline-tavern-thinking-content {
+.offline-chat-thinking-content {
   padding: 0 12px 12px;
   color: #636366;
   font-size: 13px;
@@ -4944,133 +5425,131 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
   white-space: pre-wrap;
   word-break: break-word;
 }
-.offline-tavern-thinking-content[hidden] {
+.offline-chat-thinking-content[hidden] {
   display: none;
 }
-.offline-tavern-placeholder,
-.offline-tavern-reroll-placeholder {
+.offline-chat-placeholder,
+.offline-chat-reroll-placeholder {
   color: #8e8e93;
 }
 
 /* 弹幕入口和玩家选项 */
-.offline-tavern-barrage-btn {
+.offline-chat-barrage-btn {
   background: #f2f2f7;
   color: #48484a;
 }
-.offline-tavern-choice-list {
+.offline-chat-choice-list {
   display: grid;
   gap: 8px;
 }
-.offline-tavern-choice-btn {
+.offline-chat-choice-btn {
   background: #ffffff;
   color: #111111;
   border: 1px solid #d8d8dc;
 }
-.offline-tavern-choice-index {
+.offline-chat-choice-index {
   background: #111111;
   color: #ffffff;
 }
-.offline-tavern-choice-text {
+.offline-chat-choice-text {
   color: inherit;
 }
 
 /* 消息操作 */
-.offline-tavern-bubble-actions {
+.offline-chat-bubble-actions {
   display: flex;
   gap: 6px;
 }
-.offline-tavern-action-btn {
+.offline-chat-action-btn {
   background: #f2f2f7;
   color: #48484a;
 }
-.offline-tavern-action-btn.danger {
+.offline-chat-action-btn.danger {
   color: #ff3b30;
 }
-.offline-tavern-inline-editor {
+.offline-chat-inline-editor {
   background: #ffffff;
   color: #111111;
   border: 1px solid #d1d1d6;
 }
 
 /* 历史见面 */
-.offline-tavern-history-back,
-.offline-tavern-history-card,
-.offline-tavern-history-session,
-.offline-tavern-history-detail-summary {
+.offline-chat-history-back,
+.offline-chat-history-card,
+.offline-chat-history-session,
+.offline-chat-history-detail-summary {
   background: #ffffff;
   color: #111111;
   border-color: #e5e5ea;
 }
-.offline-tavern-history-title,
-.offline-tavern-history-detail-summary-title {
+.offline-chat-history-title,
+.offline-chat-history-detail-summary-title {
   color: #111111;
 }
-.offline-tavern-history-meta,
-.offline-tavern-history-summary,
-.offline-tavern-history-detail-summary-meta {
+.offline-chat-history-meta,
+.offline-chat-history-summary,
+.offline-chat-history-detail-summary-meta {
   color: #8e8e93;
 }
-.offline-tavern-history-detail-summary-text,
-.offline-tavern-history-summary-textarea {
+.offline-chat-history-detail-summary-text,
+.offline-chat-history-summary-textarea {
   color: #333333;
 }
-.offline-tavern-history-delete,
-.offline-tavern-history-summary-cancel {
+.offline-chat-history-delete,
+.offline-chat-history-summary-cancel {
   color: #ff3b30;
 }
-.offline-tavern-history-summary-edit,
-.offline-tavern-history-summary-save {
+.offline-chat-history-summary-edit,
+.offline-chat-history-summary-save {
   color: #007aff;
 }
 
 /* 输入区 */
-.offline-tavern-input-area {
+.offline-chat-input-area {
   background: rgba(255, 255, 255, 0.96);
   border-top: 1px solid rgba(0, 0, 0, 0.08);
 }
-.offline-tavern-input-bar {
+.offline-chat-input-bar {
   background: #f2f2f7;
   border: 1px solid #e5e5ea;
 }
-.offline-tavern-attachment,
-.offline-tavern-send {
+.offline-chat-attachment,
+.offline-chat-send {
   color: #111111;
 }
-.offline-tavern-input {
+.offline-chat-input {
   color: #111111;
   background: transparent;
 }
 
 /* 弹幕详情页 */
-:scope.offline-tavern-barrage-view {
+:scope.offline-chat-barrage-view {
   background: #ffffff;
 }
-.offline-tavern-barrage-header {
+.offline-chat-barrage-header {
   background: rgba(255, 255, 255, 0.96);
   border-bottom: 1px solid #e5e5ea;
 }
-.offline-tavern-barrage-close,
-.offline-tavern-barrage-title {
+.offline-chat-barrage-close,
+.offline-chat-barrage-title {
   color: #111111;
 }
-.offline-tavern-barrage-list {
+.offline-chat-barrage-list {
   background: #ffffff;
 }
-.offline-tavern-barrage-row {
+.offline-chat-barrage-row {
   border-bottom: 1px solid #eeeeee;
 }
-.offline-tavern-barrage-name {
+.offline-chat-barrage-name {
   color: #111111;
 }
-.offline-tavern-barrage-text {
+.offline-chat-barrage-text {
   color: #48484a;
 }
-.offline-tavern-barrage-likes,
-.offline-tavern-barrage-empty {
+.offline-chat-barrage-likes,
+.offline-chat-barrage-empty {
   color: #8e8e93;
-}`.replaceAll('offline-tavern', 'offline-chat');
-        const resolveOfflineThemeCss = (css) => String(css || '')
-            .replaceAll('offline-chat', 'offline-tavern');
+}`;
         const normalizeOfflineTheme = (theme) => window.imApp?.normalizeOfflineThemeState
             ? window.imApp.normalizeOfflineThemeState(theme)
             : { ...OFFLINE_THEME_DEFAULTS, ...(theme || {}) };
@@ -5089,27 +5568,27 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
             return window.imData.offlineTheme;
         };
         const ensureOfflineThemeStyleTag = () => {
-            let styleTag = document.getElementById('offline-tavern-custom-theme-style');
+            let styleTag = document.getElementById('offline-chat-custom-theme-style');
             if (!styleTag) {
                 styleTag = document.createElement('style');
-                styleTag.id = 'offline-tavern-custom-theme-style';
+                styleTag.id = 'offline-chat-custom-theme-style';
                 document.head.appendChild(styleTag);
             }
             return styleTag;
         };
-        const applyOfflineTavernTheme = (legacyFriend = null) => {
+        const applyOfflineChatTheme = (legacyFriend = null) => {
             const theme = ensureGlobalOfflineTheme(legacyFriend);
-            ['offline-tavern-view', 'offline-tavern-barrage-view'].forEach((id) => {
+            ['offline-chat-view', 'offline-chat-barrage-view'].forEach((id) => {
                 const view = document.getElementById(id);
                 if (!view) return;
-                view.style.setProperty('--offline-tavern-narrative-color', theme.narrativeColor);
-                view.style.setProperty('--offline-tavern-dialogue-color', theme.dialogueColor);
+                view.style.setProperty('--offline-chat-narrative-color', theme.narrativeColor);
+                view.style.setProperty('--offline-chat-dialogue-color', theme.dialogueColor);
             });
             const styleTag = ensureOfflineThemeStyleTag();
             styleTag.textContent = theme.customCssEnabled && theme.customCss.trim()
                 ? (window.imApp?.scopeUserCss
-                    ? window.imApp.scopeUserCss(resolveOfflineThemeCss(theme.customCss), OFFLINE_THEME_SCOPE)
-                    : resolveOfflineThemeCss(theme.customCss))
+                    ? window.imApp.scopeUserCss(theme.customCss, OFFLINE_THEME_SCOPE)
+                    : theme.customCss)
                 : '';
             return theme;
         };
@@ -5124,7 +5603,7 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
             window.imData.offlineTheme = normalized;
             window.imData.offlineThemeInitialized = true;
             if (window.imApp?.saveImessageUiState) window.imApp.saveImessageUiState();
-            applyOfflineTavernTheme();
+            applyOfflineChatTheme();
             return normalized;
         };
 
@@ -5138,7 +5617,7 @@ If a <thinking> block is produced for the frontend, put it before the prose and 
             const normalized = normalizeOfflineTheme(theme);
             window.imData.offlineTheme = normalized;
             window.imData.offlineThemeInitialized = true;
-            applyOfflineTavernTheme();
+            applyOfflineChatTheme();
             if (offlineThemeSaveTimer) clearTimeout(offlineThemeSaveTimer);
             offlineThemeSaveTimer = setTimeout(() => {
                 persistOfflineTheme(normalized).catch((error) => {
@@ -5365,7 +5844,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             if (options.applyMessages !== false) {
                 const latestFriend = window.imApp?.getFriendById?.(activeFriend.id) || activeFriend;
                 await persistOfflineMessages(latestFriend, normalizeOfflineMessagesForFriend(latestFriend));
-                const titleEl = document.querySelector('#offline-tavern-view .offline-tavern-title');
+                const titleEl = document.querySelector('#offline-chat-view .offline-chat-title');
                 if (titleEl?.textContent === '线下') renderOfflineCurrentMessages(latestFriend);
             }
             return normalized;
@@ -5543,7 +6022,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             listEl.appendChild(addButton);
         };
 
-        const renderOfflineTavernSettingsEditor = (listEl, activeFriend) => {
+        const renderOfflineChatSettingsEditor = (listEl, activeFriend) => {
             listEl.innerHTML = '';
 
             const streamRow = document.createElement('div');
@@ -5579,7 +6058,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     <span><strong>挂载世界书</strong><small>WORLD BOOK</small></span>
                 </div>
                 <div class="offline-settings-worldbook-meta">
-                    <span id="offline-tavern-wb-count">${(activeFriend.worldbooks || activeFriend.boundBooks || []).length} 项</span>
+                    <span id="offline-chat-wb-count">${(activeFriend.worldbooks || activeFriend.boundBooks || []).length} 项</span>
                     <i class="fas fa-chevron-right"></i>
                 </div>
             `;
@@ -5589,7 +6068,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     commitSheetFriendChange(activeFriend.id, (targetFriend) => {
                         targetFriend.worldbooks = newIds;
                     }, { silent: true, metaOnly: true });
-                    const countSpan = document.getElementById('offline-tavern-wb-count');
+                    const countSpan = document.getElementById('offline-chat-wb-count');
                     if (countSpan) countSpan.textContent = `${newIds.length} 项`;
                 };
 
@@ -5647,7 +6126,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                 }
                 prompts = preset.prompts.map(cloneOfflinePrompt);
                 await persistGlobalOfflinePromptState({ prompts, presets, activePresetId: preset.id });
-                renderOfflineTavernSettingsEditor(listEl, activeFriend);
+                renderOfflineChatSettingsEditor(listEl, activeFriend);
                 if (window.showToast) window.showToast(`已应用提示词预设：${preset.name}`);
             });
             const removeSelectedPromptPreset = async () => {
@@ -5655,7 +6134,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                 if (!selectedId) return;
                 presets = normalizeOfflinePromptPresets(presets.filter(preset => preset.id !== selectedId));
                 await persistGlobalOfflinePromptState({ prompts, presets, activePresetId: '' });
-                renderOfflineTavernSettingsEditor(listEl, activeFriend);
+                renderOfflineChatSettingsEditor(listEl, activeFriend);
                 if (window.showToast) window.showToast('提示词预设已删除，当前提示词保持不变');
             };
             deletePromptPresetBtn.addEventListener('click', () => {
@@ -5749,7 +6228,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     const nextPrompts = prompts.slice();
                     [nextPrompts[index - 1], nextPrompts[index]] = [nextPrompts[index], nextPrompts[index - 1]];
                     await persistOfflinePrompts(nextPrompts);
-                    renderOfflineTavernSettingsEditor(listEl, activeFriend);
+                    renderOfflineChatSettingsEditor(listEl, activeFriend);
                 });
 
                 downBtn.addEventListener('click', async (event) => {
@@ -5758,7 +6237,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     const nextPrompts = prompts.slice();
                     [nextPrompts[index], nextPrompts[index + 1]] = [nextPrompts[index + 1], nextPrompts[index]];
                     await persistOfflinePrompts(nextPrompts);
-                    renderOfflineTavernSettingsEditor(listEl, activeFriend);
+                    renderOfflineChatSettingsEditor(listEl, activeFriend);
                 });
 
                 moveGroup.appendChild(upBtn);
@@ -5811,7 +6290,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                         event.stopPropagation();
                         const nextPrompts = prompts.filter((_, promptIndex) => promptIndex !== index);
                         await persistOfflinePrompts(nextPrompts);
-                        renderOfflineTavernSettingsEditor(listEl, activeFriend);
+                        renderOfflineChatSettingsEditor(listEl, activeFriend);
                     });
                     actionGroup.appendChild(deleteBtn);
                 }
@@ -5903,7 +6382,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             addBtn.addEventListener('click', async () => {
                 const nextPrompts = prompts.concat(createCustomOfflinePrompt());
                 await persistOfflinePrompts(nextPrompts);
-                renderOfflineTavernSettingsEditor(listEl, activeFriend);
+                renderOfflineChatSettingsEditor(listEl, activeFriend);
             });
             listEl.appendChild(addBtn);
         };
@@ -5912,7 +6391,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             if (!listEl || !activeFriend) return;
             listEl.innerHTML = '';
 
-            let theme = applyOfflineTavernTheme(activeFriend);
+            let theme = applyOfflineChatTheme(activeFriend);
             let presets = normalizeOfflineThemePresets(window.imData.offlineThemePresets);
             const controls = [];
             let cssInput = null;
@@ -6260,11 +6739,11 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             updateControls();
         };
 
-        // Render Offline Tavern Settings
-        const renderOfflineTavernSettings = () => {
-            const listEl = document.getElementById('offline-tavern-settings-list');
-            const regexListEl = document.getElementById('offline-tavern-regex-list');
-            const themeListEl = document.getElementById('offline-tavern-theme-list');
+        // Render Offline Chat Settings
+        const renderOfflineChatSettings = () => {
+            const listEl = document.getElementById('offline-chat-settings-list');
+            const regexListEl = document.getElementById('offline-chat-regex-list');
+            const themeListEl = document.getElementById('offline-chat-theme-list');
             if (!listEl || !regexListEl || !themeListEl) return;
             listEl.innerHTML = '';
             regexListEl.innerHTML = '';
@@ -6273,15 +6752,15 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             const activeFriend = window.imData.currentActiveFriend;
             if (!activeFriend) return;
 
-            renderOfflineTavernSettingsEditor(listEl, activeFriend);
+            renderOfflineChatSettingsEditor(listEl, activeFriend);
             renderOfflineRegexSettingsEditor(regexListEl, activeFriend);
             renderOfflineThemeSettingsEditor(themeListEl, activeFriend);
 
-            const tabButtons = Array.from(document.querySelectorAll('#offline-tavern-settings-tabs [data-offline-settings-tab]'));
+            const tabButtons = Array.from(document.querySelectorAll('#offline-chat-settings-tabs [data-offline-settings-tab]'));
             const panels = {
-                prompts: document.getElementById('offline-tavern-prompts-panel'),
-                regex: document.getElementById('offline-tavern-regex-panel'),
-                theme: document.getElementById('offline-tavern-theme-panel')
+                prompts: document.getElementById('offline-chat-prompts-panel'),
+                regex: document.getElementById('offline-chat-regex-panel'),
+                theme: document.getElementById('offline-chat-theme-panel')
             };
             const activateTab = (tabName) => {
                 Object.entries(panels).forEach(([name, panel]) => {
@@ -6303,19 +6782,163 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
         };
 
 
-        // Offline Tavern logic setup
-        const setupOfflineTavernLogic = () => {
-            const sendBtn = document.getElementById('offline-tavern-send-btn');
-            const inputField = document.getElementById('offline-tavern-input');
-            const attachmentBtn = document.getElementById('offline-tavern-attachment-btn');
-            const actionSheet = document.getElementById('offline-tavern-action-sheet');
-            const actionCancel = document.getElementById('offline-tavern-action-cancel');
-            const clearBtn = document.getElementById('offline-tavern-clear-btn');
-            const endBtn = document.getElementById('offline-tavern-end-btn');
-            const tavernView = document.getElementById('offline-tavern-view');
+        // Offline Chat logic setup
+        const setupOfflineChatLogic = () => {
+            const sendBtn = document.getElementById('offline-chat-send-btn');
+            const inputField = document.getElementById('offline-chat-input');
+            const attachmentBtn = document.getElementById('offline-chat-attachment-btn');
+            const actionSheet = document.getElementById('offline-chat-action-sheet');
+            const actionCancel = document.getElementById('offline-chat-action-cancel');
+            const clearBtn = document.getElementById('offline-chat-clear-btn');
+            const endBtn = document.getElementById('offline-chat-end-btn');
+            const chatView = document.getElementById('offline-chat-view');
+            const summarySheet = document.getElementById('offline-chat-summary-sheet');
+            const summaryApiSelect = document.getElementById('offline-summary-api-select');
+            const summaryPromptInput = document.getElementById('offline-summary-prompt-input');
+            const summaryStartInput = document.getElementById('offline-summary-start-floor');
+            const summaryEndInput = document.getElementById('offline-summary-end-floor');
+            const summaryOnlyBtn = document.getElementById('offline-summary-only-btn');
+            const summaryEndBtn = document.getElementById('offline-summary-end-btn');
+            const summaryCancelBtn = document.getElementById('offline-summary-cancel-btn');
 
             let isGenerating = false;
             let currentGenerationController = null;
+            let offlineSummarySettingsTimer = null;
+
+            const closeOfflineSummarySheet = () => {
+                if (!summarySheet) return;
+                summarySheet.classList.remove('active');
+                setTimeout(() => { summarySheet.style.display = 'none'; }, 180);
+            };
+
+            const getOfflineSummarySettingsFromModal = () => normalizeOfflineSummarySettings({
+                apiPresetId: summaryApiSelect?.value || '',
+                prompt: summaryPromptInput?.value || ''
+            });
+
+            const saveOfflineSummarySettingsFromModal = async () => {
+                const activeFriend = window.imData.currentActiveFriend;
+                if (!activeFriend) return;
+                await persistOfflineSummarySettings(activeFriend, getOfflineSummarySettingsFromModal());
+            };
+
+            const refreshOfflineSummaryApiSelect = (settings) => {
+                if (!summaryApiSelect) return;
+                const normalized = normalizeOfflineSummarySettings(settings);
+                const presets = getOfflineSummaryApiPresets();
+                summaryApiSelect.replaceChildren();
+                const currentOption = document.createElement('option');
+                currentOption.value = '';
+                currentOption.textContent = '跟随当前 API';
+                summaryApiSelect.appendChild(currentOption);
+                presets.forEach((preset) => {
+                    const option = document.createElement('option');
+                    option.value = String(preset?.id || '');
+                    option.textContent = String(preset?.name || '未命名预设');
+                    summaryApiSelect.appendChild(option);
+                });
+                summaryApiSelect.value = presets.some(preset => String(preset?.id || '') === normalized.apiPresetId)
+                    ? normalized.apiPresetId
+                    : '';
+            };
+
+            const openOfflineSummarySheet = () => {
+                const activeFriend = window.imData.currentActiveFriend;
+                if (!activeFriend || !summarySheet) return;
+                const messages = normalizeOfflineMessagesForFriend(activeFriend);
+                const unarchivedRows = getOfflineUnarchivedDialogueRows(messages);
+                const allRows = getOfflineDialogueRows(messages);
+                const canEnd = messages.some(message => isOfflineSummaryMessage(message) || (message.role === 'user' || message.role === 'assistant'));
+                if (!canEnd) {
+                    if (window.showToast) window.showToast('没有可结束的见面内容');
+                    return;
+                }
+                const firstFloor = unarchivedRows[0]?.floor || allRows[0]?.floor || 1;
+                const lastFloor = unarchivedRows[unarchivedRows.length - 1]?.floor || allRows[allRows.length - 1]?.floor || firstFloor;
+                const settings = getOfflineSummarySettings(activeFriend);
+                refreshOfflineSummaryApiSelect(settings);
+                if (summaryPromptInput) summaryPromptInput.value = settings.prompt;
+                [summaryStartInput, summaryEndInput].forEach(input => {
+                    if (!input) return;
+                    input.min = String(firstFloor);
+                    input.max = String(lastFloor);
+                });
+                if (summaryStartInput) summaryStartInput.value = String(firstFloor);
+                if (summaryEndInput) summaryEndInput.value = String(lastFloor);
+                if (summaryOnlyBtn) summaryOnlyBtn.disabled = unarchivedRows.length === 0;
+                if (summaryEndBtn) summaryEndBtn.disabled = false;
+                summarySheet.style.display = 'flex';
+                void summarySheet.offsetWidth;
+                summarySheet.classList.add('active');
+            };
+
+            if (summaryApiSelect) {
+                summaryApiSelect.addEventListener('change', () => {
+                    saveOfflineSummarySettingsFromModal().catch((error) => {
+                        console.error('Offline summary API setting save failed', error);
+                        if (window.showToast) window.showToast('线下总结设置保存失败');
+                    });
+                });
+            }
+            if (summaryPromptInput) {
+                summaryPromptInput.addEventListener('input', () => {
+                    if (offlineSummarySettingsTimer) clearTimeout(offlineSummarySettingsTimer);
+                    offlineSummarySettingsTimer = setTimeout(() => {
+                        saveOfflineSummarySettingsFromModal().catch((error) => console.error('Offline summary prompt save failed', error));
+                    }, 350);
+                });
+            }
+            if (summaryCancelBtn) summaryCancelBtn.addEventListener('click', closeOfflineSummarySheet);
+            if (summarySheet) {
+                summarySheet.addEventListener('click', (event) => {
+                    if (event.target === summarySheet) closeOfflineSummarySheet();
+                });
+            }
+            if (summaryOnlyBtn) {
+                summaryOnlyBtn.addEventListener('click', async () => {
+                    const activeFriend = window.imData.currentActiveFriend;
+                    if (!activeFriend || summaryOnlyBtn.disabled) return;
+                    const settings = getOfflineSummarySettingsFromModal();
+                    const startFloor = Number(summaryStartInput?.value);
+                    const endFloor = Number(summaryEndInput?.value);
+                    summaryOnlyBtn.disabled = true;
+                    if (summaryEndBtn) summaryEndBtn.disabled = true;
+                    try {
+                        if (window.showToast) window.showToast('正在生成线下总结...');
+                        await summarizeOfflineFloors(activeFriend, startFloor, endFloor, settings);
+                        closeOfflineSummarySheet();
+                        if (window.showToast) window.showToast(`第 ${startFloor}–${endFloor} 楼已总结并归档`);
+                    } catch (error) {
+                        console.error('Offline segment summary failed', error);
+                        const message = /already summarized/i.test(String(error?.message || ''))
+                            ? '所选楼层包含已归档内容，请选择连续的未归档楼层'
+                            : /range is invalid/i.test(String(error?.message || ''))
+                                ? '请输入有效且连续的未归档楼层范围'
+                                : '线下总结失败，请检查 API 配置或网络';
+                        if (window.showToast) window.showToast(message);
+                    } finally {
+                        summaryOnlyBtn.disabled = false;
+                        if (summaryEndBtn) summaryEndBtn.disabled = false;
+                    }
+                });
+            }
+            if (summaryEndBtn) {
+                summaryEndBtn.addEventListener('click', async () => {
+                    const activeFriend = window.imData.currentActiveFriend;
+                    if (!activeFriend || summaryEndBtn.disabled) return;
+                    const settings = getOfflineSummarySettingsFromModal();
+                    summaryEndBtn.disabled = true;
+                    if (summaryOnlyBtn) summaryOnlyBtn.disabled = true;
+                    try {
+                        // End always summarizes every unarchived floor; the displayed range is informational for this path.
+                        const ended = await endOfflineMeeting(summaryEndBtn, { settings });
+                        if (ended) closeOfflineSummarySheet();
+                    } finally {
+                        summaryEndBtn.disabled = false;
+                        if (summaryOnlyBtn) summaryOnlyBtn.disabled = false;
+                    }
+                });
+            }
             
             if (attachmentBtn && actionSheet) {
                 attachmentBtn.addEventListener('click', () => {
@@ -6344,31 +6967,55 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                 });
             }
 
-            if (clearBtn && tavernView) {
+            if (clearBtn && chatView) {
                 clearBtn.addEventListener('click', async () => {
                     actionSheet.classList.remove('active');
                     setTimeout(() => {
                         actionSheet.style.display = 'none';
                     }, 300);
 
-                    const activeFriend = window.imData.currentActiveFriend;
-                    if (activeFriend) {
-                        await persistOfflineMessages(activeFriend, []);
-                        renderOfflineCurrentMessages(activeFriend);
-                        
-                        if (window.showToast) window.showToast('线下聊天记录已清空');
+                    const clearOfflineHistory = async () => {
+                        const activeFriend = window.imData.currentActiveFriend;
+                        if (!activeFriend) return;
+                        clearBtn.dataset.busy = 'true';
+                        clearBtn.style.pointerEvents = 'none';
+                        try {
+                            await persistOfflineMessages(activeFriend, []);
+                            renderOfflineCurrentMessages(activeFriend);
+                            if (window.showToast) window.showToast('线下聊天记录已清空');
+                        } catch (error) {
+                            console.error('Failed to clear offline chat history', error);
+                            if (window.showToast) window.showToast('清空线下聊天记录失败，请重试');
+                        } finally {
+                            clearBtn.dataset.busy = 'false';
+                            clearBtn.style.pointerEvents = '';
+                        }
+                    };
+
+                    const confirmClear = () => {
+                        void clearOfflineHistory();
+                    };
+                    if (window.showCustomModal) {
+                        window.showCustomModal({
+                            title: '清空线下聊天记录',
+                            message: '确定清空本次线下见面的全部聊天记录吗？此操作无法恢复。',
+                            confirmText: '清空',
+                            isDestructive: true,
+                            onConfirm: confirmClear
+                        });
+                    } else if (window.confirm('确定清空本次线下见面的全部聊天记录吗？此操作无法恢复。')) {
+                        confirmClear();
                     }
                 });
             }
 
             if (endBtn && actionSheet) {
                 endBtn.addEventListener('click', async () => {
-                    if (endBtn.dataset.busy === 'true') return;
                     actionSheet.classList.remove('active');
                     setTimeout(() => {
                         actionSheet.style.display = 'none';
                     }, 300);
-                    await endOfflineMeeting(endBtn);
+                    openOfflineSummarySheet();
                 });
             }
             
@@ -6424,21 +7071,21 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                             let messagesWithUser = previousMessages;
                             if (text) {
                                 const userMsg = {
-                                    id: createOfflineTavernId('offline-user'),
+                                    id: createOfflineChatId('offline-user'),
                                     role: 'user',
                                     content: text,
                                     timestamp: Date.now()
                                 };
                                 messagesWithUser = await persistOfflineMessages(activeFriend, previousMessages.concat(userMsg));
                                 const persistedUserMsg = messagesWithUser.find(message => String(message.id) === String(userMsg.id)) || userMsg;
-                                renderOfflineTavernBubble(persistedUserMsg, true, {
-                                    floor: messagesWithUser.length,
+                                renderOfflineChatBubble(persistedUserMsg, true, {
+                                    floor: getOfflineMessageFloor(messagesWithUser, persistedUserMsg.id),
                                     depth: 0
                                 });
                             }
 
                             const aiTimestamp = Date.now();
-                            const aiMessageId = createOfflineTavernId('offline-ai');
+                            const aiMessageId = createOfflineChatId('offline-ai');
                             pendingAiMessage = {
                                 id: aiMessageId,
                                 role: 'assistant',
@@ -6448,7 +7095,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                             };
                             streamingBubble = createStreamingBubble('', false, {
                                 id: aiMessageId,
-                                floor: messagesWithUser.length + 1,
+                                floor: getOfflineDialogueRows(messagesWithUser).length + 1,
                                 timestamp: aiTimestamp,
                                 depth: 0
                             });
@@ -6480,7 +7127,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                                 window.showToast(finalReplyContent ? '已暂停生成' : '已暂停生成，可重回空白楼层');
                             }
                         } catch (error) {
-                            console.error("Offline Tavern API Error:", error);
+                            console.error("Offline Chat API Error:", error);
                             const isPersistenceFailure = /Failed to persist offline meeting/.test(String(error?.message || ''));
                             let failureFloorPersistenceFailed = false;
                             if (!isPersistenceFailure && pendingAiMessage) {
@@ -6554,7 +7201,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                 });
             }
         };
-        setupOfflineTavernLogic();
+        setupOfflineChatLogic();
 
         const closeSheet = () => {
             const currentPage = attachmentSheet.parentElement || page;
@@ -7026,33 +7673,33 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
 
         if (offlineEntry) {
             offlineEntry.addEventListener('click', () => {
-                openOfflineTavernView();
+                openOfflineChatView();
             });
         }
 
-        const tavernCloseBtn = document.getElementById('offline-tavern-close-btn');
-        if (tavernCloseBtn) {
-            tavernCloseBtn.addEventListener('click', () => {
-                const tavernView = document.getElementById('offline-tavern-view');
-                if (tavernView) {
-                    tavernView.classList.remove('active');
-                    setTimeout(() => { tavernView.style.display = 'none'; }, 300);
+        const chatCloseBtn = document.getElementById('offline-chat-close-btn');
+        if (chatCloseBtn) {
+            chatCloseBtn.addEventListener('click', () => {
+                const chatView = document.getElementById('offline-chat-view');
+                if (chatView) {
+                    chatView.classList.remove('active');
+                    setTimeout(() => { chatView.style.display = 'none'; }, 300);
                 }
             });
         }
 
-        const tavernSettingsBtn = document.getElementById('offline-tavern-settings-btn');
-        if (tavernSettingsBtn) {
-            tavernSettingsBtn.addEventListener('click', () => {
-                renderOfflineTavernSettings();
-                window.openView(document.getElementById('offline-tavern-settings-sheet'));
+        const chatSettingsBtn = document.getElementById('offline-chat-settings-btn');
+        if (chatSettingsBtn) {
+            chatSettingsBtn.addEventListener('click', () => {
+                renderOfflineChatSettings();
+                window.openView(document.getElementById('offline-chat-settings-sheet'));
             });
         }
 
-        const tavernSettingsBackBtn = document.getElementById('offline-tavern-settings-back-btn');
-        if (tavernSettingsBackBtn) {
-            tavernSettingsBackBtn.addEventListener('click', () => {
-                window.closeView(document.getElementById('offline-tavern-settings-sheet'));
+        const chatSettingsBackBtn = document.getElementById('offline-chat-settings-back-btn');
+        if (chatSettingsBackBtn) {
+            chatSettingsBackBtn.addEventListener('click', () => {
+                window.closeView(document.getElementById('offline-chat-settings-sheet'));
             });
         }
 

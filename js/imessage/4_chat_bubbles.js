@@ -1836,21 +1836,27 @@ function renderVoiceMessageBubble(msg, friend, container, timestamp = Date.now()
                 transcriptEl.hidden = !shouldExpand;
                 toggle.setAttribute('aria-expanded', shouldExpand ? 'true' : 'false');
 
-                if (shouldExpand && window.u2MinimaxTts && typeof window.u2MinimaxTts.speakTextCached === 'function') {
+                const ttsFriend = window.u2Tts?.resolveMessageTtsFriend
+                    ? window.u2Tts.resolveMessageTtsFriend(friend, msg)
+                    : friend;
+                const canPlayTts = window.u2Tts?.canSpeakForFriend
+                    ? window.u2Tts.canSpeakForFriend(ttsFriend)
+                    : true;
+                if (shouldExpand && canPlayTts && window.u2Tts && typeof window.u2Tts.speakTextCached === 'function') {
                     try {
                         const cacheOwner = msg && typeof msg === 'object' ? msg : {};
-                        const audioUrl = await window.u2MinimaxTts.speakTextCached(transcript, friend, cacheOwner);
-                        if (audioUrl && msg && typeof msg === 'object' && !msg.minimaxAudioUrl && window.imApp?.updateFriendMessage) {
+                        const audioUrl = await window.u2Tts.speakTextCached(transcript, ttsFriend, cacheOwner);
+                        if (audioUrl && msg && typeof msg === 'object' && !msg.ttsAudioUrl && window.imApp?.updateFriendMessage) {
                             await window.imApp.updateFriendMessage(friend.id, {
                                 id: msg.id || row.getAttribute('data-message-id') || null,
                                 timestamp: row.getAttribute('data-timestamp') || timestamp || null
                             }, (targetMsg) => {
-                                if (targetMsg) targetMsg.minimaxAudioUrl = audioUrl;
+                                if (targetMsg) targetMsg.ttsAudioUrl = audioUrl;
                             }, { silent: true });
                         }
                     } catch (error) {
                         console.error('Voice message playback failed', error);
-                        if (window.showToast) window.showToast('语音播放失败');
+                        if (window.showToast) window.showToast(window.u2Tts?.getUserErrorMessage?.(error) || '语音播放失败');
                     }
                 }
             });
@@ -2531,7 +2537,7 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
                 <div style="display:flex; align-items:center; justify-content:space-between; padding:17px 18px 14px; border-bottom:1px solid rgba(17,17,17,0.08);">
                     <button id="offline-meeting-detail-close-btn" type="button" style="border:none; background:transparent; color:#007aff; font-size:16px; font-weight:700; cursor:pointer;">关闭</button>
                     <div style="font-size:17px; font-weight:800;">见面总结</div>
-                    <div style="width:48px;"></div>
+                    <button id="offline-meeting-detail-delete-btn" type="button" style="border:none; background:transparent; color:#ff3b30; font-size:16px; font-weight:700; cursor:pointer;">删除</button>
                 </div>
                 <div id="offline-meeting-detail-content" class="detail-sheet-content" style="flex:1; overflow-y:auto; padding:18px 20px 22px;"></div>
             </div>
@@ -2544,6 +2550,7 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
         const detailModal = ensureOfflineMeetingDetailModal();
         const detailContent = document.getElementById('offline-meeting-detail-content');
         const closeBtn = document.getElementById('offline-meeting-detail-close-btn');
+        const deleteBtn = document.getElementById('offline-meeting-detail-delete-btn');
         const detailFriend = friend || window.imData?.currentActiveFriend || null;
         if (!detailModal || !detailContent) return;
 
@@ -2554,7 +2561,23 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
             };
         }
 
-        renderOfflineMeetingDetailReadMode(detailContent, resolveOfflineMeetingDetailMessage(msg, detailFriend));
+        const detailMessage = resolveOfflineMeetingDetailMessage(msg, detailFriend);
+        if (deleteBtn) {
+            const canDelete = !!detailMessage?.offlineSessionId && typeof window.imChat.confirmDeleteOfflineMeetingRecord === 'function';
+            deleteBtn.style.visibility = canDelete ? 'visible' : 'hidden';
+            deleteBtn.disabled = !canDelete;
+            deleteBtn.onclick = () => {
+                if (!canDelete) return;
+                window.imChat.confirmDeleteOfflineMeetingRecord(detailFriend, detailMessage, deleteBtn, {
+                    onDeleted: () => {
+                        if (window.closeView) window.closeView(detailModal);
+                        else detailModal.style.display = 'none';
+                    }
+                });
+            };
+        }
+
+        renderOfflineMeetingDetailReadMode(detailContent, detailMessage);
         if (window.openView) window.openView(detailModal);
         else detailModal.style.display = 'flex';
     };

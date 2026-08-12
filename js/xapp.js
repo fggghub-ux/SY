@@ -99,6 +99,10 @@
             postsEnabled: true,
             postsCount: 3
         };
+        const defaultImessageContextMount = Object.freeze({
+            enabled: true,
+            limit: 20
+        });
 
         const defaultXState = {
             xData: { ...defaultProfile, edited: false },
@@ -1107,6 +1111,22 @@ X is a global app. Non-User authors may write in the language that naturally fit
                             <span class="x-settings-spacer"></span>
                         </div>
                         <div class="x-dm-settings-body">
+                            <section class="x-dm-imessage-context-settings" id="x-dm-imessage-context-settings" hidden>
+                                <div class="x-dm-imessage-context-heading">
+                                    <div>
+                                        <strong>iMessage 单聊上下文</strong>
+                                        <small id="x-dm-imessage-context-source">生成回复时引用同一 Char 的 iMessage 单聊</small>
+                                    </div>
+                                    <label class="x-dm-imessage-context-switch" aria-label="开启 iMessage 单聊上下文">
+                                        <input id="x-dm-imessage-context-enabled" type="checkbox" checked>
+                                        <span aria-hidden="true"></span>
+                                    </label>
+                                </div>
+                                <label class="x-dm-imessage-context-limit-row" for="x-dm-imessage-context-limit">
+                                    <span>上下文条数</span>
+                                    <span><input id="x-dm-imessage-context-limit" type="number" min="1" max="50" step="1" inputmode="numeric" value="20" aria-label="iMessage 单聊上下文条数"> 条</span>
+                                </label>
+                            </section>
                             <button class="x-dm-settings-action" id="x-dm-clear-chat-btn" type="button">
                                 <i class="fas fa-eraser"></i>
                                 <span>清空聊天记录</span>
@@ -3361,6 +3381,84 @@ ${worldbook || 'None'}`;
             }).filter((message) => message.text || message.type === 'post-card');
         }
 
+        function normalizeImessageContextMount(mount) {
+            const source = mount && typeof mount === 'object' && !Array.isArray(mount) ? mount : {};
+            const parsedLimit = Number(source.limit);
+            return {
+                enabled: source.enabled !== false,
+                limit: Number.isFinite(parsedLimit)
+                    ? Math.max(1, Math.min(50, Math.floor(parsedLimit)))
+                    : defaultImessageContextMount.limit
+            };
+        }
+
+        function isImessageImportedDm(item) {
+            return Boolean(
+                item
+                && item.origin === 'imessage'
+                && String(item.sourceFriendId || '').trim()
+            );
+        }
+
+        function getLinkedImessageCharForDm(item) {
+            if (!isImessageImportedDm(item)) return null;
+            const friendId = String(item.sourceFriendId || '').trim();
+            const friend = window.imApp?.getFriendById?.(friendId)
+                || (Array.isArray(window.imData?.friends)
+                    ? window.imData.friends.find(candidate => String(candidate?.id) === friendId)
+                    : null);
+            return friend?.type === 'char' ? friend : null;
+        }
+
+        function formatImessageContextTimestamp(timestamp) {
+            const date = new Date(Number(timestamp));
+            if (Number.isNaN(date.getTime())) return '';
+            const pad = value => String(value).padStart(2, '0');
+            return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+        }
+
+        function buildImessageSingleChatContextMessage(message, userName, charName) {
+            if (!message || (message.role !== 'user' && message.role !== 'assistant')) return '';
+            const rawText = message.content || message.text || message.message || '';
+            const text = String(rawText)
+                .replace(/[<>]/g, character => character === '<' ? '‹' : '›')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .slice(0, 800);
+            if (!text) return '';
+            const timestamp = formatImessageContextTimestamp(message.timestamp);
+            const speaker = message.role === 'user' ? userName : charName;
+            return `${timestamp ? `[${timestamp}] ` : ''}${speaker}: ${text}`;
+        }
+
+        async function buildImessageSingleChatContext(item) {
+            const mount = normalizeImessageContextMount(item?.imessageContextMount);
+            if (!mount.enabled) return '';
+
+            const initialFriend = getLinkedImessageCharForDm(item);
+            if (!initialFriend) return '';
+
+            if (window.imApp?.ensureFriendMessagesLoaded) {
+                await window.imApp.ensureFriendMessagesLoaded(initialFriend);
+            }
+
+            const friend = getLinkedImessageCharForDm(item);
+            if (!friend) return '';
+
+            const userName = safeText(currentProfile?.name, 'User')
+                .replace(/[<>]/g, character => character === '<' ? '‹' : '›');
+            const charName = safeText(friend.nickname || friend.realName || item.name, 'Char')
+                .replace(/[<>]/g, character => character === '<' ? '‹' : '›');
+            const recentMessages = (Array.isArray(friend.messages) ? friend.messages : [])
+                .filter(message => message?.role === 'user' || message?.role === 'assistant')
+                .slice(-mount.limit)
+                .map(message => buildImessageSingleChatContextMessage(message, userName, charName))
+                .filter(Boolean);
+            if (!recentMessages.length) return '';
+
+            return `<mounted_imessage_single_chat_context>\nSource: prior iMessage one-to-one chat with the same Char. This is cross-platform continuity only, not a message in the current X conversation.\nUse it only to maintain continuity with User. Do not say it happened on X, do not repeat it as a new X message, and do not imply anyone else saw it.\nSame iMessage Char: ${charName}\nRecent iMessage messages:\n${recentMessages.join('\n')}\n</mounted_imessage_single_chat_context>`;
+        }
+
         function stripImessageCharMessagesForXImport(source = {}) {
             if (!source || typeof source !== 'object') return source;
             const id = source.id || source.sourceFriendId || makeLocalId('imessage');
@@ -3443,6 +3541,9 @@ ${worldbook || 'None'}`;
                 avatar: avatar,
                 boundBooks: getCharacterBoundWorldBookIds(source),
                 messages: normalizeDmMessages(source.messages),
+                imessageContextMount: origin === 'imessage'
+                    ? normalizeImessageContextMount(source.imessageContextMount)
+                    : null,
                 isFollowing: typeof source.isFollowing === 'boolean' ? source.isFollowing : origin !== 'generated',
                 coverSeed: safeText(source.coverSeed, `${id}-cover`),
                 coverImage: safeText(source.coverImage),
@@ -3468,6 +3569,10 @@ ${worldbook || 'None'}`;
                         ...existing,
                         ...item,
                         messages: item.messages.length ? item.messages : existing.messages,
+                        imessageContextMount: existing.origin === 'imessage'
+                            && String(existing.sourceFriendId || '') === String(item.sourceFriendId || '')
+                            ? existing.imessageContextMount
+                            : item.imessageContextMount,
                         addedAt: existing.addedAt || item.addedAt,
                         lastReadAt: Math.max(Number(existing.lastReadAt) || 0, Number(item.lastReadAt) || 0)
                     };
@@ -4002,6 +4107,7 @@ ${worldbook || 'None'}`;
 
         function openDmSettingsSheet() {
             if (!currentDmId || !getDirectMessageById(currentDmId)) return;
+            renderDmSettingsImessageContext();
             if (typeof window.openView === 'function') window.openView(dmSettingsSheet);
             else dmSettingsSheet?.classList.add('active');
         }
@@ -4009,6 +4115,45 @@ ${worldbook || 'None'}`;
         function closeDmSettingsSheet() {
             if (typeof window.closeView === 'function') window.closeView(dmSettingsSheet);
             else dmSettingsSheet?.classList.remove('active');
+        }
+
+        function renderDmSettingsImessageContext() {
+            const section = document.getElementById('x-dm-imessage-context-settings');
+            const enabledInput = document.getElementById('x-dm-imessage-context-enabled');
+            const limitInput = document.getElementById('x-dm-imessage-context-limit');
+            const sourceLabel = document.getElementById('x-dm-imessage-context-source');
+            const item = currentDmId ? getDirectMessageById(currentDmId) : null;
+            const linkedChar = getLinkedImessageCharForDm(item);
+
+            if (!section || !enabledInput || !limitInput) return;
+            if (!item || !linkedChar) {
+                section.hidden = true;
+                return;
+            }
+
+            const mount = normalizeImessageContextMount(item.imessageContextMount);
+            section.hidden = false;
+            enabledInput.checked = mount.enabled;
+            limitInput.value = String(mount.limit);
+            if (sourceLabel) {
+                sourceLabel.textContent = `生成回复时引用 ${linkedChar.nickname || linkedChar.realName || item.name} 的 iMessage 单聊`;
+            }
+        }
+
+        function updateCurrentDmImessageContext(patch = {}) {
+            const item = currentDmId ? getDirectMessageById(currentDmId) : null;
+            if (!item || !getLinkedImessageCharForDm(item)) return null;
+
+            const nextMount = normalizeImessageContextMount({
+                ...item.imessageContextMount,
+                ...patch
+            });
+            const updated = updateDirectMessage(item.id, draft => {
+                draft.imessageContextMount = nextMount;
+                return draft;
+            });
+            renderDmSettingsImessageContext();
+            return updated;
         }
 
         function clearCurrentDmChat() {
@@ -4365,6 +4510,7 @@ ${comments || '暂无评论'}`;
             apiBtn?.classList.add('loading');
             apiBtn?.setAttribute('disabled', 'true');
             try {
+                const imessageContext = await buildImessageSingleChatContext(item);
                 const recent = normalizeDmMessages(item.messages).slice(-12)
                     .map((message) => message.type === 'post-card'
                         ? serializeDmMessageForAi(message)
@@ -4375,14 +4521,17 @@ ${comments || '暂无评论'}`;
                     getCharacterBoundWorldBookIds(item)
                 );
                 const content = await requestXChatCompletion([
-                    { role: 'system', content: 'Reply only as the named X private-message Char, never as the User. Return strict JSON only: {"messages":[{"text":"","translation":""}]}.' },
+                    { role: 'system', content: 'You are generating an incoming direct-message reply in the X app. This is a one-to-one private conversation between the named Char and the human-controlled User account. Reply only as the named X private-message Char, never as the User. Return strict JSON only: {"messages":[{"text":"","translation":""}]}.' },
                     { role: 'user', content: `Character: ${item.name} ${item.handle || ''}
 Persona: ${item.persona || 'ordinary user'}
 Bio/signature: ${item.bio || ''}
 User profile: ${currentProfile.name} ${currentProfile.handle}
 User persona: ${currentProfile.persona || currentProfile.bio || ''}
+Conversation channel: this is a private one-to-one X app direct message between this Character and User.
 Worldbook:
 ${worldbook || 'None'}
+iMessage single-chat continuity:
+${imessageContext || 'None'}
 Recent chat:
 ${recent || 'No previous chat.'}
 Generate between 3 and 8 natural incoming private-message bubbles from this Character.
@@ -5613,6 +5762,12 @@ ${worldbook || 'None'}`;
         document.getElementById('x-dm-chat-back')?.addEventListener('click', closeDmChat);
         document.getElementById('x-dm-chat-menu-btn')?.addEventListener('click', openDmSettingsSheet);
         document.getElementById('x-dm-settings-close-btn')?.addEventListener('click', closeDmSettingsSheet);
+        document.getElementById('x-dm-imessage-context-enabled')?.addEventListener('change', (event) => {
+            updateCurrentDmImessageContext({ enabled: event.target.checked });
+        });
+        document.getElementById('x-dm-imessage-context-limit')?.addEventListener('change', (event) => {
+            updateCurrentDmImessageContext({ limit: event.target.value });
+        });
         document.getElementById('x-dm-clear-chat-btn')?.addEventListener('click', clearCurrentDmChat);
         document.getElementById('x-dm-delete-chat-btn')?.addEventListener('click', deleteCurrentDmChat);
         document.getElementById('x-dm-profile-back')?.addEventListener('click', closeDmProfile);

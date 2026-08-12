@@ -2420,6 +2420,649 @@
     opacity: 0.9 !important;
 }
 
+/* ==========================================
+   iOS 26 Notes-style World Book (20260812)
+   ========================================== */
+.world-book-files-view.wb-notes-view,
+.world-book-files-view.wb-notes-view .wb-files-page {
+    background: #f2f2f7 !important;
+}
+
+.world-book-files-view.wb-notes-view {
+    isolation: isolate;
+}
+
+.wb-notes-view .wb-files-page {
+    padding-top: max(var(--safe-top, 0px), env(safe-area-inset-top, 0px));
+}
+
+.wb-notes-view .wb-notes-nav {
+    min-height: 58px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 18px 4px;
+    flex-shrink: 0;
+}
+
+.wb-notes-view .wb-notes-nav-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: auto;
+}
+
+.wb-notes-view .wb-nav-btn,
+.wb-notes-view .wb-nav-text-btn,
+.wb-notes-view .wb-nav-round-btn {
+    border: 0;
+    font: inherit;
+    color: #c89300;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.wb-notes-view .wb-nav-btn {
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0;
+    background: transparent;
+    font-size: 21px;
+}
+
+.wb-notes-view .wb-nav-labeled {
+    width: auto;
+    gap: 4px;
+    justify-content: flex-start;
+    font-size: 16px;
+}
+
+.wb-notes-view .wb-nav-labeled i {
+    font-size: 18px;
+}
+
+.wb-notes-view #wb-folder-add-btn {
+    color: #c89300 !important;
+    font-family: "Font Awesome 6 Free", "Font Awesome 6 Pro", sans-serif !important;
+    font-weight: 900 !important;
+}
+
+.wb-notes-view #wb-folder-add-btn::before {
+    content: "\f65e";
+    font-family: "Font Awesome 6 Free", "Font Awesome 6 Pro", sans-serif;
+    font-weight: 900;
+    font-size: 20px;
+    line-height: 1;
+}
+
+.wb-notes-view #wb-folder-add-btn > i {
+    display: none !important;
+}
+
+.wb-notes-view .wb-nav-text-btn {
+    background: transparent;
+    padding: 8px 2px;
+    font-size: 17px;
+    font-weight: 600;
+}
+
+.wb-notes-view .wb-nav-round-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border-radius: 21px;
+    background: #fff;
+    box-shadow: 0 8px 22px rgba(68, 70, 90, 0.09);
+    font-size: 18px;
+}
+
+.wb-notes-view .wb-nav-btn:active,
+.wb-notes-view .wb-nav-text-btn:active,
+.wb-notes-view .wb-nav-round-btn:active,
+.wb-notes-view .wb-notes-compose-btn:active {
+    transform: scale(0.94);
+    opacity: 0.72;
+}
+
+.wb-notes-view .wb-notes-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 2px 18px calc(102px + env(safe-area-inset-bottom, 0px));
+    -webkit-overflow-scrolling: touch;
+}
+
+.wb-notes-view .wb-notes-title {
+    margin: 13px 2px 31px;
+    color: #060607;
+    font-size: 38px;
+    line-height: 1;
+    font-weight: 800;
+    letter-spacing: -1.3px;
+}
+
+.wb-notes-view .wb-notes-section-title {
+    margin: 0 2px 11px;
+    font-size: 18px;
+    font-weight: 750;
+    color: #1d1d20;
+}
+
+.wb-notes-view .wb-notes-list {
+    overflow: hidden;
+    border-radius: 23px;
+    background: #fff;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.025);
+}
+
+.wb-notes-view .wb-notes-row {
+    position: relative;
+    width: 100%;
+    min-height: 69px;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border: 0;
+    background: #fff;
+    color: #111114;
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+}
+
+.wb-notes-view .wb-notes-row + .wb-notes-row::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 62px;
+    right: 14px;
+    height: 1px;
+    background: #e8e8ed;
+}
+
+.wb-notes-view .wb-notes-row:active {
+    background: #f0f0f4;
+}
+
+.wb-notes-view .wb-row-icon {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 11px;
+    font-size: 19px;
+}
+
+.wb-notes-view .wb-folder-icon {
+    color: #e3ac00;
+    background: #fff8dd;
+}
+
+.wb-notes-view .wb-book-icon {
+    color: #ff9f0a;
+    background: #fff0d9;
+}
+
+.wb-notes-view .wb-row-main {
+    min-width: 0;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.wb-notes-view .wb-row-main strong {
+    overflow: hidden;
+    color: #17171a;
+    font-size: 17px;
+    line-height: 1.25;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.wb-notes-view .wb-row-main small,
+.wb-notes-view .wb-group-count-line {
+    overflow: hidden;
+    color: #8b8b92;
+    font-size: 13px;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.wb-notes-view .wb-row-count {
+    color: #8b8b92;
+    font-size: 17px;
+    font-variant-numeric: tabular-nums;
+}
+
+.wb-notes-view .wb-row-chevron {
+    width: 13px;
+    color: #c6c6cc;
+    font-size: 15px;
+    text-align: right;
+}
+
+.wb-notes-view .wb-row-edit-actions {
+    display: none;
+    align-items: center;
+    gap: 14px;
+    padding-left: 8px;
+    color: #c89300;
+    font-size: 15px;
+}
+
+.wb-notes-view .wb-folder-row.is-editing .wb-row-chevron,
+.wb-notes-view .wb-folder-row.is-editing .wb-row-count {
+    display: none;
+}
+
+.wb-notes-view .wb-folder-row.is-editing .wb-row-edit-actions {
+    display: inline-flex;
+}
+
+.wb-notes-view .wb-notes-bottom-bar {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 18px max(13px, calc(12px + env(safe-area-inset-bottom, 0px)));
+    background: linear-gradient(180deg, rgba(242,242,247,0.01), rgba(242,242,247,0.95) 26%, #f2f2f7 55%);
+}
+
+.wb-notes-view .wb-notes-search {
+    min-width: 0;
+    height: 48px;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 0 17px;
+    border-radius: 24px;
+    background: #fff;
+    color: #202026;
+    box-shadow: none;
+}
+
+.wb-notes-view .wb-notes-search i {
+    font-size: 18px;
+}
+
+.wb-notes-view .wb-notes-search input {
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: #111;
+    font: inherit;
+    font-size: 16px;
+}
+
+.wb-notes-view .wb-notes-search input::placeholder {
+    color: #8e8e93;
+}
+
+.wb-notes-view .wb-notes-compose-btn {
+    width: 50px;
+    height: 50px;
+    flex: 0 0 50px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 50%;
+    background: #fff;
+    color: #c89300;
+    font-size: 21px;
+    cursor: pointer;
+    box-shadow: none;
+}
+
+.wb-notes-view .wb-group-count-line {
+    margin: -23px 2px 19px;
+    font-size: 16px;
+}
+
+.wb-notes-view .wb-group-bottom-bar {
+    justify-content: space-between;
+}
+
+.wb-notes-view .wb-context-menu {
+    position: absolute;
+    top: calc(max(var(--safe-top, 0px), env(safe-area-inset-top, 0px)) + 57px);
+    right: 18px;
+    z-index: 20;
+    min-width: 196px;
+    overflow: hidden;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.17);
+}
+
+.wb-notes-view .wb-context-menu button {
+    width: 100%;
+    min-height: 47px;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 0 15px;
+    border: 0;
+    border-bottom: 1px solid #ececf0;
+    background: transparent;
+    color: #202024;
+    font: inherit;
+    font-size: 15px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.wb-notes-view .wb-context-menu button:last-child {
+    border-bottom: 0;
+}
+
+.wb-notes-view .wb-context-menu button.is-danger {
+    color: #ff3b30;
+}
+
+.wb-notes-view .wb-search-results {
+    position: absolute;
+    inset: auto 18px max(75px, calc(65px + env(safe-area-inset-bottom, 0px))) 18px;
+    z-index: 12;
+    max-height: min(62vh, 540px);
+    overflow-y: auto;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    border-radius: 20px;
+    background: rgba(255,255,255,0.98);
+    box-shadow: 0 17px 42px rgba(39, 40, 55, 0.16);
+}
+
+.wb-notes-view .wb-search-result {
+    width: 100%;
+    min-height: 66px;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 9px 12px;
+    border: 0;
+    border-bottom: 1px solid #ececf0;
+    background: transparent;
+    color: #17171a;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.wb-notes-view .wb-search-result:last-child { border-bottom: 0; }
+.wb-notes-view .wb-search-result > span:not(.wb-row-icon) { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.wb-notes-view .wb-search-result strong, .wb-notes-view .wb-search-result small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-notes-view .wb-search-result strong { font-size: 15px; }
+.wb-notes-view .wb-search-result small { color: #8e8e93; font-size: 12px; }
+.wb-notes-view .wb-search-result > i { color: #c6c6cc; font-size: 14px; }
+.wb-notes-view .wb-search-empty { padding: 28px 18px; color: #8e8e93; font-size: 14px; text-align: center; }
+
+.wb-notes-view .wb-files-empty-state {
+    min-height: 190px;
+    border-radius: 23px;
+    background: #fff;
+    color: #8e8e93;
+}
+
+.wb-notes-view .wb-files-empty-state i { color: #e3ac00; }
+
+.wb-notes-view .wb-editor-nav {
+    padding-right: 21px;
+}
+
+.wb-notes-view .wb-editor-done-btn {
+    color: #c89300;
+}
+
+.wb-notes-view .wb-editor-scroll {
+    padding-top: 12px;
+    padding-bottom: max(38px, calc(28px + env(safe-area-inset-bottom, 0px)));
+}
+
+.wb-notes-view .wb-editor-title-input {
+    width: 100%;
+    margin: 0 0 21px;
+    padding: 0 1px;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: #08080a;
+    font: inherit;
+    font-size: 36px;
+    line-height: 1.13;
+    font-weight: 800;
+    letter-spacing: -1px;
+}
+
+.wb-notes-view .wb-editor-title-input::placeholder { color: #b6b6be; }
+
+.wb-notes-view .wb-editor-group-row,
+.wb-notes-view .wb-book-setting-row {
+    min-height: 55px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 15px;
+    border-radius: 16px;
+    background: #fff;
+    color: #1d1d20;
+    font-size: 16px;
+}
+
+.wb-notes-view .wb-editor-group-row > span { font-weight: 600; }
+.wb-notes-view .wb-editor-group-row select { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: #8e8e93; font: inherit; font-size: 15px; text-align-last: right; }
+.wb-notes-view .wb-editor-group-row > i { color: #c6c6cc; font-size: 13px; }
+
+.wb-notes-view .wb-editor-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 31px 2px 11px;
+}
+
+.wb-notes-view .wb-editor-section-head > span,
+.wb-notes-view .wb-book-settings-title {
+    color: #1d1d20;
+    font-size: 17px;
+    font-weight: 750;
+}
+
+.wb-notes-view .wb-editor-section-head button {
+    border: 0;
+    background: transparent !important;
+    color: #c89300 !important;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.wb-notes-view .wb-editor-entry-list {
+    overflow: hidden;
+    border-radius: 20px;
+    background: #fff;
+}
+
+.wb-notes-view #add-book-entry-btn {
+    min-height: 34px;
+    padding: 0 8px;
+    border-radius: 8px;
+    background: transparent !important;
+    color: #c89300 !important;
+    box-shadow: none !important;
+}
+
+.wb-notes-view .wb-entry-note + .wb-entry-note { border-top: 1px solid #e8e8ed; }
+
+.wb-notes-view .wb-entry-note-head {
+    min-height: 66px;
+    display: flex;
+    align-items: stretch;
+}
+
+.wb-notes-view .wb-entry-expand-btn {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 11px 13px 11px 16px;
+    border: 0;
+    background: #fff;
+    color: #1c1c20;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.wb-notes-view .wb-entry-expand-btn > span { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.wb-notes-view .wb-entry-expand-btn strong, .wb-notes-view .wb-entry-expand-btn small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-notes-view .wb-entry-expand-btn strong { font-size: 16px; font-weight: 650; }
+.wb-notes-view .wb-entry-expand-btn small { color: #8e8e93; font-size: 12px; }
+.wb-notes-view .wb-entry-expand-btn > i { color: #b6b6bd; font-size: 14px; transition: transform .18s ease; }
+.wb-notes-view .wb-entry-note.expanded .wb-entry-expand-btn > i { transform: rotate(90deg); }
+
+.wb-notes-view .wb-entry-delete-btn {
+    width: 47px;
+    border: 0;
+    background: #fff;
+    color: #ff3b30;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+.wb-notes-view .wb-entry-note-body {
+    padding: 0 16px 20px;
+}
+
+.wb-notes-view .wb-entry-title-input {
+    width: 100%;
+    height: 40px;
+    margin: 2px 0 10px;
+    padding: 0;
+    border: 0;
+    border-bottom: 1px solid #e5e5ea;
+    outline: 0;
+    background: transparent;
+    color: #16161a;
+    font: inherit;
+    font-size: 18px;
+    font-weight: 650;
+}
+
+.wb-notes-view .wb-entry-body-textarea {
+    width: 100%;
+    height: clamp(390px, 68vh, 720px) !important;
+    min-height: 390px !important;
+    max-height: 720px !important;
+    display: block;
+    box-sizing: border-box;
+    padding: 9px 0 15px;
+    border: 0 !important;
+    border-radius: 0 !important;
+    outline: 0;
+    background: transparent;
+    color: #29292d;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    resize: none;
+    font: inherit;
+    font-size: 16px;
+    line-height: 1.55;
+}
+
+.wb-notes-view .wb-entry-body-textarea::placeholder { color: #b4b4bc; }
+
+.wb-notes-view .wb-entry-settings {
+    overflow: hidden;
+    border-radius: 14px;
+    background: #f4f4f7;
+}
+
+.wb-notes-view .wb-entry-settings summary {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 13px;
+    color: #52525a;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    list-style: none;
+}
+
+.wb-notes-view .wb-entry-settings summary::-webkit-details-marker { display: none; }
+.wb-notes-view .wb-entry-settings summary i { font-size: 12px; transition: transform .18s ease; }
+.wb-notes-view .wb-entry-settings[open] summary i { transform: rotate(90deg); }
+
+.wb-notes-view .wb-entry-settings-content {
+    display: grid;
+    gap: 10px;
+    padding: 0 13px 13px;
+}
+
+.wb-notes-view .wb-entry-field { display: flex; flex-direction: column; gap: 5px; color: #797981; font-size: 12px; font-weight: 600; }
+.wb-notes-view .wb-entry-field input, .wb-notes-view .wb-entry-field select { min-height: 39px; padding: 0 10px; border: 1px solid #e0e0e5; border-radius: 10px; outline: 0; background: #fff; color: #242429; font: inherit; font-size: 14px; }
+
+.wb-notes-view .wb-book-settings-section { margin-top: 31px; }
+.wb-notes-view .wb-book-settings-title { margin: 0 2px 11px; }
+
+.wb-notes-view .wb-book-setting-row {
+    position: relative;
+    justify-content: space-between;
+    min-height: 71px;
+}
+
+.wb-notes-view .wb-book-setting-row > span { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 4px; padding-right: 11px; }
+.wb-notes-view .wb-book-setting-row strong { font-size: 16px; font-weight: 600; }
+.wb-notes-view .wb-book-setting-row small { color: #8e8e93; font-size: 12px; line-height: 1.35; }
+.wb-notes-view .wb-book-setting-row input { position: absolute; width: 46px; height: 28px; margin: 0; opacity: 0; cursor: pointer; }
+.wb-notes-view .wb-ios-switch { width: 46px; height: 28px; flex: 0 0 46px; position: relative; border-radius: 15px; background: #d1d1d6; transition: background .18s ease; }
+.wb-notes-view .wb-ios-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.22); transition: transform .18s ease; }
+.wb-notes-view .wb-book-setting-row input:checked + .wb-ios-switch { background: #34c759; }
+.wb-notes-view .wb-book-setting-row input:checked + .wb-ios-switch::after { transform: translateX(18px); }
+
+.wb-notes-view .wb-delete-book-btn {
+    width: 100%;
+    min-height: 52px;
+    margin-top: 14px;
+    border: 0;
+    border-radius: 16px;
+    background: #fff;
+    color: #ff3b30;
+    font: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.wb-notes-view .wb-delete-book-btn[hidden] { display: none; }
+
+@media (max-width: 380px) {
+    .wb-notes-view .wb-notes-title { font-size: 34px; }
+    .wb-notes-view .wb-notes-scroll { padding-right: 14px; padding-left: 14px; }
+    .wb-notes-view .wb-notes-bottom-bar { padding-right: 14px; padding-left: 14px; gap: 11px; }
+    .wb-notes-view .wb-nav-labeled span { display: none; }
+}
+
 @media (max-width: 380px) {
     .world-book-files-view .wb-folder-visual {
         width: 100px !important;

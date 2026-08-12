@@ -406,23 +406,39 @@
                             text = clone.innerText || clone.textContent || '';
                         }
 
+                        const ttsMessage = msg || {
+                            role: row.classList.contains('user-row') ? 'user' : 'assistant',
+                            speaker: row.getAttribute('data-speaker') || '',
+                            speakerMemberId: row.getAttribute('data-speaker-member-id') || null
+                        };
+                        const ttsFriend = window.u2Tts?.resolveMessageTtsFriend
+                            ? window.u2Tts.resolveMessageTtsFriend(liveFriend, ttsMessage)
+                            : liveFriend;
+                        const canSpeakTts = window.u2Tts?.canSpeakForFriend
+                            ? window.u2Tts.canSpeakForFriend(ttsFriend)
+                            : true;
+                        if (!canSpeakTts) {
+                            window.imChat.closeContextMenu();
+                            return;
+                        }
+
                         try {
-                            if (!window.u2MinimaxTts || typeof window.u2MinimaxTts.speakTextCached !== 'function') {
-                                throw new Error('Minimax TTS 未初始化');
+                            if (!window.u2Tts || typeof window.u2Tts.speakTextCached !== 'function') {
+                                throw new Error('TTS 未初始化');
                             }
                             const cacheOwner = msg && typeof msg === 'object' ? msg : {};
-                            const audioUrl = await window.u2MinimaxTts.speakTextCached(text, liveFriend, cacheOwner);
-                            if (audioUrl && msg && typeof msg === 'object' && !msg.minimaxAudioUrl && window.imApp?.updateFriendMessage) {
+                            const audioUrl = await window.u2Tts.speakTextCached(text, ttsFriend, cacheOwner);
+                            if (audioUrl && msg && typeof msg === 'object' && !msg.ttsAudioUrl && window.imApp?.updateFriendMessage) {
                                 await window.imApp.updateFriendMessage(friendId, {
                                     id: msg.id || messageId || null,
                                     timestamp: ts || null
                                 }, (targetMsg) => {
-                                    if (targetMsg) targetMsg.minimaxAudioUrl = audioUrl;
+                                    if (targetMsg) targetMsg.ttsAudioUrl = audioUrl;
                                 }, { silent: true });
                             }
                         } catch (error) {
-                            console.error('Minimax speech failed', error);
-                            if (window.showToast) window.showToast('语音播放失败');
+                            console.error('TTS speech failed', error);
+                            if (window.showToast) window.showToast(window.u2Tts?.getUserErrorMessage?.(error) || '语音播放失败');
                         }
                     }
                 } else if (action === 'translate') {

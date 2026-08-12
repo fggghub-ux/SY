@@ -66,12 +66,18 @@
                 friendPositionsStore: {}
             },
             netflix: {
-                works: [],
-                boundWorldBookIds: [],
+                schemaVersion: 4,
                 homeCatalog: null,
-                playbackCatalog: {},
-                playbackCustomCss: '',
-                presetState: null
+                activeRun: null,
+                saveSlots: {
+                    auto: null,
+                    manual: [null, null, null, null, null, null]
+                },
+                unlockedEndings: [],
+                uiSettings: {
+                    textSpeed: 'normal',
+                    reduceMotion: false
+                }
             },
             desktop: {},
             bstage: {},

@@ -13,8 +13,59 @@
     const confirmButton = document.getElementById('about-info-modal-confirm');
     const CHANGELOG_ENTRIES = [
         {
+            id: '2026-08-12',
+            date: '2026年8月12日',
+            summary: '数据管理、世界书与群聊设置优化，Pay 和表情包能力更新。',
+            sections: [
+                {
+                    title: '界面与内容',
+                    items: [
+                        '优化数据管理与世界书的界面体验。',
+                        '表情包贴图支持添加描述。'
+                    ]
+                },
+                {
+                    title: 'Pay 与群聊',
+                    items: [
+                        'Pay 新增充值功能，亲属卡支持解绑。',
+                        '群聊新增“允许角色私聊”与“允许角色和角色好友私聊”开关。'
+                    ]
+                },
+                {
+                    title: '线下模式',
+                    items: [
+                        '进行线下性能小优化。'
+                    ]
+                }
+            ]
+        },
+        {
             id: '2026-08-11',
             date: '2026年8月11日',
+            summary: 'AI 兼容性、Netflix 玩法、TTS 与聊天记忆优化。',
+            sections: [
+                {
+                    title: '功能更新',
+                    items: [
+                        '兼容 iOS 16.4 以下系统无法调用 AI 接口的问题。',
+                        '重构 Netflix 玩法，未完善，测试中。',
+                        '优化 TTS，增加更多服务商。',
+                        '群聊增加 TTS。',
+                        'X 和单聊记忆互通，未完善，测试中。'
+                    ]
+                },
+                {
+                    title: '线下模式',
+                    items: [
+                        '优化总结，增加总结楼层。',
+                        '增加两个由 haru宝宝提供的单楼回顾条目，可在提示词中开启；注意 CoT 也要一并开启。'
+                    ]
+                }
+            ]
+        },
+        {
+            id: '2026-08-10',
+            date: '2026年8月10日',
             summary: '识图、X 与朋友圈权限上线，并修复语言播放和排序问题',
             sections: [
                 {
@@ -163,7 +214,8 @@
     const LATEST_CHANGELOG_ENTRY_ID = CHANGELOG_ENTRIES[0]?.id || '';
     const AUTO_CHANGELOG_DELAY_MS = 250;
     const ACKNOWLEDGEMENT_DELAY_MS = 3000;
-    const CHANGELOG_NOTICE_STORAGE_PREFIX = 'u2_changelog_notice_seen:';
+    // Version the key so accounts that saw an earlier release receive this one once.
+    const CHANGELOG_NOTICE_STORAGE_PREFIX = 'u2_changelog_notice_seen:20260812-v1:';
     let returnFocus = null;
     let previousBodyOverflow = '';
     let activeChangelogTrigger = null;

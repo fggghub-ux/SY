@@ -1003,7 +1003,7 @@
                 window.imApp.getXDirectMessageMountCandidates?.(normalizedFriend)?.length
             );
             xDmContextStatus.textContent = hasMatchingXDirectMessage
-                ? (xDirectMessageMount.enabled ? `${xDirectMessageMount.limit}条` : '关闭')
+                ? (xDirectMessageMount.enabled ? `${xDirectMessageMount.limit}条/类` : '关闭')
                 : '';
         }
 
@@ -3368,8 +3368,48 @@
         summaryApiSelect.value = presets.some(preset => String(preset?.id) === selectedId) ? selectedId : '';
     }
 
+    function getSummaryFailureClassification(input = {}) {
+        if (window.imDataUtils?.classifySummaryRequestFailure) {
+            return window.imDataUtils.classifySummaryRequestFailure(input);
+        }
+        const status = Math.max(0, Math.round(Number(input.status) || 0));
+        return {
+            code: 'unknown',
+            status,
+            message: `摘要生成失败，请稍后重试${status > 0 ? `（HTTP ${status}）` : ''}`
+        };
+    }
+
+    function createSummaryFailureError(input = {}) {
+        const failure = getSummaryFailureClassification(input);
+        const error = new Error(`Summary ${failure.code}`);
+        error.name = 'SummaryGenerationError';
+        error.summaryFailure = failure;
+        return error;
+    }
+
+    function isSummaryNetworkError(error) {
+        if (error?.name === 'TypeError') return true;
+        return /(?:failed to fetch|networkerror|network request failed|cors)/i.test(String(error?.message || ''));
+    }
+
+    function logManualSingleSummaryFailure(friend, error) {
+        const failure = error?.summaryFailure || getSummaryFailureClassification({
+            kind: isSummaryNetworkError(error) ? 'network' : 'unknown'
+        });
+        console.error('Manual single-chat summary failed', {
+            friendId: String(friend?.id || ''),
+            apiPresetId: String(friend?.memory?.summary?.apiPresetId || ''),
+            category: failure.code,
+            status: failure.status || 0,
+            message: failure.message
+        });
+        return failure;
+    }
+
     async function generateChatSummary(friend, options = {}) {
         const currentApiConfig = resolveSummaryApiConfig(friend);
+        const isManualSingleChatSummary = friend.type !== 'group' && !options.auto;
         if (!currentApiConfig.endpoint || !currentApiConfig.apiKey) {
             if (!options.silent) showToast('请先在设置中配置 API');
             return null;
@@ -3436,11 +3476,27 @@
         });
 
         if (!response.ok) {
-            throw new Error(`${response.status} ${response.statusText}`);
+            const apiError = window.u2Api?.readApiError
+                ? await window.u2Api.readApiError(response)
+                : { status: response.status, statusText: response.statusText || '', message: response.statusText || '' };
+            throw createSummaryFailureError({
+                kind: 'http',
+                status: apiError.status || response.status,
+                message: apiError.message || apiError.statusText || ''
+            });
         }
 
-        const data = await response.json();
-        const summary = parseManualSummary(getSummaryResponseContent(data));
+        let data;
+        try {
+            data = await response.json();
+        } catch (error) {
+            throw createSummaryFailureError({ kind: 'response_format' });
+        }
+        const responseContent = getSummaryResponseContent(data);
+        if (isManualSingleChatSummary && !String(responseContent || '').trim()) {
+            throw createSummaryFailureError({ kind: 'response_format' });
+        }
+        const summary = parseManualSummary(responseContent);
         summary.id = `stm-${Date.now()}`;
         summary.time = eventTime;
         summary.degree = '高';
@@ -3557,7 +3613,12 @@
             });
             if (!summary) return false;
             const saved = await commitGeneratedSummary(friend, summary);
-            if (!saved) throw new Error('summary persistence failed');
+            if (!saved) {
+                if (!isGroupSummary && !options.auto) {
+                    throw createSummaryFailureError({ kind: 'persistence' });
+                }
+                throw new Error('summary persistence failed');
+            }
             const latestFriend = window.imData.friends.find(item => String(item.id) === friendId) || friend;
             latestFriend.memory = window.imApp.normalizeFriendData(latestFriend).memory;
             if (window.imData.currentSettingsFriend && String(window.imData.currentSettingsFriend.id) === friendId) {
@@ -3585,8 +3646,13 @@
                 : (isGroupSummary ? '群聊总结已存入 More' : '总结已存入短期记忆'));
             return true;
         } catch (error) {
-            console.error(options.auto ? 'Auto summary failed' : 'Manual summary failed', error);
-            showToast(options.auto ? '自动总结失败，将在下次回复后重试' : '总结生成失败');
+            if (!isGroupSummary && !options.auto) {
+                const failure = logManualSingleSummaryFailure(friend, error);
+                showToast(`总结失败：${failure.message}`);
+            } else {
+                console.error(options.auto ? 'Auto summary failed' : 'Manual summary failed', error);
+                showToast(options.auto ? '自动总结失败，将在下次回复后重试' : '总结生成失败');
+            }
             return false;
         } finally {
             summaryInFlight.delete(friendId);
@@ -3724,10 +3790,32 @@
             manualSummaryConfirm.disabled = true;
             manualSummaryConfirm.textContent = '生成中...';
             try {
-                await persistSummarySettings(friend);
+                const settingsSaved = await persistSummarySettings(friend);
+                if (!settingsSaved) {
+                    const failure = getSummaryFailureClassification({ kind: 'settings_persistence' });
+                    console.error('Manual single-chat summary settings save failed', {
+                        friendId: String(friend.id || ''),
+                        apiPresetId: String(friend.memory?.summary?.apiPresetId || ''),
+                        category: failure.code,
+                        status: failure.status || 0,
+                        message: failure.message
+                    });
+                    showToast(`总结失败：${failure.message}`);
+                    return;
+                }
                 friend = window.imData.friends.find(item => String(item.id) === String(friend.id)) || friend;
                 const saved = await runChatSummary(friend, { auto: false });
                 if (saved) closeView(manualSummaryModal);
+            } catch (error) {
+                const failure = getSummaryFailureClassification({ kind: 'settings_persistence' });
+                console.error('Manual single-chat summary settings save failed', {
+                    friendId: String(friend?.id || ''),
+                    apiPresetId: String(friend?.memory?.summary?.apiPresetId || ''),
+                    category: failure.code,
+                    status: failure.status || 0,
+                    message: failure.message
+                });
+                showToast(`总结失败：${failure.message}`);
             } finally {
                 manualSummaryConfirm.disabled = false;
                 const latestFriend = window.imData.friends.find(item => String(item.id) === String(friend.id)) || friend;
@@ -3817,10 +3905,10 @@
         const chatTimeAwareToggle = document.getElementById('chat-time-aware-toggle');
         const chatRoleRecallToggle = document.getElementById('chat-role-recall-toggle');
         const chatAutoExpandTranslationToggle = document.getElementById('chat-auto-expand-translation-toggle');
-        const chatMinimaxEnabledToggle = document.getElementById('chat-minimax-enabled-toggle');
-        const chatMinimaxBody = document.getElementById('chat-minimax-settings-body');
-        const chatMinimaxVoiceInput = document.getElementById('chat-minimax-voice-id-input');
-        const chatMinimaxSpeedInput = document.getElementById('chat-minimax-speed-input');
+        const chatTtsEnabledToggle = document.getElementById('chat-tts-enabled-toggle');
+        const chatTtsBody = document.getElementById('chat-tts-settings-body');
+        const chatTtsVoiceInput = document.getElementById('chat-tts-voice-id-input');
+        const chatTtsSpeedInput = document.getElementById('chat-tts-speed-input');
         
         if (chatAvatarToggle) {
             chatAvatarToggle.checked = !!friend.showAvatar;
@@ -3853,18 +3941,20 @@
         }
         renderChatCotSettings(friend);
 
-        const minimaxVoice = friend.minimaxVoice && typeof friend.minimaxVoice === 'object' ? friend.minimaxVoice : {};
-        if (chatMinimaxEnabledToggle) {
-            chatMinimaxEnabledToggle.checked = !!minimaxVoice.enabled;
+        const ttsVoice = friend.ttsVoice && typeof friend.ttsVoice === 'object'
+            ? friend.ttsVoice
+            : (friend.minimaxVoice && typeof friend.minimaxVoice === 'object' ? friend.minimaxVoice : {});
+        if (chatTtsEnabledToggle) {
+            chatTtsEnabledToggle.checked = !!ttsVoice.enabled;
         }
-        if (chatMinimaxBody) {
-            chatMinimaxBody.style.display = minimaxVoice.enabled ? 'block' : 'none';
+        if (chatTtsBody) {
+            chatTtsBody.style.display = ttsVoice.enabled ? 'block' : 'none';
         }
-        if (chatMinimaxVoiceInput) {
-            chatMinimaxVoiceInput.value = minimaxVoice.voiceId || '';
+        if (chatTtsVoiceInput) {
+            chatTtsVoiceInput.value = ttsVoice.voiceId || '';
         }
-        if (chatMinimaxSpeedInput) {
-            chatMinimaxSpeedInput.value = minimaxVoice.speed || 1;
+        if (chatTtsSpeedInput) {
+            chatTtsSpeedInput.value = ttsVoice.speed || 1;
         }
 
         if (tsToggle) {
@@ -4222,73 +4312,81 @@
         });
     }
 
-    function getCurrentMinimaxVoiceSettings(friend) {
-        return friend && friend.minimaxVoice && typeof friend.minimaxVoice === 'object'
-            ? friend.minimaxVoice
-            : { enabled: false, voiceId: '', speed: 1 };
+    function getCurrentTtsVoiceSettings(friend) {
+        if (!friend || typeof friend !== 'object') return { enabled: false, voiceId: '', speed: 1 };
+        const source = friend.ttsVoice && typeof friend.ttsVoice === 'object'
+            ? friend.ttsVoice
+            : (friend.minimaxVoice && typeof friend.minimaxVoice === 'object' ? friend.minimaxVoice : {});
+        return {
+            enabled: source.enabled === true,
+            voiceId: String(source.voiceId || '').trim(),
+            speed: Math.max(0.5, Math.min(2, Number.parseFloat(source.speed) || 1))
+        };
     }
 
-    function syncChatMinimaxBodyVisibility(enabled) {
-        const body = document.getElementById('chat-minimax-settings-body');
+    function syncChatTtsBodyVisibility(enabled) {
+        const body = document.getElementById('chat-tts-settings-body');
         if (body) body.style.display = enabled ? 'block' : 'none';
     }
 
-    const chatMinimaxEnabledToggle = document.getElementById('chat-minimax-enabled-toggle');
-    if (chatMinimaxEnabledToggle && chatMinimaxEnabledToggle.dataset.bound !== 'true') {
-        chatMinimaxEnabledToggle.dataset.bound = 'true';
-        chatMinimaxEnabledToggle.addEventListener('change', async (e) => {
+    const chatTtsEnabledToggle = document.getElementById('chat-tts-enabled-toggle');
+    if (chatTtsEnabledToggle && chatTtsEnabledToggle.dataset.bound !== 'true') {
+        chatTtsEnabledToggle.dataset.bound = 'true';
+        chatTtsEnabledToggle.addEventListener('change', async (e) => {
             if (!window.imData.currentSettingsFriend) return;
-            const previousSettings = { ...getCurrentMinimaxVoiceSettings(window.imData.currentSettingsFriend) };
+            const previousSettings = { ...getCurrentTtsVoiceSettings(window.imData.currentSettingsFriend) };
             const nextValue = e.target.checked;
 
-            syncChatMinimaxBodyVisibility(nextValue);
+            syncChatTtsBodyVisibility(nextValue);
             const saved = await commitSettingsFriendChange((targetFriend) => {
-                targetFriend.minimaxVoice = {
-                    ...getCurrentMinimaxVoiceSettings(targetFriend),
+                targetFriend.ttsVoice = {
+                    ...getCurrentTtsVoiceSettings(targetFriend),
                     enabled: nextValue
                 };
+                delete targetFriend.minimaxVoice;
             }, { silent: true });
 
             if (!saved) {
                 e.target.checked = !!previousSettings.enabled;
-                syncChatMinimaxBodyVisibility(!!previousSettings.enabled);
-                showToast('Minimax 语音设置保存失败');
+                syncChatTtsBodyVisibility(!!previousSettings.enabled);
+                showToast('TTS 设置保存失败');
             }
         });
     }
 
-    async function saveChatMinimaxField(field, value, inputEl, previousValue) {
+    async function saveChatTtsField(field, value, inputEl, previousValue) {
         if (!window.imData.currentSettingsFriend) return;
         const saved = await commitSettingsFriendChange((targetFriend) => {
-            targetFriend.minimaxVoice = {
-                ...getCurrentMinimaxVoiceSettings(targetFriend),
+            targetFriend.ttsVoice = {
+                ...getCurrentTtsVoiceSettings(targetFriend),
                 [field]: value
             };
+            delete targetFriend.minimaxVoice;
         }, { silent: true });
 
         if (!saved) {
             if (inputEl) inputEl.value = previousValue;
-            showToast('Minimax 语音设置保存失败');
+            showToast('TTS 设置保存失败');
         }
     }
 
-    const chatMinimaxVoiceInput = document.getElementById('chat-minimax-voice-id-input');
-    if (chatMinimaxVoiceInput && chatMinimaxVoiceInput.dataset.bound !== 'true') {
-        chatMinimaxVoiceInput.dataset.bound = 'true';
-        chatMinimaxVoiceInput.addEventListener('change', async (e) => {
-            const previousValue = getCurrentMinimaxVoiceSettings(window.imData.currentSettingsFriend).voiceId || '';
-            await saveChatMinimaxField('voiceId', e.target.value.trim(), e.target, previousValue);
+    const chatTtsVoiceInput = document.getElementById('chat-tts-voice-id-input');
+    if (chatTtsVoiceInput && chatTtsVoiceInput.dataset.bound !== 'true') {
+        chatTtsVoiceInput.dataset.bound = 'true';
+        chatTtsVoiceInput.addEventListener('change', async (e) => {
+            const previousValue = getCurrentTtsVoiceSettings(window.imData.currentSettingsFriend).voiceId || '';
+            await saveChatTtsField('voiceId', e.target.value.trim(), e.target, previousValue);
         });
     }
 
-    const chatMinimaxSpeedInput = document.getElementById('chat-minimax-speed-input');
-    if (chatMinimaxSpeedInput && chatMinimaxSpeedInput.dataset.bound !== 'true') {
-        chatMinimaxSpeedInput.dataset.bound = 'true';
-        chatMinimaxSpeedInput.addEventListener('change', async (e) => {
-            const previousValue = getCurrentMinimaxVoiceSettings(window.imData.currentSettingsFriend).speed || 1;
+    const chatTtsSpeedInput = document.getElementById('chat-tts-speed-input');
+    if (chatTtsSpeedInput && chatTtsSpeedInput.dataset.bound !== 'true') {
+        chatTtsSpeedInput.dataset.bound = 'true';
+        chatTtsSpeedInput.addEventListener('change', async (e) => {
+            const previousValue = getCurrentTtsVoiceSettings(window.imData.currentSettingsFriend).speed || 1;
             const nextValue = Math.max(0.5, Math.min(2, parseFloat(e.target.value) || 1));
             e.target.value = nextValue;
-            await saveChatMinimaxField('speed', nextValue, e.target, previousValue);
+            await saveChatTtsField('speed', nextValue, e.target, previousValue);
         });
     }
 

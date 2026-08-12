@@ -3705,6 +3705,120 @@ button.x-dm-translation-bubble {
     padding: 0 16px calc(18px + var(--safe-bottom));
 }
 
+.x-dm-imessage-context-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 14px;
+    background: #f5f5f7;
+    color: #050505;
+}
+
+.x-dm-imessage-context-heading,
+.x-dm-imessage-context-limit-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.x-dm-imessage-context-heading > div {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.x-dm-imessage-context-heading strong,
+.x-dm-imessage-context-limit-row {
+    font-size: 15px;
+    font-weight: 850;
+}
+
+.x-dm-imessage-context-heading small {
+    overflow: hidden;
+    color: #6e6e73;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.x-dm-imessage-context-switch {
+    position: relative;
+    display: inline-flex;
+    width: 46px;
+    height: 28px;
+    flex: 0 0 auto;
+    cursor: pointer;
+}
+
+.x-dm-imessage-context-switch input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+
+.x-dm-imessage-context-switch span {
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: #d1d1d6;
+    transition: background 0.18s ease;
+}
+
+.x-dm-imessage-context-switch span::after {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    content: '';
+    transition: transform 0.18s ease;
+}
+
+.x-dm-imessage-context-switch input:checked + span {
+    background: #34c759;
+}
+
+.x-dm-imessage-context-switch input:checked + span::after {
+    transform: translateX(18px);
+}
+
+.x-dm-imessage-context-switch input:focus-visible + span {
+    outline: 2px solid #007aff;
+    outline-offset: 2px;
+}
+
+.x-dm-imessage-context-limit-row > span:last-child {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: #6e6e73;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.x-dm-imessage-context-limit-row input {
+    width: 52px;
+    height: 32px;
+    box-sizing: border-box;
+    border: 1px solid #dedee3;
+    border-radius: 9px;
+    background: #fff;
+    color: #050505;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    text-align: center;
+}
+
 .x-dm-settings-action {
     display: flex;
     align-items: center;
