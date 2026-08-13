@@ -2796,7 +2796,7 @@
                             <span class="data-management-action-icon success"><i class="fas fa-file-export"></i></span>
                             <span class="data-management-action-copy">
                                 <strong>导出完整备份</strong>
-                                <small>生成低内存、可回导的备份归档</small>
+                                <small>导出当前全部数据与配置</small>
                             </span>
                             <i class="fas fa-chevron-right data-management-action-chevron" aria-hidden="true"></i>
                         </button>
@@ -2808,7 +2808,7 @@
                             </span>
                             <i class="fas fa-chevron-right data-management-action-chevron" aria-hidden="true"></i>
                         </button>
-                        <input type="file" id="import-data-file" accept=".u2backup,.json,application/vnd.u2phone.backup+zip,application/json" style="display:none;">
+                        <input type="file" id="import-data-file" accept=".json" style="display:none;">
                         <div class="data-import-preview" id="data-import-preview" style="display: none;">
                             <div class="data-import-preview-title">待导入备份</div>
                             <div class="data-import-preview-file" id="data-import-file-name"></div>
@@ -2819,7 +2819,6 @@
                                 <div><span id="data-import-size">-</span><small>大小</small></div>
                             </div>
                         </div>
-                        <p class="data-backup-safety-hint">新备份会分批写入，包含图片原文件；导入时将先检查临时可用空间。</p>
                     </div>
                 </section>
 
@@ -8315,8 +8314,7 @@
     </section>
 </div>
 
-<script src="js/storage/backup_worker.js?v=20260814-streaming-u2backup-v10-file-runtime-v1"></script>
-<script src="js/storage/app_storage.js?v=20260715-library-content-store-v1&cot=20260725-single-chat-cot-v1&backup=20260814-streaming-u2backup-v10-file-runtime-v1&provider=20260807-v1&image-generation=20260803-char-face-reference-v2&startup-queue=20260804-v1&vector-memory-index=20260807-v1&group-identity-css-v1"></script>
+<script src="js/storage/app_storage.js?v=20260715-library-content-store-v1&cot=20260725-single-chat-cot-v1&backup=20260814-v9-json-rollback-v1&provider=20260807-v1&image-generation=20260803-char-face-reference-v2&startup-queue=20260804-v1&vector-memory-index=20260807-v1&group-identity-css-v1"></script>
     <script src="js/storage/imessage_storage.js?v=20260710-storage-v8-idb1"></script>
     <script src="storage.js?v=20260710-storage-v7-cache1"></script>
     <script src="js/lazy_vendor_loader.js?v=20260803-v1"></script>
@@ -8366,7 +8364,7 @@
     <!-- 引入核心 UI 管理与设置模块脚本 -->
     <script src="js/ui.js?v=20260811-no-glass-v1"></script>
     <script src="js/ui_translation.js?v=20260807-global-ui-zh-v1"></script>
-    <script src="js/settings.js?v=20260718-ios-pwa-export-v1-notification-sync-v1-custom-notification-sound-v1-api-presets-accessor-v1&global-font-scale=20260801-v3&theme-source=20260802-status-center-v1&assistive=20260801-drag-settle-v3&home-theme=20260731-widgets-v1&app-icon-alpha=20260731-v1&backup=20260814-streaming-u2backup-v10&api=20260803-config-v2-model-search&provider-picker=20260807-v1&image-generation=20260807-model-select-v1&image-understanding=20260811-v1&startup-queue=20260804-v1&api-open-performance=20260805-v1&vector-memory=20260807-local-v1&group-identity-css-v1&theme-import-android-v1&moments-account-hydration=20260806-v1&global-ui-zh-v1&tts=20260811-v1&data-management-fullscreen=20260812-v1"></script>
+<script src="js/settings.js?v=20260718-ios-pwa-export-v1-notification-sync-v1-custom-notification-sound-v1-api-presets-accessor-v1&global-font-scale=20260801-v3&theme-source=20260802-status-center-v1&assistive=20260801-drag-settle-v3&home-theme=20260731-widgets-v1&app-icon-alpha=20260731-v1&backup=20260814-v9-json-rollback-v1&api=20260803-config-v2-model-search&provider-picker=20260807-v1&image-generation=20260807-model-select-v1&image-understanding=20260811-v1&startup-queue=20260804-v1&api-open-performance=20260805-v1&vector-memory=20260807-local-v1&group-identity-css-v1&theme-import-android-v1&moments-account-hydration=20260806-v1&global-ui-zh-v1&tts=20260811-v1&data-management-fullscreen=20260812-v1"></script>
     <script src="js/library.js?v=20260715-reader-streaming-v1&open-performance=20260801-v1&vendor-lazy=20260803-v1&startup-queue=20260804-v1"></script>
     <script src="js/loves.js?v=20260719-friend-phone-bilingual-v13-android-focus-scope-v1&open-performance=20260801-v1&api=20260803-unified-v1&image-assets=20260803-v1&startup-queue=20260804-v1&moment-language=20260806-v1&android-comment-focus=20260807-v1"></script>
     <script src="js/tiktok/2_core.js?v=20260712-tiktok-feed-cleanup-v1&open-performance=20260801-v1&startup-queue=20260804-v1"></script>
