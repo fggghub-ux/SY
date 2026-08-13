@@ -9,6 +9,10 @@
     const OPTIMIZATION_SHADOW_DB_NAME = 'iiso_app_storage_optimization_shadow_v9';
     const IMPORT_SHADOW_DB_NAME = 'iiso_app_storage_import_shadow_v9';
     const IMPORT_ROLLBACK_DB_NAME = 'iiso_app_storage_import_rollback_v9';
+    const BACKUP_OPERATION_META_KEY = 'backup_operation_v10';
+    const BACKUP_WORKER_URL = 'js/storage/backup_worker.js?v=20260814-streaming-backup-v10';
+    const BACKUP_FORMAT_VERSION = 10;
+    const BACKUP_FILE_TYPE = 'application/vnd.u2phone.backup+zip';
     const DB_VERSION = 8;
     const STORAGE_SCHEMA_VERSION = 9;
     const BACKUP_APP_NAME = 'u2phone';
@@ -69,6 +73,9 @@
     const storageBootstrapQueue = [];
     let storageBootstrapQueueScheduled = false;
     let deferredMaintenanceScheduled = false;
+    let backupWorker = null;
+    let backupWorkerSequence = 0;
+    const activeBackupOperations = new Map();
 
     function isTransientIndexedDbError(error) {
         const name = String(error?.name || '');
@@ -197,6 +204,101 @@
         } catch (error) {
             return isBlobUrl(String(rawValue)) ? '' : String(rawValue);
         }
+    }
+
+    function makeBackupError(code, message) {
+        const error = new Error(message);
+        error.code = code;
+        return error;
+    }
+
+    function isU2BackupFile(file) {
+        return !!file && (/\.u2backup$/i.test(String(file.name || '')) || String(file.type || '') === BACKUP_FILE_TYPE);
+    }
+
+    function isLocalFileRuntime() {
+        return globalThis.location?.protocol === 'file:' || globalThis.location?.origin === 'null';
+    }
+
+    function createLocalBackupWorker() {
+        if (typeof MessageChannel !== 'function' || !globalThis.u2BackupWorkerRuntime?.start) {
+            throw makeBackupError('BACKUP_WORKER_LOCAL_LOAD_FAILED', '本地备份组件未加载。请确认 js/storage/backup_worker.js 与 index.html 位于同一完整应用目录。');
+        }
+        const channel = new MessageChannel();
+        globalThis.u2BackupWorkerRuntime.start(channel.port1);
+        return channel.port2;
+    }
+
+    function createBackupWorker() {
+        if (typeof Worker !== 'function') {
+            if (isLocalFileRuntime()) return createLocalBackupWorker();
+            throw makeBackupError('BACKUP_WORKER_UNAVAILABLE', '当前浏览器不支持低内存备份，请更新浏览器后重试。');
+        }
+        if (isLocalFileRuntime()) {
+            return createLocalBackupWorker();
+        }
+        return new Worker(BACKUP_WORKER_URL);
+    }
+
+    function getBackupWorker() {
+        if (backupWorker) return backupWorker;
+        backupWorker = createBackupWorker();
+        backupWorker.addEventListener('message', (event) => {
+            const data = event.data || {};
+            const operation = activeBackupOperations.get(data.operationId);
+            if (!operation) return;
+            if (data.type === 'chunk') {
+                operation.chunks.push(data.buffer);
+                operation.bytes += Number(data.buffer?.byteLength) || 0;
+                operation.onChunk?.(data.buffer);
+                return;
+            }
+            if (data.type === 'progress') {
+                operation.onProgress?.(data.progress || {});
+                return;
+            }
+            if (data.type === 'complete') {
+                activeBackupOperations.delete(data.operationId);
+                operation.resolve({ ...(data.result || {}), chunks: operation.chunks, bytes: operation.bytes });
+                return;
+            }
+            if (data.type === 'error') {
+                activeBackupOperations.delete(data.operationId);
+                operation.reject(makeBackupError(data.error?.code || 'BACKUP_FAILED', data.error?.message || '备份操作失败。'));
+            }
+        });
+        backupWorker.addEventListener('error', (event) => {
+            const error = makeBackupError('BACKUP_WORKER_CRASHED', event.message || '备份进程意外停止。');
+            activeBackupOperations.forEach((operation) => operation.reject(error));
+            activeBackupOperations.clear();
+            try { backupWorker?.terminate(); } catch (terminateError) {}
+            backupWorker = null;
+        });
+        return backupWorker;
+    }
+
+    function runBackupWorker(command, payload = {}, options = {}) {
+        const worker = getBackupWorker();
+        const operationId = `backup_${Date.now()}_${++backupWorkerSequence}`;
+        return new Promise((resolve, reject) => {
+            const operation = { resolve, reject, chunks: [], bytes: 0, onProgress: options.onProgress, onChunk: options.onChunk };
+            activeBackupOperations.set(operationId, operation);
+            const signal = options.signal;
+            const abort = () => worker.postMessage({ type: 'abort', operationId });
+            if (signal?.aborted) {
+                activeBackupOperations.delete(operationId);
+                reject(makeBackupError('BACKUP_CANCELLED', '备份操作已取消。'));
+                return;
+            }
+            signal?.addEventListener?.('abort', abort, { once: true });
+            const settle = (callback) => (value) => {
+                signal?.removeEventListener?.('abort', abort);
+                callback(value);
+            };
+            operation.resolve = settle(resolve);
+            operation.reject = settle(reject);
+            worker.postMessage({ type: 'run', operationId, command, payload });
+        });
     }
 
     async function importLegacyBackupStorageRows(snapshot = []) {
@@ -793,12 +895,140 @@
         return { db, marker };
     }
 
-    async function getAllFromConnection(db, storeName) {
+    const BACKUP_BATCH_ROWS = 48;
+
+    function updateFnv1a(hash, text) {
+        let next = hash >>> 0;
+        const source = String(text || '');
+        for (let index = 0; index < source.length; index += 1) {
+            next ^= source.charCodeAt(index);
+            next = Math.imul(next, 16777619);
+        }
+        return next >>> 0;
+    }
+
+    function createStreamingStoreSignature() {
+        return { count: 0, bytes: 0, hash: 2166136261 };
+    }
+
+    function signatureRecordValue(storeName, row) {
+        if (storeName !== STORES.assets) return row;
+        const blob = row?.blob;
+        return {
+            ...row,
+            blob: blob ? {
+                size: Number(blob.size) || 0,
+                type: blob.type || '',
+                sha256: row.sha256 || ''
+            } : null
+        };
+    }
+
+    function appendStreamingStoreSignature(signature, storeName, row) {
+        signature.count += 1;
+        signature.bytes += measureRecordBytes(row);
+        signature.hash = updateFnv1a(signature.hash, JSON.stringify(signatureRecordValue(storeName, row)));
+        signature.hash = updateFnv1a(signature.hash, '\n');
+        return signature;
+    }
+
+    function finishStreamingStoreSignature(signature) {
+        return {
+            count: signature.count,
+            bytes: signature.bytes,
+            checksum: (signature.hash >>> 0).toString(16).padStart(8, '0')
+        };
+    }
+
+    async function readConnectionBatch(db, storeName, afterKey, limit = BACKUP_BATCH_ROWS) {
         return new Promise((resolve, reject) => {
-            const request = db.transaction(storeName, 'readonly').objectStore(storeName).getAll();
-            request.onsuccess = () => resolve(Array.isArray(request.result) ? request.result : []);
-            request.onerror = () => reject(request.error);
+            const transaction = db.transaction(storeName, 'readonly');
+            const store = transaction.objectStore(storeName);
+            const range = afterKey === undefined ? undefined : IDBKeyRange.lowerBound(afterKey, true);
+            const rowsRequest = store.getAll(range, limit);
+            const keysRequest = store.getAllKeys(range, limit);
+            let rows = null;
+            let keys = null;
+            const complete = () => {
+                if (rows !== null && keys !== null) resolve({ rows, keys });
+            };
+            rowsRequest.onsuccess = () => { rows = Array.isArray(rowsRequest.result) ? rowsRequest.result : []; complete(); };
+            keysRequest.onsuccess = () => { keys = Array.isArray(keysRequest.result) ? keysRequest.result : []; complete(); };
+            rowsRequest.onerror = () => reject(rowsRequest.error);
+            keysRequest.onerror = () => reject(keysRequest.error);
         });
+    }
+
+    async function putConnectionBatch(db, storeName, rows) {
+        if (!rows.length) return;
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(storeName, 'readwrite');
+            const store = transaction.objectStore(storeName);
+            rows.forEach((row) => store.put(row));
+            transaction.oncomplete = () => resolve(true);
+            transaction.onerror = () => reject(transaction.error);
+            transaction.onabort = () => reject(transaction.error || new Error(`Copy aborted for ${storeName}`));
+        });
+    }
+
+    async function readConnectionRowsByPrimaryKey(db, storeName, rows) {
+        const keyField = BACKUP_STORE_KEY_FIELDS[storeName];
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(storeName, 'readonly');
+            const store = transaction.objectStore(storeName);
+            const results = new Array(rows.length);
+            let pending = rows.length;
+            if (pending === 0) {
+                resolve(results);
+                return;
+            }
+            rows.forEach((row, index) => {
+                const request = store.get(row?.[keyField]);
+                request.onsuccess = () => {
+                    results[index] = request.result;
+                    pending -= 1;
+                    if (pending === 0) resolve(results);
+                };
+                request.onerror = () => reject(request.error);
+            });
+        });
+    }
+
+    async function clearConnectionStore(db, storeName) {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(storeName, 'readwrite');
+            transaction.objectStore(storeName).clear();
+            transaction.oncomplete = () => resolve(true);
+            transaction.onerror = () => reject(transaction.error);
+        });
+    }
+
+    async function copyConnectionStoreBatched(sourceDb, targetDb, storeName, options = {}) {
+        const filter = typeof options.filter === 'function' ? options.filter : null;
+        await clearConnectionStore(targetDb, storeName);
+        const sourceSignature = createStreamingStoreSignature();
+        const targetSignature = createStreamingStoreSignature();
+        let afterKey;
+        while (true) {
+            const { rows, keys } = await readConnectionBatch(sourceDb, storeName, afterKey);
+            if (!rows.length) break;
+            const keptRows = filter ? rows.filter(filter) : rows;
+            keptRows.forEach((row) => appendStreamingStoreSignature(sourceSignature, storeName, row));
+            await putConnectionBatch(targetDb, storeName, keptRows);
+            const storedRows = await readConnectionRowsByPrimaryKey(targetDb, storeName, keptRows);
+            storedRows.forEach((row) => {
+                if (!row) throw new Error(`Storage verification failed for ${storeName}.`);
+                appendStreamingStoreSignature(targetSignature, storeName, row);
+            });
+            afterKey = keys[keys.length - 1];
+            await delay(0);
+        }
+        const expected = finishStreamingStoreSignature(sourceSignature);
+        const actual = finishStreamingStoreSignature(targetSignature);
+        if (expected.count !== actual.count || expected.bytes !== actual.bytes || expected.checksum !== actual.checksum) {
+            throw new Error(`Storage verification failed for ${storeName}.`);
+        }
+        return actual;
     }
 
     function sortStoreRowsByKey(storeName, rows = []) {
@@ -836,34 +1066,16 @@
         };
     }
 
-    async function replaceConnectionStore(db, storeName, rows) {
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction(storeName, 'readwrite');
-            const store = transaction.objectStore(storeName);
-            store.clear();
-            rows.forEach((row) => store.put(row));
-            transaction.oncomplete = () => resolve(true);
-            transaction.onerror = () => reject(transaction.error);
-            transaction.onabort = () => reject(transaction.error || new Error(`Copy aborted for ${storeName}`));
-        });
-    }
-
     async function copyDatabaseContents(sourceDb, targetDb, progressCallback, progressStart = 0, progressSpan = 100) {
         const signatures = {};
         const storeNames = Object.values(STORES);
         for (let index = 0; index < storeNames.length; index += 1) {
             const storeName = storeNames[index];
-            const rows = await getAllFromConnection(sourceDb, storeName);
-            const filteredRows = storeName === STORES.meta
-                ? rows.filter((row) => row?.key !== 'optimization_shadow_ready' && row?.key !== 'optimization_restore_complete')
-                : rows;
-            const expected = await buildStoreSignature(storeName, filteredRows);
-            await replaceConnectionStore(targetDb, storeName, filteredRows);
-            const copiedRows = await getAllFromConnection(targetDb, storeName);
-            const actual = await buildStoreSignature(storeName, copiedRows);
-            if (expected.count !== actual.count || expected.bytes !== actual.bytes || expected.checksum !== actual.checksum) {
-                throw new Error(`Storage verification failed for ${storeName}.`);
-            }
+            const actual = await copyConnectionStoreBatched(sourceDb, targetDb, storeName, {
+                filter: storeName === STORES.meta
+                    ? (row) => row?.key !== 'optimization_shadow_ready' && row?.key !== 'optimization_restore_complete'
+                    : null
+            });
             signatures[storeName] = actual;
             reportProgress(
                 progressCallback,
@@ -3624,12 +3836,23 @@
         for (let index = 0; index < BACKUP_STORES.length; index += 1) {
             const storeName = BACKUP_STORES[index];
             const rows = Array.isArray(snapshot.stores?.[storeName]) ? snapshot.stores[storeName] : [];
-            const orderedRows = sortStoreRowsByKey(storeName, rows);
             reportProgress(progressCallback, `校验并写入 ${storeName}...`, 12 + ((index + 1) / BACKUP_STORES.length) * 58);
-            await replaceConnectionStore(db, storeName, orderedRows);
-            const copiedRows = await getAllFromConnection(db, storeName);
-            const expected = await buildStoreSignature(storeName, orderedRows);
-            const actual = await buildStoreSignature(storeName, copiedRows);
+            await clearConnectionStore(db, storeName);
+            const expectedSignature = createStreamingStoreSignature();
+            const actualSignature = createStreamingStoreSignature();
+            for (let start = 0; start < rows.length; start += BACKUP_BATCH_ROWS) {
+                const batch = rows.slice(start, start + BACKUP_BATCH_ROWS);
+                batch.forEach((row) => appendStreamingStoreSignature(expectedSignature, storeName, row));
+                await putConnectionBatch(db, storeName, batch);
+                const storedRows = await readConnectionRowsByPrimaryKey(db, storeName, batch);
+                storedRows.forEach((row) => {
+                    if (!row) throw new Error(`Import verification failed for ${storeName}.`);
+                    appendStreamingStoreSignature(actualSignature, storeName, row);
+                });
+                await delay(0);
+            }
+            const expected = finishStreamingStoreSignature(expectedSignature);
+            const actual = finishStreamingStoreSignature(actualSignature);
             if (expected.count !== actual.count || expected.bytes !== actual.bytes || expected.checksum !== actual.checksum) {
                 throw new Error(`Import verification failed for ${storeName}.`);
             }
@@ -3922,6 +4145,225 @@
         return blob;
     }
 
+    function mapBackupWorkerProgress(progress = {}, callback) {
+        const completed = Math.max(0, Number(progress.completedRecords ?? progress.completedBytes) || 0);
+        const total = Math.max(0, Number(progress.totalRecords ?? progress.totalBytes) || 0);
+        const ratio = total > 0 ? completed / total : 0;
+        const stage = progress.stage || 'working';
+        const stageOffset = stage === 'manifest' ? 1
+            : stage === 'integrity' ? 96
+            : stage === 'asset' ? 82
+            : stage === 'clear' ? 6
+            : stage === 'table' ? 12
+            : 2;
+        const stageSpan = stage === 'table' ? 72 : stage === 'asset' ? 14 : 3;
+        reportProgress(callback, progress.message || '正在处理备份...', Math.min(99, stageOffset + Math.floor(ratio * stageSpan)));
+    }
+
+    async function setBackupOperationMarker(value) {
+        try {
+            await putRecord(STORES.meta, { key: BACKUP_OPERATION_META_KEY, value });
+        } catch (error) {
+            console.warn('[appStorage] Failed to write backup operation marker', error);
+        }
+    }
+
+    async function finishBackupOperationMarker(result) {
+        try {
+            await setMeta('backup_last_result_v10', result);
+            await putRecord(STORES.meta, { key: BACKUP_OPERATION_META_KEY, value: null });
+        } catch (error) {
+            console.warn('[appStorage] Failed to finalize backup operation marker', error);
+        }
+    }
+
+    async function exportBackup(options = {}) {
+        if (storageReadyPromise) await storageReadyPromise;
+        const progressCallback = typeof options.progressCallback === 'function' ? options.progressCallback : null;
+        const signal = options.signal;
+        reportProgress(progressCallback, '正在完成待保存数据...', 0);
+        if (!await flushPendingWrites()) throw makeBackupError('BACKUP_PENDING_WRITES', '仍有数据未保存完成，请稍后重试。');
+        const operationId = `export_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        await setBackupOperationMarker({ operationId, kind: 'export', stage: 'starting', startedAt: Date.now() });
+        try {
+            const workerResult = await runBackupWorker('export', {
+                dbName: DB_NAME,
+                storeNames: BACKUP_STORES,
+                schemaVersion: STORAGE_SCHEMA_VERSION
+            }, {
+                signal,
+                onProgress(progress) {
+                    mapBackupWorkerProgress(progress, progressCallback);
+                }
+            });
+            const blob = new Blob(workerResult.chunks, { type: BACKUP_FILE_TYPE });
+            reportProgress(progressCallback, '备份归档已生成', 100);
+            await finishBackupOperationMarker({
+                kind: 'export', status: 'completed', finishedAt: Date.now(), bytes: blob.size,
+                format: 'u2backup', formatVersion: BACKUP_FORMAT_VERSION
+            });
+            return {
+                blob,
+                fileName: `u2phone_backup_${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.u2backup`,
+                summary: { ...(workerResult.manifest?.stats || {}), approximateBytes: blob.size, schemaVersion: STORAGE_SCHEMA_VERSION, format: 'u2backup' }
+            };
+        } catch (error) {
+            await finishBackupOperationMarker({
+                kind: 'export', status: error?.code === 'BACKUP_CANCELLED' ? 'cancelled' : 'failed',
+                finishedAt: Date.now(), errorCode: error?.code || 'BACKUP_FAILED'
+            });
+            throw error;
+        }
+    }
+
+    async function readLegacyBackupFile(file) {
+        const size = Math.max(0, Number(file?.size) || 0);
+        // Old JSON files need the legacy migration layer's object model. Bound
+        // the fallback so a historical Base64 JSON backup cannot kill a phone.
+        if (size > 24 * 1024 * 1024) {
+            throw makeBackupError('LEGACY_BACKUP_TOO_LARGE', '此旧版 JSON 备份过大，无法在低内存模式安全读取。请使用较新的 .u2backup 备份或在桌面浏览器中迁移一次。');
+        }
+        let text = '';
+        try {
+            text = await file.text();
+            return JSON.parse(text);
+        } catch (error) {
+            throw makeBackupError('LEGACY_BACKUP_INVALID', '旧版 JSON 备份格式错误或已损坏。');
+        }
+    }
+
+    async function readLegacySnapshotVersion(file) {
+        // Only inspect the header.  Historical snapshots write the format
+        // version before their stores table, so this keeps v7–v9 routing out
+        // of the full-file/object path.
+        const head = await file.slice(0, Math.min(Math.max(0, Number(file?.size) || 0), 64 * 1024)).text();
+        const match = head.match(/"(?:schemaVersion|version)"\s*:\s*(\d{1,3})/);
+        return match ? Number(match[1]) || 0 : 0;
+    }
+
+    async function isStreamableLegacySnapshot(file) {
+        const version = await readLegacySnapshotVersion(file);
+        return { version, supported: version >= 7 && version <= 9 };
+    }
+
+    async function inspectBackupFile(file, options = {}) {
+        if (!file) throw makeBackupError('BACKUP_FILE_MISSING', '请选择备份文件。');
+        if (!isU2BackupFile(file)) {
+            const legacySnapshot = await isStreamableLegacySnapshot(file);
+            if (!legacySnapshot.supported) {
+                const payload = await readLegacyBackupFile(file);
+                return { ...inspectBackupPayload(payload), format: 'legacy-json', fileSize: Number(file.size) || 0 };
+            }
+            try {
+                const streamed = await runBackupWorker('inspectLegacySnapshot', {
+                    file,
+                    storeNames: BACKUP_STORES,
+                    keyFields: BACKUP_STORE_KEY_FIELDS,
+                    sourceVersion: legacySnapshot.version
+                }, { signal: options.signal, onProgress: options.progressCallback });
+                return { ...streamed, fileSize: Number(file.size) || 0 };
+            } catch (error) {
+                if (!['LEGACY_SNAPSHOT_NOT_FOUND', 'LEGACY_SNAPSHOT_UNSUPPORTED'].includes(error?.code)) throw error;
+                const payload = await readLegacyBackupFile(file);
+                return { ...inspectBackupPayload(payload), format: 'legacy-json', fileSize: Number(file.size) || 0 };
+            }
+        }
+        const result = await runBackupWorker('inspect', { file }, { signal: options.signal, onProgress: options.progressCallback });
+        return { ...result, fileSize: Number(file.size) || 0 };
+    }
+
+    async function ensureImportSpace(requiredBytes) {
+        if (!navigator.storage?.estimate) return;
+        const estimate = await navigator.storage.estimate();
+        const usage = Math.max(0, Number(estimate?.usage) || 0);
+        const quota = Math.max(0, Number(estimate?.quota) || 0);
+        const required = Math.max(8 * 1024 * 1024, Math.ceil(Number(requiredBytes) || 0));
+        if (quota > 0 && Math.max(0, quota - usage) < required) {
+            throw new DOMException(`安全导入约需要 ${formatBytes(required)} 的临时可用空间，请先清理空间后再试。`, 'QuotaExceededError');
+        }
+    }
+
+    async function importBackupWithWorker(file, command, sourceFormat, options = {}) {
+        if (storageReadyPromise) await storageReadyPromise;
+        const progressCallback = typeof options.progressCallback === 'function' ? options.progressCallback : null;
+        reportProgress(progressCallback, '正在检查可用空间...', 2);
+        await ensureImportSpace(Math.max(8 * 1024 * 1024, Number(file.size) * 2.4));
+        if (!await flushPendingWrites()) throw makeBackupError('BACKUP_PENDING_WRITES', '仍有数据未保存完成，请稍后重试。');
+
+        replacementInProgress = true;
+        const importId = `import_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        let shadowDb = null;
+        let completed = false;
+        await setBackupOperationMarker({ importId, kind: 'import', stage: 'preparing', fileBytes: Number(file.size) || 0, startedAt: Date.now() });
+        try {
+            await deleteDatabaseSafe(IMPORT_SHADOW_DB_NAME);
+            shadowDb = await createDbConnection(IMPORT_SHADOW_DB_NAME);
+            shadowDb.close();
+            shadowDb = null;
+            const workerResult = await runBackupWorker(command, {
+                file,
+                shadowDbName: IMPORT_SHADOW_DB_NAME,
+                storeNames: BACKUP_STORES,
+                keyFields: BACKUP_STORE_KEY_FIELDS,
+                schemaVersion: STORAGE_SCHEMA_VERSION,
+                sourceVersion: options.sourceVersion
+            }, {
+                signal: options.signal,
+                onProgress(progress) {
+                    mapBackupWorkerProgress(progress, progressCallback);
+                }
+            });
+            shadowDb = await createDbConnection(IMPORT_SHADOW_DB_NAME);
+            await setBackupOperationMarker({ importId, kind: 'import', stage: 'validated-shadow', fileBytes: Number(file.size) || 0, startedAt: Date.now() });
+            await setConnectionMeta(shadowDb, 'import_shadow_ready', {
+                importId, createdAt: Date.now(), sourceVersion: Number(workerResult.schemaVersion || workerResult.manifest?.schemaVersion || BACKUP_FORMAT_VERSION),
+                sourceFormat, report: workerResult.report, manifest: workerResult.manifest || null
+            });
+            reportProgress(progressCallback, '隔离数据校验完成，正在安全替换...', 76);
+            await promoteImportShadow(shadowDb, importId, progressCallback);
+            shadowDb.close();
+            shadowDb = null;
+            await deleteDatabaseSafe(IMPORT_SHADOW_DB_NAME);
+            domainCache.clear();
+            const importedDomains = await getAllRecords(STORES.appDomains);
+            for (const record of importedDomains) {
+                if (record?.name) domainCache.set(String(record.name), cloneDeep(record.value));
+            }
+            completed = true;
+            reportProgress(progressCallback, '导入完成', 100);
+            await finishBackupOperationMarker({ kind: 'import', status: 'completed', finishedAt: Date.now(), fileBytes: Number(file.size) || 0, format: sourceFormat });
+            return cloneDeep(workerResult.report);
+        } catch (error) {
+            try { shadowDb?.close(); } catch (closeError) {}
+            try { await deleteDatabaseSafe(IMPORT_SHADOW_DB_NAME); } catch (cleanupError) {}
+            await finishBackupOperationMarker({
+                kind: 'import', status: error?.code === 'BACKUP_CANCELLED' ? 'cancelled' : 'failed',
+                finishedAt: Date.now(), fileBytes: Number(file.size) || 0, errorCode: error?.code || error?.name || 'BACKUP_FAILED'
+            });
+            throw error;
+        } finally {
+            if (!completed) replacementInProgress = false;
+        }
+    }
+
+    async function importBackupFile(file, options = {}) {
+        if (!file) throw makeBackupError('BACKUP_FILE_MISSING', '请选择备份文件。');
+        if (isU2BackupFile(file)) return importBackupWithWorker(file, 'import', 'u2backup', options);
+        const legacySnapshot = await isStreamableLegacySnapshot(file);
+        if (legacySnapshot.supported) try {
+            // v7–v9 snapshots have a stable `stores` layout. Stream them to
+            // the shadow database so a big historical JSON export never has to
+            // become a JavaScript object on a phone.
+            return await importBackupWithWorker(file, 'importLegacySnapshot', 'legacy-json-stream', {
+                ...options, sourceVersion: legacySnapshot.version
+            });
+        } catch (error) {
+            if (!['LEGACY_SNAPSHOT_NOT_FOUND', 'LEGACY_SNAPSHOT_UNSUPPORTED'].includes(error?.code)) throw error;
+        }
+        const payload = await readLegacyBackupFile(file);
+        return importAllData(payload, options.progressCallback);
+    }
+
     async function importAllData(payload = {}, progressCallback) {
         const validation = validateBackupPayload(payload);
         reportProgress(progressCallback, '正在预迁移并校验备份...', 3);
@@ -3998,8 +4440,8 @@
     }
 
     async function measureApproximateUsage() {
-        const blob = await exportAllData();
-        return blob.size;
+        const breakdown = await getStorageBreakdown({ skipReady: true });
+        return Math.max(0, Number(breakdown.logicalBytes) || 0);
     }
 
     async function getUsageSummary() {
@@ -4080,20 +4522,39 @@
         storageCheckpoints: '冗余历史'
     };
 
+    async function measureStoreBreakdownBatched(db, storeName) {
+        let afterKey;
+        let count = 0;
+        let bytes = 0;
+        // A thumbnail gallery can hold several large Blob records.  Restrict
+        // that table to one record per read while preserving the normal row
+        // batch for lightweight stores.
+        const batchSize = storeName === STORES.assets ? 1 : BACKUP_BATCH_ROWS;
+        while (true) {
+            const { rows, keys } = await readConnectionBatch(db, storeName, afterKey, batchSize);
+            if (!rows.length) break;
+            for (const row of rows) bytes += measureRecordBytes(row);
+            count += rows.length;
+            afterKey = keys[keys.length - 1];
+            await delay(0);
+        }
+        return { count, bytes };
+    }
+
     async function getStorageBreakdown(options = {}) {
         if (!options.skipReady && storageReadyPromise) await storageReadyPromise;
         const stores = {};
         const groups = {};
         let indexedDbBytes = 0;
+        const db = await openDb();
         for (const [storeKey, storeName] of Object.entries(STORES)) {
-            const rows = await getAllRecords(storeName);
-            const bytes = rows.reduce((sum, row) => sum + measureRecordBytes(row), 0);
-            stores[storeName] = { count: rows.length, bytes };
-            indexedDbBytes += bytes;
+            const summary = await measureStoreBreakdownBatched(db, storeName);
+            stores[storeName] = summary;
+            indexedDbBytes += summary.bytes;
             const groupName = STORAGE_BREAKDOWN_GROUPS[storeKey] || '其他数据';
             const group = groups[groupName] || { count: 0, bytes: 0 };
-            group.count += rows.length;
-            group.bytes += bytes;
+            group.count += summary.count;
+            group.bytes += summary.bytes;
             groups[groupName] = group;
         }
         const logicalGroups = cloneDeep(groups);
@@ -4632,9 +5093,24 @@
 
     async function initializeUnifiedStorage() {
         storageHealthState.status = 'initializing';
+        // A browser termination during export/import can leave only auxiliary
+        // databases. Import recovery decides whether to restore or discard
+        // them; this marker records a non-sensitive diagnostic outcome.
+        const interruptedBackupRecord = await getRecord(STORES.meta, BACKUP_OPERATION_META_KEY);
+        const interruptedBackup = interruptedBackupRecord?.value || null;
         await recoverImportRollbackIfNeeded();
         await recoverImportShadowIfNeeded();
         await recoverOptimizationShadowIfNeeded();
+        if (interruptedBackup?.kind) {
+            await setMeta('backup_last_result_v10', {
+                kind: interruptedBackup.kind,
+                status: 'interrupted-recovered',
+                recoveredAt: Date.now(),
+                stage: interruptedBackup.stage || 'unknown',
+                errorCode: 'BACKUP_INTERRUPTED'
+            });
+            await putRecord(STORES.meta, { key: BACKUP_OPERATION_META_KEY, value: null });
+        }
         const existingDomains = await getAllRecords(STORES.appDomains);
 
         if (existingDomains.length === 0) {
@@ -4935,6 +5411,9 @@
         inspectBackupPayload,
         validateBackupPayload,
         exportAllData,
+        exportBackup,
+        inspectBackupFile,
+        importBackupFile,
         importAllData,
         clearAllData,
         clearManagedPersistence,

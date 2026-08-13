@@ -6526,6 +6526,7 @@
             const importSize = document.getElementById('data-import-size');
             let selectedImportPayload = null;
             let selectedImportFile = null;
+            let operationAbortController = null;
             let overlay = null;
             let overlayText = null;
             let overlayProgress = null;
@@ -6560,15 +6561,6 @@
                 if (!btn) return;
                 btn.disabled = !!busy;
                 btn.classList.toggle('is-busy', !!busy);
-            }
-
-            function readFileText(file) {
-                return new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = (event) => resolve(event.target.result || '');
-                    reader.onerror = () => reject(reader.error || new Error('File read failed'));
-                    reader.readAsText(file);
-                });
             }
 
             function formatBytesForUi(bytes) {
@@ -6770,10 +6762,14 @@
                             <i class="fas fa-spinner fa-spin data-operation-spinner"></i>
                             <div class="data-operation-text"></div>
                             <div class="data-operation-progress"><div></div></div>
+                            <button type="button" class="data-operation-cancel">取消</button>
                         </div>
                     `;
                     overlayText = overlay.querySelector('.data-operation-text');
                     overlayProgress = overlay.querySelector('.data-operation-progress > div');
+                    overlay.querySelector('.data-operation-cancel')?.addEventListener('click', () => {
+                        operationAbortController?.abort();
+                    });
                     document.body.appendChild(overlay);
                 }
                 overlayText.textContent = text || '处理中...';
@@ -6791,6 +6787,7 @@
 
             function hideOperation() {
                 if (overlay) overlay.style.display = 'none';
+                operationAbortController = null;
             }
 
             function updatePreview(file, summary) {
@@ -6814,13 +6811,21 @@
                     stopLegacy(e);
                     try {
                         setBusy(exportDataBtn, true);
-                        showOperation('正在准备导出数据...');
-                        const blob = await window.appStorage.exportAllData(updateOperation);
+                        const storageHealth = await window.appStorage.getStorageHealth?.();
+                        const estimatedBytes = Math.max(0, Number(storageHealth?.breakdown?.logicalBytes) || 0);
+                        showOperation(estimatedBytes > 0
+                            ? `正在准备导出数据（预计约 ${formatBytesForUi(estimatedBytes)}）...`
+                            : '正在准备导出数据...');
+                        operationAbortController = new AbortController();
+                        const backup = await window.appStorage.exportBackup({
+                            progressCallback: updateOperation,
+                            signal: operationAbortController.signal
+                        });
                         updateOperation({ message: '准备下载...', progress: 99 });
                         hideOperation();
                         const result = await window.u2ExportFile({
-                            blob,
-                            fileName: `u2phone_backup_${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.json`,
+                            blob: backup.blob,
+                            fileName: backup.fileName,
                             title: 'U2 完整数据备份'
                         });
                         if (result === 'shared' || result === 'downloaded') showToast('数据导出成功');
@@ -6828,7 +6833,7 @@
                     } catch (err) {
                         console.error('Export failed:', err);
                         hideOperation();
-                        showToast('导出失败，请查看控制台');
+                        showToast(err?.code === 'BACKUP_CANCELLED' ? '已取消导出' : (err?.message || '导出失败，请重试'));
                     } finally {
                         setBusy(exportDataBtn, false);
                     }
@@ -6838,7 +6843,7 @@
             if (importDataBtn && importDataFile) {
                 importDataBtn.addEventListener('click', (e) => {
                     stopLegacy(e);
-                    if (!selectedImportPayload || !selectedImportFile) {
+                    if (!selectedImportFile) {
                         importDataFile.click();
                         return;
                     }
@@ -6851,7 +6856,11 @@
                         try {
                             setBusy(importDataBtn, true);
                             showOperation('正在导入备份...');
-                            const importReport = await window.appStorage.importAllData(selectedImportPayload, updateOperation);
+                            operationAbortController = new AbortController();
+                            const importReport = await window.appStorage.importBackupFile(selectedImportFile, {
+                                progressCallback: updateOperation,
+                                signal: operationAbortController.signal
+                            });
                             const stickerReport = importReport?.stickers;
                             const skippedStickers = Math.max(0, Number(stickerReport?.skippedItems) || 0);
                             const resultMessage = skippedStickers > 0
@@ -6862,7 +6871,7 @@
                         } catch (err) {
                             console.error('Import failed:', err);
                             hideOperation();
-                            showToast(err?.message || '导入失败，当前数据未替换');
+                            showToast(err?.code === 'BACKUP_CANCELLED' ? '已取消导入，当前数据未替换' : (err?.message || '导入失败，当前数据未替换'));
                             setBusy(importDataBtn, false);
                         }
                     })();
@@ -6876,11 +6885,12 @@
                     try {
                         setBusy(importDataBtn, true);
                         showOperation('正在读取备份文件...');
-                        const text = await readFileText(file);
-                        updateOperation({ message: '正在校验备份...', progress: 30 });
-                        const payload = JSON.parse(text);
-                        const summary = window.appStorage.inspectBackupPayload(payload);
-                        selectedImportPayload = payload;
+                        operationAbortController = new AbortController();
+                        const summary = await window.appStorage.inspectBackupFile(file, {
+                            signal: operationAbortController.signal,
+                            progressCallback: updateOperation
+                        });
+                        selectedImportPayload = null;
                         selectedImportFile = file;
                         updatePreview(file, summary);
                         hideOperation();

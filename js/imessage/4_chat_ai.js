@@ -385,11 +385,22 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
             + degreeBoost;
     }
 
+    function getMemoryRecallLimits(friend) {
+        const normalized = window.imApp.normalizeMemoryRecallLimits
+            ? window.imApp.normalizeMemoryRecallLimits(friend?.memory?.recallLimits)
+            : { shortTerm: 30, longTerm: 30 };
+        return {
+            shortTerm: normalized.shortTerm,
+            longTerm: normalized.longTerm
+        };
+    }
+
     function resolveActiveMemoryRecall(friend, recentText = null) {
         const normalizedFriend = window.imApp.normalizeFriendData(friend || {});
         const memory = normalizedFriend.memory || {};
+        const recallLimits = getMemoryRecallLimits(normalizedFriend);
         const contextText = recentText == null ? getCurrentUserRecallSource(normalizedFriend).text : String(recentText || '');
-        const pickTriggered = (entries) => (Array.isArray(entries) ? entries : [])
+        const pickTriggered = (entries, limit) => (Array.isArray(entries) ? entries : [])
             .filter(entry => entry && (entry.title || entry.event || entry.content || entry.memoryPoints || entry.memoryTags || entry.detail))
             .map(entry => ({
                 entry,
@@ -398,22 +409,44 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
             }))
             .filter(item => item.score > 0)
             .sort((a, b) => b.score - a.score || b.activatedAt.localeCompare(a.activatedAt))
-            .slice(0, 8)
+            .slice(0, limit)
             .map(item => item.entry);
-        const shortTermEntries = pickTriggered(memory.shortTermEntries);
+        const shortTermEntries = pickTriggered(memory.shortTermEntries, recallLimits.shortTerm);
         const isGroupChat = normalizedFriend.type === 'group';
         const groupLongTermEntries = Array.isArray(memory.longTermEntries)
             ? memory.longTermEntries.filter(entry => String(entry?.sourceType || '') === 'manual')
             : [];
-        const longTermEntries = pickTriggered(isGroupChat ? groupLongTermEntries : memory.longTermEntries);
-        const cherishedEntries = isGroupChat ? [] : pickTriggered(memory.cherishedEntries);
+        const longTermCandidates = (isGroupChat ? groupLongTermEntries : memory.longTermEntries)
+            .map(entry => ({ type: 'long', entry }));
+        const cherishedCandidates = isGroupChat
+            ? []
+            : (Array.isArray(memory.cherishedEntries) ? memory.cherishedEntries : [])
+                .map(entry => ({ type: 'cherished', entry }));
+        const longTermAndCherished = [...longTermCandidates, ...cherishedCandidates]
+            .filter(item => item.entry && (item.entry.title || item.entry.content || item.entry.detail || item.entry.reason || item.entry.triggerKeywords))
+            .map(item => ({
+                ...item,
+                score: getMemoryEntryRecallScore(item.entry, contextText),
+                activatedAt: String(item.entry.lastActivatedAt || item.entry.time || item.entry.createdAt || '')
+            }))
+            .filter(item => item.score > 0)
+            .sort((a, b) => b.score - a.score || b.activatedAt.localeCompare(a.activatedAt))
+            .slice(0, recallLimits.longTerm);
+        const longTermEntries = longTermAndCherished
+            .filter(item => item.type === 'long')
+            .map(item => item.entry);
+        const cherishedEntries = longTermAndCherished
+            .filter(item => item.type === 'cherished')
+            .map(item => item.entry);
 
         return {
             friendId: String(normalizedFriend.id || ''),
             isGroupChat,
+            recallLimits,
             shortTermEntries,
             longTermEntries,
             cherishedEntries,
+            longTermAndCherishedEntries: longTermAndCherished.map(item => ({ type: item.type, entry: item.entry })),
             entries: [
                 ...shortTermEntries.map(entry => ({ type: 'short', entry })),
                 ...longTermEntries.map(entry => ({ type: 'long', entry })),
@@ -436,12 +469,17 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
         }
 
         try {
-            const search = await window.imVectorMemory.searchFriendMemory(friend, queryText);
+            const recallLimits = getMemoryRecallLimits(friend);
+            const search = await window.imVectorMemory.searchFriendMemory(
+                friend,
+                queryText,
+                { limit: Math.min(100, recallLimits.shortTerm + recallLimits.longTerm) }
+            );
             if (!search?.results?.length) return keywordRecall;
             const semanticEntries = window.imVectorMemory.resolveSearchResults(friend, search.results);
             if (!semanticEntries.length) return keywordRecall;
 
-            const mergeEntries = (type, existing) => {
+            const mergeEntries = (type, existing, limit) => {
                 const seen = new Set();
                 const merged = [];
                 const append = entry => {
@@ -452,19 +490,37 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
                 };
                 semanticEntries.filter(item => item.type === type).forEach(item => append(item.entry));
                 existing.forEach(append);
-                return merged.slice(0, 8);
+                return merged.slice(0, limit);
             };
 
-            const shortTermEntries = mergeEntries('short', keywordRecall.shortTermEntries);
-            const longTermEntries = mergeEntries('long', keywordRecall.longTermEntries);
-            const cherishedEntries = keywordRecall.isGroupChat
-                ? []
-                : mergeEntries('cherished', keywordRecall.cherishedEntries);
+            const shortTermEntries = mergeEntries('short', keywordRecall.shortTermEntries, recallLimits.shortTerm);
+            const longTermAndCherished = [];
+            const longTermSeen = new Set();
+            const appendLongTerm = (type, entries) => {
+                entries.forEach(entry => {
+                    const key = `${type}:${String(entry?.id || '')}`;
+                    if (!entry?.id || longTermSeen.has(key) || longTermAndCherished.length >= recallLimits.longTerm) return;
+                    longTermSeen.add(key);
+                    longTermAndCherished.push({ type, entry });
+                });
+            };
+            semanticEntries.forEach(item => {
+                if (item.type === 'long' || (!keywordRecall.isGroupChat && item.type === 'cherished')) {
+                    appendLongTerm(item.type, [item.entry]);
+                }
+            });
+            (keywordRecall.longTermAndCherishedEntries || []).forEach(item => {
+                appendLongTerm(item.type, [item.entry]);
+            });
+            const longTermEntries = longTermAndCherished.filter(item => item.type === 'long').map(item => item.entry);
+            const cherishedEntries = longTermAndCherished.filter(item => item.type === 'cherished').map(item => item.entry);
             return {
                 ...keywordRecall,
+                recallLimits,
                 shortTermEntries,
                 longTermEntries,
                 cherishedEntries,
+                longTermAndCherishedEntries: longTermAndCherished,
                 entries: [
                     ...shortTermEntries.map(entry => ({ type: 'short', entry })),
                     ...longTermEntries.map(entry => ({ type: 'long', entry })),
@@ -615,11 +671,12 @@ User 上一次发消息时间：${lastUserMessage ? formatAutonomousPromptTime(l
 
     function createMemoryRecallSnapshot(recall) {
         const copyEntries = entries => (Array.isArray(entries) ? entries : [])
-            .slice(-8)
+            .slice(0, 100)
             .map(entry => ({ ...entry }));
         const snapshot = {
             friendId: String(recall?.friendId || ''),
             isGroupChat: !!recall?.isGroupChat,
+            recallLimits: getMemoryRecallLimits({ memory: { recallLimits: recall?.recallLimits } }),
             shortTermEntries: copyEntries(recall?.shortTermEntries),
             longTermEntries: copyEntries(recall?.longTermEntries),
             cherishedEntries: copyEntries(recall?.cherishedEntries)
@@ -5289,14 +5346,17 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
                 if (!isConversationCurrent()) return false;
 
                 let generatedImage = null;
-                if (isImageReply && shouldAutoGenerateChatImage(speakerFriend)) {
+                const liveImageFriend = getLiveFriendById(speakerFriend.id) || speakerFriend;
+                if (isImageReply && shouldAutoGenerateChatImage(liveImageFriend)) {
                     try {
                         window.showToast?.('正在根据对话生成图片…');
-                        const promptConfig = speakerFriend.imagePromptConfig || {};
+                        const promptConfig = liveImageFriend.imagePromptConfig || {};
+                        const referenceImage = await window.imChat.resolveAutoImageReferenceFace(liveImageFriend);
                         generatedImage = await window.imChat.generateChatImage(
                             buildAutoImagePrompt(currentItem, promptConfig, recentText),
-                            speakerFriend,
+                            liveImageFriend,
                             {
+                                referenceImage,
                                 charAppearance: promptConfig.charAppearance,
                                 userAppearance: promptConfig.userAppearance,
                                 artistPrompt: promptConfig.artistPrompt,
@@ -5360,7 +5420,7 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
                     }
                     : { id: window.imChat.createMessageId('msg'), role: 'assistant', content: text, timestamp: nowMsg, replyTo: aiReplyTo, apiRunId };
                 if (currentSpeakerName) msgObj.speaker = currentSpeakerName;
-                if (currentSpeakerAvatar) msgObj.senderAvatarUrl = currentSpeakerAvatar;
+            if (currentSpeakerAvatar) msgObj.senderAvatarUrl = currentSpeakerAvatar;
                 if (speakerFriend.type === 'group' && detectedSpeaker?.id != null) {
                     msgObj.speakerMemberId = detectedSpeaker.id;
                 }

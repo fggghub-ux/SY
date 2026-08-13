@@ -22,6 +22,8 @@
     ]);
     const OFFLINE_CHAT_HISTORY_PROMPT_ID = 'chat_history';
     const OFFLINE_SUMMARY_MESSAGE_TYPE = 'offline_summary';
+    const OFFLINE_AUTO_IMAGE_MESSAGE_TYPE = 'offline_generated_image';
+    const OFFLINE_AUTO_IMAGE_MARKER = '【线下生图】';
     const OFFLINE_CHAT_PROMPT_ORDER = [
         'role_identity',
         'data_zone',
@@ -272,6 +274,44 @@ async function identifyChatImage(imageUrl) {
             clearTimeout(timeoutId);
         }
     }
+
+    const isOfflineAutoImageMessage = (message) => message?.type === OFFLINE_AUTO_IMAGE_MESSAGE_TYPE;
+
+    const shouldAutoGenerateOfflineImage = (friend) => !!friend
+        && friend.type === 'char'
+        && friend.offlineAutoImageGeneration === true;
+
+    const splitOfflineAutoImageMarker = (value) => {
+        const source = String(value || '');
+        const markerIndex = source.lastIndexOf(OFFLINE_AUTO_IMAGE_MARKER);
+        if (markerIndex < 0) return { content: source.trim(), scene: '' };
+        const before = source.slice(0, markerIndex).trimEnd();
+        const after = source.slice(markerIndex + OFFLINE_AUTO_IMAGE_MARKER.length).trim();
+        const lineBreakIndex = after.search(/[\r\n]/);
+        const scene = (lineBreakIndex < 0 ? after : after.slice(0, lineBreakIndex)).trim().slice(0, 4000);
+        const trailingText = lineBreakIndex < 0 ? '' : after.slice(lineBreakIndex).trim();
+        return {
+            content: [before, trailingText].filter(Boolean).join('\n\n').trim(),
+            scene
+        };
+    };
+
+    const buildOfflineAutoImagePrompt = (scene, promptConfig, recentContext) => {
+        const visualScene = String(scene || '').trim();
+        const context = String(recentContext || '').trim().slice(-2400);
+        const basePrompt = String(promptConfig?.lastPrompt || '').trim();
+        return [
+            visualScene,
+            context ? `最近线上与线下剧情上下文（用于保持剧情连续）：\n${context}` : '',
+            basePrompt ? `当前单聊生图预设基础提示词：\n${basePrompt}` : ''
+        ].filter(Boolean).join('\n\n').trim();
+    };
+
+    const buildOfflineAutoImageRequirement = () => `<offline_auto_image_rule>
+Only when the current offline story reaches a moment that is genuinely worth visualizing, append exactly one final line in this exact format:
+${OFFLINE_AUTO_IMAGE_MARKER} concise Chinese image scene prompt
+The prompt must describe the same current moment with characters, action, setting, composition, light, and atmosphere. Do not use this marker for ordinary dialogue or routine transitions. If no visual image is needed, do not output the marker at all. The marker line is frontend-only and must be the final line after all prose, barrage, choices, and recap content.
+</offline_auto_image_rule>`;
 
 function createAttachmentSheet(page) {
         if (window.imData.attachmentSheet) {
@@ -1317,18 +1357,25 @@ function createAttachmentSheet(page) {
 
         const cloneOfflineMeetingMessages = (messages) => (Array.isArray(messages) ? messages : []).map((message, index) => {
             const isSummary = isOfflineSummaryMessage(message);
+            const isAutoImage = isOfflineAutoImageMessage(message);
             const role = isSummary ? 'system' : (message?.role === 'assistant' ? 'assistant' : 'user');
-            const parsed = role === 'assistant' && offlineReasoning
+            const parsed = role === 'assistant' && !isAutoImage && offlineReasoning
                 ? offlineReasoning.normalizeResponse(message?.content || '', message?.reasoning || '')
                 : { content: String(message?.content || ''), reasoning: '' };
             return {
-                id: message?.id || createOfflineChatId(isSummary ? 'offline-summary' : (role === 'assistant' ? 'offline-ai' : 'offline-user')),
+                id: message?.id || createOfflineChatId(isSummary ? 'offline-summary' : (isAutoImage ? 'offline-image' : (role === 'assistant' ? 'offline-ai' : 'offline-user'))),
                 role,
-                type: isSummary ? OFFLINE_SUMMARY_MESSAGE_TYPE : undefined,
+                type: isSummary ? OFFLINE_SUMMARY_MESSAGE_TYPE : (isAutoImage ? OFFLINE_AUTO_IMAGE_MESSAGE_TYPE : undefined),
                 content: parsed.content,
                 reasoning: role === 'assistant' && parsed.reasoning ? parsed.reasoning : undefined,
                 timestamp: Number(message?.timestamp) || Date.now() + index,
                 tokens: role === 'assistant' ? Math.max(0, Number(message?.tokens) || estimateOfflineTextTokens(parsed.content)) : undefined,
+                imageUrl: isAutoImage ? String(message?.imageUrl || message?.url || '').trim() : '',
+                sourceMessageId: isAutoImage ? String(message?.sourceMessageId || '').trim() : '',
+                imageProvider: isAutoImage ? String(message?.imageProvider || '').trim() : '',
+                imageModel: isAutoImage ? String(message?.imageModel || '').trim() : '',
+                imageSize: isAutoImage ? String(message?.imageSize || '').trim() : '',
+                faceReferenceUsed: isAutoImage && message?.faceReferenceUsed === true,
                 updatedAt: message?.updatedAt || undefined,
                 generationState: message?.generationState === 'failed' ? 'failed' : undefined,
                 generationError: message?.generationState === 'failed' && message?.generationError
@@ -1347,7 +1394,9 @@ function createAttachmentSheet(page) {
         const getOfflineDialogueRows = (messages) => {
             let floor = 0;
             return (Array.isArray(messages) ? messages : []).reduce((rows, message) => {
-                if (isOfflineSummaryMessage(message) || (message?.role !== 'user' && message?.role !== 'assistant')) return rows;
+                if (isOfflineSummaryMessage(message)
+                    || isOfflineAutoImageMessage(message)
+                    || (message?.role !== 'user' && message?.role !== 'assistant')) return rows;
                 floor += 1;
                 rows.push({ message, floor });
                 return rows;
@@ -1373,6 +1422,12 @@ function createAttachmentSheet(page) {
             reasoning: message.reasoning || '',
             timestamp: message.timestamp,
             tokens: message.tokens || 0,
+            imageUrl: message.imageUrl || '',
+            sourceMessageId: message.sourceMessageId || '',
+            imageProvider: message.imageProvider || '',
+            imageModel: message.imageModel || '',
+            imageSize: message.imageSize || '',
+            faceReferenceUsed: !!message.faceReferenceUsed,
             updatedAt: message.updatedAt || '',
             generationState: message.generationState || '',
             generationError: message.generationError || '',
@@ -2694,8 +2749,46 @@ function createAttachmentSheet(page) {
             if (contentArea) contentArea.scrollTop = contentArea.scrollHeight;
         };
 
-        const getOfflineChatActionButtonsHtml = (isUser, actionsDisabled = false) => {
+        const getOfflineGeneratedImageFileName = (timestamp, mimeType = '') => {
+            const extensionByMimeType = {
+                'image/jpeg': 'jpg',
+                'image/jpg': 'jpg',
+                'image/webp': 'webp',
+                'image/gif': 'gif',
+                'image/avif': 'avif',
+                'image/png': 'png'
+            };
+            const extension = extensionByMimeType[String(mimeType || '').toLowerCase()] || 'png';
+            const date = new Date(timestamp || Date.now());
+            const stamp = Number.isNaN(date.getTime())
+                ? String(Date.now())
+                : date.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            return `imessage-offline-generated-${stamp}.${extension}`;
+        };
+
+        async function saveOfflineGeneratedImage(message) {
+            const imageUrl = String(message?.imageUrl || '').trim();
+            if (!imageUrl || typeof window.u2ExportFile !== 'function') {
+                throw new Error('图片保存功能尚未加载，请刷新后重试');
+            }
+            const response = await fetch(imageUrl);
+            if (!response.ok) throw new Error('无法读取这张图片，请稍后重试');
+            const blob = await response.blob();
+            if (!/^image\//i.test(blob.type || '')) throw new Error('图片数据无效，无法保存');
+            const result = await window.u2ExportFile({
+                blob,
+                fileName: getOfflineGeneratedImageFileName(message.timestamp, blob.type),
+                title: 'iMessage 线下剧情图片'
+            });
+            if (result === 'failed') throw new Error('图片保存失败，请稍后重试');
+            return result;
+        }
+
+        const getOfflineChatActionButtonsHtml = (isUser, actionsDisabled = false, message = null) => {
             if (actionsDisabled) return '';
+            if (isOfflineAutoImageMessage(message)) {
+                return '<div class="offline-chat-bubble-actions"><button type="button" class="offline-chat-action-btn" data-offline-action="save-image" title="保存到本地" aria-label="保存到本地"><i class="fas fa-download"></i></button><button type="button" class="offline-chat-action-btn danger" data-offline-action="delete" title="删除" aria-label="删除"><i class="fas fa-trash"></i></button></div>';
+            }
             return `
                 <div class="offline-chat-bubble-actions">
                     <button type="button" class="offline-chat-action-btn" data-offline-action="edit" title="编辑" aria-label="编辑"><i class="fas fa-pen"></i></button>
@@ -2717,6 +2810,27 @@ function createAttachmentSheet(page) {
                     if (action === 'edit') await openOfflineMessageEditor(message.id);
                     if (action === 'delete') await deleteOfflineMessage(message.id);
                     if (action === 'reroll') await rerollOfflineAssistantMessage(message.id, button);
+                    if (action === 'save-image') {
+                        if (button.disabled) return;
+                        const originalHtml = button.innerHTML;
+                        const originalTitle = button.title;
+                        button.disabled = true;
+                        button.title = '保存中…';
+                        button.setAttribute('aria-label', '保存中…');
+                        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                        try {
+                            const result = await saveOfflineGeneratedImage(message);
+                            if (result === 'downloaded') window.showToast?.('图片已保存到本地');
+                            if (result === 'shared') window.showToast?.('已打开系统保存，请选择“存储到文件”');
+                        } catch (error) {
+                            window.showToast?.(error?.message || '图片保存失败，请稍后重试');
+                        } finally {
+                            button.disabled = false;
+                            button.title = originalTitle;
+                            button.setAttribute('aria-label', originalTitle || '保存到本地');
+                            button.innerHTML = originalHtml;
+                        }
+                    }
                 });
             });
         };
@@ -2725,7 +2839,7 @@ function createAttachmentSheet(page) {
             const footer = bubbleDiv?.querySelector?.('.offline-chat-bubble-footer');
             if (!footer || !message?.id) return;
             footer.querySelector('.offline-chat-bubble-actions')?.remove();
-            footer.insertAdjacentHTML('beforeend', getOfflineChatActionButtonsHtml(message.role === 'user'));
+            footer.insertAdjacentHTML('beforeend', getOfflineChatActionButtonsHtml(message.role === 'user', false, message));
             bindOfflineChatBubbleActions(bubbleDiv, message);
         };
 
@@ -2741,12 +2855,20 @@ function createAttachmentSheet(page) {
             const message = {
                 id: rawMessage.id || createOfflineChatId(rawMessage.role === 'assistant' ? 'offline-ai' : 'offline-user'),
                 role: rawMessage.role === 'assistant' ? 'assistant' : 'user',
+                type: rawMessage.type || '',
                 content: String(rawMessage.content || ''),
                 reasoning: rawMessage.role === 'assistant' ? String(rawMessage.reasoning || '') : '',
                 timestamp: Number(rawMessage.timestamp) || Date.now(),
-                tokens: Number(rawMessage.tokens) || 0
+                tokens: Number(rawMessage.tokens) || 0,
+                imageUrl: String(rawMessage.imageUrl || '').trim(),
+                sourceMessageId: String(rawMessage.sourceMessageId || '').trim(),
+                imageProvider: String(rawMessage.imageProvider || '').trim(),
+                imageModel: String(rawMessage.imageModel || '').trim(),
+                imageSize: String(rawMessage.imageSize || '').trim(),
+                faceReferenceUsed: rawMessage.faceReferenceUsed === true
             };
             isUser = message.role === 'user';
+            const isAutoImage = isOfflineAutoImageMessage(message);
 
             const offlineUserProfile = getOfflineEffectiveUserProfile(friend);
             const userName = isUser ? offlineUserProfile.name : (friend?.nickname || friend?.realName || 'TA');
@@ -2759,7 +2881,9 @@ function createAttachmentSheet(page) {
             const enableBarrageForMessage = !isUser && isOfflineBarragePromptEnabled(friend);
             const enableChoicesForMessage = !isUser && isOfflineChoicesPromptEnabled(friend);
             const timeText = formatOfflineBubbleTime(message.timestamp);
-            const metaText = isUser
+            const metaText = isAutoImage
+                ? `图片 · ${timeText}`
+                : isUser
                 ? `#${floor} · ${countOfflineTextCharacters(message.content)}字 · ${timeText}`
                 : `#${floor} · ${message.tokens || estimateOfflineTextTokens(message.content)} tokens · ${timeText}`;
 
@@ -2774,14 +2898,17 @@ function createAttachmentSheet(page) {
             }
 
             // reasoning 与正文分开渲染；旧标签消息在这里仍可兼容解析。
-            const parsedMessage = !isUser && offlineReasoning
+            const parsedMessage = !isUser && !isAutoImage && offlineReasoning
                 ? offlineReasoning.normalizeResponse(message.content, message.reasoning)
                 : { content: String(message.content || ''), reasoning: '' };
             const rawThinking = parsedMessage.reasoning;
             const displayText = applyOfflineRegexText(friend, parsedMessage.content, message.role, depth, 'display');
             const displayThinking = rawThinking ? buildOfflineThinkingHtml(rawThinking, false) : '';
 
-            const actionButtonsHtml = getOfflineChatActionButtonsHtml(isUser, actionsDisabled);
+            const actionButtonsHtml = getOfflineChatActionButtonsHtml(isUser, actionsDisabled, message);
+            const imageHtml = isAutoImage
+                ? `<figure class="offline-chat-generated-image"><img src="${escapeSheetHtml(message.imageUrl)}" alt="${escapeSheetHtml(message.content || '线下剧情图片')}" loading="lazy"><figcaption>${escapeSheetHtml(message.content || '线下剧情图片')}</figcaption></figure>`
+                : '';
 
             bubbleDiv.innerHTML = `
                 <div class="offline-chat-bubble-header">
@@ -2792,15 +2919,15 @@ function createAttachmentSheet(page) {
                     ${userSign ? `<div class="offline-chat-sign">${escapeSheetHtml(userSign)}</div>` : ''}
                 </div>
                 <div class="offline-chat-bubble-body">
-                    ${displayThinking}
-                    <div class="offline-chat-bubble-text" ${displayText ? '' : 'style="display:none;"'}>${buildOfflineChatTextHtml(displayText, {
+                    ${isAutoImage ? imageHtml : displayThinking}
+                    ${isAutoImage ? '' : `<div class="offline-chat-bubble-text" ${displayText ? '' : 'style="display:none;"'}>${buildOfflineChatTextHtml(displayText, {
                         messageId: message.id,
                         enableVoice: !isUser && isTtsEnabledForFriend(friend),
                         enableBarrage: enableBarrageForMessage,
                         enableChoices: enableChoicesForMessage,
                         enableRecap: !isUser,
                         language: friend?.language || 'zh'
-                    })}</div>
+                    })}</div>`}
                     <div class="offline-chat-bubble-footer">
                         <div class="offline-chat-bubble-meta">${escapeSheetHtml(metaText)}</div>
                         ${actionButtonsHtml}
@@ -2808,9 +2935,9 @@ function createAttachmentSheet(page) {
                 </div>
             `;
 
-            bindOfflineThinkingToggle(bubbleDiv);
+            if (!isAutoImage) bindOfflineThinkingToggle(bubbleDiv);
             bindOfflineChatBubbleActions(bubbleDiv, message);
-            bindOfflineChatTextControls(bubbleDiv, { ...message, content: displayText, reasoning: rawThinking || undefined }, friend, floor);
+            if (!isAutoImage) bindOfflineChatTextControls(bubbleDiv, { ...message, content: displayText, reasoning: rawThinking || undefined }, friend, floor);
 
             const container = options.container || contentArea;
             container.appendChild(bubbleDiv);
@@ -2864,9 +2991,10 @@ function createAttachmentSheet(page) {
                     : currentParsed;
                 const activeFriend = window.imData.currentActiveFriend;
                 const depth = Number.isInteger(Number(options.depth)) ? Number(options.depth) : 0;
+                const finalDisplayContent = splitOfflineAutoImageMarker(parsed.content).content;
                 const displayText = generationFinished
-                    ? applyOfflineStreamingRegexText(activeFriend, parsed.content, message.role, depth)
-                    : String(parsed.content || '');
+                    ? applyOfflineStreamingRegexText(activeFriend, finalDisplayContent, message.role, depth)
+                    : finalDisplayContent;
                 renderOfflineThinkingState(bubbleDiv, parsed.reasoning, { expanded: !generationFinished });
                 const textEl = bubbleDiv.querySelector('.offline-chat-bubble-text');
                 if (textEl) {
@@ -2980,6 +3108,74 @@ function createAttachmentSheet(page) {
             if (!saved) throw new Error('Failed to persist offline meeting messages');
             return normalized;
         };
+
+        async function generateOfflineAutoImage(activeFriend, sourceMessageId, scene, contextMessages = null) {
+            const liveFriend = window.imApp?.getFriendById?.(activeFriend?.id) || activeFriend;
+            if (!shouldAutoGenerateOfflineImage(liveFriend) || !String(scene || '').trim()) return null;
+            if (!window.imChat?.generateChatImage) {
+                window.showToast?.('线下剧情已保留，但生图功能尚未加载');
+                return null;
+            }
+            if (window.imChat.isChatImageGenerationRunning?.(liveFriend.id)) {
+                window.showToast?.('线下剧情已保留，当前聊天已有图片正在生成');
+                return null;
+            }
+
+            const promptConfig = liveFriend.imagePromptConfig || {};
+            const sourceMessages = Array.isArray(contextMessages)
+                ? contextMessages
+                : normalizeOfflineMessagesForFriend(liveFriend);
+            const recentContext = getOfflineContextMessages(liveFriend, sourceMessages)
+                .slice(-30)
+                .map(message => `${message.role === 'assistant' ? 'Char' : 'User'}：${message.content}`)
+                .join('\n')
+                .slice(-12000);
+            const prompt = buildOfflineAutoImagePrompt(scene, promptConfig, recentContext);
+            if (!prompt) return null;
+
+            try {
+                window.showToast?.('线下剧情图片开始生成…');
+                const referenceImage = await window.imChat.resolveAutoImageReferenceFace(liveFriend);
+                const result = await window.imChat.generateChatImage(prompt, liveFriend, {
+                    referenceImage,
+                    charAppearance: promptConfig.charAppearance || '',
+                    userAppearance: promptConfig.userAppearance || '',
+                    artistPrompt: promptConfig.artistPrompt || '',
+                    negativePrompt: promptConfig.negativePrompt || ''
+                });
+                if (!result?.imageUrl) throw new Error('image_generation_empty');
+
+                const latestFriend = window.imApp?.getFriendById?.(liveFriend.id) || liveFriend;
+                const latestMessages = normalizeOfflineMessagesForFriend(latestFriend);
+                const sourceIndex = latestMessages.findIndex(message => String(message.id) === String(sourceMessageId));
+                if (sourceIndex < 0) return null;
+                const imageMessage = {
+                    id: createOfflineChatId('offline-image'),
+                    role: 'assistant',
+                    type: OFFLINE_AUTO_IMAGE_MESSAGE_TYPE,
+                    content: String(scene).trim(),
+                    imageUrl: result.imageUrl,
+                    sourceMessageId: String(sourceMessageId),
+                    imageProvider: result.provider || '',
+                    imageModel: result.model || '',
+                    imageSize: result.size || '',
+                    faceReferenceUsed: result.faceReferenceUsed === true,
+                    timestamp: Date.now()
+                };
+                const nextMessages = latestMessages.slice();
+                nextMessages.splice(sourceIndex + 1, 0, imageMessage);
+                await persistOfflineMessages(latestFriend, nextMessages);
+                window.showToast?.('线下剧情图片生成完成');
+                if (window.imData.currentActiveFriend && String(window.imData.currentActiveFriend.id) === String(latestFriend.id)) {
+                    renderOfflineCurrentMessages(latestFriend);
+                }
+                return imageMessage;
+            } catch (error) {
+                console.error('Offline automatic image generation failed', error);
+                window.showToast?.('线下剧情图片生成失败，文字剧情已保留');
+                return null;
+            }
+        }
 
         const ensureOfflineMeetingState = async (activeFriend) => {
             if (!activeFriend) return null;
@@ -3456,7 +3652,10 @@ function createAttachmentSheet(page) {
                     updatedAt: new Date().toISOString(),
                     offlineRegexAppliedRevisions: {}
                 };
-                await persistOfflineMessages(activeFriend, nextMessages, { resetMessageIds: [messageId] });
+                const withoutAutoImages = nextMessages.filter((message, messageIndex) => (
+                    messageIndex === index || String(message.sourceMessageId || '') !== String(messageId)
+                ));
+                await persistOfflineMessages(activeFriend, withoutAutoImages, { resetMessageIds: [messageId] });
                 renderOfflineCurrentMessages(activeFriend);
             };
 
@@ -3497,7 +3696,10 @@ function createAttachmentSheet(page) {
             if (!activeFriend) return;
             if (!window.confirm('删除这一楼？')) return;
             const messages = normalizeOfflineMessagesForFriend(activeFriend);
-            const nextMessages = messages.filter(message => String(message.id) !== String(messageId));
+            const nextMessages = messages.filter(message => (
+                String(message.id) !== String(messageId)
+                && String(message.sourceMessageId || '') !== String(messageId)
+            ));
             await persistOfflineMessages(activeFriend, nextMessages);
             renderOfflineCurrentMessages(activeFriend);
         }
@@ -3582,6 +3784,9 @@ function createAttachmentSheet(page) {
             });
 
             cloneOfflineMeetingMessages(offlineMessages).forEach((message) => {
+                // Automatic image floors are display-only artifacts. Neither the
+                // image nor its scene description is allowed into model input.
+                if (isOfflineAutoImageMessage(message)) return;
                 if (isOfflineSummaryMessage(message) && message.content) {
                     const startFloor = Number(message.sourceFloorStart) || 1;
                     const endFloor = Number(message.sourceFloorEnd) || startFloor;
@@ -3683,6 +3888,9 @@ function createAttachmentSheet(page) {
             }
 
             mountHistory();
+            if (shouldAutoGenerateOfflineImage(activeFriend)) {
+                apiMessages.push({ role: 'system', content: buildOfflineAutoImageRequirement() });
+            }
             return {
                 messages: apiMessages,
                 cotValidation: {
@@ -3916,6 +4124,7 @@ function createAttachmentSheet(page) {
                     const endFloor = Number(message.sourceFloorEnd) || startFloor;
                     return `【已归档线下总结｜第 ${startFloor}–${endFloor} 楼】\n${message.content}`;
                 }
+                if (isOfflineAutoImageMessage(message)) return '';
                 if (message.archivedBySummaryId) return '';
                 const speaker = message.role === 'assistant' ? charName : userName;
                 const visibleMessages = normalizedMessages.filter(item => !isOfflineSummaryMessage(item) && !item.archivedBySummaryId);
@@ -3924,6 +4133,92 @@ function createAttachmentSheet(page) {
                 return `#${index + 1} ${speaker}: ${stripOfflineDecorativeMarkup(promptContent)}`;
             }).filter(Boolean).join('\n\n');
         };
+
+        const formatOfflineTxtTimestamp = (timestamp) => {
+            const date = new Date(Number(timestamp) || Date.now());
+            if (Number.isNaN(date.getTime())) return '';
+            const pad = (num) => String(num).padStart(2, '0');
+            return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+        };
+
+        const formatOfflineTxtSession = (activeFriend, session, options = {}) => {
+            const { userName, charName } = getOfflineIdentityContext(activeFriend);
+            const normalizedMessages = cloneOfflineMeetingMessages(session?.messages || []);
+            const sessionTitle = String(session?.title || (options.isCurrent ? '进行中的线下见面' : '线下见面记录')).trim();
+            const sessionDate = String(session?.dateText || formatOfflineMeetingDate(session?.endedAt || session?.startedAt)).trim();
+            const lines = [
+                `【${sessionTitle}】`,
+                `时间：${sessionDate}`
+            ];
+            let floor = 0;
+            normalizedMessages.forEach((message) => {
+                if (isOfflineSummaryMessage(message)) {
+                    const summary = String(message.content || '').trim();
+                    if (summary) lines.push(`\n[已归档线下总结]\n${summary}`);
+                    return;
+                }
+                if (isOfflineAutoImageMessage(message)) {
+                    lines.push(`\n[已生成线下剧情图片｜${formatOfflineTxtTimestamp(message.timestamp)}]`);
+                    return;
+                }
+                if (message.role !== 'user' && message.role !== 'assistant') return;
+                const content = stripOfflineDecorativeMarkup(message.content).trim();
+                if (!content) return;
+                floor += 1;
+                const speaker = message.role === 'assistant' ? charName : userName;
+                lines.push(`\n#${floor} ${speaker}｜${formatOfflineTxtTimestamp(message.timestamp)}\n${content}`);
+            });
+            if (floor === 0 && lines.length === 2) lines.push('\n（暂无文字聊天记录）');
+            return lines.join('\n');
+        };
+
+        const buildOfflineChatTxtExport = (activeFriend) => {
+            const sessions = normalizeOfflineMeetingSessions(activeFriend)
+                .slice()
+                .sort((a, b) => Number(a.startedAt) - Number(b.startedAt));
+            const currentMessages = normalizeOfflineMessagesForFriend(activeFriend);
+            const currentSession = currentMessages.length > 0
+                ? {
+                    id: activeFriend.offlineCurrentSessionId || 'current',
+                    startedAt: Number(activeFriend.offlineMeetingStartedAt) || currentMessages[0]?.timestamp || Date.now(),
+                    endedAt: Date.now(),
+                    dateText: formatOfflineMeetingDate(Number(activeFriend.offlineMeetingStartedAt) || currentMessages[0]?.timestamp || Date.now()),
+                    title: '进行中的线下见面',
+                    messages: currentMessages
+                }
+                : null;
+            const title = `${getOfflineIdentityContext(activeFriend).charName} 的线下聊天记录`;
+            const sessionTexts = sessions
+                .map(session => formatOfflineTxtSession(activeFriend, session))
+                .concat(currentSession ? [formatOfflineTxtSession(activeFriend, currentSession, { isCurrent: true })] : []);
+            return [
+                title,
+                `导出时间：${formatOfflineTxtTimestamp(Date.now())}`,
+                '',
+                ...(sessionTexts.length > 0 ? sessionTexts : ['（暂无线下聊天记录）'])
+            ].join('\n\n');
+        };
+
+        const getOfflineChatTxtFileName = (activeFriend) => {
+            const rawName = String(activeFriend?.nickname || activeFriend?.realName || '线下聊天记录').trim();
+            const safeName = rawName.replace(/[\\/:*?"<>|]/g, '_').slice(0, 80) || '线下聊天记录';
+            const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            return `${safeName}-线下聊天记录-${stamp}.txt`;
+        };
+
+        async function exportOfflineChatTxt(activeFriend) {
+            if (!activeFriend) throw new Error('当前线下聊天状态已失效，请重新进入');
+            if (typeof window.u2ExportFile !== 'function') throw new Error('文件导出功能尚未加载，请刷新后重试');
+            const content = buildOfflineChatTxtExport(activeFriend);
+            const blob = new Blob([`\uFEFF${content}`], { type: 'text/plain;charset=utf-8' });
+            const result = await window.u2ExportFile({
+                blob,
+                fileName: getOfflineChatTxtFileName(activeFriend),
+                title: 'iMessage 线下聊天记录'
+            });
+            if (result === 'failed') throw new Error('聊天记录导出失败，请稍后重试');
+            return result;
+        }
 
         const normalizeOfflineSummarySettings = (source) => ({
             apiPresetId: String(source?.apiPresetId || '').trim(),
@@ -4069,7 +4364,8 @@ ${transcript}`;
         const requestOfflineSegmentSummary = async (activeFriend, sourceRows, options = {}) => {
             const currentApiConfig = options.apiConfig || resolveOfflineSummaryApiConfig(options.settings || getOfflineSummarySettings(activeFriend));
             if (!currentApiConfig.endpoint || !currentApiConfig.apiKey) throw new Error('API config missing');
-            const rows = Array.isArray(sourceRows) ? sourceRows : [];
+            const rows = (Array.isArray(sourceRows) ? sourceRows : [])
+                .filter(({ message }) => !isOfflineAutoImageMessage(message));
             if (rows.length === 0) throw new Error('No offline floors selected');
             const endpoint = window.u2Api.resolveChatCompletionsEndpoint(currentApiConfig.endpoint);
             const identityContext = getOfflineIdentityContext(activeFriend);
@@ -4152,7 +4448,8 @@ ${transcript}`;
                 timestamp: Date.now()
             };
             const selectedIds = new Set(summaryMessage.sourceMessageIds);
-            const nextMessages = messages.map(message => selectedIds.has(String(message.id || ''))
+            const nextMessages = messages.map(message => (selectedIds.has(String(message.id || ''))
+                || (isOfflineAutoImageMessage(message) && selectedIds.has(String(message.sourceMessageId || ''))))
                 ? { ...message, archivedBySummaryId: summaryId }
                 : message
             ).concat(summaryMessage);
@@ -4421,7 +4718,7 @@ ${transcript}`;
                 const nextMessages = messages.slice();
                 nextMessages[targetIndex] = {
                     ...nextMessages[targetIndex],
-                    content,
+                    content: splitOfflineAutoImageMarker(content).content,
                     reasoning: reasoning || undefined,
                     tokens,
                     timestamp: rerollTimestamp,
@@ -4430,7 +4727,14 @@ ${transcript}`;
                     generationError: undefined,
                     offlineRegexAppliedRevisions: {}
                 };
-                await persistOfflineMessages(activeFriend, nextMessages, { resetMessageIds: [messageId] });
+                const nextScene = splitOfflineAutoImageMarker(content).scene;
+                const withoutPreviousAutoImages = nextMessages.filter((message, index) => (
+                    index === targetIndex || String(message.sourceMessageId || '') !== String(messageId)
+                ));
+                await persistOfflineMessages(activeFriend, withoutPreviousAutoImages, { resetMessageIds: [messageId] });
+                if (nextScene) {
+                    await generateOfflineAutoImage(activeFriend, messageId, nextScene, withoutPreviousAutoImages);
+                }
                 renderOfflineCurrentMessages(activeFriend);
             } catch (error) {
                 if (textEl) {
@@ -6050,6 +6354,37 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             streamRow.appendChild(streamToggle);
             listEl.appendChild(streamRow);
 
+            if (activeFriend.type === 'char') {
+                const autoImageRow = document.createElement('div');
+                autoImageRow.className = 'offline-settings-streaming offline-settings-auto-image';
+                autoImageRow.innerHTML = `
+                    <div class="offline-settings-worldbook-main">
+                        <i class="fas fa-wand-magic-sparkles"></i>
+                        <span><strong>线下自动生图</strong><small>按剧情决定是否生成；复用线上生图提示词配置</small></span>
+                    </div>
+                `;
+                const autoImageToggle = document.createElement('label');
+                autoImageToggle.className = 'toggle-switch';
+                autoImageToggle.setAttribute('aria-label', '线下自动生图');
+                const autoImageCheckbox = document.createElement('input');
+                autoImageCheckbox.type = 'checkbox';
+                autoImageCheckbox.checked = activeFriend.offlineAutoImageGeneration === true;
+                autoImageCheckbox.addEventListener('change', async () => {
+                    const saved = await commitSheetFriendChange(activeFriend.id, (targetFriend) => {
+                        targetFriend.offlineAutoImageGeneration = autoImageCheckbox.checked;
+                    }, { silent: true, metaOnly: true });
+                    if (!saved) {
+                        autoImageCheckbox.checked = !autoImageCheckbox.checked;
+                        window.showToast?.('线下自动生图设置保存失败');
+                    }
+                });
+                const autoImageSlider = document.createElement('span');
+                autoImageSlider.className = 'slider';
+                autoImageToggle.append(autoImageCheckbox, autoImageSlider);
+                autoImageRow.appendChild(autoImageToggle);
+                listEl.appendChild(autoImageRow);
+            }
+
             const wbBtnDiv = document.createElement('div');
             wbBtnDiv.className = 'offline-settings-worldbook';
             wbBtnDiv.innerHTML = `
@@ -6791,6 +7126,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             const actionCancel = document.getElementById('offline-chat-action-cancel');
             const clearBtn = document.getElementById('offline-chat-clear-btn');
             const endBtn = document.getElementById('offline-chat-end-btn');
+            const exportTxtBtn = document.getElementById('offline-chat-export-txt-btn');
             const chatView = document.getElementById('offline-chat-view');
             const summarySheet = document.getElementById('offline-chat-summary-sheet');
             const summaryApiSelect = document.getElementById('offline-summary-api-select');
@@ -7018,6 +7354,32 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     openOfflineSummarySheet();
                 });
             }
+
+            if (exportTxtBtn && actionSheet) {
+                exportTxtBtn.addEventListener('click', async () => {
+                    const activeFriend = window.imData.currentActiveFriend;
+                    if (!activeFriend || exportTxtBtn.disabled) return;
+                    exportTxtBtn.disabled = true;
+                    exportTxtBtn.style.pointerEvents = 'none';
+                    const originalText = exportTxtBtn.textContent;
+                    exportTxtBtn.textContent = '正在导出…';
+                    try {
+                        const result = await exportOfflineChatTxt(activeFriend);
+                        actionSheet.classList.remove('active');
+                        setTimeout(() => {
+                            actionSheet.style.display = 'none';
+                        }, 300);
+                        if (result === 'downloaded') window.showToast?.('线下聊天记录已导出为 TXT');
+                        if (result === 'shared') window.showToast?.('已打开系统保存，请选择“存储到文件”');
+                    } catch (error) {
+                        window.showToast?.(error?.message || '线下聊天记录导出失败，请稍后重试');
+                    } finally {
+                        exportTxtBtn.disabled = false;
+                        exportTxtBtn.style.pointerEvents = '';
+                        exportTxtBtn.textContent = originalText;
+                    }
+                });
+            }
             
             if (sendBtn && inputField) {
                 const handleSend = async () => {
@@ -7110,17 +7472,24 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                             });
 
                             const latestMessages = normalizeOfflineMessagesForFriend(activeFriend);
+                            const autoImageOutput = splitOfflineAutoImageMarker(finalReplyContent);
                             const aiMsgObj = {
                                 ...pendingAiMessage,
-                                content: finalReplyContent || '',
+                                content: autoImageOutput.content,
                                 reasoning: finalReplyReasoning || undefined,
-                                tokens: Math.max(0, Number(tokens) || 0)
+                                tokens: Math.max(0, Number(tokens) || 0),
+                                offlineRegexAppliedRevisions: {}
                             };
                             if (!String(finalReplyContent || '').trim()) {
                                 renderOfflineCurrentMessages(activeFriend);
+                            } else if (!String(autoImageOutput.content || '').trim()) {
+                                renderOfflineCurrentMessages(activeFriend);
                             } else {
-                                await persistOfflineMessages(activeFriend, latestMessages.concat(aiMsgObj));
+                                const persistedMessages = await persistOfflineMessages(activeFriend, latestMessages.concat(aiMsgObj));
                                 streamingBubble.enableActions(aiMsgObj);
+                                if (autoImageOutput.scene) {
+                                    await generateOfflineAutoImage(activeFriend, aiMsgObj.id, autoImageOutput.scene, persistedMessages);
+                                }
                             }
 
                             if (aborted && window.showToast) {
@@ -7917,6 +8286,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                 lastPrompt: String(modalState.promptValue || '').trim(),
                 activePresetId: String(modalState.activePresetId || '').trim(),
                 autoGenerate: modalState.autoGenerate === true,
+                autoUseReferenceFace: modalState.autoUseReferenceFace === true,
                 presets: Array.isArray(modalState.presets)
                     ? modalState.presets
                     : (Array.isArray(previous?.presets) ? previous.presets : [])
@@ -7938,6 +8308,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     presets: Array.isArray(savedPromptConfig.presets) ? savedPromptConfig.presets : [],
                     activePresetId: savedPromptConfig.activePresetId || '',
                     autoGenerate: savedPromptConfig.autoGenerate === true,
+                    autoUseReferenceFace: savedPromptConfig.autoUseReferenceFace === true,
                     onGenerateFromContext: () => generateImagePromptFromChatContext(latestTargetFriend)
                 },
                 referenceFace: supportsCharacterReference ? {
@@ -7986,6 +8357,10 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                             friend.imageFaceReferenceAssetId = null;
                             friend.imageFaceReferenceUrl = null;
                             friend.imageFaceReferenceFileName = '';
+                            friend.imagePromptConfig = {
+                                ...(friend.imagePromptConfig || {}),
+                                autoUseReferenceFace: false
+                            };
                         }, { metaOnly: true });
                         if (!saved) throw new Error('参考脸删除失败，请重试');
                         if (previousAssetId) {

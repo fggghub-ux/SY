@@ -1418,6 +1418,13 @@
     text-align: center;
 }
 
+.data-backup-safety-hint {
+    margin: 10px 14px 14px;
+    color: #8e8e93;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
 .data-import-preview-grid span {
     display: block;
     font-size: 14px;
@@ -1586,6 +1593,20 @@
     background: #fff;
     border: 1px solid #e5e5ea;
 }
+
+.data-operation-cancel {
+    min-width: 88px;
+    height: 34px;
+    border: 0;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.16);
+    color: #ffffff;
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.data-operation-cancel:active { background: rgba(255, 255, 255, 0.28); }
 
 .storage-health-head,
 .storage-health-actions {

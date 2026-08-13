@@ -53,7 +53,7 @@
     <link rel="stylesheet" href="css/login.css?v=20260731-login-gate-focus-v2">
     <link rel="stylesheet" href="css/home.css?v=20260731-ios-swipe-icon-flicker-v1&layout=20260801-fixed-grid-v1&performance=20260801-v1">
     <link rel="stylesheet" href="css/worldbook.css?no-glass=20260803-v1&notes-ios26=20260812-v6">
-    <link rel="stylesheet" href="css/imessage.css?v=20260721-status-prompt-v3-group-poll-v3&cot=20260725-single-chat-cot-v1&status=20260802-three-line-thought-v1&cotui=20260725-pill-v1&link=20260726-light-link-theatre-v1&relationship=20260801-static-preview-v3&android-keyboard=20260801-v1&group-user-avatar=20260802-v1&game=20260803-anonymous-qa-v7-context-layout&image-assets=20260803-v1&offline-stream-performance=20260805-v1&vector-memory=20260807-local-v1&theme-import-android-v1&moment-visibility=20260811-v1&offline-summary-archive=20260811-v1&offline-meeting-delete=20260811-v1&offline-summary-memory=20260811-v1&offline-chat-rename=20260811-v1">
+    <link rel="stylesheet" href="css/imessage.css?v=20260721-status-prompt-v3-group-poll-v3&cot=20260725-single-chat-cot-v1&status=20260802-three-line-thought-v1&cotui=20260725-pill-v1&link=20260726-light-link-theatre-v1&relationship=20260801-static-preview-v3&android-keyboard=20260801-v1&group-user-avatar=20260802-v1&game=20260803-anonymous-qa-v7-context-layout&image-assets=20260803-v1&offline-stream-performance=20260805-v1&vector-memory=20260807-local-v1&theme-import-android-v1&moment-visibility=20260811-v1&offline-summary-archive=20260811-v1&offline-meeting-delete=20260811-v1&offline-summary-memory=20260811-v1&offline-chat-rename=20260811-v1&offline-auto-image=20260813-v2&offline-txt-export=20260813-v1&memory-recall-promotion=20260813-v1&memory-action-loading=20260813-v1">
     <link rel="stylesheet" href="css/pay.css?v=20260812-pay-transfer-bank-v1">
     <link rel="stylesheet" href="css/bstage.css?v=20260721-mobile-input-layout-v1-android-focus-scope-v1&no-glass=20260803-v1">
     <link rel="stylesheet" href="css/tiktok.css?v=20260721-mobile-input-layout-v1">
@@ -66,7 +66,7 @@
     <link rel="stylesheet" href="css/loves.css?v=20260719-friend-phone-bilingual-v8&no-glass=20260803-v1&moment-language=20260806-v1">
     <link rel="stylesheet" href="css/library.css?v=20260715-reader-streaming-v1">
     <!-- App Styles -->
-    <link rel="stylesheet" href="css/settings.css?v=20260721-mobile-input-layout-v1&performance=20260801-v2&api-model-picker=20260803-v1&api-open-performance=20260805-v1&about-modal-focus=20260807-v1&data-management-fullscreen=20260812-v2">
+    <link rel="stylesheet" href="css/settings.css?v=20260721-mobile-input-layout-v1&performance=20260801-v2&api-model-picker=20260803-v1&api-open-performance=20260805-v1&about-modal-focus=20260807-v1&data-management-fullscreen=20260812-v2&notification-sound-v1">
     <link rel="stylesheet" href="css/youtube.css?v=20260717-char-lottery-consistency-v18&no-glass=20260803-v1">
     <link rel="stylesheet" href="css/netflix.css?v=20260811-character-relations-v3">
 </head>
@@ -97,6 +97,7 @@
         var authGateSettled = false;
         var appShellReady = false;
         var splashRemovalStarted = false;
+        window.u2SplashScreenRemoved = false;
 
         function showSplashDelayState(message) {
             var status = document.getElementById('app-splash-status');
@@ -117,7 +118,11 @@
                 splashRemovalStarted = true;
                 requestAnimationFrame(function() {
                     splash.style.opacity = '0';
-                    setTimeout(function() { if(splash.parentNode) splash.remove(); }, 240);
+                    setTimeout(function() {
+                        if (splash.parentNode) splash.remove();
+                        window.u2SplashScreenRemoved = true;
+                        window.dispatchEvent(new CustomEvent('u2:splash-screen-removed'));
+                    }, 240);
                 });
             }
         };
@@ -1805,6 +1810,9 @@
                       <div class="moment-action-sheet-item" id="offline-chat-end-btn" style="color: #007aff; background: #fff; padding: 16px; text-align: center; font-size: 17px; font-weight: 600; cursor: pointer; border-bottom: 1px solid #f2f2f7;">
                           结束见面
                       </div>
+                      <div class="moment-action-sheet-item" id="offline-chat-export-txt-btn" style="color: #007aff; background: #fff; padding: 16px; text-align: center; font-size: 17px; font-weight: 600; cursor: pointer; border-bottom: 1px solid #f2f2f7;">
+                          导出全部聊天记录（TXT）
+                      </div>
                       <div class="moment-action-sheet-item" id="offline-chat-clear-btn" style="color: #ff3b30; background: #fff; padding: 16px; text-align: center; font-size: 17px; font-weight: 500; cursor: pointer; border-bottom: 1px solid #f2f2f7;">
                           清空聊天记录
                       </div>
@@ -2375,6 +2383,40 @@
                 </div>
             </div>
 
+            <div class="bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay" id="memory-promotion-preview-modal" style="z-index: 1450; background: rgba(0, 0, 0, 0.4);">
+                <div class="wb-centered-modal-card memory-entry-editor-card">
+                    <div class="wb-centered-modal-header" style="position: relative;">
+                        <div class="wb-centered-modal-title">归纳为长期记忆</div>
+                        <button type="button" class="wb-centered-modal-close memory-entry-editor-close" id="memory-promotion-preview-close" aria-label="关闭">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="wb-centered-modal-body memory-entry-editor-body">
+                        <div class="memory-promotion-hint">确认后会新增这条长期记忆，并删除所选短期记忆。</div>
+                        <label class="memory-entry-editor-field">
+                            <span>标题</span>
+                            <input type="text" id="memory-promotion-title-input" maxlength="80" placeholder="长期记忆标题">
+                        </label>
+                        <label class="memory-entry-editor-field">
+                            <span>时间</span>
+                            <input type="text" id="memory-promotion-time-input" maxlength="80" placeholder="相关事件时间">
+                        </label>
+                        <label class="memory-entry-editor-field">
+                            <span>长期记忆内容</span>
+                            <textarea id="memory-promotion-content-input" rows="7" placeholder="长期记忆内容"></textarea>
+                        </label>
+                        <label class="memory-entry-editor-field">
+                            <span>召回标签</span>
+                            <input type="text" id="memory-promotion-tags-input" placeholder="多个标签用逗号或换行分隔">
+                        </label>
+                        <div class="memory-entry-editor-actions memory-promotion-actions">
+                            <button type="button" id="memory-promotion-preview-cancel">取消</button>
+                            <button type="button" id="memory-promotion-preview-confirm">确认归纳并删除原短期记忆</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay" id="chat-memory-schedule-modal" style="z-index: 1300; background: rgba(0, 0, 0, 0.4);">
                 <div class="wb-centered-modal-card memory-entry-detail-card" style="display: flex; flex-direction: column; max-height: 80vh; overflow: hidden;">
                     <div class="wb-centered-modal-header" style="position: relative; flex-shrink: 0;">
@@ -2754,7 +2796,7 @@
                             <span class="data-management-action-icon success"><i class="fas fa-file-export"></i></span>
                             <span class="data-management-action-copy">
                                 <strong>导出完整备份</strong>
-                                <small>生成可回导的 JSON 文件</small>
+                                <small>生成低内存、可回导的备份归档</small>
                             </span>
                             <i class="fas fa-chevron-right data-management-action-chevron" aria-hidden="true"></i>
                         </button>
@@ -2766,7 +2808,7 @@
                             </span>
                             <i class="fas fa-chevron-right data-management-action-chevron" aria-hidden="true"></i>
                         </button>
-                        <input type="file" id="import-data-file" accept=".json" style="display:none;">
+                        <input type="file" id="import-data-file" accept=".u2backup,.json,application/vnd.u2phone.backup+zip,application/json" style="display:none;">
                         <div class="data-import-preview" id="data-import-preview" style="display: none;">
                             <div class="data-import-preview-title">待导入备份</div>
                             <div class="data-import-preview-file" id="data-import-file-name"></div>
@@ -2777,6 +2819,7 @@
                                 <div><span id="data-import-size">-</span><small>大小</small></div>
                             </div>
                         </div>
+                        <p class="data-backup-safety-hint">新备份会分批写入，包含图片原文件；导入时将先检查临时可用空间。</p>
                     </div>
                 </section>
 
@@ -5247,6 +5290,13 @@
                                 <label id="modal-auto-image-generation-group" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; padding: 12px 14px; border-radius: 14px; background: #f2f2f7; cursor: pointer;">
                                     <span style="font-size: 14px; font-weight: 600; color: #1c1c1e;">自动生图</span>
                                     <input type="checkbox" id="modal-auto-image-generation-toggle" style="width: 20px; height: 20px; accent-color: #1c1c1e;">
+                                </label>
+                                <label id="modal-auto-reference-face-group" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; padding: 12px 14px; border-radius: 14px; background: #f2f2f7; cursor: pointer;">
+                                    <span style="min-width: 0;">
+                                        <span style="display: block; font-size: 14px; font-weight: 600; color: #1c1c1e;">自动锁脸</span>
+                                        <span id="modal-auto-reference-face-hint" style="display: block; margin-top: 2px; font-size: 12px; color: #8e8e93;">请先上传角色参考脸</span>
+                                    </span>
+                                    <input type="checkbox" id="modal-auto-reference-face-toggle" style="width: 20px; height: 20px; accent-color: #1c1c1e;" disabled>
                                 </label>
                             </div>
                             <div id="modal-reference-face-group" style="display: none; align-items: center; gap: 12px; margin: -4px 0 12px; padding: 12px 14px; border-radius: 14px; background: #f2f2f7;">
@@ -8265,7 +8315,8 @@
     </section>
 </div>
 
-<script src="js/storage/app_storage.js?v=20260715-library-content-store-v1&cot=20260725-single-chat-cot-v1&backup=20260804-import-safety-v1&provider=20260807-v1&image-generation=20260803-char-face-reference-v2&startup-queue=20260804-v1&vector-memory-index=20260807-v1&group-identity-css-v1"></script>
+<script src="js/storage/backup_worker.js?v=20260814-streaming-u2backup-v10-file-runtime-v1"></script>
+<script src="js/storage/app_storage.js?v=20260715-library-content-store-v1&cot=20260725-single-chat-cot-v1&backup=20260814-streaming-u2backup-v10-file-runtime-v1&provider=20260807-v1&image-generation=20260803-char-face-reference-v2&startup-queue=20260804-v1&vector-memory-index=20260807-v1&group-identity-css-v1"></script>
     <script src="js/storage/imessage_storage.js?v=20260710-storage-v8-idb1"></script>
     <script src="storage.js?v=20260710-storage-v7-cache1"></script>
     <script src="js/lazy_vendor_loader.js?v=20260803-v1"></script>
@@ -8274,8 +8325,8 @@
     <script src="js/image_generation.js?v=20260807-model-cache-v1"></script>
     <script src="js/image_understanding.js?v=20260811-v1"></script>
     <script src="js/export_file.js?v=20260718-ios-pwa-export-v1"></script>
-    <script src="js/about_info_modal.js?v=20260812-changelog-v1"></script>
-    <script src="js/login.js?v=20260801-resume-recovery-v1&changelog-notice=20260812-v1"></script>
+    <script src="js/about_info_modal.js?v=20260813-memory-recall-promotion-v1"></script>
+    <script src="js/login.js?v=20260801-resume-recovery-v1&changelog-notice=20260813-v1"></script>
 <script src="js/mobile_input_compat.js?v=20260713-bstage-enter-v1-android-focus-scope-v1&guard=20260801-v3&theme-import-android-v1&enter-blur=20260807-v1&global-scope=20260807-v1&call-viewport-owner=20260811-v1&bottom-sheet-y=20260811-v1"></script>
     <script src="js/background_activity.js"></script>
     <script src="js/system_notifications.js?v=20260721-storage-hydration-v1-custom-sound-v1&image-assets=20260803-v1"></script>
@@ -8283,27 +8334,27 @@
     <!-- 引入 iMessage 模块分段代码 -->
     <script src="js/imessage/game.js?v=20260803-anonymous-qa-v7-context-layout&startup-queue=20260804-v1"></script>
     <script src="js/imessage/data_utils.js?v=20260713-offline-memory-v1-sticker-manifest-v2-memory-event-time-v1-offline-handoff-v2&single-chat-info=20260803-v1&schedule-routine=20260804-v1&summary-error=20260811-v1"></script>
-    <script src="js/imessage/2_core.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&cotcopy=20260727-v2&observer=20260730-v1&open-performance=20260802-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&group-user-avatar=20260802-v1&image-generation=20260803-artist-prompt-v6&single-chat-info=20260803-v1&offline-handoff=20260803-v2&cot-default=20260803-v3&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v2&vendor-lazy=20260803-v1&startup-queue=20260804-v1&schedule-routine=20260804-v1&context-window=20260804-v1&local-vector-memory=20260807-v1&group-identity-css-v1&service-id-v1&x-dm-context=20260811-v2&x-social-post-context=20260811-v2&offline-summary-settings=20260811-v1&time-aware-context=20260811-v1&offline-chat-rename=20260811-v1&group-private-chat-permissions=20260812-v1"></script>
-    <script src="js/imessage/vector_memory.js?v=20260807-local-vector-memory-v1"></script>
+    <script src="js/imessage/2_core.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&cotcopy=20260727-v2&observer=20260730-v1&open-performance=20260802-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&group-user-avatar=20260802-v1&image-generation=20260803-artist-prompt-v6&single-chat-info=20260803-v1&offline-handoff=20260803-v2&cot-default=20260803-v3&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v2&vendor-lazy=20260803-v1&startup-queue=20260804-v1&schedule-routine=20260804-v1&context-window=20260804-v1&local-vector-memory=20260807-v1&group-identity-css-v1&service-id-v1&x-dm-context=20260811-v2&x-social-post-context=20260811-v2&offline-summary-settings=20260811-v1&time-aware-context=20260811-v1&offline-chat-rename=20260811-v1&group-private-chat-permissions=20260812-v1&auto-face-lock=20260812-v1&memory-recall-promotion=20260813-v1&memory-action-loading=20260813-v1"></script>
+    <script src="js/imessage/vector_memory.js?v=20260807-local-vector-memory-v1&memory-recall-promotion=20260813-v1"></script>
     <script src="js/imessage/3_contacts.js?v=20260718-friend-profile-import-v1&render-cache=20260801-v1&vendor-lazy=20260803-v1&startup-queue=20260804-v1"></script>
     <script src="js/imessage/3_groups.js?v=20260718-group-poll-v4-group-memory-editor-v1&observer=20260730-v1&render-cache=20260801-v1&user-avatar=20260802-v1&group-auto-translation=20260803-v1&startup-queue=20260804-v1&context-limit=20260804-v1&group-identity-css-v1&member-sync-private-permissions=20260812-v1"></script>
-    <script src="js/imessage/4_chat_common.js?v=image-assets-20260803-v1&auto-image=20260807-v1&startup-queue=20260804-v1"></script>
+    <script src="js/imessage/4_chat_common.js?v=image-assets-20260803-v1&auto-image=20260807-v1&startup-queue=20260804-v1&auto-face-lock=20260813-v1"></script>
     <script src="js/imessage/4_chat_status.js?v=20260716-status-prompt-v2&paging=20260801-button-only-v1&startup-queue=20260804-v1"></script>
     <script src="js/imessage/4_chat_payment.js?v=20260725-single-chat-cot-v1&startup-queue=20260804-v1&group-identity-css-v1&group-member-resolution=20260812-v1"></script>
-    <script src="js/imessage/4_chat_bubbles.js?v=20260725-single-chat-cot-v1-avatar-pill-v1-link-theatre-js-v1&group-user-avatar=20260802-v1&open-performance=20260802-v1&image-assets=20260803-v1&startup-queue=20260804-v1&group-identity-css-v1&tts=20260811-group-v2&offline-meeting-delete=20260811-v1"></script>
+    <script src="js/imessage/4_chat_bubbles.js?v=20260725-single-chat-cot-v1-avatar-pill-v1-link-theatre-js-v1&group-user-avatar=20260802-v1&open-performance=20260802-v1&image-assets=20260803-v1&startup-queue=20260804-v1&group-identity-css-v1&tts=20260811-group-v2&offline-meeting-delete=20260811-v1&image-save=20260812-v1"></script>
     <script src="js/imessage/chat_search.js?v=20260718-chat-history-search-v2&keyboard-guard=20260801-v1&startup-queue=20260804-v1"></script>
     <script src="js/imessage/chat_favorites.js?v=20260723-chat-favorites-v3&startup-queue=20260804-v1"></script>
     <script src="js/imessage/tts.js?v=20260811-tts-minimax-audio-payload-v3"></script>
-    <script src="js/imessage/4_chat_ai.js?v=20260724-single-chat-prompt-v8-single-chat-cot-v1&cot=20260802-single-chat-cot-full-analysis-v2&online=20260801-persona-entries-v1&observer=20260730-v1&performance=20260801-v1&api=20260803-nonstream-v1&auto-image=20260807-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&single-chat-info=20260803-v1&offline-handoff=20260803-v2&context-dedupe=20260803-v1&nonstream=20260803-v2&group-auto-translation=20260803-v1&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v5&image-assets=20260803-v1&startup-queue=20260804-v1&psychology-priority=20260804-v1&schedule-routine=20260804-v1&sleep-status=20260804-v1&system-merge=20260804-v1&context-trace=20260804-v1&message-count-hard-limit=20260807-v1&x-dm-context=20260811-v1&safari-compat=20260811-v1&time-aware-context=20260811-v1&group-private-chat-permissions=20260812-v1"></script>
+    <script src="js/imessage/4_chat_ai.js?v=20260724-single-chat-prompt-v8-single-chat-cot-v1&cot=20260802-single-chat-cot-full-analysis-v2&online=20260801-persona-entries-v1&observer=20260730-v1&performance=20260801-v1&api=20260803-nonstream-v1&auto-image=20260807-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&single-chat-info=20260803-v1&offline-handoff=20260803-v2&context-dedupe=20260803-v1&nonstream=20260803-v2&group-auto-translation=20260803-v1&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v5&image-assets=20260803-v1&startup-queue=20260804-v1&psychology-priority=20260804-v1&schedule-routine=20260804-v1&sleep-status=20260804-v1&system-merge=20260804-v1&context-trace=20260804-v1&message-count-hard-limit=20260807-v1&x-dm-context=20260811-v1&safari-compat=20260811-v1&time-aware-context=20260811-v1&group-private-chat-permissions=20260812-v1&auto-face-lock=20260813-v1&memory-recall-promotion=20260813-v1"></script>
     <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
     <script src="js/imessage/offline_reasoning.js?v=20260718-offline-cot-v1"></script>
-    <script src="js/imessage/4_chat_sheet.js?v=20260718-offline-cot-v1-chat-image-send-v1&cotui=20260725-pill-v1&api=20260804-offline-stream-v1&image-generation=20260807-presets-v1&chat-runtime-performance=20260803-v1&image-assets=20260803-v1&startup-queue=20260804-v1&offline-stream-performance=20260805-v2&group-identity-css-v1&tts=20260811-v1&recap-summary-archive=20260811-v1&recap-order-delete=20260811-v1&offline-summary-memory=20260811-v1&offline-clear-confirm=20260811-v1&offline-chat-rename=20260811-v1&offline-dialogue-render=20260811-v1&sticker-name-cards=20260812-v1"></script>
+    <script src="js/imessage/4_chat_sheet.js?v=20260718-offline-cot-v1-chat-image-send-v1&cotui=20260725-pill-v1&api=20260804-offline-stream-v1&image-generation=20260807-presets-v1&chat-runtime-performance=20260803-v1&image-assets=20260803-v1&startup-queue=20260804-v1&offline-stream-performance=20260805-v2&group-identity-css-v1&tts=20260811-v1&recap-summary-archive=20260811-v1&recap-order-delete=20260811-v1&offline-summary-memory=20260811-v1&offline-clear-confirm=20260811-v1&offline-chat-rename=20260811-v1&offline-dialogue-render=20260811-v1&sticker-name-cards=20260812-v1&auto-face-lock=20260813-v1&offline-auto-image=20260813-v2&offline-txt-export=20260813-v1"></script>
     <script src="js/imessage/4_chat_link.js?v=20260726-light-link-theatre-v1&api=20260803-unified-v1&startup-queue=20260804-v1&group-identity-css-v1"></script>
     <script src="js/imessage/4_chat_list.js?chat-runtime-performance=20260803-v1&startup-queue=20260804-v1"></script>
     <script src="js/imessage/4_chat_interface.js?v=20260715-chat-context-menu-offline-retry-v1&observer=20260730-v1&android-keyboard=20260802-v1&open-performance=20260802-v1&chat-runtime-performance=20260803-v1&startup-queue=20260804-v1&group-tts=20260811-v2&group-member-count=20260812-v1"></script>
     <script src="js/imessage/4_chat_voice_call.js?v=20260725-call-keyboard-minimize-v2-minimized-context-v1&api=20260803-unified-v1&group-layout=20260803-v1&group-identity-css-v1&oppo-edge-anchor=20260811-v1&tts=20260811-group-v2"></script>
     <script src="js/imessage/4_chat_main.js?v=20260715-chat-context-menu-offline-retry-v1&single-chat-info=20260803-v1&startup-queue=20260804-v1&tts=20260811-group-v3"></script>
-    <script src="js/imessage/5_settings.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v3&chat-bg=20260729-race-reset-v1&relationship=20260801-static-preview-v3&auto-translation=20260801-v1&status-prompt=20260802-v1&style-cache=20260802-v1&api=20260803-unified-v1&single-chat-info=20260803-v1&startup-queue=20260804-v1&context-persistence=20260804-v1&local-vector-memory=20260807-v1&x-dm-context=20260811-v2&x-social-post-context=20260811-v1&summary-error=20260811-v1&tts=20260811-v1"></script>
+    <script src="js/imessage/5_settings.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v3&chat-bg=20260729-race-reset-v1&relationship=20260801-static-preview-v3&auto-translation=20260801-v1&status-prompt=20260802-v1&style-cache=20260802-v1&api=20260803-unified-v1&single-chat-info=20260803-v1&startup-queue=20260804-v1&context-persistence=20260804-v1&local-vector-memory=20260807-v1&x-dm-context=20260811-v2&x-social-post-context=20260811-v1&summary-error=20260811-v1&tts=20260811-v1&memory-recall-promotion=20260813-v1&memory-action-loading=20260813-v1"></script>
     <script src="js/imessage/6_moments.js?v=20260718-moments-target-reply-v1&auto-translation=20260801-v1&api=20260803-unified-v1&startup-queue=20260804-v1&group-identity-css-v1&current-account-avatar-v1&moment-visibility=20260811-v1&relationship-engagement=20260811-v1"></script>
 
     <!-- 引入其他应用模块 -->
@@ -8315,7 +8366,7 @@
     <!-- 引入核心 UI 管理与设置模块脚本 -->
     <script src="js/ui.js?v=20260811-no-glass-v1"></script>
     <script src="js/ui_translation.js?v=20260807-global-ui-zh-v1"></script>
-    <script src="js/settings.js?v=20260718-ios-pwa-export-v1-notification-sync-v1-custom-notification-sound-v1-api-presets-accessor-v1&global-font-scale=20260801-v3&theme-source=20260802-status-center-v1&assistive=20260801-drag-settle-v3&home-theme=20260731-widgets-v1&app-icon-alpha=20260731-v1&backup=20260803-sticker-skip-v3&api=20260803-config-v2-model-search&provider-picker=20260807-v1&image-generation=20260807-model-select-v1&image-understanding=20260811-v1&startup-queue=20260804-v1&api-open-performance=20260805-v1&vector-memory=20260807-local-v1&group-identity-css-v1&theme-import-android-v1&moments-account-hydration=20260806-v1&global-ui-zh-v1&tts=20260811-v1&data-management-fullscreen=20260812-v1"></script>
+    <script src="js/settings.js?v=20260718-ios-pwa-export-v1-notification-sync-v1-custom-notification-sound-v1-api-presets-accessor-v1&global-font-scale=20260801-v3&theme-source=20260802-status-center-v1&assistive=20260801-drag-settle-v3&home-theme=20260731-widgets-v1&app-icon-alpha=20260731-v1&backup=20260814-streaming-u2backup-v10&api=20260803-config-v2-model-search&provider-picker=20260807-v1&image-generation=20260807-model-select-v1&image-understanding=20260811-v1&startup-queue=20260804-v1&api-open-performance=20260805-v1&vector-memory=20260807-local-v1&group-identity-css-v1&theme-import-android-v1&moments-account-hydration=20260806-v1&global-ui-zh-v1&tts=20260811-v1&data-management-fullscreen=20260812-v1"></script>
     <script src="js/library.js?v=20260715-reader-streaming-v1&open-performance=20260801-v1&vendor-lazy=20260803-v1&startup-queue=20260804-v1"></script>
     <script src="js/loves.js?v=20260719-friend-phone-bilingual-v13-android-focus-scope-v1&open-performance=20260801-v1&api=20260803-unified-v1&image-assets=20260803-v1&startup-queue=20260804-v1&moment-language=20260806-v1&android-comment-focus=20260807-v1"></script>
     <script src="js/tiktok/2_core.js?v=20260712-tiktok-feed-cleanup-v1&open-performance=20260801-v1&startup-queue=20260804-v1"></script>
@@ -8336,6 +8387,6 @@
     <script src="js/home_desktop.js?v=20260710-storage-ready-v1&theme-widgets=20260731-v1&image-assets=20260804-v1&eager-images=20260804-v1&splash-gate=20260804-v1"></script>
     <script src="js/home_widget_panel_enhance.js"></script>
     <!-- 引入主逻辑脚本 -->
-    <script src="script.js?v=20260725-modal-owner-v1&home-swipe=20260801-scrollend-v2&performance=20260801-v1"></script>
+    <script src="script.js?v=20260725-modal-owner-v1&home-swipe=20260801-scrollend-v2&performance=20260801-v1&splash-notice-handshake=20260813-v1"></script>
 </body>
 </html>

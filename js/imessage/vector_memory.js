@@ -527,7 +527,7 @@
         return dot / Math.sqrt(leftLength * rightLength);
     }
 
-    async function searchFriendMemory(friendOrId, queryText) {
+    async function searchFriendMemory(friendOrId, queryText, options = {}) {
         const { friend } = getMemory(friendOrId);
         const config = getGlobalConfig();
         const query = String(queryText || '').trim();
@@ -538,12 +538,16 @@
         const queryEmbedding = (await requestEmbeddings(config, [query.slice(0, 6000)]))[0];
         const fingerprint = getConfigFingerprint(config);
         const records = await getIndexRecords(getScopeFriendKey(config, friend.id));
+        const requestedLimit = Math.round(Number(options?.limit));
+        const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+            ? Math.min(100, requestedLimit)
+            : RECALL_LIMIT;
         const results = records
             .filter(record => record.fingerprint === fingerprint && Array.isArray(record.embedding))
             .map(record => ({ id: record.id, score: cosineSimilarity(queryEmbedding, record.embedding) }))
             .filter(result => Number.isFinite(result.score) && result.score >= 0)
             .sort((left, right) => right.score - left.score || left.id.localeCompare(right.id))
-            .slice(0, RECALL_LIMIT);
+            .slice(0, limit);
         return { results, skipped: false };
     }
 

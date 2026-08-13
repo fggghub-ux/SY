@@ -13,6 +13,33 @@
     const confirmButton = document.getElementById('about-info-modal-confirm');
     const CHANGELOG_ENTRIES = [
         {
+            id: '2026-08-13',
+            date: '2026年8月13日',
+            summary: '单聊线下生图、线下聊天 TXT 导出、聊天记忆优化与自动锁脸修复。',
+            sections: [
+                {
+                    title: '聊天记忆',
+                    items: [
+                        '短期记忆和长期记忆均新增“读取条数”设置，可按聊天单独调整 AI 的相关记忆召回数量。',
+                        '短期记忆支持多选归纳为一条长期记忆；确认保存后会自动移除已归纳的短期条目。'
+                    ]
+                },
+                {
+                    title: '单聊与线下模式',
+                    items: [
+                        '单聊线下设定新增“线下自动生图”开关，开启后沿用线上生图提示词与自动锁脸。',
+                        '线下聊天新增全部聊天记录 TXT 导出。'
+                    ]
+                },
+                {
+                    title: '问题修复',
+                    items: [
+                        '修复线上自动生图的自动锁脸；已上传角色参考脸时，开启“自动锁脸”即可使用。'
+                    ]
+                }
+            ]
+        },
+        {
             id: '2026-08-12',
             date: '2026年8月12日',
             summary: '数据管理、世界书与群聊设置优化，Pay 和表情包能力更新。',
@@ -215,12 +242,14 @@
     const AUTO_CHANGELOG_DELAY_MS = 250;
     const ACKNOWLEDGEMENT_DELAY_MS = 3000;
     // Version the key so accounts that saw an earlier release receive this one once.
-    const CHANGELOG_NOTICE_STORAGE_PREFIX = 'u2_changelog_notice_seen:20260812-v1:';
+    const CHANGELOG_NOTICE_STORAGE_PREFIX = 'u2_changelog_notice_seen:20260813-v1:';
     let returnFocus = null;
     let previousBodyOverflow = '';
     let activeChangelogTrigger = null;
     let autoNoticeTimer = null;
     let autoNoticeInFlight = false;
+    let pendingMainInterfaceUsername = '';
+    let latestNoticeEligibilityReady = false;
     let acknowledgementTimer = null;
     let acknowledgementInterval = null;
     let dismissalLocked = false;
@@ -422,7 +451,7 @@
     }
 
     async function showLatestChangelogNotice(username) {
-        if (!LATEST_CHANGELOG_ENTRY_ID || !modal || !modal.hidden) return false;
+        if (!latestNoticeEligibilityReady || !LATEST_CHANGELOG_ENTRY_ID || !modal || !modal.hidden) return false;
         const storageKey = getNoticeStorageKey(username);
         if (await hasSeenLatestChangelog(storageKey)) return false;
         if (!modal.hidden) return false;
@@ -433,8 +462,9 @@
     }
 
     function scheduleLatestChangelogNotice(event) {
-        if (autoNoticeTimer || autoNoticeInFlight || !modal?.hidden) return;
-        const username = event?.detail?.username || '';
+        pendingMainInterfaceUsername = event?.detail?.username || pendingMainInterfaceUsername || '';
+        if (!latestNoticeEligibilityReady || autoNoticeTimer || autoNoticeInFlight || !modal?.hidden) return;
+        const username = pendingMainInterfaceUsername;
         const storageKey = getNoticeStorageKey(username);
         autoNoticeInFlight = true;
         hasSeenLatestChangelog(storageKey).then((hasSeen) => {
@@ -450,6 +480,13 @@
         });
     }
 
+    function allowLatestChangelogNotice() {
+        latestNoticeEligibilityReady = true;
+        if (pendingMainInterfaceUsername || window.u2Auth?.isLoggedIn?.()) {
+            scheduleLatestChangelogNotice({ detail: { username: pendingMainInterfaceUsername } });
+        }
+    }
+
     closeButton?.addEventListener('click', close);
     confirmButton?.addEventListener('click', close);
     backButton?.addEventListener('click', () => showChangelogList({ restoreFocus: true }));
@@ -460,6 +497,8 @@
         if (event.key === 'Escape' && modal && !modal.hidden) close();
     });
     window.addEventListener('u2:main-interface-ready', scheduleLatestChangelogNotice);
+    window.addEventListener('u2:splash-screen-removed', allowLatestChangelogNotice, { once: true });
+    if (window.u2SplashScreenRemoved === true) allowLatestChangelogNotice();
 
     window.u2AboutInfoModal = { open, close, showLatestChangelogNotice };
 })();

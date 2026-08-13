@@ -1301,6 +1301,40 @@ function renderUserBubble(text, container, timestamp = Date.now(), replyTo = nul
         window.imChat.scrollToBottom(container);
     }
 
+    function getGeneratedChatImageFileName(timestamp, mimeType = '') {
+        const extensionByMimeType = {
+            'image/jpeg': 'jpg',
+            'image/jpg': 'jpg',
+            'image/webp': 'webp',
+            'image/gif': 'gif',
+            'image/avif': 'avif',
+            'image/png': 'png'
+        };
+        const extension = extensionByMimeType[String(mimeType || '').toLowerCase()] || 'png';
+        const date = new Date(timestamp || Date.now());
+        const stamp = Number.isNaN(date.getTime())
+            ? String(Date.now())
+            : date.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        return `imessage-generated-${stamp}.${extension}`;
+    }
+
+    async function saveGeneratedChatImage(imageUrl, timestamp) {
+        if (!imageUrl || typeof window.u2ExportFile !== 'function') {
+            throw new Error('图片保存功能尚未加载，请刷新后重试');
+        }
+        const response = await fetch(imageUrl);
+        if (!response.ok) throw new Error('无法读取这张图片，请稍后重试');
+        const blob = await response.blob();
+        if (!/^image\//i.test(blob.type || '')) throw new Error('图片数据无效，无法保存');
+        const result = await window.u2ExportFile({
+            blob,
+            fileName: getGeneratedChatImageFileName(timestamp, blob.type),
+            title: 'iMessage 生成图片'
+        });
+        if (result === 'failed') throw new Error('图片保存失败，请稍后重试');
+        return result;
+    }
+
 function openChatImageDetail(msg, friend, timestamp, senderName) {
         let overlay = document.getElementById('chat-image-detail-overlay');
         if (!overlay) {
@@ -1314,7 +1348,10 @@ function openChatImageDetail(msg, friend, timestamp, senderName) {
                             <div class="chat-image-detail-sender" style="font-size:16px; font-weight:800; color:#111; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
                             <div class="chat-image-detail-time" style="font-size:12px; color:#8e8e93; margin-top:2px;"></div>
                         </div>
-                        <button type="button" class="chat-image-detail-close" aria-label="关闭" style="width:32px; height:32px; border:none; border-radius:16px; background:#f2f2f7; color:#111; cursor:pointer; flex-shrink:0;"><i class="fas fa-times"></i></button>
+                        <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+                            <button type="button" class="chat-image-detail-save" style="display:none; border:none; border-radius:16px; background:#111; color:#fff; cursor:pointer; padding:8px 11px; font-size:12px; font-weight:700;">保存</button>
+                            <button type="button" class="chat-image-detail-close" aria-label="关闭" style="width:32px; height:32px; border:none; border-radius:16px; background:#f2f2f7; color:#111; cursor:pointer; flex-shrink:0;"><i class="fas fa-times"></i></button>
+                        </div>
                     </div>
                     <div style="background:#111; display:flex; align-items:center; justify-content:center; min-height:220px;">
                         <img class="chat-image-detail-img" src="" alt="" style="max-width:100%; max-height:52vh; object-fit:contain; display:block;">
@@ -1337,15 +1374,39 @@ function openChatImageDetail(msg, friend, timestamp, senderName) {
         const senderEl = overlay.querySelector('.chat-image-detail-sender');
         const timeEl = overlay.querySelector('.chat-image-detail-time');
         const descEl = overlay.querySelector('.chat-image-detail-desc');
+        const saveButton = overlay.querySelector('.chat-image-detail-save');
         const date = new Date(timestamp || msg.timestamp || Date.now());
         const timeStr = typeof window.formatChatBubbleTime === 'function'
             ? window.formatChatBubbleTime(timestamp || msg.timestamp || Date.now())
             : `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
 
-        if (imageEl) imageEl.src = msg.content || window.imChat.CHAT_IMAGE_PLACEHOLDER_URL || '';
+        const imageUrl = msg.content || window.imChat.CHAT_IMAGE_PLACEHOLDER_URL || '';
+        const isGeneratedImage = msg.imageSource === 'generated'
+            && imageUrl !== (window.imChat.CHAT_IMAGE_PLACEHOLDER_URL || '');
+        if (imageEl) imageEl.src = imageUrl;
         if (senderEl) senderEl.textContent = senderName || friend?.nickname || friend?.realName || '图片';
         if (timeEl) timeEl.textContent = timeStr;
         if (descEl) descEl.textContent = msg.text || msg.description || '暂无图片描述';
+        if (saveButton) {
+            saveButton.style.display = isGeneratedImage ? '' : 'none';
+            saveButton.disabled = false;
+            saveButton.textContent = '保存';
+            saveButton.onclick = async () => {
+                if (!isGeneratedImage || saveButton.disabled) return;
+                const originalText = saveButton.textContent;
+                saveButton.disabled = true;
+                saveButton.textContent = '保存中…';
+                try {
+                    const result = await saveGeneratedChatImage(imageUrl, timestamp || msg.timestamp);
+                    if (result === 'downloaded' || result === 'shared') window.showToast?.('图片已保存');
+                } catch (error) {
+                    window.showToast?.(error?.message || '图片保存失败，请稍后重试');
+                } finally {
+                    saveButton.disabled = false;
+                    saveButton.textContent = originalText;
+                }
+            };
+        }
         overlay.style.display = 'flex';
     }
 

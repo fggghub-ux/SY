@@ -13,14 +13,33 @@ function createMessageId(prefix = 'msg') {
         return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     }
 
-function ensureMessageId(msg, prefix = 'msg') {
+    function ensureMessageId(msg, prefix = 'msg') {
         if (!msg || typeof msg !== 'object') return '';
         if (!msg.id) msg.id = window.imChat.createMessageId(prefix);
         return msg.id;
     }
 
+    async function resolveAutoImageReferenceFace(friend) {
+        if (!friend
+            || friend.type !== 'char'
+            || friend.imagePromptConfig?.autoUseReferenceFace !== true) {
+            return '';
+        }
+
+        const assetId = String(friend.imageFaceReferenceAssetId || '').trim();
+        if (assetId && typeof window.appStorage?.getAssetUrl === 'function') {
+            const assetUrl = await window.appStorage.getAssetUrl(assetId).catch(() => '');
+            if (assetUrl) return assetUrl;
+        }
+
+        const directUrl = String(friend.imageFaceReferenceUrl || '').trim();
+        if (directUrl) return directUrl;
+        throw new Error('自动锁脸已开启，但角色参考脸不可用，请重新上传参考脸后重试');
+    }
+
     window.imChat.createMessageId = createMessageId;
     window.imChat.ensureMessageId = ensureMessageId;
+    window.imChat.resolveAutoImageReferenceFace = resolveAutoImageReferenceFace;
 
     async function generateChatImage(prompt, targetFriend, options = {}) {
         const friendId = targetFriend?.id;

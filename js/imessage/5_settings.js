@@ -3327,6 +3327,36 @@
         }
     }
 
+    function parseShortTermMemoryPromotionDraft(rawText, fallback = {}) {
+        const cleanText = String(rawText || '').trim()
+            .replace(/^```(?:json)?\s*/i, '')
+            .replace(/\s*```$/i, '');
+        let payload = {};
+        try {
+            payload = JSON.parse(cleanText);
+        } catch (error) {
+            throw createSummaryFailureError({ kind: 'response_format' });
+        }
+        const title = String(payload?.title || '').trim();
+        const content = String(payload?.content || payload?.memory || '').trim();
+        const rawTags = payload?.triggerKeywords || payload?.memoryTags || [];
+        const triggerKeywords = window.imChat?.normalizeMemoryTriggerKeywords
+            ? window.imChat.normalizeMemoryTriggerKeywords(rawTags)
+            : (Array.isArray(rawTags) ? rawTags : [rawTags])
+                .map(value => String(value || '').trim())
+                .filter(Boolean)
+                .slice(0, 6);
+        if (!title || !content || triggerKeywords.length === 0) {
+            throw createSummaryFailureError({ kind: 'response_format' });
+        }
+        return {
+            title,
+            content,
+            time: String(payload?.time || fallback.time || '').trim(),
+            triggerKeywords: triggerKeywords.slice(0, 6)
+        };
+    }
+
     function getSummaryApiPresets() {
         const presets = typeof window.getApiPresets === 'function' ? window.getApiPresets() : [];
         return Array.isArray(presets) ? presets : [];
@@ -3349,6 +3379,68 @@
         const current = window.getApiConfig ? window.getApiConfig() : (window.apiConfig || {});
         return { ...current, presetId: '' };
     }
+
+    window.imApp.generateShortTermMemoryPromotionDraft = async function(friendOrId, sourceEntries) {
+        const friend = window.imApp.getFriendById?.(friendOrId) || friendOrId;
+        const entries = (Array.isArray(sourceEntries) ? sourceEntries : [])
+            .filter(entry => entry && entry.id != null)
+            .map(entry => ({ ...entry }));
+        if (!friend || entries.length === 0) {
+            throw new Error('请选择至少一条短期记忆');
+        }
+
+        const apiConfig = resolveSummaryApiConfig(friend);
+        if (!apiConfig.endpoint || !apiConfig.apiKey) {
+            throw new Error('请先在设置中配置 API');
+        }
+
+        const charName = friend.nickname || friend.realname || friend.realName || 'Char';
+        const isGroup = friend.type === 'group';
+        const sourceText = entries.map((entry, index) => [
+            `条目 ${index + 1}（ID: ${entry.id}）`,
+            `标题: ${entry.title || '对话总结'}`,
+            `时间: ${entry.time || entry.createdAt || '未记录'}`,
+            `事件: ${entry.event || entry.content || ''}`,
+            `记忆点: ${entry.memoryPoints || ''}`,
+            `标签: ${(window.imChat?.getShortTermMemoryTags
+                ? window.imChat.getShortTermMemoryTags(entry)
+                : (entry.memoryTags || entry.triggerKeywords || [])).join('、')}`
+        ].join('\n')).join('\n\n');
+        const fallbackTime = String(entries[entries.length - 1]?.time || entries[entries.length - 1]?.createdAt || '');
+        const privacyRules = isGroup
+            ? `\n群聊隐私约束（最高优先级）：\n- 输入仅应来自该群公开总结；只保留公开发生的事实。\n- 禁止写入、推断或复述任何成员私信、好友私聊、私密想法或未公开信息。\n- 必须使用第三人称描述群聊共同事件。`
+            : `\n单聊约束：\n- 只合并输入条目中已经明确存在的事实，不得补写、猜测或虚构细节。\n- 用 ${charName} 与 User 的长期关系和稳定偏好可理解的简洁表述。`;
+        const prompt = `你是记忆整理员。请把以下 ${entries.length} 条短期记忆合并为一条可长期保存的记忆。保留稳定事实、承诺、偏好、关系变化和未完成事项；去掉重复与瞬时细节。${privacyRules}\n\n只输出可解析 JSON，禁止 markdown 或解释，结构必须完全如下：\n{\n  "title": "不超过16字的标题",\n  "time": "沿用输入中最晚的相关时间，不确定则留空",\n  "content": "60-180字的长期记忆正文",\n  "triggerKeywords": ["3到6个可单独触发的简短标签"]\n}\n\n短期记忆：\n${sourceText}`;
+        const response = await fetch(normalizeSummaryApiEndpoint(apiConfig), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiConfig.apiKey}` },
+            body: JSON.stringify({
+                model: apiConfig.model || '',
+                messages: [
+                    { role: 'system', content: '你只输出可解析 JSON。' },
+                    { role: 'user', content: prompt }
+                ],
+                temperature: parseFloat(apiConfig.temperature ?? apiConfig.temp) || 0.7
+            })
+        });
+        if (!response.ok) {
+            const apiError = window.u2Api?.readApiError
+                ? await window.u2Api.readApiError(response)
+                : { status: response.status, statusText: response.statusText || '', message: response.statusText || '' };
+            throw createSummaryFailureError({
+                kind: 'http',
+                status: apiError.status || response.status,
+                message: apiError.message || apiError.statusText || ''
+            });
+        }
+        let data;
+        try {
+            data = await response.json();
+        } catch (error) {
+            throw createSummaryFailureError({ kind: 'response_format' });
+        }
+        return parseShortTermMemoryPromotionDraft(getSummaryResponseContent(data), { time: fallbackTime });
+    };
 
     function refreshSummaryApiSelect(friend) {
         if (!summaryApiSelect) return;
@@ -3788,7 +3880,9 @@
             let friend = window.imData.currentSettingsFriend;
             if (!friend) return;
             manualSummaryConfirm.disabled = true;
-            manualSummaryConfirm.textContent = '生成中...';
+            manualSummaryConfirm.classList.add('is-loading');
+            manualSummaryConfirm.textContent = '正在总结...';
+            showToast('正在总结对话...');
             try {
                 const settingsSaved = await persistSummarySettings(friend);
                 if (!settingsSaved) {
@@ -3818,6 +3912,7 @@
                 showToast(`总结失败：${failure.message}`);
             } finally {
                 manualSummaryConfirm.disabled = false;
+                manualSummaryConfirm.classList.remove('is-loading');
                 const latestFriend = window.imData.friends.find(item => String(item.id) === String(friend.id)) || friend;
                 refreshSummaryModal(latestFriend);
             }

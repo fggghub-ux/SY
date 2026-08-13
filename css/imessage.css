@@ -2043,6 +2043,61 @@ button.group-private-chat-detail-bubble {
 
 .memory-sheet-title-row .memory-sheet-title { padding: 0; }
 
+.memory-sheet-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.memory-sheet-text-btn {
+    border: none;
+    background: transparent;
+    color: #007aff;
+    padding: 6px 4px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.memory-recall-limit-row {
+    margin: 0 0 12px;
+    padding: 10px 14px;
+    border-radius: 14px;
+    background: #fff;
+    color: #111;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.memory-recall-limit-row span {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.memory-recall-limit-row small {
+    color: #8e8e93;
+    font-size: 11px;
+    font-weight: 400;
+}
+
+.memory-recall-limit-row input {
+    width: 54px;
+    height: 32px;
+    box-sizing: border-box;
+    border: 1px solid #e5e5ea;
+    border-radius: 9px;
+    background: #fff;
+    color: #111;
+    text-align: center;
+    font-size: 14px;
+}
+
 .memory-sheet-add-btn {
     width: 32px;
     height: 32px;
@@ -2063,6 +2118,56 @@ button.group-private-chat-detail-bubble {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.memory-short-select {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: #007aff;
+    flex: 0 0 auto;
+    cursor: pointer;
+}
+
+.memory-promotion-btn {
+    width: 100%;
+    margin-top: 14px;
+    padding: 12px;
+    border: none;
+    border-radius: 13px;
+    background: #5856d6;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.memory-promotion-btn:disabled {
+    background: #c7c7cc;
+    cursor: not-allowed;
+}
+
+.memory-promotion-hint {
+    margin-bottom: 14px;
+    padding: 10px 12px;
+    border-radius: 11px;
+    background: #f2f2f7;
+    color: #636366;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.memory-promotion-actions {
+    grid-template-columns: minmax(88px, .7fr) minmax(0, 1.6fr);
+}
+
+#memory-promotion-preview-confirm {
+    border: none;
+    border-radius: 12px;
+    background: #5856d6;
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
 }
 
 .memory-short-actions {
@@ -2333,8 +2438,10 @@ button.group-private-chat-detail-bubble {
 }
 
 .memory-summary-confirm-btn:disabled {
-    opacity: 0.45;
-    cursor: default;
+    background: #c7c7cc;
+    color: #ffffff;
+    opacity: 1;
+    cursor: not-allowed;
 }
 
 .chat-memory-autonomous-sheet {
@@ -3676,6 +3783,30 @@ button.group-private-chat-detail-bubble {
 
 .offline-chat-bubble-text.is-streaming {
     white-space: pre-wrap;
+}
+
+.offline-chat-generated-image {
+    margin: 0;
+    overflow: hidden;
+    border-radius: 24px;
+    background: #f2f2f7;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.offline-chat-generated-image img {
+    display: block;
+    width: 100%;
+    max-height: 440px;
+    object-fit: cover;
+    background: #e5e5ea;
+}
+
+.offline-chat-generated-image figcaption {
+    padding: 10px 13px 12px;
+    color: #636366;
+    font-size: 12px;
+    line-height: 1.45;
+    text-align: left;
 }
 
 .offline-chat-bubble-body {
@@ -11422,6 +11553,14 @@ input:checked + .slider:before {
     justify-content: space-between;
     align-items: center;
     gap: 16px;
+}
+
+.offline-settings-auto-image .offline-settings-worldbook-main > i {
+    background: #af52de;
+}
+
+.offline-settings-auto-image .offline-settings-worldbook-main small {
+    line-height: 1.35;
 }
 
 .offline-settings-number-input {

@@ -420,6 +420,7 @@ window.imApp.createDefaultMemory = function() {
         overview: '',
         anniversaries: '',
         context: { enabled: true, limit: 50, notes: '' },
+        recallLimits: { shortTerm: 30, longTerm: 30 },
         summary: { enabled: false, limit: 80, roundLimit: 30, prompt: '', apiPresetId: '' },
         autonomous: window.imApp.createDefaultAutonomousActivity(),
         longTerm: '',
@@ -527,6 +528,20 @@ window.imApp.createDefaultXDirectMessageMount = function() {
         enabled: true,
         limit: 10,
         dmId: ''
+    };
+};
+
+window.imApp.normalizeMemoryRecallLimits = function(value) {
+    const source = value && typeof value === 'object' ? value : {};
+    const normalizeLimit = (candidate, fallback = 30) => {
+        const numeric = Math.round(Number(candidate));
+        return Number.isFinite(numeric) && numeric > 0
+            ? Math.min(100, Math.max(1, numeric))
+            : fallback;
+    };
+    return {
+        shortTerm: normalizeLimit(source.shortTerm, 30),
+        longTerm: normalizeLimit(source.longTerm, 30)
     };
 };
 
@@ -774,6 +789,8 @@ window.imApp.normalizeFriendData = function(friend) {
         lastPrompt: String(imagePromptConfig.lastPrompt || '').trim().slice(0, 8000),
         activePresetId: activePromptPresetId,
         autoGenerate: imagePromptConfig.autoGenerate === true,
+        autoUseReferenceFace: imagePromptConfig.autoUseReferenceFace === true
+            && !!(normalized.imageFaceReferenceUrl || normalized.imageFaceReferenceAssetId),
         presets: promptPresets
     };
     normalized.messages = Array.isArray(normalized.messages) ? normalized.messages : [];
@@ -822,6 +839,10 @@ window.imApp.normalizeFriendData = function(friend) {
         normalized.statusPrompt = window.imApp.DEFAULT_STATUS_PROMPT;
     }
     normalized.offlineStreamEnabled = normalized.offlineStreamEnabled !== false;
+    // Keep offline automatic images opt-in.  This is intentionally separate from
+    // the normal-chat autoGenerate setting so enabling one surface never starts
+    // image requests in the other.  Groups never participate in this flow.
+    normalized.offlineAutoImageGeneration = !isGroupChat && normalized.offlineAutoImageGeneration === true;
     normalized.offlineRequestReasoning = true;
     normalized.offlineMaxResponseTokens = 30000;
     normalized.offlineMaxResponseTokensVersion = 2;
@@ -880,7 +901,7 @@ window.imApp.normalizeFriendData = function(friend) {
         : null;
     const normalizeRecallPresentationEntries = (entries) => (Array.isArray(entries) ? entries : [])
         .filter(entry => entry && typeof entry === 'object')
-        .slice(-8)
+        .slice(0, 100)
         .map(entry => ({ ...entry }));
     const normalizedRecallPresentation = recallPresentationSource
         && recallPresentationSource.apiRunId
@@ -918,6 +939,7 @@ window.imApp.normalizeFriendData = function(friend) {
                 : (isGroupChat ? 100 : defaultMemory.context.limit),
             notes: memory.context?.notes || defaultMemory.context.notes
         },
+        recallLimits: window.imApp.normalizeMemoryRecallLimits(memory.recallLimits),
         summary: {
             enabled: typeof memory.summary?.enabled === 'boolean' ? memory.summary.enabled : defaultMemory.summary.enabled,
             limit: Number(memory.summary?.limit) > 0 ? Number(memory.summary.limit) : defaultMemory.summary.limit,
@@ -1079,6 +1101,66 @@ window.imApp.applyGeneratedShortTermMemory = function(friend, entry, options = {
             || (Array.isArray(friend.messages) ? friend.messages.length : 0);
     }
     return normalizedEntry;
+};
+
+window.imApp.commitShortTermMemoryPromotion = async function(friendOrId, draft, sourceEntryIds) {
+    const friend = window.imApp.getFriendById(friendOrId);
+    const selectedIds = Array.from(new Set((Array.isArray(sourceEntryIds) ? sourceEntryIds : [])
+        .map(value => String(value || '').trim())
+        .filter(Boolean)));
+    if (!friend || selectedIds.length === 0 || !draft || typeof draft !== 'object') return false;
+
+    const normalizeTags = value => (window.imChat?.normalizeMemoryTriggerKeywords
+        ? window.imChat.normalizeMemoryTriggerKeywords(value)
+        : (Array.isArray(value) ? value : [value])
+            .map(item => String(item || '').trim())
+            .filter(Boolean)
+            .slice(0, 6));
+    const title = String(draft.title || '').trim() || '长期记忆';
+    const content = String(draft.content || '').trim();
+    const time = String(draft.time || '').trim();
+    const triggerKeywords = normalizeTags(draft.triggerKeywords || draft.memoryTags || []);
+    if (!content) return false;
+
+    const promotionId = `promoted-ltm-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const saved = await window.imApp.commitScopedFriendChange(friend, targetFriend => {
+        targetFriend.memory = window.imApp.normalizeFriendData(targetFriend).memory;
+        const shortTermEntries = Array.isArray(targetFriend.memory.shortTermEntries)
+            ? targetFriend.memory.shortTermEntries
+            : [];
+        const selectedEntries = shortTermEntries.filter(entry => selectedIds.includes(String(entry?.id || '')));
+        if (selectedEntries.length !== selectedIds.length) {
+            throw new Error('Selected short-term memories are no longer available');
+        }
+        if (!Array.isArray(targetFriend.memory.longTermEntries)) targetFriend.memory.longTermEntries = [];
+        targetFriend.memory.longTermEntries.push({
+            id: promotionId,
+            title,
+            content,
+            time: time || new Date().toISOString(),
+            createdAt: time || new Date().toISOString(),
+            triggerKeywords,
+            sourceType: 'manual',
+            sourceId: promotionId,
+            promotedFromShortTermIds: selectedIds
+        });
+        targetFriend.memory.shortTermEntries = shortTermEntries.filter(entry => !selectedIds.includes(String(entry?.id || '')));
+        // Promotion is an archival operation, not a summary deletion: retain the existing cursor.
+        targetFriend.memory.recallPresentation = null;
+        window.imApp.clearFriendRuntimeMessageContext?.(targetFriend);
+    }, { silent: true, immediate: true, syncActive: true, syncSettings: true });
+
+    if (!saved) return false;
+    window.dispatchEvent(new CustomEvent('u2:memory-entries-updated', {
+        detail: {
+            friendId: String(friend.id),
+            action: 'promote',
+            collection: 'longTermEntries',
+            entryId: promotionId,
+            removedShortTermEntryIds: selectedIds
+        }
+    }));
+    return { id: promotionId };
 };
 
 window.imApp.createGroupMemberSnapshot = function(group) {
@@ -4547,6 +4629,8 @@ window.addEventListener('pagehide', () => {
     const modalGenerationPresetSelect = document.getElementById('modal-generation-preset-select');
     const modalGenerationSavePresetBtn = document.getElementById('modal-generation-save-preset-btn');
     const modalAutoImageGenerationToggle = document.getElementById('modal-auto-image-generation-toggle');
+    const modalAutoReferenceFaceToggle = document.getElementById('modal-auto-reference-face-toggle');
+    const modalAutoReferenceFaceHint = document.getElementById('modal-auto-reference-face-hint');
     const modalGenerationCharAppearance = document.getElementById('modal-generation-char-appearance');
     const modalGenerationUserAppearance = document.getElementById('modal-generation-user-appearance');
     const modalGenerationArtistPrompt = document.getElementById('modal-generation-artist-prompt');
@@ -4617,6 +4701,19 @@ window.addEventListener('pagehide', () => {
             modalToggleInput.checked = imageUrl && enableAfterUpload;
             modalToggleInput.disabled = !imageUrl;
         }
+        syncModalAutoReferenceFaceToggle();
+    }
+
+    function syncModalAutoReferenceFaceToggle() {
+        if (!modalAutoReferenceFaceToggle) return;
+        const hasReferenceFace = !!String(currentModalReferenceFace?.imageUrl || '').trim();
+        modalAutoReferenceFaceToggle.disabled = !hasReferenceFace;
+        if (!hasReferenceFace) modalAutoReferenceFaceToggle.checked = false;
+        if (modalAutoReferenceFaceHint) {
+            modalAutoReferenceFaceHint.textContent = hasReferenceFace
+                ? '自动生图时使用当前角色参考脸'
+                : '请先上传角色参考脸';
+        }
     }
 
     function showCustomModal(options) {
@@ -4668,6 +4765,9 @@ window.addEventListener('pagehide', () => {
             if (modalAutoImageGenerationToggle) {
                 modalAutoImageGenerationToggle.checked = options.generationPrompt?.autoGenerate === true;
             }
+            if (modalAutoReferenceFaceToggle) {
+                modalAutoReferenceFaceToggle.checked = options.generationPrompt?.autoUseReferenceFace === true;
+            }
             if (modalGenerationCharAppearance) modalGenerationCharAppearance.value = options.generationPrompt?.charAppearance || '';
             if (modalGenerationUserAppearance) modalGenerationUserAppearance.value = options.generationPrompt?.userAppearance || '';
             if (modalGenerationArtistPrompt) modalGenerationArtistPrompt.value = options.generationPrompt?.artistPrompt || '';
@@ -4681,6 +4781,7 @@ window.addEventListener('pagehide', () => {
                     modalToggleInput.checked = !!options.toggle?.checked;
                     modalToggleInput.disabled = !!options.toggle?.disabled;
                 }
+                syncModalAutoReferenceFaceToggle();
             }
             modalPromptConfirmBtn.textContent = options.confirmText || '确认';
             modalPromptConfirmBtn.style.background = options.confirmTone === 'dark' ? '#111' : '#007aff';
@@ -4699,6 +4800,11 @@ window.addEventListener('pagehide', () => {
                 modalGenerationPresetSelect.disabled = true;
             }
             if (modalAutoImageGenerationToggle) modalAutoImageGenerationToggle.checked = false;
+            if (modalAutoReferenceFaceToggle) {
+                modalAutoReferenceFaceToggle.checked = false;
+                modalAutoReferenceFaceToggle.disabled = true;
+            }
+            if (modalAutoReferenceFaceHint) modalAutoReferenceFaceHint.textContent = '请先上传角色参考脸';
             
             modalMessage.textContent = options.message || '';
             modalConfirmBtn.textContent = options.confirmText || '确认';
@@ -4742,6 +4848,7 @@ window.addEventListener('pagehide', () => {
             negativePrompt: modalGenerationNegativePrompt?.value || '',
             activePresetId: modalGenerationPresetSelect?.value || '',
             autoGenerate: modalAutoImageGenerationToggle?.checked === true,
+            autoUseReferenceFace: modalAutoReferenceFaceToggle?.checked === true,
             presets: Array.isArray(currentModalGenerationPrompt?.presets)
                 ? currentModalGenerationPrompt.presets
                 : []
@@ -5933,10 +6040,19 @@ window.addEventListener('pagehide', () => {
     const memoryEntryEditorClose = document.getElementById('memory-entry-editor-close');
     const memoryEntryEditorCancel = document.getElementById('memory-entry-editor-cancel');
     const memoryEntryEditorSave = document.getElementById('memory-entry-editor-save');
+    const memoryPromotionPreviewModal = document.getElementById('memory-promotion-preview-modal');
+    const memoryPromotionPreviewClose = document.getElementById('memory-promotion-preview-close');
+    const memoryPromotionPreviewCancel = document.getElementById('memory-promotion-preview-cancel');
+    const memoryPromotionPreviewConfirm = document.getElementById('memory-promotion-preview-confirm');
+    const memoryPromotionTitleInput = document.getElementById('memory-promotion-title-input');
+    const memoryPromotionTimeInput = document.getElementById('memory-promotion-time-input');
+    const memoryPromotionContentInput = document.getElementById('memory-promotion-content-input');
+    const memoryPromotionTagsInput = document.getElementById('memory-promotion-tags-input');
     const momentsContent = document.getElementById('moments-content');
     let currentMemoryFriendId = null;
     let currentMemoryLocation = 'iphone';
     let scheduleEditorEventId = null;
+    let pendingMemoryPromotion = null;
 
     function updateLineNavIndicator(activeItem) {
         if (!activeItem || !lineNavIndicator) return;
@@ -6328,6 +6444,121 @@ window.addEventListener('pagehide', () => {
         if (memoryEntryEditorModal && window.closeView) window.closeView(memoryEntryEditorModal);
     }
 
+    function normalizeMemoryRecallLimit(value, fallback = 30) {
+        const numeric = Math.round(Number(value));
+        return Number.isFinite(numeric) && numeric > 0
+            ? Math.min(100, Math.max(1, numeric))
+            : fallback;
+    }
+
+    async function saveMemoryRecallLimit(kind, rawValue) {
+        const friend = getCurrentMemoryFriend();
+        if (!friend) return false;
+        const normalizedFriend = window.imApp.normalizeFriendData(friend);
+        const fallback = normalizedFriend.memory?.recallLimits?.[kind] || 30;
+        const limit = normalizeMemoryRecallLimit(rawValue, fallback);
+        const saved = await window.imApp.commitScopedFriendChange(friend, targetFriend => {
+            targetFriend.memory = window.imApp.normalizeFriendData(targetFriend).memory;
+            targetFriend.memory.recallLimits = window.imApp.normalizeMemoryRecallLimits({
+                ...targetFriend.memory.recallLimits,
+                [kind]: limit
+            });
+            targetFriend.memory.recallPresentation = null;
+            window.imApp.clearFriendRuntimeMessageContext?.(targetFriend);
+        }, { silent: true, immediate: true, syncActive: true, syncSettings: true });
+        if (!saved) {
+            if (window.showToast) window.showToast('读取条数保存失败');
+            return false;
+        }
+        window.dispatchEvent(new CustomEvent('u2:memory-entries-updated', {
+            detail: { friendId: String(friend.id), action: 'recall-limit', kind, limit }
+        }));
+        renderMemoryLocationSheet(currentMemoryLocation);
+        return true;
+    }
+
+    function closeMemoryPromotionPreview() {
+        pendingMemoryPromotion = null;
+        if (memoryPromotionPreviewModal && window.closeView) window.closeView(memoryPromotionPreviewModal);
+    }
+
+    function openMemoryPromotionPreview(friend, selectedIds, draft) {
+        if (!memoryPromotionPreviewModal) return;
+        pendingMemoryPromotion = {
+            friendId: String(friend.id),
+            selectedIds: selectedIds.map(String)
+        };
+        if (memoryPromotionTitleInput) memoryPromotionTitleInput.value = draft.title || '';
+        if (memoryPromotionTimeInput) memoryPromotionTimeInput.value = draft.time || '';
+        if (memoryPromotionContentInput) memoryPromotionContentInput.value = draft.content || '';
+        if (memoryPromotionTagsInput) memoryPromotionTagsInput.value = (draft.triggerKeywords || []).join('，');
+        if (window.openView) window.openView(memoryPromotionPreviewModal);
+    }
+
+    async function confirmMemoryPromotionPreview() {
+        const pending = pendingMemoryPromotion;
+        if (!pending) return false;
+        const friend = window.imApp.getFriendById?.(pending.friendId) || getCurrentMemoryFriend();
+        const title = String(memoryPromotionTitleInput?.value || '').trim();
+        const content = String(memoryPromotionContentInput?.value || '').trim();
+        const time = String(memoryPromotionTimeInput?.value || '').trim();
+        const triggerKeywords = normalizeManualMemoryTags(memoryPromotionTagsInput?.value || '');
+        if (!title || !content || triggerKeywords.length === 0) {
+            if (window.showToast) window.showToast('请填写标题、内容和至少一个召回标签');
+            return false;
+        }
+        if (!friend || !window.imApp.commitShortTermMemoryPromotion) return false;
+        if (memoryPromotionPreviewConfirm) {
+            memoryPromotionPreviewConfirm.disabled = true;
+            memoryPromotionPreviewConfirm.textContent = '保存中...';
+        }
+        try {
+            const result = await window.imApp.commitShortTermMemoryPromotion(friend, {
+                title,
+                content,
+                time,
+                triggerKeywords
+            }, pending.selectedIds);
+            if (!result) {
+                if (window.showToast) window.showToast('长期记忆保存失败，短期记忆未删除');
+                return false;
+            }
+            closeMemoryPromotionPreview();
+            renderMemoryLocationSheet('iphone');
+            renderMemoryView();
+            if (window.showToast) window.showToast('已归纳为长期记忆');
+            return true;
+        } finally {
+            if (memoryPromotionPreviewConfirm) {
+                memoryPromotionPreviewConfirm.disabled = false;
+                memoryPromotionPreviewConfirm.textContent = '确认归纳并删除原短期记忆';
+            }
+        }
+    }
+
+    async function generateMemoryPromotion(friend, selectedIds) {
+        const entries = (Array.isArray(friend?.memory?.shortTermEntries) ? friend.memory.shortTermEntries : [])
+            .filter(entry => selectedIds.includes(String(entry?.id || '')));
+        if (entries.length === 0 || entries.length !== selectedIds.length) {
+            if (window.showToast) window.showToast('所选短期记忆已变更，请重新选择');
+            renderMemoryLocationSheet('iphone');
+            return;
+        }
+        if (!window.imApp.generateShortTermMemoryPromotionDraft) {
+            if (window.showToast) window.showToast('归纳功能尚未初始化');
+            return;
+        }
+        try {
+            if (window.showToast) window.showToast('正在归纳长期记忆...');
+            const draft = await window.imApp.generateShortTermMemoryPromotionDraft(friend, entries);
+            openMemoryPromotionPreview(friend, selectedIds, draft);
+        } catch (error) {
+            console.error('Short-term memory promotion failed', error);
+            const message = error?.summaryFailure?.message || error?.message || '归纳失败，请检查 API 配置';
+            if (window.showToast) window.showToast(`归纳失败：${message}`);
+        }
+    }
+
     function openMemoryEntryEditor(kind, entry = null, collection = '') {
         if (!memoryEntryEditorModal) return;
         const isShort = kind === 'short';
@@ -6682,6 +6913,10 @@ window.addEventListener('pagehide', () => {
                     <div class="memory-sheet-title">长期记忆</div>
                     <button type="button" class="memory-sheet-add-btn" data-memory-add-kind="long" aria-label="新增长期记忆"><i class="fas fa-plus"></i></button>
                 </div>
+                <div class="memory-recall-limit-row">
+                    <span>读取条数 <small>长期记忆与珍视回忆共用</small></span>
+                    <input type="number" min="1" max="100" step="1" value="${escapeMemoryHtml(normalizedFriend.memory?.recallLimits?.longTerm || 30)}" data-memory-recall-limit="longTerm" aria-label="长期记忆读取条数">
+                </div>
                 <div class="memory-short-list">
                     ${entries.length === 0 ? '<div class="memory-short-empty">暂无长期记忆</div>' : entries.slice().reverse().map(({ entry, collection }) => `
                         <div class="memory-short-item memory-long-summary-item" role="button" tabindex="0" data-memory-entry-id="${escapeMemoryHtml(entry.id)}" data-memory-collection="${collection}">
@@ -6695,6 +6930,10 @@ window.addEventListener('pagehide', () => {
                     `).join('')}
                 </div>
             `;
+
+            memoryLocationSheetContent.querySelector('[data-memory-recall-limit="longTerm"]')?.addEventListener('change', event => {
+                void saveMemoryRecallLimit('longTerm', event.target.value);
+            });
 
             memoryLocationSheetContent.querySelector('[data-memory-add-kind="long"]')?.addEventListener('click', () => openMemoryEntryEditor('long'));
             memoryLocationSheetContent.querySelectorAll('.memory-long-summary-item').forEach(btn => {
@@ -6731,11 +6970,19 @@ window.addEventListener('pagehide', () => {
         memoryLocationSheetContent.innerHTML = `
             <div class="memory-sheet-title-row">
                 <div class="memory-sheet-title">短期记忆</div>
-                <button type="button" class="memory-sheet-add-btn" data-memory-add-kind="short" aria-label="新增短期记忆"><i class="fas fa-plus"></i></button>
+                <div class="memory-sheet-toolbar">
+                    <button type="button" class="memory-sheet-text-btn" data-memory-select-all>全选</button>
+                    <button type="button" class="memory-sheet-add-btn" data-memory-add-kind="short" aria-label="新增短期记忆"><i class="fas fa-plus"></i></button>
+                </div>
+            </div>
+            <div class="memory-recall-limit-row">
+                <span>读取条数 <small>按相关度最多注入</small></span>
+                <input type="number" min="1" max="100" step="1" value="${escapeMemoryHtml(normalizedFriend.memory?.recallLimits?.shortTerm || 30)}" data-memory-recall-limit="shortTerm" aria-label="短期记忆读取条数">
             </div>
             <div class="memory-short-list">
                 ${entries.length === 0 ? '<div class="memory-short-empty">暂无短期记忆</div>' : entries.slice().reverse().map(entry => `
                     <div class="memory-short-item memory-short-summary-item" role="button" tabindex="0" data-memory-entry-id="${entry.id}">
+                        <input type="checkbox" class="memory-short-select" data-memory-select-id="${escapeMemoryHtml(entry.id)}" aria-label="选择${escapeMemoryHtml(entry.title || '短期记忆')}">
                         <span class="memory-short-summary-title">${escapeMemoryHtml(entry.title || '对话总结')}</span>
                         <div class="memory-short-actions">
                             <button type="button" class="memory-short-delete-btn" aria-label="删除已总结记录" title="删除已总结记录"><i class="fas fa-trash-alt"></i></button>
@@ -6744,9 +6991,57 @@ window.addEventListener('pagehide', () => {
                     </div>
                 `).join('')}
             </div>
+            <button type="button" class="memory-promotion-btn" data-memory-promote disabled>归纳为长期记忆</button>
         `;
 
+        memoryLocationSheetContent.querySelector('[data-memory-recall-limit="shortTerm"]')?.addEventListener('change', event => {
+            void saveMemoryRecallLimit('shortTerm', event.target.value);
+        });
         memoryLocationSheetContent.querySelector('[data-memory-add-kind="short"]')?.addEventListener('click', () => openMemoryEntryEditor('short'));
+
+        const selectedIds = new Set();
+        const selectAllButton = memoryLocationSheetContent.querySelector('[data-memory-select-all]');
+        const promoteButton = memoryLocationSheetContent.querySelector('[data-memory-promote]');
+        const refreshPromotionSelection = () => {
+            const allSelected = entries.length > 0 && selectedIds.size === entries.length;
+            if (selectAllButton) selectAllButton.textContent = allSelected ? '取消全选' : '全选';
+            if (promoteButton) {
+                const isPromoting = promoteButton.dataset.memoryPromoting === 'true';
+                if (isPromoting) {
+                    promoteButton.disabled = true;
+                    promoteButton.textContent = '正在归纳...';
+                    return;
+                }
+                promoteButton.disabled = selectedIds.size === 0;
+                promoteButton.textContent = selectedIds.size > 0
+                    ? `归纳 ${selectedIds.size} 条为长期记忆`
+                    : '归纳为长期记忆';
+            }
+        };
+        selectAllButton?.addEventListener('click', event => {
+            event.preventDefault();
+            const shouldSelectAll = selectedIds.size !== entries.length;
+            memoryLocationSheetContent.querySelectorAll('.memory-short-select').forEach(input => {
+                input.checked = shouldSelectAll;
+                const id = String(input.getAttribute('data-memory-select-id') || '');
+                if (shouldSelectAll) selectedIds.add(id);
+                else selectedIds.delete(id);
+            });
+            refreshPromotionSelection();
+        });
+        promoteButton?.addEventListener('click', async () => {
+            if (promoteButton.dataset.memoryPromoting === 'true' || selectedIds.size === 0) return;
+            promoteButton.dataset.memoryPromoting = 'true';
+            promoteButton.setAttribute('aria-busy', 'true');
+            refreshPromotionSelection();
+            try {
+                await generateMemoryPromotion(normalizedFriend, Array.from(selectedIds));
+            } finally {
+                delete promoteButton.dataset.memoryPromoting;
+                promoteButton.removeAttribute('aria-busy');
+                if (promoteButton.isConnected) refreshPromotionSelection();
+            }
+        });
 
         memoryLocationSheetContent.querySelectorAll('.memory-short-summary-item').forEach(btn => {
             const openEntry = () => {
@@ -6757,11 +7052,13 @@ window.addEventListener('pagehide', () => {
             btn.addEventListener('click', (event) => {
                 const targetEl = event.target instanceof Element ? event.target : null;
                 if (targetEl?.closest('.memory-short-delete-btn')) return;
+                if (targetEl?.closest('.memory-short-select')) return;
                 openEntry();
             });
             btn.addEventListener('keydown', (event) => {
                 const targetEl = event.target instanceof Element ? event.target : null;
                 if (targetEl?.closest('.memory-short-delete-btn')) return;
+                if (targetEl?.closest('.memory-short-select')) return;
                 if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
                     openEntry();
@@ -6777,6 +7074,13 @@ window.addEventListener('pagehide', () => {
                     if (target) confirmDeleteMemoryEntry(target, 'shortTermEntries');
                 });
             }
+            const selectInput = btn.querySelector('.memory-short-select');
+            selectInput?.addEventListener('change', () => {
+                const id = String(selectInput.getAttribute('data-memory-select-id') || '');
+                if (selectInput.checked) selectedIds.add(id);
+                else selectedIds.delete(id);
+                refreshPromotionSelection();
+            });
         });
     }
 
@@ -6826,6 +7130,14 @@ window.addEventListener('pagehide', () => {
     memoryEntryEditorSave?.addEventListener('click', () => void saveMemoryEntryEditor());
     memoryEntryEditorModal?.addEventListener('click', event => {
         if (event.target === memoryEntryEditorModal) closeMemoryEntryEditor();
+    });
+
+    [memoryPromotionPreviewClose, memoryPromotionPreviewCancel].forEach(button => {
+        button?.addEventListener('click', closeMemoryPromotionPreview);
+    });
+    memoryPromotionPreviewConfirm?.addEventListener('click', () => void confirmMemoryPromotionPreview());
+    memoryPromotionPreviewModal?.addEventListener('click', event => {
+        if (event.target === memoryPromotionPreviewModal) closeMemoryPromotionPreview();
     });
 
     if (scheduleClose && scheduleModal) {
