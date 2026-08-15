@@ -64,6 +64,11 @@
         const count = activePage.querySelector('.chat-batch-selection-count');
         if (count) count.textContent = `已选择 ${selectedCount} 条`;
         const deleteButton = activePage.querySelector('.batch-delete-btn');
+        const forwardButton = activePage.querySelector('.batch-forward-btn');
+        if (forwardButton) {
+            forwardButton.disabled = selectedCount === 0;
+            forwardButton.style.opacity = selectedCount === 0 ? '0.4' : '1';
+        }
         if (deleteButton) {
             deleteButton.disabled = selectedCount === 0;
             deleteButton.style.opacity = selectedCount === 0 ? '0.4' : '1';
@@ -517,6 +522,7 @@ window.imChat.pruneHiddenChatPages = pruneHiddenChatPages;
 async function openChatTab(friend) {
         const chatsContent = document.getElementById('chats-content');
         const navChatsBtn = document.getElementById('nav-chats-btn');
+        window.imApp?.setActiveThemeSurface?.('chat-detail');
         closeStaleGroupCallSheets();
 
         if (window.imApp.ensureFriendMessagesLoaded) {
@@ -674,7 +680,10 @@ async function openChatTab(friend) {
                     <div class="chat-batch-header" style="display:none; align-items:center; justify-content:space-between; min-height:46px; padding:0 14px; color:#111; pointer-events:auto;">
                         <button type="button" class="chat-cancel-batch-btn im-chat-cancel-batch-btn">取消</button>
                         <div class="chat-batch-selection-count" style="font-size:16px; font-weight:600;">已选择 0 条</div>
-                        <button type="button" class="batch-delete-btn" style="border:0; padding:5px; background:transparent; color:#ff3b30; font-size:16px; font-weight:600; cursor:pointer;">删除</button>
+                        <div class="chat-batch-actions">
+                            <button type="button" class="batch-forward-btn">转发</button>
+                            <button type="button" class="batch-delete-btn">删除</button>
+                        </div>
                     </div>
                 </div>
                 <div class="ins-chat-messages"></div>
@@ -729,6 +738,7 @@ async function openChatTab(friend) {
                     }
                     if (window.imData.batchSelectMode) imChat.exitBatchSelectMode(friend, page);
                     window.imData.currentActiveFriend = null;
+                    window.imApp?.setActiveThemeSurface?.('chats');
                     window.imChat.updateChatsView();
                 });
             }
@@ -736,6 +746,7 @@ async function openChatTab(friend) {
             const cancelBatchBtn = page.querySelector('.chat-cancel-batch-btn');
             const menuBtn = page.querySelector('.chat-menu-btn');
             const callBtn = page.querySelector('.chat-call-btn');
+            const batchForwardBtn = page.querySelector('.batch-forward-btn');
             const batchDeleteBtn = page.querySelector('.batch-delete-btn');
 
             function exitBatchSelectMode() {
@@ -822,6 +833,20 @@ async function openChatTab(friend) {
             if (cancelBatchBtn) {
                 cancelBatchBtn.addEventListener('click', () => {
                     exitBatchSelectMode();
+                });
+            }
+
+            if (batchForwardBtn) {
+                batchForwardBtn.addEventListener('click', () => {
+                    if (String(window.imData.batchSelectionFriendId || '') !== String(friend.id)) return;
+                    const liveFriend = window.imApp.getFriendById ? (window.imApp.getFriendById(friend.id) || friend) : friend;
+                    const descriptors = Array.from(ensureBatchSelectionMap().values());
+                    const messages = window.imApp.findForwardMessagesByDescriptors
+                        ? window.imApp.findForwardMessagesByDescriptors(liveFriend, descriptors)
+                        : [];
+                    window.imChat.openChatRecordForwardPicker?.(liveFriend, messages, {
+                        onSuccess: () => exitBatchSelectMode()
+                    });
                 });
             }
 

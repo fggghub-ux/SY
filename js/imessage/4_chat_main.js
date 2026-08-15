@@ -259,6 +259,24 @@
                     return;
                 }
 
+                if (action === 'forward') {
+                    const row = window.imData.currentActiveRow;
+                    const activeFriend = window.imData.currentActiveFriend;
+                    if (row && activeFriend) {
+                        const messageId = row.getAttribute('data-message-id');
+                        const timestamp = row.getAttribute('data-timestamp');
+                        const liveFriend = (window.imData.friends || []).find(friend => String(friend.id) === String(activeFriend.id)) || activeFriend;
+                        const messages = window.imApp.findForwardMessagesByDescriptors
+                            ? window.imApp.findForwardMessagesByDescriptors(liveFriend, [{ id: messageId, timestamp }])
+                            : [];
+                        window.imChat.closeContextMenu();
+                        window.imChat.openChatRecordForwardPicker?.(liveFriend, messages);
+                    } else {
+                        window.imChat.closeContextMenu();
+                    }
+                    return;
+                }
+
                 if (action === 'more') {
                     // Toggle more actions visibility
                     const moreActions = document.getElementById('msg-context-more-actions');

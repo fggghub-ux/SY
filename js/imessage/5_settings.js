@@ -4611,6 +4611,8 @@
         if (window.imApp.applyGlobalChatCss) {
             window.imApp.applyGlobalChatCss(window.u2ThemeState || {});
         }
+        window.imApp.applyGlobalGroupCss?.(window.u2ThemeState || {});
+        window.imApp.applyGlobalHomeCss?.(window.u2ThemeState || {});
     }
 
     function restoreSavedCss() {

@@ -347,6 +347,34 @@ window.imApp.applyGlobalChatCss = function(themeState = window.u2ThemeState || {
     if (styleTag.textContent !== nextCss) styleTag.textContent = nextCss;
 };
 
+window.imApp.setActiveThemeSurface = function(surface = 'home') {
+    const imessageView = document.getElementById('imessage-view');
+    if (!imessageView) return;
+    imessageView.dataset.imActiveSurface = String(surface || 'home');
+};
+
+function applyGlobalSurfaceCss({ styleId, enabled, css, scope }) {
+    let styleTag = document.getElementById(styleId);
+    if (!styleTag) {
+        styleTag = document.createElement('style');
+        styleTag.id = styleId;
+        document.head.appendChild(styleTag);
+    }
+    const nextCss = enabled && typeof css === 'string' && css.trim()
+        ? window.imApp.scopeUserCss(css, scope)
+        : '';
+    if (styleTag.textContent !== nextCss) styleTag.textContent = nextCss;
+}
+
+window.imApp.applyGlobalHomeCss = function(themeState = window.u2ThemeState || {}) {
+    applyGlobalSurfaceCss({
+        styleId: 'global-imessage-home-css',
+        enabled: !!themeState.imessageHomeCssEnabled,
+        css: themeState.imessageHomeCss,
+        scope: '#imessage-view:is([data-im-active-surface="home"], [data-im-active-surface="chats"])'
+    });
+};
+
 window.imApp.applyGlobalGroupCss = function(themeState = window.u2ThemeState || {}) {
     const styleId = 'global-imessage-group-css';
     let styleTag = document.getElementById(styleId);
@@ -1456,7 +1484,11 @@ window.imApp.formatMessageForApiContext = function(message, friend, options = {}
         };
     }
 
-    if (normalizedMessage.type === 'group_poll') {
+    if (normalizedMessage.type === 'chat_record_forward') {
+        apiContent = window.imApp.formatChatRecordForwardForApiContext
+            ? window.imApp.formatChatRecordForwardForApiContext(normalizedMessage)
+            : '[User 转发了一份聊天记录]';
+    } else if (normalizedMessage.type === 'group_poll') {
         const pollOptions = Array.isArray(normalizedMessage.pollOptions) ? normalizedMessage.pollOptions : [];
         const pollVotes = Array.isArray(normalizedMessage.pollVotes) ? normalizedMessage.pollVotes : [];
         const optionById = new Map(pollOptions.map(option => [String(option?.id || ''), String(option?.text || '')]));
@@ -1926,6 +1958,11 @@ window.imApp.markStickersLoaded = function(loaded = true) {
 
 window.imApp.getFriendMessagePreview = function(message) {
     const targetMessage = message || {};
+    if (targetMessage.type === 'chat_record_forward') {
+        return window.imApp.getChatRecordPreview
+            ? window.imApp.getChatRecordPreview(targetMessage)
+            : '[聊天记录]';
+    }
     if (targetMessage.type === 'image') {
         const desc = targetMessage.text || targetMessage.description || '';
         return desc ? `[图片] ${desc}`.trim() : '[图片]';
@@ -2580,6 +2617,13 @@ window.imApp.updateFriendMessage = async function(friendId, descriptor, mutator,
 
         if (persistedMessage && persistedMessage.id && !targetMessage.id) {
             targetMessage.id = persistedMessage.id;
+        }
+        if (persistedMessage) {
+            ['contentAssetId', 'stickerAssetId', 'senderAvatarAssetId'].forEach((field) => {
+                if (Object.prototype.hasOwnProperty.call(persistedMessage, field)) {
+                    targetMessage[field] = persistedMessage[field] || '';
+                }
+            });
         }
         targetMessage.__messageOrder = targetIndex;
         if (getApiContextFingerprint(targetMessage) !== previousContextFingerprint) {
@@ -4625,7 +4669,6 @@ window.addEventListener('pagehide', () => {
     const modalImageComposerRecognizeBtn = document.getElementById('modal-image-composer-recognize-btn');
     const modalImageComposerInput = document.getElementById('modal-image-composer-input');
     const modalGenerationPromptGroup = document.getElementById('modal-generation-prompt-group');
-    const modalGenerationContextBtn = document.getElementById('modal-generation-context-btn');
     const modalGenerationPresetSelect = document.getElementById('modal-generation-preset-select');
     const modalGenerationSavePresetBtn = document.getElementById('modal-generation-save-preset-btn');
     const modalAutoImageGenerationToggle = document.getElementById('modal-auto-image-generation-toggle');
@@ -4963,23 +5006,6 @@ window.addEventListener('pagehide', () => {
             modalImageComposerRecognizeBtn.textContent = '识图生成图片内容';
         }
     });
-    modalGenerationContextBtn?.addEventListener('click', async () => {
-        if (typeof currentModalGenerationPrompt?.onGenerateFromContext !== 'function') return;
-        try {
-            modalGenerationContextBtn.disabled = true;
-            modalGenerationContextBtn.textContent = '正在整理剧情…';
-            const prompt = String(await currentModalGenerationPrompt.onGenerateFromContext() || '').trim();
-            if (!prompt) throw new Error('没有生成可用的生图提示词');
-            if (modalTextarea) modalTextarea.value = prompt;
-            window.showToast?.('已根据当前剧情生成提示词');
-        } catch (error) {
-            window.showToast?.(error?.message || '剧情提示词生成失败');
-        } finally {
-            modalGenerationContextBtn.disabled = false;
-            modalGenerationContextBtn.textContent = '根据当前剧情生成提示词';
-        }
-    });
-
     modalGenerationPresetSelect?.addEventListener('change', async () => {
         const generationPrompt = currentModalGenerationPrompt;
         if (!generationPrompt) return;
@@ -7166,6 +7192,7 @@ window.addEventListener('pagehide', () => {
     if (navHomeBtn) {
         navHomeBtn.addEventListener('click', () => {
             hideAllTabs();
+            window.imApp.setActiveThemeSurface('home');
             if(imContent) imContent.style.display = 'block';
             if(imContent) imContent.setAttribute('aria-hidden', 'false');
             if(imBottomNavContainer) imBottomNavContainer.style.display = 'flex';
@@ -7179,6 +7206,7 @@ window.addEventListener('pagehide', () => {
     if (navChatsBtn) {
         navChatsBtn.addEventListener('click', () => {
             hideAllTabs();
+            window.imApp.setActiveThemeSurface('chats');
             if(chatsContent) {
                 chatsContent.style.display = 'flex';
                 chatsContent.style.flexDirection = 'column';
@@ -7194,6 +7222,7 @@ window.addEventListener('pagehide', () => {
     if (navMomentsBtn) {
         navMomentsBtn.addEventListener('click', () => {
             hideAllTabs();
+            window.imApp.setActiveThemeSurface('moments');
             if(momentsContent) {
                 momentsContent.style.display = 'flex';
                 momentsContent.style.flexDirection = 'column';
@@ -7209,6 +7238,10 @@ window.addEventListener('pagehide', () => {
             if (window.imApp.updateChatsUnreadBadges) window.imApp.updateChatsUnreadBadges();
         });
     }
+
+    window.imApp.setActiveThemeSurface(
+        navChatsBtn?.classList.contains('active') ? 'chats' : (navMomentsBtn?.classList.contains('active') ? 'moments' : 'home')
+    );
 
     // Initialize saved CSS for all friends on boot
     setTimeout(() => {

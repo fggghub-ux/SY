@@ -56,6 +56,7 @@ function updateChatsView() {
         }
 
         if (window.imData.currentActiveFriend) {
+            window.imApp?.setActiveThemeSurface?.('chat-detail');
             if(emptyState) emptyState.style.display = 'none';
             if(listContainer) listContainer.style.display = 'none';
             if(imBottomNavContainer) imBottomNavContainer.style.display = 'none';
@@ -69,6 +70,7 @@ function updateChatsView() {
                 setTimeout(() => window.imChat.scrollToBottom(container), 50);
             }
         } else {
+            window.imApp?.setActiveThemeSurface?.('chats');
             if(imBottomNavContainer) imBottomNavContainer.style.display = 'flex';
             if(lineHeader) lineHeader.style.display = 'flex'; 
             

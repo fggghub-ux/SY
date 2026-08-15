@@ -5346,14 +5346,24 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
                 if (!isConversationCurrent()) return false;
 
                 let generatedImage = null;
+                let imageGenerationPrompt = '';
+                let imageGenerationConfig = null;
                 const liveImageFriend = getLiveFriendById(speakerFriend.id) || speakerFriend;
                 if (isImageReply && shouldAutoGenerateChatImage(liveImageFriend)) {
                     try {
                         window.showToast?.('正在根据对话生成图片…');
                         const promptConfig = liveImageFriend.imagePromptConfig || {};
                         const referenceImage = await window.imChat.resolveAutoImageReferenceFace(liveImageFriend);
+                        imageGenerationPrompt = buildAutoImagePrompt(currentItem, promptConfig, recentText);
+                        imageGenerationConfig = {
+                            charAppearance: promptConfig.charAppearance || '',
+                            userAppearance: promptConfig.userAppearance || '',
+                            artistPrompt: promptConfig.artistPrompt || '',
+                            negativePrompt: promptConfig.negativePrompt || '',
+                            useReferenceFace: !!referenceImage
+                        };
                         generatedImage = await window.imChat.generateChatImage(
-                            buildAutoImagePrompt(currentItem, promptConfig, recentText),
+                            imageGenerationPrompt,
                             liveImageFriend,
                             {
                                 referenceImage,
@@ -5411,6 +5421,8 @@ ${singleChatCotEnabled ? '本轮必须输出一对完整的 <cot_summary>...</co
                         imageModel: generatedImage?.model || '',
                         imageSize: generatedImage?.size || '',
                         faceReferenceUsed: !!generatedImage?.faceReferenceUsed,
+                        imageGenerationPrompt: generatedImage ? imageGenerationPrompt : '',
+                        imageGenerationConfig: generatedImage ? imageGenerationConfig : null,
                         senderName: speakerFriend.nickname || speakerFriend.realName || 'Char',
                         senderAvatarUrl: speakerFriend.avatarUrl || '',
                         senderAvatarAssetId: speakerFriend.avatarAssetId || '',

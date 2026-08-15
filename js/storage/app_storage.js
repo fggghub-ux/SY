@@ -6,11 +6,11 @@
 
 (function() {
     const DB_NAME = 'iiso_app_storage';
-    const OPTIMIZATION_SHADOW_DB_NAME = 'iiso_app_storage_optimization_shadow_v9';
-    const IMPORT_SHADOW_DB_NAME = 'iiso_app_storage_import_shadow_v9';
-    const IMPORT_ROLLBACK_DB_NAME = 'iiso_app_storage_import_rollback_v9';
-    const DB_VERSION = 8;
-    const STORAGE_SCHEMA_VERSION = 9;
+    const OPTIMIZATION_SHADOW_DB_NAME = 'iiso_app_storage_optimization_shadow_v10';
+    const IMPORT_SHADOW_DB_NAME = 'iiso_app_storage_import_shadow_v10';
+    const IMPORT_ROLLBACK_DB_NAME = 'iiso_app_storage_import_rollback_v10';
+    const DB_VERSION = 9;
+    const STORAGE_SCHEMA_VERSION = 10;
     const BACKUP_APP_NAME = 'u2phone';
 
     const STORES = {
@@ -36,6 +36,7 @@
         xPosts: 'x_posts',
         xThreads: 'x_threads',
         xDms: 'x_dms',
+        xAccountWorlds: 'x_account_worlds',
         vectorMemoryIndex: 'vector_memory_index',
         storageCheckpoints: 'storage_checkpoints'
     };
@@ -50,6 +51,11 @@
     const runtimeBlobUrls = new Map();
     const runtimeBlobUrlAccess = new Map();
     const MAX_RUNTIME_BLOB_URLS = 120;
+    const IMAGE_COMPRESSION_MIN_BYTES = 100 * 1024;
+    const IMAGE_COMPRESSION_MIN_SAVED_BYTES = 32 * 1024;
+    const IMAGE_COMPRESSION_MIN_SAVED_RATIO = 0.1;
+    const IMAGE_COMPRESSION_QUALITY = 0.82;
+    const IMAGE_COMPRESSION_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
     let dbPromise = null;
     const domainCache = new Map();
     const domainWriteChains = new Map();
@@ -62,8 +68,10 @@
         lastError: null,
         migrationVersion: 0,
         lastCompaction: null,
-        lastCacheCleanup: null
+        lastCacheCleanup: null,
+        lastImageCompression: null
     };
+    let imageCompressionPromise = null;
     let storageReadyPromise = null;
     let replacementInProgress = false;
     const storageBootstrapQueue = [];
@@ -667,6 +675,11 @@
                     dmStore.createIndex('updatedAt', 'updatedAt', { unique: false });
                 }
 
+                if (!db.objectStoreNames.contains(STORES.xAccountWorlds)) {
+                    const worldStore = db.createObjectStore(STORES.xAccountWorlds, { keyPath: 'accountId' });
+                    worldStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+                }
+
                 if (!db.objectStoreNames.contains(STORES.vectorMemoryIndex)) {
                     const vectorStore = db.createObjectStore(STORES.vectorMemoryIndex, { keyPath: 'id' });
                     vectorStore.createIndex('scopeFriendKey', 'scopeFriendKey', { unique: false });
@@ -926,6 +939,21 @@
         return safe;
     }
 
+    function stripXAccountGlobals(value = {}) {
+        const safe = value && typeof value === 'object' ? cloneDeep(value) : {};
+        delete safe.xPlayerAccounts;
+        delete safe.activeXPlayerAccountId;
+        delete safe.xAccountSchemaVersion;
+        return safe;
+    }
+
+    function getXAssetNamespace(value = {}) {
+        return String(value?.activeXPlayerAccountId || 'legacy')
+            .trim()
+            .replace(/[^a-z0-9_-]+/gi, '-')
+            .slice(0, 80) || 'legacy';
+    }
+
     function putAssetInTransaction(assetStore, assetId, dataUrl, extra = {}) {
         const blob = dataUrlToBlob(dataUrl);
         assetStore.put({
@@ -939,6 +967,8 @@
 
     function persistXAssetsInTransaction(value, assetStore) {
         const next = cloneDeep(value && typeof value === 'object' ? value : {});
+        const accountNamespace = getXAssetNamespace(next);
+        const scopedAssetId = (suffix) => `x_account_${accountNamespace}_${suffix}`;
         const persistField = (owner, urlField, assetField, assetId, extra) => {
             if (!owner || !isDataUrl(owner[urlField])) return;
             putAssetInTransaction(assetStore, assetId, owner[urlField], extra);
@@ -946,26 +976,63 @@
             owner[urlField] = null;
         };
 
-        persistField(next.xData, 'avatar', 'avatarAssetId', 'x_profile_avatar', { ownerType: 'x_profile', field: 'avatar' });
-        persistField(next.xData, 'banner', 'bannerAssetId', 'x_profile_banner', { ownerType: 'x_profile', field: 'banner' });
-        persistField(next, 'xHomeBannerUrl', 'xHomeBannerAssetId', 'x_home_banner', { ownerType: 'x_app', field: 'homeBanner' });
-        persistField(next, 'xSearchBannerUrl', 'xSearchBannerAssetId', 'x_search_banner', { ownerType: 'x_app', field: 'searchBanner' });
+        persistField(next.xData, 'avatar', 'avatarAssetId', scopedAssetId('profile_avatar'), { ownerType: 'x_profile', ownerId: accountNamespace, field: 'avatar' });
+        persistField(next.xData, 'banner', 'bannerAssetId', scopedAssetId('profile_banner'), { ownerType: 'x_profile', ownerId: accountNamespace, field: 'banner' });
+        persistField(next, 'xHomeBannerUrl', 'xHomeBannerAssetId', scopedAssetId('home_banner'), { ownerType: 'x_app', ownerId: accountNamespace, field: 'homeBanner' });
+        persistField(next, 'xSearchBannerUrl', 'xSearchBannerAssetId', scopedAssetId('search_banner'), { ownerType: 'x_app', ownerId: accountNamespace, field: 'searchBanner' });
+        (Array.isArray(next.xPlayerAccounts) ? next.xPlayerAccounts : []).forEach((account, accountIndex) => {
+            const accountId = String(account?.id || `account-${accountIndex}`)
+                .replace(/[^a-z0-9_-]+/gi, '-')
+                .slice(0, 80) || `account-${accountIndex}`;
+            persistField(account, 'avatar', 'avatarAssetId', `x_account_${accountId}_switcher_avatar`, {
+                ownerType: 'x_account',
+                ownerId: accountId,
+                field: 'avatar'
+            });
+        });
 
         (Array.isArray(next.xTopics) ? next.xTopics : []).forEach((topic, topicIndex) => {
             const topicId = String(topic?.id ?? topic?.name ?? topicIndex);
-            persistField(topic, 'avatar', 'avatarAssetId', `x_topic_${topicId}_avatar`, { ownerType: 'x_topic', ownerId: topicId, field: 'avatar' });
-            persistField(topic, 'banner', 'bannerAssetId', `x_topic_${topicId}_banner`, { ownerType: 'x_topic', ownerId: topicId, field: 'banner' });
+            persistField(topic, 'avatar', 'avatarAssetId', scopedAssetId(`topic_${topicId}_avatar`), { ownerType: 'x_topic', ownerId: topicId, accountId: accountNamespace, field: 'avatar' });
+            persistField(topic, 'banner', 'bannerAssetId', scopedAssetId(`topic_${topicId}_banner`), { ownerType: 'x_topic', ownerId: topicId, accountId: accountNamespace, field: 'banner' });
         });
 
         (Array.isArray(next.xGeneratedPosts) ? next.xGeneratedPosts : []).forEach((post, postIndex) => {
             const postId = String(post?.id ?? postIndex);
-            persistField(post, 'authorAvatar', 'authorAvatarAssetId', `x_post_${postId}_author`, { ownerType: 'x_post', ownerId: postId, field: 'authorAvatar' });
+            persistField(post, 'authorAvatar', 'authorAvatarAssetId', scopedAssetId(`post_${postId}_author`), { ownerType: 'x_post', ownerId: postId, accountId: accountNamespace, field: 'authorAvatar' });
             (Array.isArray(post?.images) ? post.images : []).forEach((image, imageIndex) => {
                 if (!image || typeof image !== 'object' || !isDataUrl(image.url)) return;
-                const assetId = String(image.assetId || `x_post_${postId}_image_${imageIndex}`);
-                putAssetInTransaction(assetStore, assetId, image.url, { ownerType: 'x_post', ownerId: postId, field: 'images', index: imageIndex });
+                const assetId = String(image.assetId || scopedAssetId(`post_${postId}_image_${imageIndex}`));
+                putAssetInTransaction(assetStore, assetId, image.url, { ownerType: 'x_post', ownerId: postId, accountId: accountNamespace, field: 'images', index: imageIndex });
                 image.assetId = assetId;
                 image.url = null;
+            });
+        });
+        (Array.isArray(next.xDirectMessages) ? next.xDirectMessages : []).forEach((dm, dmIndex) => {
+            const charId = String(dm?.id ?? dmIndex).replace(/[^a-z0-9_-]+/gi, '-').slice(0, 80) || `char-${dmIndex}`;
+            persistField(
+                dm,
+                'profileImageFaceReferenceUrl',
+                'profileImageFaceReferenceAssetId',
+                scopedAssetId(`char_${charId}_profile_face`),
+                { ownerType: 'x_char_profile_face', ownerId: String(dm?.id ?? dmIndex), accountId: accountNamespace }
+            );
+            (Array.isArray(dm?.profilePosts) ? dm.profilePosts : []).forEach((post, postIndex) => {
+                const postId = String(post?.id ?? postIndex).replace(/[^a-z0-9_-]+/gi, '-').slice(0, 100) || `post-${postIndex}`;
+                (Array.isArray(post?.images) ? post.images : []).forEach((image, imageIndex) => {
+                    if (!image || typeof image !== 'object' || !isDataUrl(image.url)) return;
+                    const assetId = String(image.assetId || scopedAssetId(`char_${charId}_profile_post_${postId}_image_${imageIndex}`));
+                    putAssetInTransaction(assetStore, assetId, image.url, {
+                        ownerType: 'x_char_profile_post',
+                        ownerId: postId,
+                        charId: String(dm?.id ?? dmIndex),
+                        accountId: accountNamespace,
+                        field: 'images',
+                        index: imageIndex
+                    });
+                    image.assetId = assetId;
+                    image.url = null;
+                });
             });
         });
         return next;
@@ -980,6 +1047,9 @@
         await hydrateField(next.xData, 'banner', 'bannerAssetId');
         await hydrateField(next, 'xHomeBannerUrl', 'xHomeBannerAssetId');
         await hydrateField(next, 'xSearchBannerUrl', 'xSearchBannerAssetId');
+        for (const account of (Array.isArray(next.xPlayerAccounts) ? next.xPlayerAccounts : [])) {
+            await hydrateField(account, 'avatar', 'avatarAssetId');
+        }
         for (const topic of (Array.isArray(next.xTopics) ? next.xTopics : [])) {
             await hydrateField(topic, 'avatar', 'avatarAssetId');
             await hydrateField(topic, 'banner', 'bannerAssetId');
@@ -988,6 +1058,14 @@
             await hydrateField(post, 'authorAvatar', 'authorAvatarAssetId');
             for (const image of (Array.isArray(post?.images) ? post.images : [])) {
                 if (image?.assetId && !image.url) image.url = await getAssetUrl(image.assetId);
+            }
+        }
+        for (const dm of (Array.isArray(next.xDirectMessages) ? next.xDirectMessages : [])) {
+            await hydrateField(dm, 'profileImageFaceReferenceUrl', 'profileImageFaceReferenceAssetId');
+            for (const post of (Array.isArray(dm?.profilePosts) ? dm.profilePosts : [])) {
+                for (const image of (Array.isArray(post?.images) ? post.images : [])) {
+                    if (image?.assetId && !image.url) image.url = await getAssetUrl(image.assetId);
+                }
             }
         }
         return next;
@@ -1015,6 +1093,114 @@
             xPostThreads: Object.fromEntries(threads.map((row) => [String(row.postId), row.value])),
             xDirectMessages: dms
         });
+    }
+
+    function buildXAccountWorldRecord(persistedValue = {}, accountId = '') {
+        const safeAccountId = String(accountId || '').trim();
+        if (!safeAccountId) throw new Error('X account id is required.');
+        return {
+            accountId: safeAccountId,
+            updatedAt: Date.now(),
+            state: stripXAccountGlobals(stripXCollections(persistedValue)),
+            xGeneratedPosts: cloneDeep(Array.isArray(persistedValue.xGeneratedPosts) ? persistedValue.xGeneratedPosts : []),
+            xPostThreads: cloneDeep(
+                persistedValue.xPostThreads && typeof persistedValue.xPostThreads === 'object'
+                    ? persistedValue.xPostThreads
+                    : {}
+            ),
+            xDirectMessages: cloneDeep(Array.isArray(persistedValue.xDirectMessages) ? persistedValue.xDirectMessages : [])
+        };
+    }
+
+    function restoreXAccountWorldRecord(record = {}, globals = {}) {
+        return {
+            ...(record.state && typeof record.state === 'object' ? cloneDeep(record.state) : {}),
+            xGeneratedPosts: cloneDeep(Array.isArray(record.xGeneratedPosts) ? record.xGeneratedPosts : []),
+            xPostThreads: cloneDeep(record.xPostThreads && typeof record.xPostThreads === 'object' ? record.xPostThreads : {}),
+            xDirectMessages: cloneDeep(Array.isArray(record.xDirectMessages) ? record.xDirectMessages : []),
+            xPlayerAccounts: cloneDeep(Array.isArray(globals.xPlayerAccounts) ? globals.xPlayerAccounts : []),
+            activeXPlayerAccountId: String(globals.activeXPlayerAccountId || record.accountId || ''),
+            xAccountSchemaVersion: Math.max(1, Number(globals.xAccountSchemaVersion) || 1)
+        };
+    }
+
+    async function switchXAccountWorld(targetAccountId, initialState = null) {
+        if (replacementInProgress) throw new Error('Storage replacement is in progress.');
+        if (storageReadyPromise) await storageReadyPromise;
+        const targetId = String(targetAccountId || '').trim();
+        if (!targetId) throw new Error('Target X account id is required.');
+        if (!await flushPendingWrites()) throw new Error('Pending writes could not be completed before switching X accounts.');
+
+        const currentRuntime = readDomain('x', {});
+        const currentId = String(currentRuntime.activeXPlayerAccountId || '').trim();
+        if (currentId && currentId === targetId) return cloneDeep(currentRuntime);
+
+        const storeNames = [
+            STORES.appDomains,
+            STORES.xPosts,
+            STORES.xThreads,
+            STORES.xDms,
+            STORES.xAccountWorlds,
+            STORES.assets
+        ];
+        let persistedTargetResult = null;
+        const now = Date.now();
+
+        await runWithQuotaRetry(() => withStore(storeNames, 'readwrite', async (stores) => {
+            const currentRecord = await requestToPromise(stores[STORES.appDomains].get('x'));
+            const persistedCurrent = persistXAssetsInTransaction(currentRuntime, stores[STORES.assets]);
+            const globalAccountState = {
+                xPlayerAccounts: cloneDeep(Array.isArray(persistedCurrent.xPlayerAccounts) ? persistedCurrent.xPlayerAccounts : []),
+                activeXPlayerAccountId: targetId,
+                xAccountSchemaVersion: Math.max(1, Number(persistedCurrent.xAccountSchemaVersion) || 1)
+            };
+
+            if (currentId) {
+                stores[STORES.xAccountWorlds].put(buildXAccountWorldRecord(persistedCurrent, currentId));
+            }
+
+            let targetWorld = await requestToPromise(stores[STORES.xAccountWorlds].get(targetId));
+            if (!targetWorld) {
+                if (!initialState || typeof initialState !== 'object') {
+                    throw new Error(`X account world ${targetId} was not found.`);
+                }
+                const preparedInitial = persistXAssetsInTransaction({
+                    ...cloneDeep(initialState),
+                    ...globalAccountState,
+                    activeXPlayerAccountId: targetId
+                }, stores[STORES.assets]);
+                targetWorld = buildXAccountWorldRecord(preparedInitial, targetId);
+            }
+
+            const persistedTarget = restoreXAccountWorldRecord(targetWorld, globalAccountState);
+            const revision = Math.max(0, Number(currentRecord?.revision) || 0) + 1;
+            stores[STORES.appDomains].put({
+                name: 'x',
+                schemaVersion: STORAGE_SCHEMA_VERSION,
+                revision,
+                updatedAt: now,
+                value: stripXCollections(persistedTarget)
+            });
+            await replaceCollectionRecords(stores[STORES.xPosts], persistedTarget.xGeneratedPosts || [], 'id');
+            const threadRows = Object.entries(persistedTarget.xPostThreads || {}).map(([postId, value]) => ({ postId, value }));
+            await replaceCollectionRecords(stores[STORES.xThreads], threadRows, 'postId');
+            const dmRows = (persistedTarget.xDirectMessages || []).map((item, index) => ({
+                ...item,
+                id: String(item?.id ?? item?.charId ?? `x-dm-${index}`),
+                updatedAt: Number(item?.updatedAt) || now
+            }));
+            await replaceCollectionRecords(stores[STORES.xDms], dmRows, 'id');
+            stores[STORES.xAccountWorlds].delete(targetId);
+            persistedTargetResult = persistedTarget;
+        }));
+
+        const nextRuntime = await hydrateXAssets(persistedTargetResult || {});
+        domainCache.set('x', cloneDeep(nextRuntime));
+        storageHealthState.status = 'saved';
+        storageHealthState.lastCommitAt = now;
+        storageHealthState.lastError = null;
+        notifyStorageSubscribers({ ...storageHealthState, reason: 'x-account-switch' });
+        return cloneDeep(nextRuntime);
     }
 
     async function runWithQuotaRetry(task) {
@@ -1393,6 +1579,221 @@
         return deleteRecord(STORES.assets, assetId);
     }
 
+    function getAssetImageMimeType(asset = {}) {
+        return String(asset?.blob?.type || asset?.mimeType || '').trim().toLowerCase();
+    }
+
+    function isCompressibleImageAsset(asset = {}) {
+        const blob = asset?.blob;
+        return !!blob
+            && !asset?.compressedAt
+            && IMAGE_COMPRESSION_MIME_TYPES.has(getAssetImageMimeType(asset))
+            && Number(blob.size) >= IMAGE_COMPRESSION_MIN_BYTES;
+    }
+
+    function isStoredImageAsset(asset = {}) {
+        return getAssetImageMimeType(asset).startsWith('image/');
+    }
+
+    function getImageCompressionMaxEdge(asset = {}) {
+        const hint = [asset?.ownerType, asset?.field, asset?.id]
+            .map((value) => String(value || '').toLowerCase())
+            .join(' ');
+        if (/(avatar|icon|sticker|face|reference)/.test(hint)) return 1024;
+        if (/(cover|banner|background|wallpaper|bg)/.test(hint)) return 1920;
+        return 1600;
+    }
+
+    function decodeImageBlobForCompression(blob) {
+        if (!blob) return Promise.reject(new Error('Image blob is missing.'));
+        if (typeof createImageBitmap === 'function') {
+            return createImageBitmap(blob).then((bitmap) => ({
+                source: bitmap,
+                width: Number(bitmap.width) || 0,
+                height: Number(bitmap.height) || 0,
+                close: () => bitmap.close?.()
+            }));
+        }
+        if (typeof Image !== 'function' || typeof URL?.createObjectURL !== 'function') {
+            return Promise.reject(new Error('Image decoding is unavailable.'));
+        }
+        return new Promise((resolve, reject) => {
+            const objectUrl = URL.createObjectURL(blob);
+            const image = new Image();
+            image.onload = () => resolve({
+                source: image,
+                width: Number(image.naturalWidth || image.width) || 0,
+                height: Number(image.naturalHeight || image.height) || 0,
+                close: () => URL.revokeObjectURL(objectUrl)
+            });
+            image.onerror = () => {
+                URL.revokeObjectURL(objectUrl);
+                reject(new Error('Image could not be decoded.'));
+            };
+            image.src = objectUrl;
+        });
+    }
+
+    function canvasToBlob(canvas, mimeType, quality) {
+        return new Promise((resolve, reject) => {
+            if (!canvas || typeof canvas.toBlob !== 'function') {
+                reject(new Error('Canvas image encoding is unavailable.'));
+                return;
+            }
+            canvas.toBlob((blob) => {
+                if (blob) resolve(blob);
+                else reject(new Error('Image encoding returned no data.'));
+            }, mimeType, quality);
+        });
+    }
+
+    async function createCompressedImageBlob(asset) {
+        const decoded = await decodeImageBlobForCompression(asset.blob);
+        try {
+            if (!decoded.width || !decoded.height) throw new Error('Image dimensions are invalid.');
+            const maxEdge = getImageCompressionMaxEdge(asset);
+            const scale = Math.min(1, maxEdge / Math.max(decoded.width, decoded.height));
+            const width = Math.max(1, Math.round(decoded.width * scale));
+            const height = Math.max(1, Math.round(decoded.height * scale));
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const context = canvas.getContext?.('2d', { alpha: true });
+            if (!context) throw new Error('Canvas rendering is unavailable.');
+            context.drawImage(decoded.source, 0, 0, width, height);
+            const blob = await canvasToBlob(canvas, 'image/webp', IMAGE_COMPRESSION_QUALITY);
+            const verification = await decodeImageBlobForCompression(blob);
+            try {
+                if (!verification.width || !verification.height) throw new Error('Compressed image verification failed.');
+            } finally {
+                verification.close?.();
+            }
+            return { blob, width, height, originalWidth: decoded.width, originalHeight: decoded.height };
+        } finally {
+            decoded.close?.();
+        }
+    }
+
+    async function inspectImageCompression(options = {}) {
+        if (!options.skipReady && storageReadyPromise) await storageReadyPromise;
+        const assets = await getAllRecords(STORES.assets);
+        const images = assets.filter(isStoredImageAsset);
+        const eligible = images.filter(isCompressibleImageAsset);
+        return {
+            scope: 'all',
+            profile: 'balanced',
+            scanned: images.length,
+            eligible: eligible.length,
+            skipped: Math.max(0, images.length - eligible.length),
+            bytes: eligible.reduce((sum, asset) => sum + Math.max(0, Number(asset?.blob?.size) || 0), 0)
+        };
+    }
+
+    async function runImageAssetCompression(options = {}) {
+        if (!options.skipReady && storageReadyPromise) await storageReadyPromise;
+        const progressCallback = typeof options.progressCallback === 'function' ? options.progressCallback : null;
+        if (replacementInProgress) throw new Error('Storage replacement is in progress.');
+        storageHealthState.status = 'saving';
+        storageHealthState.lastError = null;
+        notifyStorageSubscribers({ ...storageHealthState, reason: 'image-compression-start' });
+        try {
+            reportProgress(progressCallback, '正在完成待保存数据...', 2);
+            if (!await flushPendingWrites()) throw new Error('Pending writes could not be completed before image compression.');
+            const assets = await getAllRecords(STORES.assets);
+            const images = assets.filter(isStoredImageAsset);
+            const candidates = images.filter(isCompressibleImageAsset);
+            const report = {
+                scope: 'all',
+                profile: 'balanced',
+                compressedAt: Date.now(),
+                scanned: images.length,
+                eligible: candidates.length,
+                compressed: 0,
+                skipped: Math.max(0, images.length - candidates.length),
+                failed: 0,
+                bytesBefore: candidates.reduce((sum, asset) => sum + Math.max(0, Number(asset?.blob?.size) || 0), 0),
+                bytesAfter: 0,
+                bytesFreed: 0
+            };
+
+            for (let index = 0; index < candidates.length; index += 1) {
+                const asset = candidates[index];
+                const originalBytes = Math.max(0, Number(asset?.blob?.size) || 0);
+                reportProgress(
+                    progressCallback,
+                    `正在压缩第 ${index + 1} / ${candidates.length} 张图片...`,
+                    candidates.length ? 5 + ((index / candidates.length) * 90) : 95
+                );
+                try {
+                    const compressed = await createCompressedImageBlob(asset);
+                    const savedBytes = originalBytes - compressed.blob.size;
+                    const savedRatio = originalBytes > 0 ? savedBytes / originalBytes : 0;
+                    if (savedBytes < IMAGE_COMPRESSION_MIN_SAVED_BYTES || savedRatio < IMAGE_COMPRESSION_MIN_SAVED_RATIO) {
+                        report.skipped += 1;
+                        report.bytesAfter += originalBytes;
+                        continue;
+                    }
+                    const digest = await hashBlobSha256(compressed.blob);
+                    const replaced = await withStore([STORES.assets], 'readwrite', async (stores) => {
+                        const current = await requestToPromise(stores[STORES.assets].get(String(asset.id)));
+                        if (
+                            !current?.blob
+                            || Number(current.blob.size) !== originalBytes
+                            || String(current.updatedAt ?? '') !== String(asset.updatedAt ?? '')
+                        ) return false;
+                        stores[STORES.assets].put({
+                            ...current,
+                            blob: compressed.blob,
+                            mimeType: compressed.blob.type || 'image/webp',
+                            width: compressed.width,
+                            height: compressed.height,
+                            originalWidth: Number(current.originalWidth) || compressed.originalWidth,
+                            originalHeight: Number(current.originalHeight) || compressed.originalHeight,
+                            originalMimeType: current.originalMimeType || getAssetImageMimeType(current),
+                            sha256: digest || current.sha256 || null,
+                            compressionProfile: 'balanced',
+                            compressedAt: Date.now(),
+                            updatedAt: Date.now()
+                        });
+                        return true;
+                    });
+                    if (!replaced) {
+                        report.skipped += 1;
+                        report.bytesAfter += originalBytes;
+                        continue;
+                    }
+                    revokeRuntimeBlobUrl(asset.id);
+                    report.compressed += 1;
+                    report.bytesAfter += compressed.blob.size;
+                } catch (error) {
+                    console.warn('[Storage] Image compression skipped an asset:', asset?.id, error);
+                    report.failed += 1;
+                    report.bytesAfter += originalBytes;
+                }
+            }
+            report.bytesFreed = Math.max(0, report.bytesBefore - report.bytesAfter);
+            await setMeta('storage_last_image_compression', report);
+            storageHealthState.status = 'saved';
+            storageHealthState.lastError = null;
+            storageHealthState.lastImageCompression = cloneDeep(report);
+            notifyStorageSubscribers({ ...storageHealthState, reason: 'image-compression-complete' });
+            reportProgress(progressCallback, '图片压缩完成', 100);
+            return cloneDeep(report);
+        } catch (error) {
+            storageHealthState.status = 'error';
+            storageHealthState.lastError = error?.message || String(error);
+            notifyStorageSubscribers({ ...storageHealthState, reason: 'image-compression-error' });
+            throw error;
+        }
+    }
+
+    function compressImageAssets(options = {}) {
+        if (imageCompressionPromise) return imageCompressionPromise;
+        imageCompressionPromise = runImageAssetCompression(options)
+            .finally(() => { imageCompressionPromise = null; });
+        return imageCompressionPromise;
+    }
+
     async function markAssetOrphaned(assetId) {
         if (!assetId) return false;
         return withStore([STORES.assets], 'readwrite', async (stores) => {
@@ -1526,8 +1927,25 @@
             imageModel: typeof safe.imageModel === 'string' ? safe.imageModel : '',
             imageSize: typeof safe.imageSize === 'string' ? safe.imageSize : '',
             faceReferenceUsed: !!safe.faceReferenceUsed,
+            imageGenerationPrompt: typeof safe.imageGenerationPrompt === 'string'
+                ? safe.imageGenerationPrompt.slice(0, 16000)
+                : '',
+            imageGenerationConfig: safe.imageGenerationConfig && typeof safe.imageGenerationConfig === 'object'
+                ? {
+                    charAppearance: String(safe.imageGenerationConfig.charAppearance || '').slice(0, 4000),
+                    userAppearance: String(safe.imageGenerationConfig.userAppearance || '').slice(0, 4000),
+                    artistPrompt: String(safe.imageGenerationConfig.artistPrompt || '').slice(0, 4000),
+                    negativePrompt: String(safe.imageGenerationConfig.negativePrompt || '').slice(0, 4000),
+                    useReferenceFace: safe.imageGenerationConfig.useReferenceFace === true
+                }
+                : null,
+            imageRerollCount: Math.max(0, Number(safe.imageRerollCount) || 0),
+            imageRerolledAt: Math.max(0, Number(safe.imageRerolledAt) || 0),
             fakeLinkData: safe.fakeLinkData && typeof safe.fakeLinkData === 'object'
                 ? sanitizePersistentValue(cloneDeep(safe.fakeLinkData))
+                : null,
+            record: safe.record && typeof safe.record === 'object'
+                ? sanitizePersistentValue(cloneDeep(safe.record))
                 : null,
             packetId: safe.packetId,
             totalAmount: safe.totalAmount,
@@ -1665,8 +2083,17 @@
             imageModel: row.imageModel || '',
             imageSize: row.imageSize || '',
             faceReferenceUsed: !!row.faceReferenceUsed,
+            imageGenerationPrompt: row.imageGenerationPrompt || '',
+            imageGenerationConfig: row.imageGenerationConfig && typeof row.imageGenerationConfig === 'object'
+                ? cloneDeep(row.imageGenerationConfig)
+                : null,
+            imageRerollCount: Math.max(0, Number(row.imageRerollCount) || 0),
+            imageRerolledAt: Math.max(0, Number(row.imageRerolledAt) || 0),
             fakeLinkData: row.fakeLinkData && typeof row.fakeLinkData === 'object'
                 ? cloneDeep(row.fakeLinkData)
+                : null,
+            record: row.record && typeof row.record === 'object'
+                ? cloneDeep(row.record)
                 : null,
             packetId: row.packetId,
             totalAmount: row.totalAmount,
@@ -2697,6 +3124,11 @@
                     avatar: '',
                     banner: ''
                 },
+                xPlayerAccounts: [],
+                activeXPlayerAccountId: '',
+                xAccountSchemaVersion: 1,
+                xCharIdentityMigrationVersion: 0,
+                xCharProfileMediaMigrationVersion: 0,
                 xTopics: [],
                 xHomeBannerUrl: '',
                 xSearchBannerUrl: ''
@@ -2777,6 +3209,8 @@
         const safe = payload && typeof payload === 'object' ? payload : {};
         const themeState = safe.themeState && typeof safe.themeState === 'object' ? safe.themeState : null;
         if (themeState) {
+            themeState.imessageHomeCssEnabled = !!themeState.imessageHomeCssEnabled;
+            themeState.imessageHomeCss = typeof themeState.imessageHomeCss === 'string' ? themeState.imessageHomeCss : '';
             themeState.imessageChatCssEnabled = !!themeState.imessageChatCssEnabled;
             themeState.imessageChatCss = typeof themeState.imessageChatCss === 'string' ? themeState.imessageChatCss : '';
             if (Array.isArray(themeState.apps)) {
@@ -2894,6 +3328,8 @@
                     ttf: ''
                 },
                 savedFontPresets: [],
+                imessageHomeCssEnabled: false,
+                imessageHomeCss: '',
                 imessageChatCssEnabled: false,
                 imessageChatCss: '',
                 apps: [
@@ -3222,6 +3658,7 @@
         [STORES.xPosts]: 'id',
         [STORES.xThreads]: 'postId',
         [STORES.xDms]: 'id',
+        [STORES.xAccountWorlds]: 'accountId',
         [STORES.vectorMemoryIndex]: 'id',
         [STORES.storageCheckpoints]: 'id'
     };
@@ -3940,7 +4377,6 @@
 
         replacementInProgress = true;
         let shadowDb = null;
-        let completed = false;
         const importId = `import_${Date.now()}_${Math.random().toString(36).slice(2)}`;
         try {
             await deleteDatabaseSafe(IMPORT_SHADOW_DB_NAME);
@@ -3964,7 +4400,6 @@
             for (const record of importedDomains) {
                 if (record?.name) domainCache.set(String(record.name), cloneDeep(record.value));
             }
-            completed = true;
             reportProgress(progressCallback, '导入完成', 100);
             return cloneDeep(prepared.report);
         } catch (error) {
@@ -3976,7 +4411,7 @@
             } catch (cleanupError) {}
             throw error;
         } finally {
-            if (!completed) replacementInProgress = false;
+            replacementInProgress = false;
         }
     }
 
@@ -4071,6 +4506,7 @@
         xPosts: 'X',
         xThreads: 'X',
         xDms: 'X',
+        xAccountWorlds: 'X',
         assets: '图片资源',
         libraryBooks: '书库',
         libraryBookContent: '书库',
@@ -4711,6 +5147,7 @@
             ? await compactStorage({ skipReady: true, force: true })
             : await getMeta('storage_last_compaction');
         storageHealthState.lastCacheCleanup = await getMeta('storage_last_cache_cleanup');
+        storageHealthState.lastImageCompression = await getMeta('storage_last_image_compression');
 
         const hydratedDomains = await getAllRecords(STORES.appDomains);
         for (const record of hydratedDomains) {
@@ -4925,6 +5362,7 @@
         saveAssetFromDataUrl,
         getAssetUrl,
         deleteAsset,
+        markAssetOrphaned,
         getMeta,
         setMeta,
         getSetting,
@@ -4978,7 +5416,8 @@
         deleteLibraryTrack,
         deleteLibraryPlaylist,
         loadLibraryDailyStats,
-        incrementLibraryDailyStat
+        incrementLibraryDailyStat,
+        switchXAccountWorld
     };
 
     Object.assign(window.appStorage, {
@@ -4991,6 +5430,8 @@
         compactStorage,
         clearSafeCache,
         optimizeStorage,
+        inspectImageCompression,
+        compressImageAssets,
         pruneOrphanedAssets,
         subscribe,
         loadLegacyKey,

@@ -67,6 +67,8 @@
         const editHandleInput = document.getElementById('x-edit-handle-input');
         const editBioInput = document.getElementById('x-edit-bio-input');
         const editPersonaInput = document.getElementById('x-edit-persona-input');
+        const editFollowingInput = document.getElementById('x-edit-following-input');
+        const editFollowersInput = document.getElementById('x-edit-followers-input');
         const closeButtons = [
             document.getElementById('x-back-btn'),
             document.getElementById('x-profile-close-btn')
@@ -83,7 +85,10 @@
             bio: '',
             persona: '',
             avatar: '',
-            banner: ''
+            banner: '',
+            following: 520,
+            followers: 13100,
+            profileStatsEdited: false
         };
 
         const defaultTrends = [
@@ -106,6 +111,11 @@
 
         const defaultXState = {
             xData: { ...defaultProfile, edited: false },
+            xPlayerAccounts: [],
+            activeXPlayerAccountId: '',
+            xAccountSchemaVersion: 1,
+            xCharIdentityMigrationVersion: 0,
+            xCharProfileMediaMigrationVersion: 0,
             xTopics: [],
             boundWorldBookIds: [],
             xVisitors: [],
@@ -118,7 +128,6 @@
             xHomeBannerUrl: '',
             xSearchBannerUrl: ''
         };
-        const generatedImagePlaceholderUrl = 'assets/x/generated-image-placeholder.jpg';
         const xImageCompressionPresets = Object.freeze({
             avatar: Object.freeze({ maxWidth: 512, maxHeight: 512, quality: 0.82 }),
             cover: Object.freeze({ maxWidth: 1600, maxHeight: 900, quality: 0.82 }),
@@ -196,6 +205,9 @@
         let touchStartY = 0;
         let isTouching = false;
         let currentProfile = { ...defaultProfile };
+        let profileEditorMode = 'edit';
+        let accountSwitchSheet = null;
+        let xAccountSwitchInFlight = false;
         let avatarDraft = currentProfile.avatar || '';
         let bannerDraft = currentProfile.banner || '';
         let tempPostCounter = 0;
@@ -221,6 +233,13 @@
         let charEditAvatarDraft = '';
         let charEditCoverSeed = '';
         let charEditCoverImageDraft = '';
+        let charProfileGenerateSheet = null;
+        let currentGeneratingCharId = null;
+        let charProfileGenerationInFlight = false;
+        let charProfileReferenceDraft = '';
+        let charProfileReferenceFileNameDraft = '';
+        let charProfileReferenceChanged = false;
+        let charProfilePresetDrafts = [];
         let postForwardSheet = null;
         let currentForwardPostId = null;
         let currentDmId = null;
@@ -242,6 +261,11 @@
         const xHomeFeedPageSize = 20;
         let xHomeFeedRenderLimit = xHomeFeedInitialLimit;
         let xHomeFeedTotalPosts = 0;
+        let xHomeFeedRenderKey = '';
+        let cachedNormalizedXState = null;
+        let cachedNormalizedXRevision = -1;
+        let fallbackXStateRevision = 0;
+        let xOpenMaintenancePromise = null;
 
         function safeText(value, fallback = '') {
             const text = String(value == null ? '' : value).trim();
@@ -265,6 +289,14 @@
             if (match[2] === '万') return Math.round(number * 10000);
             if (match[2] && match[2].toLowerCase() === 'k') return Math.round(number * 1000);
             return Math.round(number);
+        }
+
+        function normalizeProfileCount(value, fallback = 0) {
+            const raw = String(value == null ? '' : value).trim().replace(/,/g, '');
+            if (!raw) return Math.max(0, Math.round(Number(fallback) || 0));
+            const parsed = Number(raw);
+            if (!Number.isFinite(parsed) || parsed < 0) return Math.max(0, Math.round(Number(fallback) || 0));
+            return Math.min(Number.MAX_SAFE_INTEGER, Math.round(parsed));
         }
 
         function formatCompactCount(value) {
@@ -481,6 +513,113 @@ X is a global app. Non-User authors may write in the language that naturally fit
             return (Array.isArray(items) ? items : []).filter((item) => item && !isCurrentXUserAuthor(item));
         }
 
+        function reconcileTopicCharacterAuthors(rawPosts, topic, cloneAccountIds = new Set()) {
+            const topicChars = (Array.isArray(topic?.chars) ? topic.chars : []).map((char) => {
+                const name = safeText(char?.name || char?.nickname || char?.realName, 'Char');
+                return {
+                    id: String(char?.id || char?.sourceFriendId || ''),
+                    sourceFriendId: safeText(char?.sourceFriendId),
+                    name,
+                    handle: makeHandle(name, char?.handle || char?.realName || char?.signature || name),
+                    avatar: safeText(char?.avatar || char?.avatarUrl)
+                };
+            }).filter((char) => char.id && char.name);
+            if (!topicChars.length) return Array.isArray(rawPosts) ? rawPosts : [];
+
+            const uniqueNameCounts = topicChars.reduce((counts, char) => {
+                const key = char.name.toLocaleLowerCase();
+                counts.set(key, (counts.get(key) || 0) + 1);
+                return counts;
+            }, new Map());
+            const findChar = (raw) => {
+                if (!raw || typeof raw !== 'object') return null;
+                const authorId = safeText(raw.authorId || raw.accountId);
+                const authorName = safeText(raw.authorName || raw.name || raw.displayName);
+                const authorHandle = canonicalAccountHandle(raw.handle || raw.authorHandle, authorName);
+                return topicChars.find((char) => authorId && (authorId === char.id || authorId === char.sourceFriendId))
+                    || topicChars.find((char) => authorHandle && authorHandle === canonicalAccountHandle(char.handle, char.name))
+                    || topicChars.find((char) => {
+                        const key = authorName.toLocaleLowerCase();
+                        return key && uniqueNameCounts.get(key) === 1 && char.name.toLocaleLowerCase() === key;
+                    })
+                    || null;
+            };
+            const reconcileAuthor = (raw) => {
+                if (!raw || typeof raw !== 'object') return raw;
+                const matched = findChar(raw);
+                if (matched) {
+                    const previousAuthorId = safeText(raw.authorId || raw.accountId);
+                    if (previousAuthorId && previousAuthorId !== matched.id) cloneAccountIds.add(previousAuthorId);
+                    raw.authorId = matched.id;
+                    delete raw.accountId;
+                    raw.authorName = matched.name;
+                    raw.name = matched.name;
+                    raw.handle = matched.handle;
+                    raw.authorHandle = matched.handle;
+                    if (matched.avatar) {
+                        raw.authorAvatar = matched.avatar;
+                        raw.avatar = matched.avatar;
+                    }
+                }
+                const comments = Array.isArray(raw.comments) ? raw.comments : (Array.isArray(raw.commentList) ? raw.commentList : []);
+                comments.forEach(reconcileAuthor);
+                if (raw.refPost) reconcileAuthor(raw.refPost);
+                return raw;
+            };
+            return (Array.isArray(rawPosts) ? rawPosts : []).map(reconcileAuthor);
+        }
+
+        async function migrateActiveXCharIdentities() {
+            const state = getXState();
+            if (state.xCharIdentityMigrationVersion >= 1) return state;
+            const cloneAccountIds = new Set();
+            const topics = Array.isArray(state.xTopics) ? state.xTopics : [];
+            const posts = (state.xGeneratedPosts || []).map((post) => ({ ...post }));
+            topics.forEach((topic) => {
+                const topicPosts = posts.filter((post) => (
+                    String(post.superTopicId || '') === String(topic.id || topic.name || '')
+                    || (!post.superTopicId && safeText(post.superTopicName) === safeText(topic.name || topic.title))
+                ));
+                reconcileTopicCharacterAuthors(topicPosts, topic, cloneAccountIds);
+            });
+            const migrated = saveXState({
+                ...state,
+                xGeneratedPosts: posts,
+                xAccounts: (state.xAccounts || []).filter((account) => !cloneAccountIds.has(String(account.id))),
+                xCharIdentityMigrationVersion: 1
+            });
+            await flushXStateNow('x-char-identity-migration');
+            return migrated;
+        }
+
+        function isLegacyCharProfileRandomImage(image) {
+            const url = safeText(image?.url || image?.src || image?.imageUrl);
+            return /^https:\/\/picsum\.photos\//i.test(url);
+        }
+
+        async function migrateActiveXCharProfileMedia() {
+            const state = getXState();
+            if (state.xCharProfileMediaMigrationVersion >= 2) return state;
+            const normalizedDirectMessages = (state.xDirectMessages || []).map((item) => ({
+                ...item,
+                profilePosts: (item.profilePosts || []).map((post) => ({
+                    ...post,
+                    images: (Array.isArray(post.images) ? post.images : [])
+                        .filter((image) => !isLegacyCharProfileRandomImage(image))
+                }))
+            }));
+            const existingProfilePosts = normalizedDirectMessages
+                .flatMap((item) => item.profilePosts || []);
+            const migrated = saveXState({
+                ...state,
+                xDirectMessages: normalizedDirectMessages,
+                xGeneratedPosts: prependUniquePosts(state.xGeneratedPosts || [], existingProfilePosts),
+                xCharProfileMediaMigrationVersion: 2
+            });
+            await flushXStateNow('x-char-profile-media-migration');
+            return migrated;
+        }
+
         function getGeneratedTranslation(raw = {}, originalText = '') {
             const translation = safeText(
                 raw.translation || raw.translationZh || raw.zhTranslation || raw.translatedText || raw.textZh || raw.chineseTranslation
@@ -537,6 +676,12 @@ X is a global app. Non-User authors may write in the language that naturally fit
                     id: String(image.id || `${id}-image-${imageIndex}`),
                     text: safeText(image.text || image.prompt || image.description || image.alt || imageText),
                     url: safeText(image.url || image.src || image.imageUrl),
+                    assetId: safeText(image.assetId || image.imageAssetId),
+                    imageSource: safeText(image.imageSource),
+                    imageProvider: safeText(image.imageProvider),
+                    imageModel: safeText(image.imageModel),
+                    imageSize: safeText(image.imageSize),
+                    faceReferenceUsed: image.faceReferenceUsed === true,
                     vision: image?.vision && typeof image.vision === 'object' ? { ...image.vision } : undefined
                 }))
                 : (imageText || raw.mediaType === 'image'
@@ -575,7 +720,8 @@ X is a global app. Non-User authors may write in the language that naturally fit
         }
 
         function getPostImages(post) {
-            return Array.isArray(post?.images) ? post.images : [];
+            return (Array.isArray(post?.images) ? post.images : [])
+                .filter((image) => safeText(image?.url));
         }
 
         function renderPostImages(images = []) {
@@ -584,7 +730,7 @@ X is a global app. Non-User authors may write in the language that naturally fit
                 <div class="x-generated-media-grid">
                     ${images.slice(0, 4).map((image) => `
                         <button class="x-post-image-thumb" type="button" data-image-text="${escapeHtml(image.text || 'Image')}" data-image-url="${escapeHtml(image.url || '')}">
-                            <img src="${escapeHtml(image.url || generatedImagePlaceholderUrl)}" alt="" onerror="this.src='${escapeHtml(generatedImagePlaceholderUrl)}'">
+                            <img src="${escapeHtml(image.url)}" alt="" onerror="this.remove()">
                         </button>
                     `).join('')}
                 </div>
@@ -603,6 +749,44 @@ X is a global app. Non-User authors may write in the language that naturally fit
         function canonicalAccountHandle(handle, name = '') {
             const raw = safeText(handle).split('·')[0].trim();
             return makeHandle(name, raw || name).toLocaleLowerCase();
+        }
+
+        function getTopicCharacterIdentities(state = getXState()) {
+            const identities = [];
+            const seen = new Set();
+            (state.xTopics || []).forEach((topic) => {
+                (Array.isArray(topic?.chars) ? topic.chars : []).forEach((char) => {
+                    if (!char || typeof char !== 'object') return;
+                    const name = safeText(char.name || char.nickname || char.realName, 'Char');
+                    const id = String(char.id || char.sourceFriendId || `${topic.id || topic.name}:${name}`);
+                    const key = `${id}|${canonicalAccountHandle(char.handle, name)}`;
+                    if (seen.has(key)) return;
+                    seen.add(key);
+                    identities.push({
+                        id,
+                        sourceFriendId: safeText(char.sourceFriendId),
+                        name,
+                        handle: makeHandle(name, char.handle || char.realName || char.signature || name),
+                        avatar: normalizePersonAvatar(char.avatar || char.avatarUrl, `topic-char:${id}`),
+                        bio: safeText(char.bio || char.signature),
+                        persona: safeText(char.persona || char.characterPersona || char.systemPrompt),
+                        coverSeed: safeText(char.coverSeed, `${id}-cover`),
+                        coverImage: safeText(char.coverImage),
+                        kind: 'topic-char'
+                    });
+                });
+            });
+            return identities;
+        }
+
+        function findTopicCharacterIdentity(authorId, handle, name, state = getXState()) {
+            const requestedId = safeText(authorId);
+            const requestedHandle = canonicalAccountHandle(handle, name);
+            const identities = getTopicCharacterIdentities(state);
+            return identities.find((identity) => requestedId && (
+                String(identity.id) === requestedId || String(identity.sourceFriendId || '') === requestedId
+            )) || identities.find((identity) => requestedHandle && canonicalAccountHandle(identity.handle, identity.name) === requestedHandle)
+                || null;
         }
 
         function makeAccountId(handle, name = '') {
@@ -695,9 +879,62 @@ X is a global app. Non-User authors may write in the language that naturally fit
                 });
         }
 
+        function normalizeXPlayerAccount(raw = {}, fallbackProfile = defaultProfile, index = 0) {
+            const profile = raw && typeof raw === 'object' ? raw : {};
+            const name = safeText(profile.name, fallbackProfile.name || defaultProfile.name);
+            return {
+                id: String(profile.id || `x-account-${index + 1}`),
+                name,
+                handle: makeHandle(name, profile.handle || fallbackProfile.handle),
+                avatar: safeText(profile.avatar || fallbackProfile.avatar),
+                avatarAssetId: safeText(profile.avatarAssetId || fallbackProfile.avatarAssetId),
+                createdAt: Number(profile.createdAt) || Date.now(),
+                updatedAt: Number(profile.updatedAt) || Date.now()
+            };
+        }
+
+        function normalizeXPlayerAccounts(items, xData = {}) {
+            const source = Array.isArray(items) && items.length
+                ? items
+                : [{ id: 'x-account-default', ...xData, createdAt: Date.now() }];
+            const seen = new Set();
+            return source.map((item, index) => normalizeXPlayerAccount(item, index === 0 ? xData : defaultProfile, index))
+                .filter((account) => {
+                    if (!account.id || seen.has(account.id)) return false;
+                    seen.add(account.id);
+                    return true;
+                });
+        }
+
+        function syncActiveXAccountSummary(state) {
+            const activeId = String(state.activeXPlayerAccountId || '');
+            const profile = state.xData || defaultProfile;
+            state.xPlayerAccounts = normalizeXPlayerAccounts(state.xPlayerAccounts, profile).map((account) => (
+                account.id === activeId
+                    ? {
+                        ...account,
+                        name: safeText(profile.name, account.name),
+                        handle: makeHandle(profile.name || account.name, profile.handle || account.handle),
+                        avatar: safeText(profile.avatar),
+                        avatarAssetId: safeText(profile.avatarAssetId),
+                        updatedAt: Date.now()
+                    }
+                    : account
+            ));
+            return state;
+        }
+
         function normalizeXState(rawState) {
             const safe = rawState && typeof rawState === 'object' ? rawState : {};
             const xData = safe.xData && typeof safe.xData === 'object' ? safe.xData : {};
+            const xPlayerAccounts = normalizeXPlayerAccounts(safe.xPlayerAccounts, {
+                ...defaultXState.xData,
+                ...xData
+            });
+            const requestedActiveId = String(safe.activeXPlayerAccountId || '');
+            const activeXPlayerAccountId = xPlayerAccounts.some((account) => account.id === requestedActiveId)
+                ? requestedActiveId
+                : xPlayerAccounts[0].id;
             const normalized = {
                 ...defaultXState,
                 ...safe,
@@ -705,6 +942,11 @@ X is a global app. Non-User authors may write in the language that naturally fit
                     ...defaultXState.xData,
                     ...xData
                 },
+                xPlayerAccounts,
+                activeXPlayerAccountId,
+                xAccountSchemaVersion: Math.max(1, Number(safe.xAccountSchemaVersion) || 1),
+                xCharIdentityMigrationVersion: Math.max(0, Number(safe.xCharIdentityMigrationVersion) || 0),
+                xCharProfileMediaMigrationVersion: Math.max(0, Number(safe.xCharProfileMediaMigrationVersion) || 0),
                 xTopics: Array.isArray(safe.xTopics) ? safe.xTopics : [],
                 boundWorldBookIds: Array.isArray(safe.boundWorldBookIds)
                     ? safe.boundWorldBookIds.map(String)
@@ -726,18 +968,60 @@ X is a global app. Non-User authors may write in the language that naturally fit
         }
 
         function getXState() {
+            const revision = typeof window.getAppStateRevision === 'function'
+                ? window.getAppStateRevision('x')
+                : fallbackXStateRevision;
+            if (cachedNormalizedXState && cachedNormalizedXRevision === revision) {
+                return cachedNormalizedXState;
+            }
             const raw = typeof window.getAppState === 'function' ? window.getAppState('x') : window.__xFallbackState;
-            return normalizeXState(raw);
+            cachedNormalizedXState = normalizeXState(raw);
+            cachedNormalizedXRevision = revision;
+            return cachedNormalizedXState;
         }
 
         function saveXState(nextState) {
-            const normalized = normalizeXState(nextState);
+            const normalized = syncActiveXAccountSummary(normalizeXState(nextState));
             if (typeof window.setAppState === 'function') {
                 window.setAppState('x', normalized);
             } else {
                 window.__xFallbackState = normalized;
+                fallbackXStateRevision += 1;
             }
+            cachedNormalizedXState = normalized;
+            cachedNormalizedXRevision = typeof window.getAppStateRevision === 'function'
+                ? window.getAppStateRevision('x')
+                : fallbackXStateRevision;
             return normalized;
+        }
+
+        async function ensureXPlayerAccountMigration() {
+            const raw = typeof window.getAppState === 'function' ? window.getAppState('x') : window.__xFallbackState;
+            const hasAccounts = Array.isArray(raw?.xPlayerAccounts) && raw.xPlayerAccounts.length > 0;
+            const hasActive = !!safeText(raw?.activeXPlayerAccountId);
+            if (hasAccounts && hasActive) return getXState();
+            const migrated = saveXState(normalizeXState(raw));
+            await flushXStateNow('x-account-migration');
+            return migrated;
+        }
+
+        function createBlankXWorld(profile) {
+            return {
+                ...JSON.parse(JSON.stringify(defaultXState)),
+                xData: {
+                    ...defaultXState.xData,
+                    ...profile,
+                    edited: true,
+                    following: normalizeProfileCount(profile.following, 0),
+                    followers: normalizeProfileCount(profile.followers, 0),
+                    profileStatsEdited: true
+                },
+                xPlayerAccounts: [],
+                activeXPlayerAccountId: '',
+                xAccountSchemaVersion: 1,
+                xCharIdentityMigrationVersion: 1,
+                xCharProfileMediaMigrationVersion: 2
+            };
         }
 
         function updateXState(mutator) {
@@ -748,6 +1032,7 @@ X is a global app. Non-User authors may write in the language that naturally fit
                 xDirectMessages: [...(previous.xDirectMessages || [])],
                 xPostThreads: { ...(previous.xPostThreads || {}) },
                 xGeneratedPosts: [...(previous.xGeneratedPosts || [])],
+                xPlayerAccounts: [...(previous.xPlayerAccounts || [])],
                 xAccounts: [...(previous.xAccounts || [])],
                 xTrends: [...(previous.xTrends || [])],
                 xAdvancePreferences: { ...(previous.xAdvancePreferences || defaultAdvancePreferences) }
@@ -794,6 +1079,9 @@ X is a global app. Non-User authors may write in the language that naturally fit
                     kind: 'char'
                 };
             }
+
+            const topicCharacter = findTopicCharacterIdentity(requestedId, displayHandle, displayName, state);
+            if (topicCharacter) return topicCharacter;
 
             const accounts = Array.isArray(state.xAccounts) ? state.xAccounts : [];
             const account = accounts.find((item) =>
@@ -940,6 +1228,7 @@ X is a global app. Non-User authors may write in the language that naturally fit
             setupDmSettingsSheet();
             setupDmProfileView();
             setupCharEditSheet();
+            setupCharProfileGenerateSheet();
             setupEditSuperTopicSheet();
             setupPostForwardSheet();
             setupSearchGenerateSheet();
@@ -1186,11 +1475,69 @@ X is a global app. Non-User authors may write in the language that naturally fit
                         <label class="x-edit-field"><span>@ Account</span><input id="x-char-edit-handle" type="text" maxlength="32"></label>
                         <label class="x-edit-field"><span>Signature</span><textarea id="x-char-edit-bio" maxlength="160"></textarea></label>
                         <label class="x-edit-field"><span>Persona</span><textarea id="x-char-edit-persona" maxlength="800"></textarea></label>
+                        <label class="x-edit-field"><span>Following</span><input id="x-char-edit-following" type="number" min="0" step="1" inputmode="numeric"></label>
+                        <label class="x-edit-field"><span>Followers</span><input id="x-char-edit-followers" type="number" min="0" step="1" inputmode="numeric"></label>
                         <button class="x-char-random-cover-btn" id="x-char-random-cover-btn" type="button"><i class="fas fa-image"></i> 更换随机背景</button>
                     </div>
                 </div>
             `;
             view.appendChild(charEditSheet);
+        }
+
+        function setupCharProfileGenerateSheet() {
+            charProfileGenerateSheet = document.getElementById('x-char-profile-generate-sheet');
+            if (charProfileGenerateSheet) return;
+            charProfileGenerateSheet = document.createElement('div');
+            charProfileGenerateSheet.className = 'bottom-sheet-overlay detail-sheet-overlay x-char-profile-generate-overlay';
+            charProfileGenerateSheet.id = 'x-char-profile-generate-sheet';
+            charProfileGenerateSheet.style.zIndex = '281';
+            charProfileGenerateSheet.innerHTML = `
+                <div class="bottom-sheet x-char-profile-generate-sheet" role="dialog" aria-modal="true" aria-labelledby="x-char-profile-generate-title">
+                    <div class="sheet-handle"></div>
+                    <div class="x-edit-sheet-header">
+                        <button class="x-edit-sheet-text-btn" id="x-char-profile-generate-close-btn" type="button">取消</button>
+                        <strong id="x-char-profile-generate-title">生成主页帖子</strong>
+                        <button class="x-edit-sheet-save" id="x-char-profile-generate-run-btn" type="button">生成</button>
+                    </div>
+                    <div class="x-char-profile-generate-body">
+                        <label class="x-char-profile-generate-row">
+                            <span><strong>帖子数量</strong><small>每条至少包含 10 条评论</small></span>
+                            <input id="x-char-profile-generate-count" type="number" min="1" max="10" step="1" inputmode="numeric" value="3">
+                        </label>
+                        <label class="x-char-profile-generate-row">
+                            <span><strong>开启生图</strong><small>整批最多为一条帖子生成真实图片</small></span>
+                            <input id="x-char-profile-image-toggle" type="checkbox">
+                        </label>
+                        <section class="x-char-profile-image-options" id="x-char-profile-image-options" hidden>
+                            <label class="x-edit-field">
+                                <span>提示词预设</span>
+                                <select id="x-char-profile-image-preset"><option value="">当前编辑内容</option></select>
+                            </label>
+                            <div class="x-char-profile-preset-actions">
+                                <input id="x-char-profile-preset-name" type="text" maxlength="40" placeholder="预设名称">
+                                <button id="x-char-profile-preset-save" type="button">保存预设</button>
+                                <button id="x-char-profile-preset-delete" type="button">删除</button>
+                            </div>
+                            <label class="x-edit-field"><span>正向提示词</span><textarea id="x-char-profile-image-prompt" maxlength="4000" placeholder="追加到帖子画面描述后的主体、场景或风格要求"></textarea></label>
+                            <label class="x-edit-field"><span>Char 外貌</span><textarea id="x-char-profile-char-appearance" maxlength="4000" placeholder="角色外貌约束"></textarea></label>
+                            <label class="x-edit-field"><span>User 外貌</span><textarea id="x-char-profile-user-appearance" maxlength="4000" placeholder="用户外貌约束"></textarea></label>
+                            <label class="x-edit-field"><span>画风提示词</span><textarea id="x-char-profile-artist-prompt" maxlength="4000" placeholder="画风、镜头、质感等"></textarea></label>
+                            <label class="x-edit-field"><span>负面提示词</span><textarea id="x-char-profile-negative-prompt" maxlength="4000" placeholder="不希望出现在图片中的内容"></textarea></label>
+                            <div class="x-char-profile-reference-card">
+                                <button class="x-char-profile-reference-preview" id="x-char-profile-reference-preview" type="button" aria-label="上传参考脸"><i class="fas fa-user"></i></button>
+                                <input id="x-char-profile-reference-input" type="file" accept="image/jpeg,image/png" hidden>
+                                <div><strong>Char 参考脸</strong><small id="x-char-profile-reference-status">尚未上传</small></div>
+                                <button id="x-char-profile-reference-delete" type="button">移除</button>
+                            </div>
+                            <label class="x-char-profile-generate-row compact">
+                                <span><strong>本次使用参考脸</strong><small>仅在已有参考脸时可用</small></span>
+                                <input id="x-char-profile-reference-toggle" type="checkbox">
+                            </label>
+                        </section>
+                        <p class="x-advance-note">生图失败时仍会保留本次生成的文字帖子，不会使用随机外部图片。</p>
+                    </div>
+                </div>`;
+            view.appendChild(charProfileGenerateSheet);
         }
 
         function setupEditSuperTopicSheet() {
@@ -1450,7 +1797,16 @@ X is a global app. Non-User authors may write in the language that naturally fit
                     source.avatar || source.avatarUrl || fallback.avatar,
                     `me:${source.handle || fallback.handle || name}`
                 ),
-                banner: safeText(source.banner || source.bannerUrl, fallback.banner || '')
+                banner: safeText(source.banner || source.bannerUrl, fallback.banner || ''),
+                following: normalizeProfileCount(
+                    source.profileStatsEdited === true ? source.following : defaultProfile.following,
+                    defaultProfile.following
+                ),
+                followers: normalizeProfileCount(
+                    source.profileStatsEdited === true ? source.followers : defaultProfile.followers,
+                    defaultProfile.followers
+                ),
+                profileStatsEdited: source.profileStatsEdited === true
             };
         }
 
@@ -1485,7 +1841,10 @@ X is a global app. Non-User authors may write in the language that naturally fit
                     <div class="x-profile-avatar"${avatarId}>${buildAvatarHtml(safeIdentity.avatar, `${safeIdentity.id || handle}:${name}`)}</div>
                     <div class="x-dm-profile-heading-row">
                         <div class="x-dm-profile-identity">
-                            <h2${nameId}>${escapeHtml(name)}</h2>
+                            <div class="x-profile-account-name-row">
+                                <h2${nameId}>${escapeHtml(name)}</h2>
+                                ${isSelf ? '<button class="x-account-switch-trigger" id="x-account-switch-trigger" type="button" aria-label="切换 X 账号" aria-haspopup="dialog"><i class="fas fa-chevron-down"></i></button>' : ''}
+                            </div>
                             <span${handleId}>${escapeHtml(handle)}</span>
                         </div>
                         <div class="x-dm-profile-actions x-unified-profile-actions">${actionsHtml}</div>
@@ -1531,11 +1890,165 @@ X is a global app. Non-User authors may write in the language that naturally fit
                     actionsHtml: '<button class="x-profile-edit" id="x-profile-edit-btn" type="button">Edit profile</button>',
                     stats: [
                         { value: posts.length, label: 'Posts' },
-                        { value: '13.1K', label: 'Followers' },
-                        { value: '520', label: 'Following' }
+                        { value: formatCompactCount(profile.followers), label: 'Followers' },
+                        { value: formatCompactCount(profile.following), label: 'Following' }
                     ]
                 });
                 profileScroll.querySelectorAll('.x-profile-feed-card').forEach(bindPostCard);
+            }
+        }
+
+        function ensureAccountSwitchSheet() {
+            accountSwitchSheet = document.getElementById('x-account-switch-sheet');
+            if (accountSwitchSheet) return accountSwitchSheet;
+            accountSwitchSheet = document.createElement('div');
+            accountSwitchSheet.className = 'bottom-sheet-overlay detail-sheet-overlay x-account-switch-overlay';
+            accountSwitchSheet.id = 'x-account-switch-sheet';
+            accountSwitchSheet.style.zIndex = '282';
+            accountSwitchSheet.innerHTML = `
+                <div class="bottom-sheet x-account-switch-sheet" role="dialog" aria-modal="true" aria-labelledby="x-account-switch-title">
+                    <div class="sheet-handle"></div>
+                    <div class="x-edit-sheet-header">
+                        <button class="x-edit-sheet-text-btn" id="x-account-switch-close-btn" type="button">关闭</button>
+                        <strong id="x-account-switch-title">切换账号</strong>
+                        <span class="x-settings-spacer"></span>
+                    </div>
+                    <div class="x-account-switch-list" id="x-account-switch-list"></div>
+                    <button class="x-account-add-btn" id="x-account-add-btn" type="button"><i class="fas fa-plus"></i><span>新增账号</span></button>
+                </div>`;
+            view.appendChild(accountSwitchSheet);
+            return accountSwitchSheet;
+        }
+
+        function renderAccountSwitchList(state = getXState()) {
+            ensureAccountSwitchSheet();
+            const list = accountSwitchSheet?.querySelector('#x-account-switch-list');
+            if (!list) return;
+            list.innerHTML = (state.xPlayerAccounts || []).map((account) => {
+                const active = account.id === state.activeXPlayerAccountId;
+                return `<button class="x-account-switch-row${active ? ' active' : ''}" type="button" data-x-player-account-id="${escapeHtml(account.id)}"${active ? ' aria-current="true"' : ''}>
+                    <span class="x-account-switch-avatar">${buildAvatarHtml(account.avatar, account.name)}</span>
+                    <span class="x-account-switch-copy"><strong>${escapeHtml(account.name)}</strong><small>${escapeHtml(account.handle)}</small></span>
+                    ${active ? '<i class="fas fa-check" aria-label="当前账号"></i>' : '<i class="fas fa-chevron-right" aria-hidden="true"></i>'}
+                </button>`;
+            }).join('');
+        }
+
+        function openAccountSwitchSheet() {
+            renderAccountSwitchList();
+            if (typeof window.openView === 'function') window.openView(accountSwitchSheet);
+            else accountSwitchSheet?.classList.add('active');
+        }
+
+        function closeAccountSwitchSheet() {
+            if (typeof window.closeView === 'function') window.closeView(accountSwitchSheet);
+            else accountSwitchSheet?.classList.remove('active');
+        }
+
+        function resetXRuntimeForAccountSwitch() {
+            const staticPostIds = new Set(['island', 'super', 'following', 'profile']);
+            Object.keys(postData).forEach((postId) => {
+                if (!staticPostIds.has(postId)) delete postData[postId];
+            });
+            postVisionRuns.clear();
+            currentActiveTopicId = null;
+            currentEditingSuperTopicId = null;
+            currentDetailPostId = null;
+            currentDmId = null;
+            currentProfileIdentity = null;
+            replyTarget = null;
+            xHomeFeedRenderLimit = xHomeFeedInitialLimit;
+            xHomeFeedRenderKey = '';
+            closeAccountSwitchSheet();
+            closeEditProfile();
+            closeTopicDetail();
+            closePostDetail();
+            closeComposer();
+            closeVisitorsSheet();
+            closeAddDmSheet();
+            closeDmChat();
+            closeDmSettingsSheet();
+            closeDmProfile();
+            closeSearchGenerateSheet();
+            closeAdvanceSheet();
+            closeCharEditSheet();
+            closeCharProfileGenerateSheet();
+            closeEditSuperTopicSheet();
+            closePostForwardSheet();
+            closeImagePreview();
+        }
+
+        async function activateXPlayerAccount(accountId, initialState = null) {
+            const targetId = String(accountId || '');
+            const currentState = getXState();
+            if (!targetId || targetId === currentState.activeXPlayerAccountId) {
+                closeAccountSwitchSheet();
+                return true;
+            }
+            if (xAccountSwitchInFlight) return false;
+            if (charProfileGenerationInFlight) {
+                if (typeof window.showToast === 'function') window.showToast('请等待 Char 主页生成完成后再切换账号');
+                return false;
+            }
+            xAccountSwitchInFlight = true;
+            try {
+                if (!window.appStorage?.switchXAccountWorld) throw new Error('X account storage is unavailable.');
+                const durable = await flushXStateNow('x-account-before-switch');
+                if (!durable) throw new Error('Current X account could not be saved.');
+                const nextState = await window.appStorage.switchXAccountWorld(targetId, initialState);
+                if (typeof window.setAppState === 'function') window.setAppState('x', nextState, { save: false });
+                else window.__xFallbackState = nextState;
+                await migrateActiveXCharIdentities();
+                await migrateActiveXCharProfileMedia();
+                resetXRuntimeForAccountSwitch();
+                const normalized = getXState();
+                syncCurrentProfile(normalized);
+                const meIndex = navItems.findIndex((item) => item.getAttribute('data-target') === 'x-me-tab');
+                switchTab(meIndex >= 0 ? meIndex : currentIndex, { state: normalized, resetHomeFeed: true });
+                renderWorldBookSummary(normalized);
+                return true;
+            } finally {
+                xAccountSwitchInFlight = false;
+            }
+        }
+
+        async function createAndSwitchXPlayerAccount(profile) {
+            const previous = getXState();
+            const accountId = makeLocalId('x-account');
+            const accountSummary = normalizeXPlayerAccount({
+                id: accountId,
+                name: profile.name,
+                handle: profile.handle,
+                avatar: profile.avatar,
+                createdAt: Date.now(),
+                updatedAt: Date.now()
+            }, profile, previous.xPlayerAccounts.length);
+            saveXState({
+                ...previous,
+                xPlayerAccounts: [...previous.xPlayerAccounts, accountSummary]
+            });
+            try {
+                const switched = await activateXPlayerAccount(accountId, createBlankXWorld(profile));
+                if (!switched) throw new Error('Another X account switch is still running.');
+                if (typeof window.showToast === 'function') window.showToast('已创建并切换账号');
+            } catch (error) {
+                console.error('[X] Create account failed', error);
+                const rollback = getXState();
+                saveXState({
+                    ...rollback,
+                    xPlayerAccounts: (rollback.xPlayerAccounts || []).filter((account) => account.id !== accountId)
+                });
+                await flushXStateNow('x-account-create-rollback');
+                if (typeof window.showToast === 'function') window.showToast('账号创建失败，原账号未改变');
+            }
+        }
+
+        async function switchXPlayerAccount(accountId) {
+            try {
+                await activateXPlayerAccount(accountId);
+            } catch (error) {
+                console.error('[X] Account switch failed', error);
+                if (typeof window.showToast === 'function') window.showToast('账号切换失败，已保留当前账号');
             }
         }
 
@@ -1548,15 +2061,23 @@ X is a global app. Non-User authors may write in the language that naturally fit
             }
         }
 
-        function openEditProfile() {
+        function openEditProfile(mode = 'edit') {
+            profileEditorMode = mode === 'create' ? 'create' : 'edit';
             currentProfile = resolveProfile();
-            avatarDraft = currentProfile.avatar || '';
-            bannerDraft = currentProfile.banner || '';
-            if (editNameInput) editNameInput.value = currentProfile.name;
-            if (editHandleInput) editHandleInput.value = currentProfile.handle;
-            if (editBioInput) editBioInput.value = currentProfile.bio;
-            if (editPersonaInput) editPersonaInput.value = currentProfile.persona;
-            renderImagePreview(editAvatarPreview, avatarDraft, currentProfile.name.slice(0, 1).toUpperCase());
+            const sourceProfile = profileEditorMode === 'create'
+                ? { ...defaultProfile, name: '', handle: '', bio: '', persona: '', avatar: '', banner: '', following: 0, followers: 0, profileStatsEdited: true }
+                : currentProfile;
+            avatarDraft = sourceProfile.avatar || '';
+            bannerDraft = sourceProfile.banner || '';
+            if (editNameInput) editNameInput.value = sourceProfile.name;
+            if (editHandleInput) editHandleInput.value = sourceProfile.handle;
+            if (editBioInput) editBioInput.value = sourceProfile.bio;
+            if (editPersonaInput) editPersonaInput.value = sourceProfile.persona;
+            if (editFollowingInput) editFollowingInput.value = String(normalizeProfileCount(sourceProfile.following, 0));
+            if (editFollowersInput) editFollowersInput.value = String(normalizeProfileCount(sourceProfile.followers, 0));
+            const title = editSheet?.querySelector('.x-edit-sheet-header strong');
+            if (title) title.textContent = profileEditorMode === 'create' ? '新增 X 账号' : 'Edit profile';
+            renderImagePreview(editAvatarPreview, avatarDraft, (sourceProfile.name || 'U').slice(0, 1).toUpperCase());
             renderImagePreview(editBannerPreview, bannerDraft, 'Cover');
             if (typeof window.openView === 'function') window.openView(editSheet);
             else editSheet?.classList.add('active');
@@ -1565,10 +2086,23 @@ X is a global app. Non-User authors may write in the language that naturally fit
         function closeEditProfile() {
             if (typeof window.closeView === 'function') window.closeView(editSheet);
             else editSheet?.classList.remove('active');
+            profileEditorMode = 'edit';
         }
 
-        function saveProfile() {
-            const name = safeText(editNameInput?.value, defaultProfile.name);
+        async function saveProfile() {
+            const name = safeText(editNameInput?.value);
+            if (!name) {
+                if (typeof window.showToast === 'function') window.showToast('请输入账号名称');
+                editNameInput?.focus();
+                return;
+            }
+            const followingRaw = String(editFollowingInput?.value ?? '').trim();
+            const followersRaw = String(editFollowersInput?.value ?? '').trim();
+            if ((followingRaw && (!/^\d+$/.test(followingRaw) || Number(followingRaw) > Number.MAX_SAFE_INTEGER))
+                || (followersRaw && (!/^\d+$/.test(followersRaw) || Number(followersRaw) > Number.MAX_SAFE_INTEGER))) {
+                if (typeof window.showToast === 'function') window.showToast('关注数和粉丝数请输入非负整数');
+                return;
+            }
             const nextProfile = {
                 name,
                 handle: makeHandle(name, editHandleInput?.value || currentProfile.handle),
@@ -1576,9 +2110,16 @@ X is a global app. Non-User authors may write in the language that naturally fit
                 persona: safeText(editPersonaInput?.value),
                 avatar: avatarDraft,
                 banner: bannerDraft,
+                following: normalizeProfileCount(followingRaw, 0),
+                followers: normalizeProfileCount(followersRaw, 0),
+                profileStatsEdited: true,
                 edited: true,
                 updatedAt: new Date().toISOString()
             };
+            if (profileEditorMode === 'create') {
+                await createAndSwitchXPlayerAccount(nextProfile);
+                return;
+            }
             const previous = getXState();
             const nextState = saveXState({
                 ...previous,
@@ -1612,12 +2153,17 @@ X is a global app. Non-User authors may write in the language that naturally fit
 
         function resetAllXData() {
             showXConfirm({
-                title: '初始化 X',
-                message: '将清空 X 内的帖子、超话、私信、热搜、主页资料和全部设置。此操作不可恢复。',
-                confirmText: '清空并初始化',
+                title: '清空当前 X 账号',
+                message: '将清空当前账号内的帖子、超话、私信、热搜、主页资料和全部设置，其他 X 账号不受影响。此操作不可恢复。',
+                confirmText: '清空当前账号',
                 isDestructive: true,
                 onConfirm: () => {
+                    const previous = getXState();
                     const freshState = JSON.parse(JSON.stringify(defaultXState));
+                    freshState.xPlayerAccounts = previous.xPlayerAccounts;
+                    freshState.activeXPlayerAccountId = previous.activeXPlayerAccountId;
+                    freshState.xAccountSchemaVersion = previous.xAccountSchemaVersion;
+                    freshState.xCharIdentityMigrationVersion = 1;
                     saveXState(freshState);
                     currentActiveTopicId = null;
                     currentProfileIdentity = null;
@@ -1637,7 +2183,7 @@ X is a global app. Non-User authors may write in the language that naturally fit
                     renderDirectMessages();
                     renderVisitors();
                     switchTab(0);
-                    if (typeof window.showToast === 'function') window.showToast('X 已恢复初始状态');
+                    if (typeof window.showToast === 'function') window.showToast('当前 X 账号已恢复初始状态');
                 }
             });
         }
@@ -1877,6 +2423,11 @@ X is a global app. Non-User authors may write in the language that naturally fit
             const recommendPanel = view.querySelector('.x-feed-panel[data-feed-panel="recommend"]');
             if (!recommendPanel) return;
             if (options.resetLimit) xHomeFeedRenderLimit = xHomeFeedInitialLimit;
+            const revision = typeof window.getAppStateRevision === 'function'
+                ? window.getAppStateRevision('x')
+                : fallbackXStateRevision;
+            const renderKey = `${state.activeXPlayerAccountId || 'default'}:${revision}:${xHomeFeedRenderLimit}`;
+            if (!options.force && xHomeFeedRenderKey === renderKey) return;
             clearDefaultHomeFeedContent();
             clearHomeEmptyState(recommendPanel);
             recommendPanel.querySelectorAll('.x-generated-feed-card').forEach((card) => card.remove());
@@ -1900,6 +2451,7 @@ X is a global app. Non-User authors may write in the language that naturally fit
                 updatePostCountNodes(post.id, getPostThread(post.id, state));
             });
             renderHomeEmptyStates();
+            xHomeFeedRenderKey = renderKey;
         }
 
         function loadMoreHomeFeedPosts() {
@@ -2090,9 +2642,15 @@ ${worldbook || 'None'}`;
 
             const topicName = topic.name || topic.title || '超话';
             
-            let charsInfo = '';
+            let charsInfo = [];
             if (Array.isArray(topic.chars) && topic.chars.length > 0) {
-                charsInfo = topic.chars.map(c => `Character Name: ${c.name}, Persona/Bio: ${c.persona || c.bio || 'None'}`).join('\n');
+                charsInfo = topic.chars.map((char) => ({
+                    authorId: String(char.id || char.sourceFriendId || ''),
+                    sourceFriendId: safeText(char.sourceFriendId),
+                    name: safeText(char.name || char.nickname || char.realName, 'Char'),
+                    handle: makeHandle(char.name || 'Char', char.handle || char.realName || char.signature || char.name),
+                    persona: safeText(char.persona || char.bio || char.signature)
+                }));
             }
 
             superUpdateBtn.disabled = true;
@@ -2101,7 +2659,7 @@ ${worldbook || 'None'}`;
             
             try {
                 const worldbook = getSelectedWorldBookContext(
-                    `${topicName} ${charsInfo}`,
+                    `${topicName} ${JSON.stringify(charsInfo)}`,
                     getCharacterBoundWorldBookIds(topic.chars)
                 );
                 const reusableAuthors = getReusableAuthorContext();
@@ -2111,6 +2669,7 @@ ${worldbook || 'None'}`;
 Please generate a JSON OBJECT containing the celebrity's online status and an array of 15 to 20 feed items.
 The feed items should be a mix of fan posts, photo posts, featured high-quality posts, and moments.
 The current User is context only and must never appear as the author of any post, comment, reply, moment, or nested refPost.
+The Topic Characters below are canonical identities. If a Topic Character authors a post, comment, reply, moment or nested refPost, copy that character's authorId, name and handle EXACTLY. Never invent a duplicate, clone, alternate handle, lookalike celebrity account, or replacement identity for a Topic Character. Fan and passer-by accounts must be clearly distinct identities.
 
 JSON Format Requirements:
 {
@@ -2141,8 +2700,8 @@ Ensure the "items" array has at least 3 items with "isFeatured": true, at least 
 Authors may use any language natural to their identity and context. Every post, nested refPost, comment and reply must include translation: an accurate Simplified Chinese translation for non-Chinese originals, or "" for Chinese originals. Keep imagePrompt descriptions in Simplified Chinese.
 
 Topic Name: ${topicName}
-Topic Characters Info:
-${charsInfo || 'None'}
+Canonical Topic Characters (authorId, name and handle are immutable):
+${charsInfo.length ? JSON.stringify(charsInfo) : 'None'}
 Reusable existing authors (optional; when used, return their exact authorId): ${JSON.stringify(reusableAuthors)}
 Worldbook context:
 ${worldbook || 'None'}
@@ -2184,6 +2743,8 @@ ${worldbook || 'None'}
                 });
 
                 allItems = sanitizeApiGeneratedPosts(allItems);
+                const cloneAccountIds = new Set();
+                allItems = reconcileTopicCharacterAuthors(allItems, topic, cloneAccountIds);
                 allItems.forEach(p => {
                     p.topicTag = topicName;
                     p.superTopicId = String(topic.id || topic.name);
@@ -2194,6 +2755,11 @@ ${worldbook || 'None'}
                 topic.onlineStatus = newOnlineStatus;
                 
                 const added = appendGeneratedPosts(allItems);
+                if (cloneAccountIds.size) {
+                    updateXState((draft) => {
+                        draft.xAccounts = (draft.xAccounts || []).filter((account) => !cloneAccountIds.has(String(account.id)));
+                    });
+                }
                 await flushXStateNow('x-super-topic-generation');
                 renderSuperTopicFeed(topic);
                 
@@ -2342,7 +2908,7 @@ ${worldbook || 'None'}
                     photosPanel.innerHTML = `<div class="x-super-post-grid">
                         ${allImages.map((img, i) => `
                             <div class="x-post-image-thumb ${i >= 12 ? 'x-hidden-page-2' : ''}" style="${i >= 12 ? 'display:none;' : ''}" data-image-text="${escapeHtml(img.text || 'Image')}" data-image-url="${escapeHtml(img.url || '')}" data-post-id="${img.postId}">
-                                <img src="${escapeHtml(img.url || generatedImagePlaceholderUrl)}" alt="">
+                                <img src="${escapeHtml(img.url)}" alt="" onerror="this.remove()">
                             </div>
                         `).join('')}
                     </div>`;
@@ -2517,6 +3083,7 @@ ${worldbook || 'None'}
                 return;
             }
             let updatedTopic = null;
+            const cloneAccountIds = new Set();
             updateXState((draft) => {
                 const topic = (draft.xTopics || []).find((item) => String(item.id || item.name) === String(topicId));
                 if (!topic) return;
@@ -2540,6 +3107,14 @@ ${worldbook || 'None'}
                         topicTag: post.topicTag === previousName ? name : post.topicTag
                     };
                 });
+                reconcileTopicCharacterAuthors(
+                    draft.xGeneratedPosts.filter((post) => String(post.superTopicId || '') === String(topicId)),
+                    topic,
+                    cloneAccountIds
+                );
+                if (cloneAccountIds.size) {
+                    draft.xAccounts = (draft.xAccounts || []).filter((account) => !cloneAccountIds.has(String(account.id)));
+                }
             });
             closeEditSuperTopicSheet();
             renderSuperFollowBar();
@@ -3522,20 +4097,56 @@ ${worldbook || 'None'}`;
             }
         }
 
+        function normalizeCharProfileImagePromptConfig(raw = {}) {
+            const source = raw && typeof raw === 'object' ? raw : {};
+            const presets = (Array.isArray(source.presets) ? source.presets : []).map((preset, index) => ({
+                id: String(preset?.id || `x-char-image-preset-${index + 1}`),
+                name: safeText(preset?.name, `预设 ${index + 1}`),
+                prompt: safeText(preset?.prompt),
+                charAppearance: safeText(preset?.charAppearance),
+                userAppearance: safeText(preset?.userAppearance),
+                artistPrompt: safeText(preset?.artistPrompt),
+                negativePrompt: safeText(preset?.negativePrompt)
+            }));
+            const activePresetId = presets.some((preset) => preset.id === String(source.activePresetId || ''))
+                ? String(source.activePresetId)
+                : '';
+            return {
+                lastPrompt: safeText(source.lastPrompt),
+                charAppearance: safeText(source.charAppearance),
+                userAppearance: safeText(source.userAppearance),
+                artistPrompt: safeText(source.artistPrompt),
+                negativePrompt: safeText(source.negativePrompt),
+                presets,
+                activePresetId,
+                autoUseReferenceFace: source.autoUseReferenceFace === true
+            };
+        }
+
+        function getDefaultCharSocialCounts(source = {}) {
+            const seed = `${source.id || ''}:${source.handle || source.name || ''}`;
+            return {
+                followersCount: 1200 + (hashPostMetricSeed(`followers:${seed}`) % 198800),
+                followingCount: 80 + (hashPostMetricSeed(`following:${seed}`) % 1920)
+            };
+        }
+
         function normalizeDmChar(source = {}, origin = 'manual') {
             const name = safeText(source.nickname || source.name || source.realName, 'Char');
             const handleSource = source.handle || source.realName || source.signature || name;
             const id = String(source.id || makeLocalId(origin));
+            const handle = makeHandle(name, handleSource);
             const avatar = normalizePersonAvatar(source.avatarUrl || source.avatar, `char:${id}:${handleSource}`);
             const profilePosts = (Array.isArray(source.profilePosts) ? source.profilePosts : [])
                 .map((post, index) => normalizeGeneratedPost({ ...post, profileOwnerId: id, authorId: id }, index))
                 .filter(Boolean);
+            const socialCounts = getDefaultCharSocialCounts({ ...source, id, name, handle });
             return {
                 id,
                 origin,
                 sourceFriendId: source.sourceFriendId || (origin === 'imessage' ? source.id : ''),
                 name,
-                handle: makeHandle(name, handleSource),
+                handle,
                 bio: safeText(source.bio || source.signature, '暂无签名'),
                 persona: safeText(source.persona || source.characterPersona || source.systemPrompt),
                 avatar: avatar,
@@ -3545,8 +4156,14 @@ ${worldbook || 'None'}`;
                     ? normalizeImessageContextMount(source.imessageContextMount)
                     : null,
                 isFollowing: typeof source.isFollowing === 'boolean' ? source.isFollowing : origin !== 'generated',
+                followingCount: normalizeProfileCount(source.followingCount ?? source.following, socialCounts.followingCount),
+                followersCount: normalizeProfileCount(source.followersCount ?? source.followers, socialCounts.followersCount),
                 coverSeed: safeText(source.coverSeed, `${id}-cover`),
                 coverImage: safeText(source.coverImage),
+                profileImagePromptConfig: normalizeCharProfileImagePromptConfig(source.profileImagePromptConfig),
+                profileImageFaceReferenceAssetId: safeText(source.profileImageFaceReferenceAssetId),
+                profileImageFaceReferenceUrl: safeText(source.profileImageFaceReferenceUrl),
+                profileImageFaceReferenceFileName: safeText(source.profileImageFaceReferenceFileName),
                 profilePosts,
                 profileGeneratedAt: Number(source.profileGeneratedAt) || 0,
                 addedAt: Number(source.addedAt) || Date.now(),
@@ -3816,7 +4433,7 @@ ${worldbook || 'None'}`;
             if (!images.length) return '<div class="x-empty-state">暂无照片</div>';
             return `<div class="x-super-post-grid x-profile-photo-grid">${images.map((image) => `
                 <button class="x-post-image-thumb" type="button" data-image-text="${escapeHtml(image.text || 'Image')}" data-image-url="${escapeHtml(image.url || '')}" data-post-id="${escapeHtml(image.postId)}">
-                    <img src="${escapeHtml(image.url || generatedImagePlaceholderUrl)}" alt="" onerror="this.src='${escapeHtml(generatedImagePlaceholderUrl)}'">
+                    <img src="${escapeHtml(image.url)}" alt="" onerror="this.remove()">
                 </button>
             `).join('')}</div>`;
         }
@@ -3825,16 +4442,23 @@ ${worldbook || 'None'}`;
             const body = document.getElementById('x-dm-profile-body');
             if (!identity || !body || !dmProfileView) return;
             const isChar = identity.kind === 'char' && !!charItem;
+            const isTopicChar = identity.kind === 'topic-char';
             const posts = getIdentityProfilePosts(identity);
             const socialSeed = `${identity.id || ''}:${identity.handle || identity.name || ''}`;
-            const followersCount = 1200 + (hashPostMetricSeed(`followers:${socialSeed}`) % 198800);
-            const followingCount = 80 + (hashPostMetricSeed(`following:${socialSeed}`) % 1920);
+            const fallbackSocialCounts = getDefaultCharSocialCounts({ id: identity.id, handle: identity.handle, name: identity.name });
+            const followersCount = isChar
+                ? normalizeProfileCount(charItem.followersCount, fallbackSocialCounts.followersCount)
+                : 1200 + (hashPostMetricSeed(`followers:${socialSeed}`) % 198800);
+            const followingCount = isChar
+                ? normalizeProfileCount(charItem.followingCount, fallbackSocialCounts.followingCount)
+                : 80 + (hashPostMetricSeed(`following:${socialSeed}`) % 1920);
             const coverSeed = safeText(charItem?.coverSeed || identity.coverSeed, `${identity.id}-cover`);
             const coverUrl = safeText(charItem?.coverImage || identity.coverImage) || getStableExternalImage(coverSeed, 1200, 480);
-            const fallbackCover = safeText(currentProfile.banner || generatedImagePlaceholderUrl);
+            const fallbackCover = safeText(currentProfile.banner);
+            const fallbackCoverStyle = fallbackCover ? `,url('${escapeHtml(fallbackCover)}')` : '';
             const following = isChar ? charItem.isFollowing !== false : identity.isFollowing !== false;
-            currentProfileIdentity = { ...identity, kind: isChar ? 'char' : 'account' };
-            const actionsHtml = `
+            currentProfileIdentity = { ...identity, kind: isChar ? 'char' : (isTopicChar ? 'topic-char' : 'account') };
+            const actionsHtml = isTopicChar ? '' : `
                 <button class="x-profile-follow-btn ${following ? 'active' : ''}" type="button" data-profile-follow-id="${escapeHtml(identity.id)}">${following ? '已关注' : '关注'}</button>
                 ${isChar ? `<button class="x-profile-edit" type="button" data-profile-edit-id="${escapeHtml(identity.id)}">Edit</button>` : ''}
             `;
@@ -3851,7 +4475,7 @@ ${worldbook || 'None'}`;
 
             body.innerHTML = `
                 <div class="x-dm-profile-page-scroll">
-                    <div class="x-profile-cover x-dm-profile-cover" style="background-image:linear-gradient(180deg,rgba(0,0,0,.04),rgba(0,0,0,.35)),url('${escapeHtml(fallbackCover)}')">
+                    <div class="x-profile-cover x-dm-profile-cover" style="background-image:linear-gradient(180deg,rgba(0,0,0,.04),rgba(0,0,0,.35))${fallbackCoverStyle}">
                         <img class="x-dm-profile-cover-image" src="${escapeHtml(coverUrl)}" alt="" onerror="this.remove()">
                         <div class="x-profile-cover-actions">
                             <button class="x-header-button" id="x-dm-profile-back" type="button" aria-label="返回"><i class="fas fa-chevron-left"></i></button>
@@ -3894,6 +4518,10 @@ ${worldbook || 'None'}`;
             }
             if (identity.kind === 'char') {
                 openDmProfile(identity.id);
+                return;
+            }
+            if (identity.kind === 'topic-char') {
+                renderIdentityProfile(identity);
                 return;
             }
             const account = identity.kind === 'account' ? identity : registerLightweightAccount(identity);
@@ -3939,10 +4567,14 @@ ${worldbook || 'None'}`;
             const handleInput = document.getElementById('x-char-edit-handle');
             const bioInput = document.getElementById('x-char-edit-bio');
             const personaInput = document.getElementById('x-char-edit-persona');
+            const followingInput = document.getElementById('x-char-edit-following');
+            const followersInput = document.getElementById('x-char-edit-followers');
             if (nameInput) nameInput.value = item.name;
             if (handleInput) handleInput.value = item.handle;
             if (bioInput) bioInput.value = item.bio;
             if (personaInput) personaInput.value = item.persona;
+            if (followingInput) followingInput.value = String(item.followingCount);
+            if (followersInput) followersInput.value = String(item.followersCount);
             renderImagePreview(document.getElementById('x-char-edit-avatar-preview'), charEditAvatarDraft, item.name.slice(0, 1).toUpperCase());
             renderImagePreview(
                 document.getElementById('x-char-edit-cover-preview'),
@@ -3964,6 +4596,13 @@ ${worldbook || 'None'}`;
             if (!currentEditingCharId) return;
             const previous = getDirectMessageById(currentEditingCharId);
             const name = safeText(document.getElementById('x-char-edit-name')?.value, 'Char');
+            const followingRaw = String(document.getElementById('x-char-edit-following')?.value ?? '').trim();
+            const followersRaw = String(document.getElementById('x-char-edit-followers')?.value ?? '').trim();
+            if ((followingRaw && (!/^\d+$/.test(followingRaw) || Number(followingRaw) > Number.MAX_SAFE_INTEGER))
+                || (followersRaw && (!/^\d+$/.test(followersRaw) || Number(followersRaw) > Number.MAX_SAFE_INTEGER))) {
+                if (typeof window.showToast === 'function') window.showToast('关注数和粉丝数请输入非负整数');
+                return;
+            }
             const updated = updateDirectMessage(currentEditingCharId, (draft) => {
                 draft.name = name;
                 draft.handle = makeHandle(name, document.getElementById('x-char-edit-handle')?.value);
@@ -3972,6 +4611,8 @@ ${worldbook || 'None'}`;
                 draft.avatar = charEditAvatarDraft;
                 draft.coverSeed = charEditCoverSeed;
                 draft.coverImage = charEditCoverImageDraft;
+                draft.followingCount = normalizeProfileCount(followingRaw, previous?.followingCount || 0);
+                draft.followersCount = normalizeProfileCount(followersRaw, previous?.followersCount || 0);
                 return draft;
             });
             const id = currentEditingCharId;
@@ -3996,37 +4637,231 @@ ${worldbook || 'None'}`;
             if (typeof window.showToast === 'function') window.showToast('已更换主页背景');
         }
 
+        function getCharProfilePromptFieldValues() {
+            return {
+                lastPrompt: safeText(document.getElementById('x-char-profile-image-prompt')?.value),
+                charAppearance: safeText(document.getElementById('x-char-profile-char-appearance')?.value),
+                userAppearance: safeText(document.getElementById('x-char-profile-user-appearance')?.value),
+                artistPrompt: safeText(document.getElementById('x-char-profile-artist-prompt')?.value),
+                negativePrompt: safeText(document.getElementById('x-char-profile-negative-prompt')?.value)
+            };
+        }
+
+        function setCharProfilePromptFieldValues(config = {}) {
+            const normalized = normalizeCharProfileImagePromptConfig(config);
+            const values = {
+                'x-char-profile-image-prompt': normalized.lastPrompt,
+                'x-char-profile-char-appearance': normalized.charAppearance,
+                'x-char-profile-user-appearance': normalized.userAppearance,
+                'x-char-profile-artist-prompt': normalized.artistPrompt,
+                'x-char-profile-negative-prompt': normalized.negativePrompt
+            };
+            Object.entries(values).forEach(([id, value]) => {
+                const field = document.getElementById(id);
+                if (field) field.value = value;
+            });
+        }
+
+        function renderCharProfilePresetOptions(activePresetId = '') {
+            const select = document.getElementById('x-char-profile-image-preset');
+            if (!select) return;
+            select.innerHTML = '<option value="">当前编辑内容</option>' + charProfilePresetDrafts.map((preset) => (
+                `<option value="${escapeHtml(preset.id)}">${escapeHtml(preset.name)}</option>`
+            )).join('');
+            select.value = charProfilePresetDrafts.some((preset) => preset.id === activePresetId) ? activePresetId : '';
+        }
+
+        function syncCharProfileImageOptions() {
+            const enabled = document.getElementById('x-char-profile-image-toggle')?.checked === true;
+            const options = document.getElementById('x-char-profile-image-options');
+            if (options) options.hidden = !enabled;
+        }
+
+        function renderCharProfileReferenceDraft() {
+            const preview = document.getElementById('x-char-profile-reference-preview');
+            const status = document.getElementById('x-char-profile-reference-status');
+            const removeButton = document.getElementById('x-char-profile-reference-delete');
+            const toggle = document.getElementById('x-char-profile-reference-toggle');
+            if (preview) {
+                preview.innerHTML = charProfileReferenceDraft
+                    ? `<img src="${escapeHtml(charProfileReferenceDraft)}" alt="">`
+                    : '<i class="fas fa-user"></i>';
+            }
+            if (status) status.textContent = charProfileReferenceDraft
+                ? (charProfileReferenceFileNameDraft || '已上传')
+                : '尚未上传';
+            if (removeButton) removeButton.hidden = !charProfileReferenceDraft;
+            if (toggle) {
+                toggle.disabled = !charProfileReferenceDraft;
+                if (!charProfileReferenceDraft) toggle.checked = false;
+            }
+        }
+
+        async function resolveCharProfileReferenceUrl(item) {
+            if (item?.profileImageFaceReferenceUrl) return item.profileImageFaceReferenceUrl;
+            if (item?.profileImageFaceReferenceAssetId && typeof window.appStorage?.getAssetUrl === 'function') {
+                return window.appStorage.getAssetUrl(item.profileImageFaceReferenceAssetId).catch(() => '');
+            }
+            return '';
+        }
+
+        async function openCharProfileGenerateSheet(charId) {
+            const item = getDirectMessageById(charId);
+            if (!item || !charProfileGenerateSheet || charProfileGenerationInFlight) return;
+            currentGeneratingCharId = String(item.id);
+            const config = normalizeCharProfileImagePromptConfig(item.profileImagePromptConfig);
+            charProfilePresetDrafts = config.presets.map((preset) => ({ ...preset }));
+            const countInput = document.getElementById('x-char-profile-generate-count');
+            const imageToggle = document.getElementById('x-char-profile-image-toggle');
+            const referenceToggle = document.getElementById('x-char-profile-reference-toggle');
+            const presetNameInput = document.getElementById('x-char-profile-preset-name');
+            if (countInput) countInput.value = '3';
+            if (imageToggle) imageToggle.checked = false;
+            if (presetNameInput) presetNameInput.value = '';
+            setCharProfilePromptFieldValues(config);
+            renderCharProfilePresetOptions(config.activePresetId);
+            charProfileReferenceDraft = await resolveCharProfileReferenceUrl(item);
+            charProfileReferenceFileNameDraft = item.profileImageFaceReferenceFileName || '';
+            charProfileReferenceChanged = false;
+            if (referenceToggle) referenceToggle.checked = !!charProfileReferenceDraft && config.autoUseReferenceFace;
+            renderCharProfileReferenceDraft();
+            syncCharProfileImageOptions();
+            if (typeof window.openView === 'function') window.openView(charProfileGenerateSheet);
+            else charProfileGenerateSheet.classList.add('active');
+        }
+
+        function closeCharProfileGenerateSheet() {
+            if (charProfileGenerationInFlight) return;
+            currentGeneratingCharId = null;
+            charProfileReferenceDraft = '';
+            charProfileReferenceFileNameDraft = '';
+            charProfileReferenceChanged = false;
+            charProfilePresetDrafts = [];
+            const referenceInput = document.getElementById('x-char-profile-reference-input');
+            if (referenceInput) referenceInput.value = '';
+            if (typeof window.closeView === 'function') window.closeView(charProfileGenerateSheet);
+            else charProfileGenerateSheet?.classList.remove('active');
+        }
+
+        function saveCharProfilePromptPreset() {
+            const nameInput = document.getElementById('x-char-profile-preset-name');
+            const name = safeText(nameInput?.value);
+            if (!name) {
+                if (typeof window.showToast === 'function') window.showToast('请输入预设名称');
+                nameInput?.focus();
+                return;
+            }
+            const selectedId = String(document.getElementById('x-char-profile-image-preset')?.value || '');
+            const values = getCharProfilePromptFieldValues();
+            const preset = {
+                id: selectedId || makeLocalId('x-char-image-preset'),
+                name,
+                prompt: values.lastPrompt,
+                charAppearance: values.charAppearance,
+                userAppearance: values.userAppearance,
+                artistPrompt: values.artistPrompt,
+                negativePrompt: values.negativePrompt
+            };
+            const existingIndex = charProfilePresetDrafts.findIndex((item) => item.id === preset.id);
+            if (existingIndex >= 0) charProfilePresetDrafts[existingIndex] = preset;
+            else charProfilePresetDrafts.push(preset);
+            renderCharProfilePresetOptions(preset.id);
+            if (nameInput) nameInput.value = preset.name;
+        }
+
+        function deleteCharProfilePromptPreset() {
+            const select = document.getElementById('x-char-profile-image-preset');
+            const id = String(select?.value || '');
+            if (!id) return;
+            charProfilePresetDrafts = charProfilePresetDrafts.filter((preset) => preset.id !== id);
+            renderCharProfilePresetOptions('');
+            const nameInput = document.getElementById('x-char-profile-preset-name');
+            if (nameInput) nameInput.value = '';
+        }
+
+        function applyCharProfilePromptPreset(presetId) {
+            const preset = charProfilePresetDrafts.find((item) => item.id === String(presetId || ''));
+            const nameInput = document.getElementById('x-char-profile-preset-name');
+            if (!preset) {
+                if (nameInput) nameInput.value = '';
+                return;
+            }
+            setCharProfilePromptFieldValues({
+                lastPrompt: preset.prompt,
+                charAppearance: preset.charAppearance,
+                userAppearance: preset.userAppearance,
+                artistPrompt: preset.artistPrompt,
+                negativePrompt: preset.negativePrompt
+            });
+            if (nameInput) nameInput.value = preset.name;
+        }
+
+        async function loadCharProfileReferenceFile() {
+            const input = document.getElementById('x-char-profile-reference-input');
+            const file = input?.files?.[0];
+            if (!file) return;
+            input.disabled = true;
+            try {
+                charProfileReferenceDraft = await compressXImageFile(file, { maxWidth: 1536, maxHeight: 1536, quality: 0.9 });
+                charProfileReferenceFileNameDraft = file.name || 'reference.jpg';
+                charProfileReferenceChanged = true;
+                const toggle = document.getElementById('x-char-profile-reference-toggle');
+                if (toggle) toggle.checked = true;
+                renderCharProfileReferenceDraft();
+            } catch (error) {
+                if (typeof window.showToast === 'function') window.showToast(error?.message || '参考脸读取失败');
+            } finally {
+                input.disabled = false;
+                input.value = '';
+            }
+        }
+
+        function removeCharProfileReferenceDraft() {
+            charProfileReferenceDraft = '';
+            charProfileReferenceFileNameDraft = '';
+            charProfileReferenceChanged = true;
+            renderCharProfileReferenceDraft();
+        }
+
         function normalizeCharProfilePosts(rawPosts, item) {
             return (Array.isArray(rawPosts) ? rawPosts : []).map((rawPost, index) => {
                 const charAvatar = normalizePersonAvatar(item.avatar, `char:${item.id}:${item.handle || item.name}`);
+                const imageCandidatePrompt = safeText(
+                    rawPost.imagePrompt || rawPost.imageText || rawPost.mediaDescription
+                    || (Array.isArray(rawPost.images) ? rawPost.images[0]?.text || rawPost.images[0]?.prompt : '')
+                );
                 const post = normalizeGeneratedPost({
                     ...rawPost,
+                    mediaType: 'text',
+                    imagePrompt: '',
+                    imageText: '',
+                    images: [],
                     authorId: item.id,
                     authorName: item.name,
                     handle: item.handle,
                     authorAvatar: charAvatar,
                     profileOwnerId: item.id
                 }, index);
-                if (!post || getPostImages(post).length === 0 || post.commentList.length < 10) return null;
+                if (!post || post.commentList.length < 10) return null;
                 post.avatar = charAvatar;
-                post.images = getPostImages(post).map((image, imageIndex) => ({
-                    ...image,
-                    url: getStableExternalImage(`${item.id}-${post.id}-${imageIndex}`, 900, 900)
-                }));
+                post.images = [];
+                post.imageCandidate = rawPost.imageCandidate === true || safeText(rawPost.imageCandidate).toLowerCase() === 'true';
+                post.imageCandidatePrompt = imageCandidatePrompt;
                 return ensureCommentDepth(post);
             }).filter(Boolean);
         }
 
-        async function requestCharProfilePostBatch(item, count, excludedTexts = []) {
+        async function requestCharProfilePostBatch(item, count, excludedTexts = [], allowImageCandidate = false) {
             const recentChat = normalizeDmMessages(item.messages).slice(-12).map(serializeDmMessageForAi).join('\n');
             const worldbook = getSelectedWorldBookContext(
                 `${item.name} ${item.bio} ${item.persona} ${currentProfile.persona}`,
                 getCharacterBoundWorldBookIds(item)
             );
-            const prompt = `Return strict JSON only: {"posts":[{"authorName":"","handle":"","text":"","translation":"","likes":0,"reposts":0,"commentsCount":10,"mediaType":"image","imagePrompt":"简体中文图片描述","comments":[{"authorName":"","handle":"","text":"","translation":"","replies":[{"authorName":"","handle":"","text":"","translation":""}]}]}]}.
-Generate exactly ${count} new X profile posts written by this Char. Every post MUST contain at least one imagePrompt or images item and at least 10 distinct top-level comment objects in comments. Replies do not count toward the 10-comment minimum. Posts must feel like the Char's own public life and remain consistent with their persona, recent private conversation, User relationship and worldbook.
+            const prompt = `Return strict JSON only: {"posts":[{"authorName":"","handle":"","text":"","translation":"","likes":0,"reposts":0,"commentsCount":10,"imageCandidate":false,"imagePrompt":"","comments":[{"authorName":"","handle":"","text":"","translation":"","replies":[{"authorName":"","handle":"","text":"","translation":""}]}]}]}.
+Generate exactly ${count} new text-first X profile posts written by this Char. Every post MUST contain at least 10 distinct top-level comment objects in comments. Replies do not count toward the 10-comment minimum. Posts must feel like the Char's own public life and remain consistent with their persona, recent private conversation, User relationship and worldbook.
+${allowImageCandidate ? 'Mark exactly one visually suitable post with imageCandidate:true and provide a detailed Simplified Chinese imagePrompt that directly matches that post. All other posts use imageCandidate:false and imagePrompt:"".' : 'Every post must use imageCandidate:false and imagePrompt:"". Do not create any image entry.'}
 Only the named Char may author the posts. All generated commenters and repliers must be non-User accounts; never write a comment or reply as the current User.
-The Char and commenters may use any language natural to their identity and context. Every post, comment and reply must include translation: Simplified Chinese for non-Chinese originals, or "" for Chinese originals. Image descriptions must remain Simplified Chinese. Do not return image URLs.
+The Char and commenters may use any language natural to their identity and context. Every post, comment and reply must include translation: Simplified Chinese for non-Chinese originals, or "" for Chinese originals. Never return an image URL or external image.
 Char: ${JSON.stringify({ id: item.id, name: item.name, handle: item.handle, bio: item.bio, persona: item.persona })}
 User: ${JSON.stringify({ name: currentProfile.name, handle: currentProfile.handle, bio: currentProfile.bio, persona: currentProfile.persona })}
 Recent private chat: ${recentChat || 'None'}
@@ -4045,54 +4880,164 @@ ${worldbook || 'None'}`;
             return normalizeCharProfilePosts(posts, item);
         }
 
+        async function persistCharProfileReference(item, promptConfig) {
+            const previousAssetId = safeText(item.profileImageFaceReferenceAssetId);
+            let nextAssetId = previousAssetId;
+            let nextReferenceUrl = item.profileImageFaceReferenceUrl || '';
+            if (charProfileReferenceChanged) {
+                if (charProfileReferenceDraft) {
+                    if (!window.appStorage?.saveAssetFromDataUrl) throw new Error('图片存储服务不可用');
+                    const accountId = safeText(getXState().activeXPlayerAccountId, 'legacy').replace(/[^a-z0-9_-]+/gi, '-');
+                    const charId = String(item.id).replace(/[^a-z0-9_-]+/gi, '-');
+                    nextAssetId = `x_account_${accountId}_char_${charId}_profile_face`;
+                    await window.appStorage.saveAssetFromDataUrl(nextAssetId, charProfileReferenceDraft, {
+                        ownerType: 'x_char_profile_face',
+                        ownerId: String(item.id),
+                        accountId,
+                        fileName: charProfileReferenceFileNameDraft
+                    });
+                    nextReferenceUrl = '';
+                } else {
+                    nextAssetId = '';
+                    nextReferenceUrl = '';
+                }
+            }
+            const updated = updateDirectMessage(item.id, (draft) => {
+                draft.profileImagePromptConfig = promptConfig;
+                draft.profileImageFaceReferenceAssetId = nextAssetId;
+                draft.profileImageFaceReferenceUrl = nextReferenceUrl;
+                draft.profileImageFaceReferenceFileName = charProfileReferenceDraft ? charProfileReferenceFileNameDraft : '';
+                return draft;
+            });
+            if (!updated) throw new Error('Char 生图配置保存失败');
+            if (previousAssetId && previousAssetId !== nextAssetId) {
+                await window.appStorage?.deleteAsset?.(previousAssetId).catch(() => undefined);
+            }
+            return updated;
+        }
+
         async function generateCurrentCharProfile() {
-            if (currentProfileIdentity?.kind !== 'char') return;
-            const item = getDirectMessageById(currentProfileIdentity.id);
-            const button = document.getElementById('x-char-profile-generate-btn');
+            if (charProfileGenerationInFlight || !currentGeneratingCharId) return;
+            const item = getDirectMessageById(currentGeneratingCharId);
+            const button = document.getElementById('x-char-profile-generate-run-btn');
+            const countInput = document.getElementById('x-char-profile-generate-count');
             if (!item || !button) return;
+            const requestedCount = Math.min(10, Math.max(1, Number.parseInt(countInput?.value, 10) || 3));
+            if (countInput) countInput.value = String(requestedCount);
+            const imageEnabled = document.getElementById('x-char-profile-image-toggle')?.checked === true;
+            const selectedPresetId = String(document.getElementById('x-char-profile-image-preset')?.value || '');
+            const promptFields = getCharProfilePromptFieldValues();
+            const promptConfig = normalizeCharProfileImagePromptConfig({
+                ...promptFields,
+                presets: charProfilePresetDrafts,
+                activePresetId: selectedPresetId,
+                autoUseReferenceFace: imageEnabled
+                    && document.getElementById('x-char-profile-reference-toggle')?.checked === true
+            });
+            charProfileGenerationInFlight = true;
             button.disabled = true;
-            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 生成中';
+            let completed = false;
             try {
                 const collected = [];
                 const existingTexts = (item.profilePosts || []).map((post) => safeText(post.text)).filter(Boolean);
                 const seen = new Set(existingTexts.map((text) => text.toLocaleLowerCase()));
                 const addPosts = (posts) => posts.forEach((post) => {
                     const key = post.text.toLocaleLowerCase();
-                    if (!seen.has(key)) {
+                    if (collected.length < requestedCount && !seen.has(key)) {
                         seen.add(key);
                         collected.push(post);
                     }
                 });
-                addPosts(await requestCharProfilePostBatch(item, 5, existingTexts));
-                let imageCount = collected.reduce((sum, post) => sum + getPostImages(post).length, 0);
-                if (collected.length < 5 || imageCount < 5) {
+                const maxAttempts = Math.ceil(requestedCount / 3) + 3;
+                let attempt = 0;
+                while (collected.length < requestedCount && attempt < maxAttempts) {
+                    const batchCount = Math.min(3, requestedCount - collected.length);
                     addPosts(await requestCharProfilePostBatch(
                         item,
-                        Math.max(1, 5 - collected.length, 5 - imageCount),
-                        [...existingTexts, ...collected.map((post) => post.text)]
+                        batchCount,
+                        [...existingTexts, ...collected.map((post) => post.text)],
+                        imageEnabled && attempt === 0
                     ));
-                    imageCount = collected.reduce((sum, post) => sum + getPostImages(post).length, 0);
+                    attempt += 1;
                 }
-                if (collected.length < 5 || imageCount < 5 || collected.some((post) => post.commentList.length < 10)) {
+                if (collected.length !== requestedCount || collected.some((post) => post.commentList.length < 10)) {
                     throw new Error('Insufficient Char profile content');
                 }
-                updateDirectMessage(item.id, (draft) => {
-                    draft.profilePosts = prependUniquePosts(draft.profilePosts || [], collected);
-                    draft.profileGeneratedAt = Date.now();
-                    return draft;
+
+                let generatedImage = null;
+                let imageError = null;
+                if (imageEnabled) {
+                    const targetPost = collected.find((post) => post.imageCandidate) || collected[0];
+                    const postPrompt = safeText(targetPost.imageCandidatePrompt, targetPost.text);
+                    const finalPrompt = [postPrompt, promptConfig.lastPrompt].filter(Boolean).join('\n');
+                    try {
+                        if (!window.u2ImageGeneration?.generate) throw new Error('生图功能尚未加载，请刷新后重试');
+                        generatedImage = await window.u2ImageGeneration.generate(finalPrompt, {
+                            referenceImage: promptConfig.autoUseReferenceFace ? charProfileReferenceDraft : '',
+                            charAppearance: promptConfig.charAppearance,
+                            userAppearance: promptConfig.userAppearance,
+                            artistPrompt: promptConfig.artistPrompt,
+                            negativePrompt: promptConfig.negativePrompt
+                        });
+                        targetPost.images = [{
+                            id: `${targetPost.id}-image-0`,
+                            text: postPrompt,
+                            url: generatedImage.imageUrl,
+                            imageSource: 'generated',
+                            imageProvider: generatedImage.provider || '',
+                            imageModel: generatedImage.model || '',
+                            imageSize: generatedImage.size || '',
+                            faceReferenceUsed: !!generatedImage.faceReferenceUsed
+                        }];
+                    } catch (error) {
+                        imageError = error;
+                        console.warn('[X] Char profile image generation failed', error);
+                    }
+                }
+
+                collected.forEach((post) => {
+                    delete post.imageCandidate;
+                    delete post.imageCandidatePrompt;
                 });
+                const latestItem = await persistCharProfileReference(item, promptConfig);
+                updateXState((draft) => {
+                    draft.xGeneratedPosts = prependUniquePosts(draft.xGeneratedPosts || [], collected);
+                    draft.xDirectMessages = (draft.xDirectMessages || []).map((entry) => {
+                        if (String(entry.id) !== String(item.id)) return entry;
+                        const normalized = normalizeDmChar(entry, entry.origin || 'manual');
+                        return {
+                            ...normalized,
+                            profileImagePromptConfig: latestItem.profileImagePromptConfig,
+                            profileImageFaceReferenceAssetId: latestItem.profileImageFaceReferenceAssetId,
+                            profileImageFaceReferenceUrl: latestItem.profileImageFaceReferenceUrl,
+                            profileImageFaceReferenceFileName: latestItem.profileImageFaceReferenceFileName,
+                            profilePosts: prependUniquePosts(normalized.profilePosts || [], collected),
+                            profileGeneratedAt: Date.now()
+                        };
+                    });
+                });
+                await flushXStateNow('x-char-profile-generation');
+                renderGeneratedPosts(getXState(), { force: true });
                 openDmProfile(item.id);
-                if (typeof window.showToast === 'function') window.showToast(`已生成 ${collected.length} 条帖子和 ${imageCount} 张图片`);
+                completed = true;
+                if (typeof window.showToast === 'function') {
+                    window.showToast(imageError
+                        ? `已生成 ${collected.length} 条帖子；${imageError?.message || '生图失败，已保留文字帖'}`
+                        : `已生成 ${collected.length} 条帖子${generatedImage ? '和 1 张图片' : ''}`);
+                }
             } catch (error) {
                 console.error('[X] Generate Char profile failed', error);
                 if (typeof window.showToast === 'function') window.showToast('主页生成失败，未修改现有内容');
             } finally {
-                const nextButton = document.getElementById('x-char-profile-generate-btn');
+                charProfileGenerationInFlight = false;
+                const nextButton = document.getElementById('x-char-profile-generate-run-btn');
                 if (nextButton) {
                     nextButton.disabled = false;
-                    nextButton.innerHTML = '<i class="fas fa-search"></i>';
+                    nextButton.textContent = '生成';
                 }
             }
+            if (completed) closeCharProfileGenerateSheet();
         }
 
         function showXConfirm(options = {}) {
@@ -4430,7 +5375,7 @@ ${comments || '暂无评论'}`;
                         <span><strong>${escapeHtml(post.name)}</strong><small>${escapeHtml(post.handle)}</small></span>
                     </div>
                     <p>${renderPostTextHtml({ ...post, text: post.text || '分享了一条帖子' })}</p>
-                    ${image ? `<img src="${escapeHtml(image.url || generatedImagePlaceholderUrl)}" alt="" onerror="this.src='${escapeHtml(generatedImagePlaceholderUrl)}'">` : ''}
+                    ${image ? `<img src="${escapeHtml(image.url)}" alt="" onerror="this.remove()">` : ''}
                     <span class="x-dm-post-card-label"><i class="fab fa-x-twitter"></i> X Post</span>
                 </div>
             `;
@@ -4574,8 +5519,13 @@ Rules:
             const imgEl = document.getElementById('x-image-preview-img');
             if (textEl) textEl.textContent = safeText(text, 'Image');
             if (imgEl) {
-                imgEl.src = url || generatedImagePlaceholderUrl;
-                imgEl.style.display = 'block';
+                if (url) {
+                    imgEl.src = url;
+                    imgEl.style.display = 'block';
+                } else {
+                    imgEl.removeAttribute('src');
+                    imgEl.style.display = 'none';
+                }
             }
             imagePreviewOverlay.classList.add('active');
             imagePreviewOverlay.setAttribute('aria-hidden', 'false');
@@ -5469,7 +6419,7 @@ ${worldbook || 'None'}`;
             syncCurrentProfile(state);
             const target = navItems[index]?.getAttribute('data-target');
             if (target === 'x-home-tab') {
-                renderGeneratedPosts(state, { resetLimit: !!options.resetHomeFeed });
+                renderGeneratedPosts(state, { resetLimit: !!options.resetHomeFeed, force: !!options.force });
                 return;
             }
             if (target === 'x-super-tab') {
@@ -5601,6 +6551,38 @@ ${worldbook || 'None'}`;
             });
         }
 
+        function scheduleXOpenMaintenance() {
+            if (xOpenMaintenancePromise) return xOpenMaintenancePromise;
+            const run = async () => {
+                const beforeRevision = typeof window.getAppStateRevision === 'function'
+                    ? window.getAppStateRevision('x')
+                    : fallbackXStateRevision;
+                await ensureXPlayerAccountMigration();
+                await migrateActiveXCharIdentities();
+                await migrateActiveXCharProfileMedia();
+                const afterRevision = typeof window.getAppStateRevision === 'function'
+                    ? window.getAppStateRevision('x')
+                    : fallbackXStateRevision;
+                if (view.classList.contains('active') && afterRevision !== beforeRevision) {
+                    renderVisibleXTab(currentIndex, getXState(), { force: true });
+                }
+            };
+            xOpenMaintenancePromise = new Promise((resolve) => {
+                const start = () => run().catch((error) => {
+                    console.warn('[X] Deferred open maintenance failed', error);
+                }).finally(() => {
+                    xOpenMaintenancePromise = null;
+                    resolve();
+                });
+                if (typeof window.requestIdleCallback === 'function') {
+                    window.requestIdleCallback(start, { timeout: 750 });
+                } else {
+                    setTimeout(start, 0);
+                }
+            });
+            return xOpenMaintenancePromise;
+        }
+
         async function openXApp(event) {
             if (event) event.stopPropagation();
             if (window.isJiggleMode) return;
@@ -5611,13 +6593,17 @@ ${worldbook || 'None'}`;
             xHomeFeedRenderLimit = xHomeFeedInitialLimit;
             const state = getXState();
             syncCurrentProfile(state);
-            requestAnimationFrame(() => switchTab(currentIndex, { state, resetHomeFeed: true }));
+            requestAnimationFrame(() => {
+                switchTab(currentIndex, { state, resetHomeFeed: true });
+                scheduleXOpenMaintenance();
+            });
         }
 
         function closeXApp() {
             closeTopicDetail();
             closePostDetail();
             closeEditProfile();
+            closeAccountSwitchSheet();
             closeCreateTopicSheet();
             closeXSettings();
             closeComposer();
@@ -5629,6 +6615,7 @@ ${worldbook || 'None'}`;
             closeSearchGenerateSheet();
             closeAdvanceSheet();
             closeCharEditSheet();
+            closeCharProfileGenerateSheet();
             closeEditSuperTopicSheet();
             closePostForwardSheet();
             closeImagePreview();
@@ -5776,6 +6763,15 @@ ${worldbook || 'None'}`;
         document.getElementById('x-char-random-cover-btn')?.addEventListener('click', refreshCharEditCover);
         document.getElementById('x-char-edit-avatar-preview')?.addEventListener('click', () => document.getElementById('x-char-edit-avatar-input')?.click());
         document.getElementById('x-char-edit-cover-preview')?.addEventListener('click', () => document.getElementById('x-char-edit-cover-input')?.click());
+        document.getElementById('x-char-profile-generate-close-btn')?.addEventListener('click', closeCharProfileGenerateSheet);
+        document.getElementById('x-char-profile-generate-run-btn')?.addEventListener('click', generateCurrentCharProfile);
+        document.getElementById('x-char-profile-image-toggle')?.addEventListener('change', syncCharProfileImageOptions);
+        document.getElementById('x-char-profile-image-preset')?.addEventListener('change', (event) => applyCharProfilePromptPreset(event.target.value));
+        document.getElementById('x-char-profile-preset-save')?.addEventListener('click', saveCharProfilePromptPreset);
+        document.getElementById('x-char-profile-preset-delete')?.addEventListener('click', deleteCharProfilePromptPreset);
+        document.getElementById('x-char-profile-reference-preview')?.addEventListener('click', () => document.getElementById('x-char-profile-reference-input')?.click());
+        document.getElementById('x-char-profile-reference-input')?.addEventListener('change', loadCharProfileReferenceFile);
+        document.getElementById('x-char-profile-reference-delete')?.addEventListener('click', removeCharProfileReferenceDraft);
         document.getElementById('x-edit-super-topic-close-btn')?.addEventListener('click', closeEditSuperTopicSheet);
         document.getElementById('x-edit-super-topic-save-btn')?.addEventListener('click', saveEditedSuperTopic);
         document.getElementById('x-edit-super-topic-delete-btn')?.addEventListener('click', deleteEditedSuperTopic);
@@ -5881,6 +6877,32 @@ ${worldbook || 'None'}`;
                 openTopicDetail(topicLink.dataset.topicTag);
                 return;
             }
+            const accountSwitchTrigger = event.target.closest('#x-account-switch-trigger');
+            if (accountSwitchTrigger) {
+                event.preventDefault();
+                event.stopPropagation();
+                openAccountSwitchSheet();
+                return;
+            }
+            const accountSwitchClose = event.target.closest('#x-account-switch-close-btn');
+            if (accountSwitchClose) {
+                event.preventDefault();
+                closeAccountSwitchSheet();
+                return;
+            }
+            const addAccountButton = event.target.closest('#x-account-add-btn');
+            if (addAccountButton) {
+                event.preventDefault();
+                closeAccountSwitchSheet();
+                openEditProfile('create');
+                return;
+            }
+            const accountRow = event.target.closest('[data-x-player-account-id]');
+            if (accountRow) {
+                event.preventDefault();
+                void switchXPlayerAccount(accountRow.dataset.xPlayerAccountId);
+                return;
+            }
             const selfProfileEdit = event.target.closest('#x-profile-edit-btn');
             if (selfProfileEdit) {
                 event.preventDefault();
@@ -5914,7 +6936,7 @@ ${worldbook || 'None'}`;
             const profileGenerate = event.target.closest('#x-char-profile-generate-btn');
             if (profileGenerate) {
                 event.preventDefault();
-                generateCurrentCharProfile();
+                openCharProfileGenerateSheet(currentProfileIdentity?.id);
                 return;
             }
             const forwardButton = event.target.closest('.x-feed-forward-btn');

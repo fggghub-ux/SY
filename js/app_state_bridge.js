@@ -93,6 +93,11 @@
                     avatar: '',
                     banner: ''
                 },
+                xPlayerAccounts: [],
+                activeXPlayerAccountId: '',
+                xAccountSchemaVersion: 1,
+                xCharIdentityMigrationVersion: 0,
+                xCharProfileMediaMigrationVersion: 0,
                 xTopics: [],
                 boundWorldBookIds: [],
                 xVisitors: [],
@@ -247,6 +252,11 @@
                 ...defaults.x.xData,
                 ...(isPlainObject(safeX.xData) ? safeX.xData : {})
             },
+            xPlayerAccounts: Array.isArray(safeX.xPlayerAccounts) ? safeX.xPlayerAccounts : defaults.x.xPlayerAccounts,
+            activeXPlayerAccountId: typeof safeX.activeXPlayerAccountId === 'string' ? safeX.activeXPlayerAccountId : defaults.x.activeXPlayerAccountId,
+            xAccountSchemaVersion: Math.max(1, Number(safeX.xAccountSchemaVersion) || defaults.x.xAccountSchemaVersion),
+            xCharIdentityMigrationVersion: Math.max(0, Number(safeX.xCharIdentityMigrationVersion) || defaults.x.xCharIdentityMigrationVersion),
+            xCharProfileMediaMigrationVersion: Math.max(0, Number(safeX.xCharProfileMediaMigrationVersion) || defaults.x.xCharProfileMediaMigrationVersion),
             xTopics: Array.isArray(safeX.xTopics) ? safeX.xTopics : defaults.x.xTopics,
             boundWorldBookIds: Array.isArray(safeX.boundWorldBookIds) ? safeX.boundWorldBookIds.map(String) : defaults.x.boundWorldBookIds,
             xVisitors: Array.isArray(safeX.xVisitors) ? safeX.xVisitors : defaults.x.xVisitors,
@@ -318,8 +328,16 @@
     let runtimeDirty = false;
     const dirtyAppKeys = new Set();
     let appState = normalizeAppState(initialLocalAppState);
+    const appStateRevisions = Object.create(null);
     let globalDataCache = null;
     let saveTimer = null;
+
+    function bumpAppStateRevision(appKey) {
+        const key = String(appKey || '');
+        if (!key) return 0;
+        appStateRevisions[key] = Math.max(0, Number(appStateRevisions[key]) || 0) + 1;
+        return appStateRevisions[key];
+    }
 
     function syncWindowState() {
         window.__u2AppState = appState;
@@ -371,10 +389,15 @@
             : null;
     };
 
+    window.getAppStateRevision = function getAppStateRevision(appKey) {
+        return Math.max(0, Number(appStateRevisions[String(appKey || '')]) || 0);
+    };
+
     window.setAppState = function setAppState(appKey, nextState, options = {}) {
         if (!appKey) return null;
         appState[appKey] = isPlainObject(nextState) || Array.isArray(nextState) ? clone(nextState) : nextState;
         appState = normalizeAppState(appState);
+        bumpAppStateRevision(appKey);
         syncWindowState();
         runtimeDirty = true;
         dirtyAppKeys.add(String(appKey));
@@ -392,6 +415,7 @@
 
     window.resetUnifiedAppState = function resetUnifiedAppState(options = {}) {
         appState = normalizeAppState();
+        Object.keys(appState).forEach(bumpAppStateRevision);
         syncWindowState();
         runtimeDirty = true;
         Object.keys(appState).forEach((key) => dirtyAppKeys.add(key));
@@ -426,6 +450,7 @@
                     appState = mergeDurableBaseWithRuntimeState(window.__u2AppState, appState);
                     appState = normalizeAppState(appState);
                 }
+                Object.keys(appState).forEach(bumpAppStateRevision);
                 globalDataCache = typeof window.appStorage.loadGlobalData === 'function'
                     ? await window.appStorage.loadGlobalData()
                     : {};

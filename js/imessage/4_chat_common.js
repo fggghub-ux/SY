@@ -19,10 +19,10 @@ function createMessageId(prefix = 'msg') {
         return msg.id;
     }
 
-    async function resolveAutoImageReferenceFace(friend) {
+    async function resolveAutoImageReferenceFace(friend, options = {}) {
         if (!friend
             || friend.type !== 'char'
-            || friend.imagePromptConfig?.autoUseReferenceFace !== true) {
+            || (options.force !== true && friend.imagePromptConfig?.autoUseReferenceFace !== true)) {
             return '';
         }
 

@@ -8173,6 +8173,14 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     imageModel: result.model,
                     imageSize: result.size,
                     faceReferenceUsed: result.faceReferenceUsed,
+                    imageGenerationPrompt: prompt,
+                    imageGenerationConfig: {
+                        charAppearance: promptConfig.charAppearance || '',
+                        userAppearance: promptConfig.userAppearance || '',
+                        artistPrompt: promptConfig.artistPrompt || '',
+                        negativePrompt: promptConfig.negativePrompt || '',
+                        useReferenceFace: !!referenceImage
+                    },
                     senderName: targetFriend.nickname || targetFriend.realName || 'Char',
                     senderAvatarUrl: targetFriend.avatarUrl || '',
                     senderAvatarAssetId: targetFriend.avatarAssetId || '',
@@ -8294,8 +8302,8 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
             showModal({
                 type: 'prompt',
                 title: '生成图片',
-                message: '描述你想生成的画面',
-                placeholder: '输入主体、场景、风格、光线等细节…',
+                message: '将自动根据当前聊天上下文生成画面',
+                placeholder: '可补充主体、场景、风格等要求（选填）',
                 defaultValue: savedPromptConfig.lastPrompt || '',
                 multiline: true,
                 confirmText: '开始生成',
@@ -8308,8 +8316,7 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     presets: Array.isArray(savedPromptConfig.presets) ? savedPromptConfig.presets : [],
                     activePresetId: savedPromptConfig.activePresetId || '',
                     autoGenerate: savedPromptConfig.autoGenerate === true,
-                    autoUseReferenceFace: savedPromptConfig.autoUseReferenceFace === true,
-                    onGenerateFromContext: () => generateImagePromptFromChatContext(latestTargetFriend)
+                    autoUseReferenceFace: savedPromptConfig.autoUseReferenceFace === true
                 },
                 referenceFace: supportsCharacterReference ? {
                     title: `${latestTargetFriend.nickname || latestTargetFriend.realName || '当前角色'}的参考脸`,
@@ -8376,26 +8383,33 @@ ${sections.length > 0 ? sections.join('\n\n') : 'No active vectorized character 
                     }, { metaOnly: true, silent: true });
                 },
                 onConfirm: (value, modalState = {}) => {
-                    const prompt = String(value || '').trim();
-                    if (!prompt) {
-                        window.showToast?.('请输入生图提示词');
-                        return false;
-                    }
-                    const promptConfig = buildPromptConfig({ ...modalState, promptValue: prompt });
+                    const supplement = String(value || '').trim();
+                    const promptConfig = buildPromptConfig({ ...modalState, promptValue: supplement });
                     (async () => {
-                        const saved = await commitSheetFriendChange(targetFriend, (friend) => {
-                            friend.imagePromptConfig = promptConfig;
-                        }, { metaOnly: true });
-                        if (!saved) {
-                            window.showToast?.('生图提示词保存失败，请重试');
-                            return;
+                        try {
+                            const saved = await commitSheetFriendChange(targetFriend, (friend) => {
+                                friend.imagePromptConfig = promptConfig;
+                            }, { metaOnly: true });
+                            if (!saved) {
+                                window.showToast?.('生图提示词保存失败，请重试');
+                                return;
+                            }
+                            window.showToast?.('正在根据聊天上下文整理画面…');
+                            const contextPrompt = await generateImagePromptFromChatContext(latestTargetFriend);
+                            const finalPrompt = [
+                                contextPrompt,
+                                supplement ? `用户补充画面要求：\n${supplement}` : ''
+                            ].filter(Boolean).join('\n\n');
+                            await generateAndSendChatImage(
+                                finalPrompt,
+                                targetFriend,
+                                modalState.toggleChecked ? modalState.referenceImage : '',
+                                promptConfig
+                            );
+                        } catch (error) {
+                            console.error('Failed to prepare contextual chat image prompt', error);
+                            window.showToast?.(error?.message || '根据聊天上下文生成画面失败');
                         }
-                        await generateAndSendChatImage(
-                            prompt,
-                            targetFriend,
-                            modalState.toggleChecked ? modalState.referenceImage : '',
-                            promptConfig
-                        );
                     })();
                     return true;
                 },
@@ -8459,6 +8473,8 @@ async function sendImageMessage(imgUrl, description, options = {}) {
             imageModel: options.imageModel || '',
             imageSize: options.imageSize || '',
             faceReferenceUsed: !!options.faceReferenceUsed,
+            imageGenerationPrompt: options.imageGenerationPrompt || '',
+            imageGenerationConfig: options.imageGenerationConfig || null,
             fileName: options.fileName || '',
             senderName: options.senderName || '',
             senderAvatarUrl: options.senderAvatarUrl || '',

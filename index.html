@@ -53,12 +53,12 @@
     <link rel="stylesheet" href="css/login.css?v=20260731-login-gate-focus-v2">
     <link rel="stylesheet" href="css/home.css?v=20260731-ios-swipe-icon-flicker-v1&layout=20260801-fixed-grid-v1&performance=20260801-v1">
     <link rel="stylesheet" href="css/worldbook.css?no-glass=20260803-v1&notes-ios26=20260812-v6">
-    <link rel="stylesheet" href="css/imessage.css?v=20260721-status-prompt-v3-group-poll-v3&cot=20260725-single-chat-cot-v1&status=20260802-three-line-thought-v1&cotui=20260725-pill-v1&link=20260726-light-link-theatre-v1&relationship=20260801-static-preview-v3&android-keyboard=20260801-v1&group-user-avatar=20260802-v1&game=20260803-anonymous-qa-v7-context-layout&image-assets=20260803-v1&offline-stream-performance=20260805-v1&vector-memory=20260807-local-v1&theme-import-android-v1&moment-visibility=20260811-v1&offline-summary-archive=20260811-v1&offline-meeting-delete=20260811-v1&offline-summary-memory=20260811-v1&offline-chat-rename=20260811-v1&offline-auto-image=20260813-v2&offline-txt-export=20260813-v1&memory-recall-promotion=20260813-v1&memory-action-loading=20260813-v1">
+    <link rel="stylesheet" href="css/imessage.css?v=20260721-status-prompt-v3-group-poll-v3&cot=20260725-single-chat-cot-v1&status=20260802-three-line-thought-v1&cotui=20260725-pill-v1&link=20260726-light-link-theatre-v1&relationship=20260801-static-preview-v3&android-keyboard=20260801-v1&group-user-avatar=20260802-v1&game=20260803-anonymous-qa-v7-context-layout&image-assets=20260803-v1&offline-stream-performance=20260805-v1&vector-memory=20260807-local-v1&theme-import-android-v1&moment-visibility=20260811-v1&offline-summary-archive=20260811-v1&offline-meeting-delete=20260811-v1&offline-summary-memory=20260811-v1&offline-chat-rename=20260811-v1&offline-auto-image=20260813-v2&offline-txt-export=20260813-v1&memory-recall-promotion=20260813-v1&memory-action-loading=20260813-v1&theme-surfaces=20260814-v1&theme-avatar-hooks=20260814-v2&chat-record-forward=20260815-v3">
     <link rel="stylesheet" href="css/pay.css?v=20260812-pay-transfer-bank-v1">
     <link rel="stylesheet" href="css/bstage.css?v=20260721-mobile-input-layout-v1-android-focus-scope-v1&no-glass=20260803-v1">
     <link rel="stylesheet" href="css/tiktok.css?v=20260721-mobile-input-layout-v1">
     <link rel="stylesheet" href="css/shopping.css">
-    <link rel="stylesheet" href="css/x.css?v=20260811-x-dm-imessage-context-v1">
+    <link rel="stylesheet" href="css/x.css?v=20260815-x-char-profile-generation-v1">
     
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -2780,8 +2780,10 @@
                         </div>
                         <div class="storage-health-warning" id="storage-health-warning" hidden></div>
                         <div class="storage-health-compaction" id="storage-health-compaction"></div>
+                        <div class="storage-health-compaction" id="storage-health-image-compression"></div>
                         <div class="storage-health-actions">
                             <button type="button" id="storage-clean-cache-btn">优化存储</button>
+                            <button type="button" id="storage-compress-images-btn">压缩图片</button>
                             <button type="button" id="storage-retry-btn" hidden>重试保存</button>
                         </div>
                     </div>
@@ -3449,19 +3451,45 @@
                     <strong>主题美化</strong>
                     <span>iMessage CSS</span>
                 </div>
-                <button class="im-theme-apply-btn" id="theme-current-apply-btn" type="button">应用</button>
+                <div class="im-theme-header-actions">
+                    <button class="im-theme-reset-btn" id="theme-reset-all-btn" type="button">重置</button>
+                    <button class="im-theme-apply-btn" id="theme-current-apply-btn" type="button">应用</button>
+                </div>
             </header>
 
             <div class="im-theme-tabs" role="tablist" aria-label="主题配置类型">
-                <button class="theme-tab active" data-target="theme-tab-bubble" type="button" role="tab" aria-selected="true">气泡 CSS</button>
-                <button class="theme-tab" data-target="theme-tab-chat" type="button" role="tab" aria-selected="false">Chat CSS</button>
-                <button class="theme-tab" data-target="theme-tab-group" type="button" role="tab" aria-selected="false">Group CSS</button>
+                <button class="theme-tab active" data-target="theme-tab-home" type="button" role="tab" aria-selected="true">Home CSS</button>
+                <button class="theme-tab" data-target="theme-tab-bubble" type="button" role="tab" aria-selected="false">气泡 CSS</button>
+                <button class="theme-tab" data-target="theme-tab-chat" type="button" role="tab" aria-selected="false">Chat</button>
+                <button class="theme-tab" data-target="theme-tab-group" type="button" role="tab" aria-selected="false">Group</button>
                 <button class="theme-tab" data-target="theme-tab-status" type="button" role="tab" aria-selected="false">状态栏 CSS</button>
             </div>
 
             <main class="im-theme-content">
+                <section id="theme-tab-home" class="theme-tab-content active im-theme-panel" data-theme-type="home">
+                    <div class="im-theme-layout">
+                        <div class="im-theme-editor-panel">
+                            <div class="im-theme-panel-heading"><strong>Home 界面样式</strong><span>全局 Home 与 Chats 会话列表</span></div>
+                            <textarea id="theme-home-css-input" class="global-textarea im-theme-code-input" placeholder="/* 使用 :scope 定位 Home 与 Chats 会话列表 */"></textarea>
+                            <div class="im-theme-actions">
+                                <button class="sheet-action im-theme-danger-action" id="theme-home-clear-btn" type="button">清空</button>
+                                <button class="sheet-action im-theme-secondary-action im-theme-import-action" id="theme-home-import-btn" data-theme-import-type="home" type="button" title="导入 TXT / DOCX"><i class="fas fa-file-import" aria-hidden="true"></i>导入</button>
+                                <button class="sheet-action im-theme-secondary-action" id="theme-home-copy-btn" type="button">复制源码</button>
+                            </div>
+                            <div class="im-theme-save-row">
+                                <input type="text" id="theme-home-preset-name" placeholder="输入预设名字">
+                                <button class="sheet-action im-theme-save-action" id="theme-home-save-btn" type="button">存为预设</button>
+                            </div>
+                        </div>
+                        <aside class="im-theme-preset-panel">
+                            <div class="im-theme-panel-heading"><strong>我的预设</strong><span>点击填入编辑器</span></div>
+                            <div id="theme-home-preset-list" class="account-list im-theme-preset-list"></div>
+                        </aside>
+                    </div>
+                </section>
+
                 <!-- 气泡 CSS Tab -->
-                <section id="theme-tab-bubble" class="theme-tab-content active im-theme-panel" data-theme-type="bubble">
+                <section id="theme-tab-bubble" class="theme-tab-content im-theme-panel" data-theme-type="bubble" hidden>
                     <div class="im-theme-layout">
                         <div class="im-theme-editor-panel">
                             <div class="im-theme-panel-heading">
@@ -5010,10 +5038,10 @@
                                 <div class="form-item" style="justify-content: space-between; border-bottom: 1px solid var(--separator-color);">
                                     <label style="width: auto; font-size: 16px; color: #000;">显示头像</label>
                                     <label class="toggle-switch">
-                                        <input type="checkbox" id="chat-avatar-toggle">
-                                        <span class="slider"></span>
-                                    </label>
-                                </div>
+                                    <input type="checkbox" id="chat-avatar-toggle">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
                                 
                                 <div class="form-item" style="justify-content: space-between; border-bottom: none;" id="timestamp-header">
                                     <label style="width: auto; font-size: 16px; color: #000;">显示时间戳</label>
@@ -5262,7 +5290,6 @@
                                 <textarea id="modal-textarea" class="global-textarea" placeholder="请输入"></textarea>
                             </div>
                             <div id="modal-generation-prompt-group" style="display: none; margin: -6px 0 14px;">
-                                <button type="button" id="modal-generation-context-btn" style="width: 100%; padding: 10px 12px; border: none; border-radius: 12px; background: #111; color: #fff; font-size: 13px; font-weight: 650; margin-bottom: 10px;">根据当前剧情生成提示词</button>
                                 <div id="modal-generation-preset-group" style="display: flex; gap: 8px; margin-bottom: 10px;">
                                     <select id="modal-generation-preset-select" aria-label="选择生图提示词预设" style="flex: 1; min-width: 0; border: none; border-radius: 12px; padding: 10px 12px; background: #f2f2f7; color: #1c1c1e; font-size: 13px; outline: none;">
                                         <option value="">当前编辑内容</option>
@@ -5854,6 +5881,14 @@
                                 <span>Persona</span>
                                 <textarea id="x-edit-persona-input" maxlength="600" placeholder="Private persona for role settings"></textarea>
                             </label>
+                            <label class="x-edit-field">
+                                <span>Following</span>
+                                <input id="x-edit-following-input" type="number" min="0" step="1" inputmode="numeric" placeholder="0">
+                            </label>
+                            <label class="x-edit-field">
+                                <span>Followers</span>
+                                <input id="x-edit-followers-input" type="number" min="0" step="1" inputmode="numeric" placeholder="0">
+                            </label>
                         </div>
                     </div>
                 </div>
@@ -5879,8 +5914,8 @@
                             <button class="x-settings-row x-settings-danger-row" id="x-settings-clear-data-btn" type="button">
                                 <div class="x-settings-row-icon"><i class="fas fa-trash-alt"></i></div>
                                 <div>
-                                    <strong>清空所有 X 数据</strong>
-                                    <span>将 X 恢复到初始状态</span>
+                                    <strong>清空当前 X 账号数据</strong>
+                                    <span>其他 X 账号不受影响</span>
                                 </div>
                                 <i class="fas fa-chevron-right"></i>
                             </button>
@@ -8314,17 +8349,17 @@
     </section>
 </div>
 
-<script src="js/storage/app_storage.js?v=20260715-library-content-store-v1&cot=20260725-single-chat-cot-v1&backup=20260814-v9-json-rollback-v1&provider=20260807-v1&image-generation=20260803-char-face-reference-v2&startup-queue=20260804-v1&vector-memory-index=20260807-v1&group-identity-css-v1"></script>
+<script src="js/storage/app_storage.js?v=20260715-library-content-store-v1&cot=20260725-single-chat-cot-v1&backup=20260815-v10-x-account-worlds-v1&provider=20260807-v1&image-generation=20260803-char-face-reference-v2&startup-queue=20260804-v1&vector-memory-index=20260807-v1&group-identity-css-v1&x-char-assets=20260815-v1&image-compression=20260815-v1&chat-image-reroll=20260815-v1&chat-record-forward=20260815-v1"></script>
     <script src="js/storage/imessage_storage.js?v=20260710-storage-v8-idb1"></script>
     <script src="storage.js?v=20260710-storage-v7-cache1"></script>
     <script src="js/lazy_vendor_loader.js?v=20260803-v1"></script>
-    <script src="js/app_state_bridge.js?v=20260710-bstage-chat-recovery-v1"></script>
+    <script src="js/app_state_bridge.js?v=20260710-bstage-chat-recovery-v1&x-accounts=20260815-v1&x-revisions=20260815-v1&x-char-media=20260815-v1"></script>
     <script src="js/bootstrap_globals.js?v=20260721-fetch-abort-v1&error-copy=20260801-zh-v1&api=20260803-unified-v1&provider-adapters=20260807-v1&image-generation=20260807-model-cache-v1&image-understanding=20260811-v1&vector-memory=20260807-local-v1&tts=20260811-v2"></script>
     <script src="js/image_generation.js?v=20260807-model-cache-v1"></script>
     <script src="js/image_understanding.js?v=20260811-v1"></script>
     <script src="js/export_file.js?v=20260718-ios-pwa-export-v1"></script>
-    <script src="js/about_info_modal.js?v=20260813-memory-recall-promotion-v1"></script>
-    <script src="js/login.js?v=20260801-resume-recovery-v1&changelog-notice=20260813-v1"></script>
+    <script src="js/about_info_modal.js?v=20260815-changelog-v1"></script>
+    <script src="js/login.js?v=20260801-resume-recovery-v1&changelog-notice=20260815-v1"></script>
 <script src="js/mobile_input_compat.js?v=20260713-bstage-enter-v1-android-focus-scope-v1&guard=20260801-v3&theme-import-android-v1&enter-blur=20260807-v1&global-scope=20260807-v1&call-viewport-owner=20260811-v1&bottom-sheet-y=20260811-v1"></script>
     <script src="js/background_activity.js"></script>
     <script src="js/system_notifications.js?v=20260721-storage-hydration-v1-custom-sound-v1&image-assets=20260803-v1"></script>
@@ -8332,27 +8367,28 @@
     <!-- 引入 iMessage 模块分段代码 -->
     <script src="js/imessage/game.js?v=20260803-anonymous-qa-v7-context-layout&startup-queue=20260804-v1"></script>
     <script src="js/imessage/data_utils.js?v=20260713-offline-memory-v1-sticker-manifest-v2-memory-event-time-v1-offline-handoff-v2&single-chat-info=20260803-v1&schedule-routine=20260804-v1&summary-error=20260811-v1"></script>
-    <script src="js/imessage/2_core.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&cotcopy=20260727-v2&observer=20260730-v1&open-performance=20260802-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&group-user-avatar=20260802-v1&image-generation=20260803-artist-prompt-v6&single-chat-info=20260803-v1&offline-handoff=20260803-v2&cot-default=20260803-v3&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v2&vendor-lazy=20260803-v1&startup-queue=20260804-v1&schedule-routine=20260804-v1&context-window=20260804-v1&local-vector-memory=20260807-v1&group-identity-css-v1&service-id-v1&x-dm-context=20260811-v2&x-social-post-context=20260811-v2&offline-summary-settings=20260811-v1&time-aware-context=20260811-v1&offline-chat-rename=20260811-v1&group-private-chat-permissions=20260812-v1&auto-face-lock=20260812-v1&memory-recall-promotion=20260813-v1&memory-action-loading=20260813-v1"></script>
+    <script src="js/imessage/2_core.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v4-cot-short-v1&cotcopy=20260727-v2&observer=20260730-v1&open-performance=20260802-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&group-user-avatar=20260802-v1&image-generation=20260803-artist-prompt-v6&single-chat-info=20260803-v1&offline-handoff=20260803-v2&cot-default=20260803-v3&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v2&vendor-lazy=20260803-v1&startup-queue=20260804-v1&schedule-routine=20260804-v1&context-window=20260804-v1&local-vector-memory=20260807-v1&group-identity-css-v1&service-id-v1&x-dm-context=20260811-v2&x-social-post-context=20260811-v2&offline-summary-settings=20260811-v1&time-aware-context=20260811-v1&offline-chat-rename=20260811-v1&group-private-chat-permissions=20260812-v1&auto-face-lock=20260812-v1&memory-recall-promotion=20260813-v1&memory-action-loading=20260813-v1&theme-surfaces=20260814-v1&theme-avatar-hooks=20260814-v2&chat-image-reroll=20260815-v1&chat-record-forward=20260815-v1"></script>
     <script src="js/imessage/vector_memory.js?v=20260807-local-vector-memory-v1&memory-recall-promotion=20260813-v1"></script>
     <script src="js/imessage/3_contacts.js?v=20260718-friend-profile-import-v1&render-cache=20260801-v1&vendor-lazy=20260803-v1&startup-queue=20260804-v1"></script>
-    <script src="js/imessage/3_groups.js?v=20260718-group-poll-v4-group-memory-editor-v1&observer=20260730-v1&render-cache=20260801-v1&user-avatar=20260802-v1&group-auto-translation=20260803-v1&startup-queue=20260804-v1&context-limit=20260804-v1&group-identity-css-v1&member-sync-private-permissions=20260812-v1"></script>
+    <script src="js/imessage/3_groups.js?v=20260718-group-poll-v4-group-memory-editor-v1&observer=20260730-v1&render-cache=20260801-v1&user-avatar=20260802-v1&group-auto-translation=20260803-v1&startup-queue=20260804-v1&context-limit=20260804-v1&group-identity-css-v1&member-sync-private-permissions=20260812-v1&theme-avatar-hooks=20260814-v2"></script>
+    <script src="js/imessage/chat_record_forward.js?v=20260815-v3"></script>
     <script src="js/imessage/4_chat_common.js?v=image-assets-20260803-v1&auto-image=20260807-v1&startup-queue=20260804-v1&auto-face-lock=20260813-v1"></script>
     <script src="js/imessage/4_chat_status.js?v=20260716-status-prompt-v2&paging=20260801-button-only-v1&startup-queue=20260804-v1"></script>
     <script src="js/imessage/4_chat_payment.js?v=20260725-single-chat-cot-v1&startup-queue=20260804-v1&group-identity-css-v1&group-member-resolution=20260812-v1"></script>
-    <script src="js/imessage/4_chat_bubbles.js?v=20260725-single-chat-cot-v1-avatar-pill-v1-link-theatre-js-v1&group-user-avatar=20260802-v1&open-performance=20260802-v1&image-assets=20260803-v1&startup-queue=20260804-v1&group-identity-css-v1&tts=20260811-group-v2&offline-meeting-delete=20260811-v1&image-save=20260812-v1"></script>
+    <script src="js/imessage/4_chat_bubbles.js?v=20260725-single-chat-cot-v1-avatar-pill-v1-link-theatre-js-v1&group-user-avatar=20260802-v1&open-performance=20260802-v1&image-assets=20260803-v1&startup-queue=20260804-v1&group-identity-css-v1&tts=20260811-group-v2&offline-meeting-delete=20260811-v1&image-save=20260812-v1&theme-avatar-hooks=20260815-v3&image-reroll=20260815-v3&chat-record-forward=20260815-v1&live-user-avatar=20260815-v1"></script>
     <script src="js/imessage/chat_search.js?v=20260718-chat-history-search-v2&keyboard-guard=20260801-v1&startup-queue=20260804-v1"></script>
     <script src="js/imessage/chat_favorites.js?v=20260723-chat-favorites-v3&startup-queue=20260804-v1"></script>
     <script src="js/imessage/tts.js?v=20260811-tts-minimax-audio-payload-v3"></script>
     <script src="js/imessage/4_chat_ai.js?v=20260724-single-chat-prompt-v8-single-chat-cot-v1&cot=20260802-single-chat-cot-full-analysis-v2&online=20260801-persona-entries-v1&observer=20260730-v1&performance=20260801-v1&api=20260803-nonstream-v1&auto-image=20260807-v1&auto-translation=20260801-v1&status-prompt=20260802-v1&single-chat-info=20260803-v1&offline-handoff=20260803-v2&context-dedupe=20260803-v1&nonstream=20260803-v2&group-auto-translation=20260803-v1&chat-runtime-performance=20260803-v1&avatar-self-update=20260803-v5&image-assets=20260803-v1&startup-queue=20260804-v1&psychology-priority=20260804-v1&schedule-routine=20260804-v1&sleep-status=20260804-v1&system-merge=20260804-v1&context-trace=20260804-v1&message-count-hard-limit=20260807-v1&x-dm-context=20260811-v1&safari-compat=20260811-v1&time-aware-context=20260811-v1&group-private-chat-permissions=20260812-v1&auto-face-lock=20260813-v1&memory-recall-promotion=20260813-v1"></script>
     <script src="js/imessage/offline_regex.js?v=20260705-offline-regex-v1"></script>
     <script src="js/imessage/offline_reasoning.js?v=20260718-offline-cot-v1"></script>
-    <script src="js/imessage/4_chat_sheet.js?v=20260718-offline-cot-v1-chat-image-send-v1&cotui=20260725-pill-v1&api=20260804-offline-stream-v1&image-generation=20260807-presets-v1&chat-runtime-performance=20260803-v1&image-assets=20260803-v1&startup-queue=20260804-v1&offline-stream-performance=20260805-v2&group-identity-css-v1&tts=20260811-v1&recap-summary-archive=20260811-v1&recap-order-delete=20260811-v1&offline-summary-memory=20260811-v1&offline-clear-confirm=20260811-v1&offline-chat-rename=20260811-v1&offline-dialogue-render=20260811-v1&sticker-name-cards=20260812-v1&auto-face-lock=20260813-v1&offline-auto-image=20260813-v2&offline-txt-export=20260813-v1"></script>
+    <script src="js/imessage/4_chat_sheet.js?v=20260718-offline-cot-v1-chat-image-send-v1&cotui=20260725-pill-v1&api=20260804-offline-stream-v1&image-generation=20260807-presets-v1&chat-runtime-performance=20260803-v1&image-assets=20260803-v1&startup-queue=20260804-v1&offline-stream-performance=20260805-v2&group-identity-css-v1&tts=20260811-v1&recap-summary-archive=20260811-v1&recap-order-delete=20260811-v1&offline-summary-memory=20260811-v1&offline-clear-confirm=20260811-v1&offline-chat-rename=20260811-v1&offline-dialogue-render=20260811-v1&sticker-name-cards=20260812-v1&auto-face-lock=20260813-v1&offline-auto-image=20260813-v2&offline-txt-export=20260813-v1&contextual-image=20260815-v1"></script>
     <script src="js/imessage/4_chat_link.js?v=20260726-light-link-theatre-v1&api=20260803-unified-v1&startup-queue=20260804-v1&group-identity-css-v1"></script>
-    <script src="js/imessage/4_chat_list.js?chat-runtime-performance=20260803-v1&startup-queue=20260804-v1"></script>
-    <script src="js/imessage/4_chat_interface.js?v=20260715-chat-context-menu-offline-retry-v1&observer=20260730-v1&android-keyboard=20260802-v1&open-performance=20260802-v1&chat-runtime-performance=20260803-v1&startup-queue=20260804-v1&group-tts=20260811-v2&group-member-count=20260812-v1"></script>
+    <script src="js/imessage/4_chat_list.js?chat-runtime-performance=20260803-v1&startup-queue=20260804-v1&theme-surfaces=20260814-v1"></script>
+    <script src="js/imessage/4_chat_interface.js?v=20260715-chat-context-menu-offline-retry-v1&observer=20260730-v1&android-keyboard=20260802-v1&open-performance=20260802-v1&chat-runtime-performance=20260803-v1&startup-queue=20260804-v1&group-tts=20260811-v2&group-member-count=20260812-v1&theme-surfaces=20260814-v1&chat-record-forward=20260815-v1"></script>
     <script src="js/imessage/4_chat_voice_call.js?v=20260725-call-keyboard-minimize-v2-minimized-context-v1&api=20260803-unified-v1&group-layout=20260803-v1&group-identity-css-v1&oppo-edge-anchor=20260811-v1&tts=20260811-group-v2"></script>
-    <script src="js/imessage/4_chat_main.js?v=20260715-chat-context-menu-offline-retry-v1&single-chat-info=20260803-v1&startup-queue=20260804-v1&tts=20260811-group-v3"></script>
-    <script src="js/imessage/5_settings.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v3&chat-bg=20260729-race-reset-v1&relationship=20260801-static-preview-v3&auto-translation=20260801-v1&status-prompt=20260802-v1&style-cache=20260802-v1&api=20260803-unified-v1&single-chat-info=20260803-v1&startup-queue=20260804-v1&context-persistence=20260804-v1&local-vector-memory=20260807-v1&x-dm-context=20260811-v2&x-social-post-context=20260811-v1&summary-error=20260811-v1&tts=20260811-v1&memory-recall-promotion=20260813-v1&memory-action-loading=20260813-v1"></script>
+    <script src="js/imessage/4_chat_main.js?v=20260715-chat-context-menu-offline-retry-v1&single-chat-info=20260803-v1&startup-queue=20260804-v1&tts=20260811-group-v3&chat-record-forward=20260815-v1"></script>
+    <script src="js/imessage/5_settings.js?v=20260725-single-chat-cot-v1-default-off-v2-context50-thought-v3&chat-bg=20260729-race-reset-v1&relationship=20260801-static-preview-v3&auto-translation=20260801-v1&status-prompt=20260802-v1&style-cache=20260802-v1&api=20260803-unified-v1&single-chat-info=20260803-v1&startup-queue=20260804-v1&context-persistence=20260804-v1&local-vector-memory=20260807-v1&x-dm-context=20260811-v2&x-social-post-context=20260811-v1&summary-error=20260811-v1&tts=20260811-v1&memory-recall-promotion=20260813-v1&memory-action-loading=20260813-v1&theme-avatar-hooks=20260814-v2"></script>
     <script src="js/imessage/6_moments.js?v=20260718-moments-target-reply-v1&auto-translation=20260801-v1&api=20260803-unified-v1&startup-queue=20260804-v1&group-identity-css-v1&current-account-avatar-v1&moment-visibility=20260811-v1&relationship-engagement=20260811-v1"></script>
 
     <!-- 引入其他应用模块 -->
@@ -8364,7 +8400,7 @@
     <!-- 引入核心 UI 管理与设置模块脚本 -->
     <script src="js/ui.js?v=20260811-no-glass-v1"></script>
     <script src="js/ui_translation.js?v=20260807-global-ui-zh-v1"></script>
-<script src="js/settings.js?v=20260718-ios-pwa-export-v1-notification-sync-v1-custom-notification-sound-v1-api-presets-accessor-v1&global-font-scale=20260801-v3&theme-source=20260802-status-center-v1&assistive=20260801-drag-settle-v3&home-theme=20260731-widgets-v1&app-icon-alpha=20260731-v1&backup=20260814-v9-json-rollback-v1&api=20260803-config-v2-model-search&provider-picker=20260807-v1&image-generation=20260807-model-select-v1&image-understanding=20260811-v1&startup-queue=20260804-v1&api-open-performance=20260805-v1&vector-memory=20260807-local-v1&group-identity-css-v1&theme-import-android-v1&moments-account-hydration=20260806-v1&global-ui-zh-v1&tts=20260811-v1&data-management-fullscreen=20260812-v1"></script>
+<script src="js/settings.js?v=20260718-ios-pwa-export-v1-notification-sync-v1-custom-notification-sound-v1-api-presets-accessor-v1&global-font-scale=20260801-v3&theme-source=20260802-status-center-v1&assistive=20260801-drag-settle-v3&home-theme=20260731-widgets-v1&app-icon-alpha=20260731-v1&backup=20260814-v9-json-rollback-v1&api=20260803-config-v2-model-search&provider-picker=20260807-v1&image-generation=20260807-model-select-v1&image-understanding=20260811-v1&startup-queue=20260804-v1&api-open-performance=20260805-v1&vector-memory=20260807-local-v1&group-identity-css-v1&theme-import-android-v1&moments-account-hydration=20260806-v1&global-ui-zh-v1&tts=20260811-v1&data-management-fullscreen=20260812-v1&imessage-theme-surfaces=20260814-v1&image-compression=20260815-v1"></script>
     <script src="js/library.js?v=20260715-reader-streaming-v1&open-performance=20260801-v1&vendor-lazy=20260803-v1&startup-queue=20260804-v1"></script>
     <script src="js/loves.js?v=20260719-friend-phone-bilingual-v13-android-focus-scope-v1&open-performance=20260801-v1&api=20260803-unified-v1&image-assets=20260803-v1&startup-queue=20260804-v1&moment-language=20260806-v1&android-comment-focus=20260807-v1"></script>
     <script src="js/tiktok/2_core.js?v=20260712-tiktok-feed-cleanup-v1&open-performance=20260801-v1&startup-queue=20260804-v1"></script>
@@ -8381,7 +8417,7 @@
     <script src="js/netflix_game_core.js?v=20260811-character-relations-v3"></script>
     <script src="js/netflix.js?v=20260811-character-relations-v3&open-performance=20260801-v1&api=20260803-unified-v1&startup-queue=20260804-v1"></script>
     <script src="js/shopping.js?v=20260710-storage-ready-v1&performance=20260801-v2&api=20260803-unified-v1&startup-queue=20260804-v1"></script>
-    <script src="js/xapp.js?v=20260710-storage-v7-cache1&worldbook=20260729-global-bound-char-v1&api=20260803-unified-v1&image-understanding=20260811-v1&startup-queue=20260804-v1&dm-imessage-context=20260811-v1&dm-role-context=20260811-v1"></script>
+    <script src="js/xapp.js?v=20260815-x-char-profile-generation-v3&worldbook=20260729-global-bound-char-v1&api=20260803-unified-v1&image-understanding=20260811-v1&startup-queue=20260804-v1&dm-imessage-context=20260811-v1&dm-role-context=20260811-v1"></script>
     <script src="js/home_desktop.js?v=20260710-storage-ready-v1&theme-widgets=20260731-v1&image-assets=20260804-v1&eager-images=20260804-v1&splash-gate=20260804-v1"></script>
     <script src="js/home_widget_panel_enhance.js"></script>
     <!-- 引入主逻辑脚本 -->

@@ -46,6 +46,39 @@
         container.style.setProperty('--group-user-avatar-image', `url(${JSON.stringify(String(avatarUrl))})`);
     }
 
+    function decorateMessageRowAvatar(row, friend, message = {}) {
+        if (!row || friend?.type === 'group' || row.querySelector(':scope > .im-message-avatar')) return row;
+        if (message.type === 'system_notice' || row.classList.contains('chat-system-row') || row.classList.contains('typing-row')) return row;
+
+        const isUser = message.role === 'user' || row.classList.contains('user-row');
+        let profile;
+        if (isUser) {
+            profile = getEffectiveUserProfile(friend, message);
+        } else {
+            profile = {
+                name: friend?.nickname || friend?.realName || 'AI',
+                avatarUrl: friend?.avatarUrl || 'assets/moren-thumb.jpg'
+            };
+        }
+
+        const avatar = document.createElement('span');
+        avatar.className = `im-message-avatar ${isUser ? 'is-user' : 'is-assistant'}`;
+        avatar.setAttribute('aria-hidden', 'true');
+        avatar.dataset.messageRole = isUser ? 'user' : 'assistant';
+        avatar.innerHTML = `<img src="${escapeHtml(profile.avatarUrl || 'assets/moren-thumb.jpg')}" alt="" loading="lazy" decoding="async" onerror="this.src='assets/moren-thumb.jpg'">`;
+        row.appendChild(avatar);
+        return row;
+    }
+
+    function finalizeRenderedMessage(message, friend, container) {
+        const messageId = String(message?.id || '');
+        const rows = Array.from(container?.children || []);
+        const row = rows.reverse().find((candidate) => candidate.classList?.contains('chat-row')
+            && (!messageId || String(candidate.getAttribute('data-message-id') || '') === messageId));
+        if (row) decorateMessageRowAvatar(row, friend, message);
+        return true;
+    }
+
     function setGroupUserRowIdentity(row, friend, message = renderMessageContextByFriend.get(friend)) {
         if (!row || friend?.type !== 'group' || message?.role !== 'user') return;
         const profile = getEffectiveUserProfile(friend, message);
@@ -772,43 +805,47 @@ function renderMessageBubble(msg, friend, container, timestamp = Date.now()) {
 
         if (msg.type === 'group_poll') {
             renderGroupPollBubble(msg, friend, container, msgTime);
-            return true;
+            return finalizeRenderedMessage(msg, friend, container);
+        }
+        if (msg.type === 'chat_record_forward') {
+            window.imChat.renderChatRecordForwardBubble(msg, friend, container, msgTime);
+            return finalizeRenderedMessage(msg, friend, container);
         }
         if (msg.type === 'moment_forward') {
             window.imChat.renderMomentForwardBubble(msg, friend, container, msgTime);
-            return true;
+            return finalizeRenderedMessage(msg, friend, container);
         }
         if (msg.type === 'voice_call_record') {
             window.imChat.renderVoiceCallRecordBubble(msg, friend, container, msgTime);
-            return true;
+            return finalizeRenderedMessage(msg, friend, container);
         }
         if (msg.type === 'offline_meeting_record') {
             window.imChat.renderOfflineMeetingRecordBubble(msg, friend, container, msgTime);
-            return true;
+            return finalizeRenderedMessage(msg, friend, container);
         }
         if (msg.type === 'voice_message') {
             window.imChat.renderVoiceMessageBubble(msg, friend, container, msgTime);
-            return true;
+            return finalizeRenderedMessage(msg, friend, container);
         }
         if (msg.type === 'sticker') {
             window.imChat.renderStickerMessageBubble(msg, friend, container, msgTime);
-            return true;
+            return finalizeRenderedMessage(msg, friend, container);
         }
         if (msg.type === 'fake_link') {
             window.imChat.renderFakeLinkBubble(msg, friend, container, msgTime);
-            return true;
+            return finalizeRenderedMessage(msg, friend, container);
         }
         if (msg.type === 'image') {
             window.imChat.renderImageBubble(msg, friend, container, msgTime);
-            return true;
+            return finalizeRenderedMessage(msg, friend, container);
         }
         if (msg.type === 'pay_transfer') {
             window.imChat.renderPayTransferBubble(msg, friend, container, msgTime);
-            return true;
+            return finalizeRenderedMessage(msg, friend, container);
         }
         if (msg.type === 'group_red_packet') {
             window.imChat.renderGroupRedPacketBubble(msg, friend, container, msgTime);
-            return true;
+            return finalizeRenderedMessage(msg, friend, container);
         }
         if (msg.type === 'system_notice') {
             window.imChat.renderSystemNoticeBubble(msg, friend, container, msgTime);
@@ -816,11 +853,11 @@ function renderMessageBubble(msg, friend, container, timestamp = Date.now()) {
         }
         if (msg.type === 'html') {
             window.imChat.renderHtmlBubble(msg, friend, container, msgTime);
-            return true;
+            return finalizeRenderedMessage(msg, friend, container);
         }
         if (msg.role === 'user') {
             window.imChat.renderUserBubble(msg.content, container, msgTime, msg.replyTo, msg.translation, msg.showTranslation, msg.id, friend, msg);
-            return true;
+            return finalizeRenderedMessage(msg, friend, container);
         }
         if (msg.role === 'assistant') {
             let safeSpeakerName = msg.speaker || msg.senderName || null;
@@ -848,7 +885,7 @@ function renderMessageBubble(msg, friend, container, timestamp = Date.now()) {
                 msg.offlineAction || null,
                 msg.speakerMemberId || msg.senderMemberId || null
             );
-            return true;
+            return finalizeRenderedMessage(msg, friend, container);
         }
 
         return false;
@@ -1210,6 +1247,7 @@ function renderUserBubble(text, container, timestamp = Date.now(), replyTo = nul
             </div>
         `;
         container.appendChild(row);
+        decorateMessageRowAvatar(row, friend, userMessage);
         window.imChat.scrollToBottom(container);
     }
 
@@ -1335,6 +1373,107 @@ function renderUserBubble(text, container, timestamp = Date.now(), replyTo = nul
         return result;
     }
 
+    function getGeneratedImageRerollInput(msg, friend) {
+        const currentConfig = friend?.imagePromptConfig && typeof friend.imagePromptConfig === 'object'
+            ? friend.imagePromptConfig
+            : {};
+        const savedConfig = msg?.imageGenerationConfig && typeof msg.imageGenerationConfig === 'object'
+            ? msg.imageGenerationConfig
+            : null;
+        const scenePrompt = String(msg?.imageGenerationPrompt || msg?.description || msg?.text || '').trim();
+        const basePrompt = savedConfig ? '' : String(currentConfig.lastPrompt || '').trim();
+        const prompt = [
+            scenePrompt,
+            basePrompt && !scenePrompt.includes(basePrompt)
+                ? `当前单聊生图预设基础提示词：\n${basePrompt}`
+                : ''
+        ].filter(Boolean).join('\n\n');
+        return {
+            prompt,
+            config: {
+                charAppearance: String(savedConfig?.charAppearance ?? currentConfig.charAppearance ?? '').trim(),
+                userAppearance: String(savedConfig?.userAppearance ?? currentConfig.userAppearance ?? '').trim(),
+                artistPrompt: String(savedConfig?.artistPrompt ?? currentConfig.artistPrompt ?? '').trim(),
+                negativePrompt: String(savedConfig?.negativePrompt ?? currentConfig.negativePrompt ?? '').trim(),
+                useReferenceFace: savedConfig
+                    ? savedConfig.useReferenceFace === true
+                    : (msg?.faceReferenceUsed === true || currentConfig.autoUseReferenceFace === true)
+            }
+        };
+    }
+
+    async function rerollGeneratedChatImage(msg, friend) {
+        if (!msg || msg.imageSource !== 'generated' || !friend?.id) {
+            throw new Error('这张图片不支持重新生成');
+        }
+        const liveFriend = window.imApp?.getFriendById?.(friend.id)
+            || (window.imData?.friends || []).find((item) => String(item.id) === String(friend.id))
+            || friend;
+        const { prompt, config } = getGeneratedImageRerollInput(msg, liveFriend);
+        if (!prompt) throw new Error('这张图片没有可复用的生成提示词');
+        const referenceImage = config.useReferenceFace
+            ? await window.imChat.resolveAutoImageReferenceFace(liveFriend, { force: true })
+            : '';
+        const result = await window.imChat.generateChatImage(prompt, liveFriend, {
+            referenceImage,
+            charAppearance: config.charAppearance,
+            userAppearance: config.userAppearance,
+            artistPrompt: config.artistPrompt,
+            negativePrompt: config.negativePrompt
+        });
+        const previousAssetId = String(msg.contentAssetId || '').trim();
+        const descriptor = { id: msg.id || null, timestamp: msg.timestamp || null };
+        const saved = await window.imApp.updateFriendMessage(friend.id, descriptor, (targetMsg) => {
+            targetMsg.content = result.imageUrl;
+            targetMsg.contentAssetId = '';
+            targetMsg.imageSource = 'generated';
+            targetMsg.imageProvider = result.provider || '';
+            targetMsg.imageModel = result.model || '';
+            targetMsg.imageSize = result.size || '';
+            targetMsg.faceReferenceUsed = !!result.faceReferenceUsed;
+            targetMsg.imageGenerationPrompt = prompt;
+            targetMsg.imageGenerationConfig = config;
+            targetMsg.imageRerollCount = Math.max(0, Number(targetMsg.imageRerollCount) || 0) + 1;
+            targetMsg.imageRerolledAt = Date.now();
+        }, { silent: true });
+        if (!saved) throw new Error('新图片保存失败');
+
+        const updatedFriend = window.imApp?.getFriendById?.(friend.id) || liveFriend;
+        const updatedMessage = (updatedFriend.messages || []).find((item) => {
+            if (descriptor.id && item?.id) return String(item.id) === String(descriptor.id);
+            return descriptor.timestamp && String(item?.timestamp || '') === String(descriptor.timestamp);
+        }) || msg;
+        const nextAssetId = String(updatedMessage.contentAssetId || '').trim();
+        if (previousAssetId && previousAssetId !== nextAssetId) {
+            await window.appStorage?.markAssetOrphaned?.(previousAssetId).catch(() => undefined);
+        }
+        const page = document.getElementById(`chat-interface-${friend.id}`);
+        const container = page?.querySelector('.ins-chat-messages');
+        if (container) {
+            const row = Array.from(container.querySelectorAll('.chat-row')).find((item) => {
+                if (descriptor.id && item.dataset.messageId) return String(item.dataset.messageId) === String(descriptor.id);
+                return descriptor.timestamp && String(item.dataset.timestamp || '') === String(descriptor.timestamp);
+            });
+            const image = row?.querySelector('.chat-image-bubble-img');
+            if (image && updatedMessage.content) image.src = updatedMessage.content;
+        }
+        return { updatedFriend, updatedMessage };
+    }
+
+    function formatGeneratedImageRerollError(error) {
+        let reason = String(error?.message || error || '').trim();
+        if (error?.name === 'AbortError' || /abort|timeout|超时/i.test(reason)) {
+            reason = reason || '生图请求超时，请稍后重试';
+        } else if (error?.name === 'QuotaExceededError') {
+            reason = '本地存储空间不足，无法保存新图片';
+        } else if (!reason) {
+            reason = '生图接口未返回具体错误';
+        }
+        reason = reason.replace(/^图片(?:重新生成|重\s*roll)失败[：:]?\s*/i, '').trim();
+        reason = reason.replace(/[。.!！]+$/g, '').trim();
+        return `图片重 roll 失败：${reason}。旧图片已保留`;
+    }
+
 function openChatImageDetail(msg, friend, timestamp, senderName) {
         let overlay = document.getElementById('chat-image-detail-overlay');
         if (!overlay) {
@@ -1349,6 +1488,7 @@ function openChatImageDetail(msg, friend, timestamp, senderName) {
                             <div class="chat-image-detail-time" style="font-size:12px; color:#8e8e93; margin-top:2px;"></div>
                         </div>
                         <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+                            <button type="button" class="chat-image-detail-reroll" style="display:none; border:none; border-radius:16px; background:#f2f2f7; color:#111; cursor:pointer; padding:8px 11px; font-size:12px; font-weight:700;"><i class="fas fa-redo"></i> 重 roll</button>
                             <button type="button" class="chat-image-detail-save" style="display:none; border:none; border-radius:16px; background:#111; color:#fff; cursor:pointer; padding:8px 11px; font-size:12px; font-weight:700;">保存</button>
                             <button type="button" class="chat-image-detail-close" aria-label="关闭" style="width:32px; height:32px; border:none; border-radius:16px; background:#f2f2f7; color:#111; cursor:pointer; flex-shrink:0;"><i class="fas fa-times"></i></button>
                         </div>
@@ -1356,6 +1496,7 @@ function openChatImageDetail(msg, friend, timestamp, senderName) {
                     <div style="background:#111; display:flex; align-items:center; justify-content:center; min-height:220px;">
                         <img class="chat-image-detail-img" src="" alt="" style="max-width:100%; max-height:52vh; object-fit:contain; display:block;">
                     </div>
+                    <div class="chat-image-detail-reroll-error" role="alert" aria-live="assertive" style="display:none; margin:12px 16px 0; padding:10px 12px; border-radius:12px; background:#fff1f0; color:#c62828; font-size:13px; line-height:1.45; word-break:break-word;"></div>
                     <div style="padding:14px 16px 18px; overflow-y:auto;">
                         <div style="font-size:12px; color:#8e8e93; font-weight:700; margin-bottom:7px;">图片详情</div>
                         <div class="chat-image-detail-desc" style="font-size:15px; color:#222; line-height:1.55; white-space:pre-wrap; word-break:break-word;"></div>
@@ -1374,6 +1515,8 @@ function openChatImageDetail(msg, friend, timestamp, senderName) {
         const senderEl = overlay.querySelector('.chat-image-detail-sender');
         const timeEl = overlay.querySelector('.chat-image-detail-time');
         const descEl = overlay.querySelector('.chat-image-detail-desc');
+        const rerollErrorEl = overlay.querySelector('.chat-image-detail-reroll-error');
+        const rerollButton = overlay.querySelector('.chat-image-detail-reroll');
         const saveButton = overlay.querySelector('.chat-image-detail-save');
         const date = new Date(timestamp || msg.timestamp || Date.now());
         const timeStr = typeof window.formatChatBubbleTime === 'function'
@@ -1383,10 +1526,16 @@ function openChatImageDetail(msg, friend, timestamp, senderName) {
         const imageUrl = msg.content || window.imChat.CHAT_IMAGE_PLACEHOLDER_URL || '';
         const isGeneratedImage = msg.imageSource === 'generated'
             && imageUrl !== (window.imChat.CHAT_IMAGE_PLACEHOLDER_URL || '');
+        const detailMessageKey = String(msg.id || timestamp || msg.timestamp || '');
+        overlay.dataset.messageKey = detailMessageKey;
         if (imageEl) imageEl.src = imageUrl;
         if (senderEl) senderEl.textContent = senderName || friend?.nickname || friend?.realName || '图片';
         if (timeEl) timeEl.textContent = timeStr;
         if (descEl) descEl.textContent = msg.text || msg.description || '暂无图片描述';
+        if (rerollErrorEl) {
+            rerollErrorEl.style.display = 'none';
+            rerollErrorEl.textContent = '';
+        }
         if (saveButton) {
             saveButton.style.display = isGeneratedImage ? '' : 'none';
             saveButton.disabled = false;
@@ -1404,6 +1553,41 @@ function openChatImageDetail(msg, friend, timestamp, senderName) {
                 } finally {
                     saveButton.disabled = false;
                     saveButton.textContent = originalText;
+                }
+            };
+        }
+        if (rerollButton) {
+            rerollButton.style.display = isGeneratedImage ? '' : 'none';
+            rerollButton.disabled = false;
+            rerollButton.innerHTML = '<i class="fas fa-redo"></i> 重 roll';
+            rerollButton.onclick = async () => {
+                if (!isGeneratedImage || rerollButton.disabled) return;
+                rerollButton.disabled = true;
+                if (saveButton) saveButton.disabled = true;
+                if (rerollErrorEl) {
+                    rerollErrorEl.style.display = 'none';
+                    rerollErrorEl.textContent = '';
+                }
+                rerollButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 生成中…';
+                try {
+                    const { updatedFriend, updatedMessage } = await rerollGeneratedChatImage(msg, friend);
+                    window.showToast?.('图片已重新生成');
+                    if (overlay.dataset.messageKey === detailMessageKey && overlay.style.display !== 'none') {
+                        openChatImageDetail(updatedMessage, updatedFriend, updatedMessage.timestamp, senderName);
+                    }
+                } catch (error) {
+                    console.error('[iMessage] Image reroll failed:', error);
+                    const userFacingError = formatGeneratedImageRerollError(error);
+                    if (rerollErrorEl) {
+                        rerollErrorEl.textContent = userFacingError;
+                        rerollErrorEl.style.display = 'block';
+                    } else {
+                        window.alert(userFacingError);
+                    }
+                } finally {
+                    rerollButton.disabled = false;
+                    rerollButton.innerHTML = '<i class="fas fa-redo"></i> 重 roll';
+                    if (saveButton) saveButton.disabled = false;
                 }
             };
         }
@@ -2266,7 +2450,7 @@ function renderStickerMessageBubble(msg, friend, container, timestamp = Date.now
             frame.setAttribute('title', '链接小剧场');
             frame.srcdoc = buildSandboxDocument(pagePackage);
             host.appendChild(frame);
-            return true;
+            return finalizeRenderedMessage(msg, friend, container);
         }
         const pageId = 'fake-link-page-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
         const scopeSelector = '[data-fake-page-id="' + pageId + '"]';

@@ -140,7 +140,7 @@
     // Theme Configuration State
     // ==========================================
     const DEFAULT_SYSTEM_THEME_FONT_FAMILY = 'system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
-    const IMESSAGE_CSS_THEME_TYPES = ['bubble', 'chat', 'group', 'status'];
+    const IMESSAGE_CSS_THEME_TYPES = ['home', 'bubble', 'chat', 'group', 'status'];
     const BUILTIN_THEME_FONTS = [
         {
             key: 'system-default',
@@ -178,11 +178,14 @@
         fontFormat: '',
         savedFontPresets: [],
         imessageCssPresets: {
+            home: [],
             bubble: [],
             chat: [],
             group: [],
             status: []
         },
+        imessageHomeCssEnabled: false,
+        imessageHomeCss: '',
         imessageChatCssEnabled: false,
         imessageChatCss: '',
         imessageGroupCssEnabled: false,
@@ -273,6 +276,8 @@
                 themeState = { ...themeState, ...savedThemeState };
             }
             themeState.uiChineseEnabled = themeState.uiChineseEnabled === true;
+            themeState.imessageHomeCssEnabled = themeState.imessageHomeCssEnabled === true;
+            themeState.imessageHomeCss = typeof themeState.imessageHomeCss === 'string' ? themeState.imessageHomeCss : '';
             themeState.imessageCssPresets = normalizeImessageCssPresets(themeState.imessageCssPresets);
 
             // Move the old generic-key presets into the durable settings domain once.
@@ -1017,6 +1022,7 @@
             if (window.imApp && window.imApp.applyGlobalChatCss) {
                 window.imApp.applyGlobalChatCss(themeState);
             }
+            window.imApp?.applyGlobalHomeCss?.(themeState);
             if (window.imApp && window.imApp.applyGlobalGroupCss) {
                 window.imApp.applyGlobalGroupCss(themeState);
             }
@@ -1035,6 +1041,9 @@
         }
 
         function openImessageThemeConfig() {
+            const homeCssInput = document.getElementById('theme-home-css-input');
+            if (homeCssInput) homeCssInput.value = themeState.imessageHomeCss || '';
+
             const bubbleCssInput = document.getElementById('theme-bubble-css-input');
             if (bubbleCssInput) bubbleCssInput.value = window.imData?.currentSettingsFriend?.customCss || '';
 
@@ -1053,7 +1062,8 @@
 
         function getActiveThemeType() {
             const activeTab = document.querySelector('.im-theme-tabs .theme-tab.active');
-            const targetId = activeTab?.getAttribute('data-target') || 'theme-tab-bubble';
+            const targetId = activeTab?.getAttribute('data-target') || 'theme-tab-home';
+            if (targetId === 'theme-tab-home') return 'home';
             if (targetId === 'theme-tab-chat') return 'chat';
             if (targetId === 'theme-tab-group') return 'group';
             if (targetId === 'theme-tab-status') return 'status';
@@ -1074,6 +1084,21 @@
 
         async function applyCurrentThemeCss() {
             const activeType = getActiveThemeType();
+
+            if (activeType === 'home') {
+                const cssInput = themeHomeCssInput;
+                const nextCss = cssInput ? cssInput.value : '';
+                themeState.imessageHomeCss = nextCss;
+                themeState.imessageHomeCssEnabled = !!nextCss.trim();
+                window.u2ThemeState = themeState;
+                window.imApp?.applyGlobalHomeCss?.(themeState);
+                const persisted = await saveGlobalData();
+                const label = 'Home CSS';
+                showToast(persisted
+                    ? (nextCss.trim() ? `${label} 已应用` : `${label} 已清空`)
+                    : `${label} 保存失败，当前效果未持久化`);
+                return;
+            }
 
             if (activeType === 'chat') {
                 const nextChatCss = themeChatCssInput ? themeChatCssInput.value : '';
@@ -1207,6 +1232,13 @@
             });
         });
         
+        const themeHomeCssInput = document.getElementById('theme-home-css-input');
+        const themeHomeClearBtn = document.getElementById('theme-home-clear-btn');
+        const themeHomeCopyBtn = document.getElementById('theme-home-copy-btn');
+        const themeHomeSaveBtn = document.getElementById('theme-home-save-btn');
+        const themeHomePresetName = document.getElementById('theme-home-preset-name');
+        const themeHomePresetList = document.getElementById('theme-home-preset-list');
+        const themeResetAllBtn = document.getElementById('theme-reset-all-btn');
         const themeBubbleCssInput = document.getElementById('theme-bubble-css-input');
         const themeBubbleClearBtn = document.getElementById('theme-bubble-clear-btn');
         const themeBubbleCopyBtn = document.getElementById('theme-bubble-copy-btn');
@@ -1240,6 +1272,7 @@
         const themeBubblePresetList = document.getElementById('theme-bubble-preset-list');
 
         function getThemeCssInput(type = getActiveThemeType()) {
+            if (type === 'home') return themeHomeCssInput;
             if (type === 'chat') return themeChatCssInput;
             if (type === 'group') return themeGroupCssInput;
             if (type === 'status') return themeStatusCssInput;
@@ -1330,6 +1363,101 @@
                 }
             });
         }
+
+        async function clearGlobalHomeTheme() {
+            themeState.imessageHomeCss = '';
+            themeState.imessageHomeCssEnabled = false;
+            if (themeHomeCssInput) themeHomeCssInput.value = '';
+            window.imApp?.applyGlobalHomeCss?.(themeState);
+            window.u2ThemeState = themeState;
+            const persisted = await saveGlobalData();
+            showToast(persisted ? 'Home CSS 已清空' : 'CSS 保存失败，当前效果未持久化');
+        }
+
+        themeHomeClearBtn?.addEventListener('click', clearGlobalHomeTheme);
+
+        async function resetAppliedImessageThemeCss() {
+            if (!window.confirm('重置 Theme 当前应用的 CSS？预设、背景、字体和其他好友的专属美化会保留。')) return;
+
+            const globalSnapshot = {
+                imessageHomeCss: themeState.imessageHomeCss || '',
+                imessageHomeCssEnabled: !!themeState.imessageHomeCssEnabled,
+                imessageChatCss: themeState.imessageChatCss || '',
+                imessageChatCssEnabled: !!themeState.imessageChatCssEnabled,
+                imessageGroupCss: themeState.imessageGroupCss || '',
+                imessageGroupCssEnabled: !!themeState.imessageGroupCssEnabled
+            };
+            const friend = window.imData?.currentSettingsFriend || null;
+            const friendSnapshot = friend ? {
+                customCss: friend.customCss || '',
+                customCssEnabled: !!friend.customCssEnabled,
+                chatCss: friend.chatCss || '',
+                chatCssEnabled: !!friend.chatCssEnabled,
+                statusCss: friend.statusCss || '',
+                statusCssEnabled: !!friend.statusCssEnabled
+            } : null;
+
+            const restoreGlobals = () => {
+                Object.assign(themeState, globalSnapshot);
+                window.u2ThemeState = themeState;
+                window.imApp?.applyGlobalHomeCss?.(themeState);
+                window.imApp?.applyGlobalChatCss?.(themeState);
+                window.imApp?.applyGlobalGroupCss?.(themeState);
+            };
+
+            Object.assign(themeState, {
+                imessageHomeCss: '', imessageHomeCssEnabled: false,
+                imessageChatCss: '', imessageChatCssEnabled: false,
+                imessageGroupCss: '', imessageGroupCssEnabled: false
+            });
+            window.u2ThemeState = themeState;
+            window.imApp?.applyGlobalHomeCss?.(themeState);
+            window.imApp?.applyGlobalChatCss?.(themeState);
+            window.imApp?.applyGlobalGroupCss?.(themeState);
+
+            let friendSaved = true;
+            if (friend && window.imApp?.commitScopedFriendChange) {
+                friendSaved = await window.imApp.commitScopedFriendChange(friend, (targetFriend) => {
+                    targetFriend.customCss = '';
+                    targetFriend.customCssEnabled = false;
+                    targetFriend.chatCss = '';
+                    targetFriend.chatCssEnabled = false;
+                    targetFriend.statusCss = '';
+                    targetFriend.statusCssEnabled = false;
+                }, { silent: true, syncSettings: true });
+            }
+
+            if (!friendSaved) {
+                restoreGlobals();
+                showToast('重置失败，原美化已恢复');
+                return;
+            }
+
+            const globalSaved = await saveGlobalData();
+            if (!globalSaved) {
+                restoreGlobals();
+                if (friend && friendSnapshot && window.imApp?.commitScopedFriendChange) {
+                    await window.imApp.commitScopedFriendChange(friend, (targetFriend) => Object.assign(targetFriend, friendSnapshot), { silent: true, syncSettings: true });
+                    window.imApp?.applyFriendCss?.(window.imData?.currentSettingsFriend || friend);
+                }
+                await saveGlobalData();
+                showToast('重置失败，原美化已恢复');
+                return;
+            }
+
+            [themeHomeCssInput, themeBubbleCssInput, themeChatCssInput, themeGroupCssInput, themeStatusCssInput]
+                .forEach((input) => { if (input) input.value = ''; });
+            if (friend) window.imApp?.applyFriendCss?.(window.imData?.currentSettingsFriend || friend);
+            refreshThemePresetUi(window.imData?.currentSettingsFriend);
+            showToast(friend ? '已重置全局与当前好友的 Theme CSS' : '已重置全局 Theme CSS');
+        }
+
+        themeResetAllBtn?.addEventListener('click', () => {
+            resetAppliedImessageThemeCss().catch((error) => {
+                console.error('Failed to reset iMessage Theme CSS', error);
+                showToast('重置失败，原美化已保留');
+            });
+        });
         
         // Clear Bubble CSS
         if (themeBubbleClearBtn) {
@@ -1410,6 +1538,52 @@
                 }
             });
         }
+
+        function bindThemeSourceCopy(button, template, successMessage) {
+            button?.addEventListener('click', () => {
+                navigator.clipboard.writeText(template).then(() => {
+                    showToast(successMessage);
+                }).catch((error) => {
+                    console.error('Copy failed', error);
+                    showToast('复制失败');
+                });
+            });
+        }
+
+        bindThemeSourceCopy(themeHomeCopyBtn, `:scope {
+  background: #ffffff;
+}
+:scope .line-header {
+  background: rgba(255, 255, 255, 0.96);
+}
+:scope .line-content {
+  color: #111111;
+}
+:scope .line-profile,
+:scope .line-search-bar,
+:scope .line-service-item,
+:scope .line-list-item {
+  background: #ffffff;
+  border-color: #f2f2f7;
+}
+:scope .line-bottom-nav {
+  background: rgba(255, 255, 255, 0.92);
+}
+:scope .chats-content,
+:scope .chats-list-container {
+  background: transparent;
+}
+:scope .chat-item {
+  background: #ffffff;
+  border-color: #f2f2f7;
+}
+:scope .chat-avatar {
+  border-radius: 50%;
+}
+:scope .chat-name { color: #111111; }
+:scope .chat-message,
+:scope .chat-time { color: #8e8e93; }
+:scope .chats-empty-state { color: #111111; }`, '已复制 Home 与 Chats 界面源码');
 
         if (themeBubbleCopyBtn) {
             themeBubbleCopyBtn.addEventListener('click', () => {
@@ -1566,6 +1740,30 @@
 }
 
 .chat-avatar-small img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 单聊的每条实际消息都带一个隐藏头像节点，Theme 可按需显示。
+   群聊继续使用原生的 .group-ai-avatar-slot，不使用这个节点。 */
+.im-message-avatar {
+  display: none;
+  width: var(--im-message-avatar-size, 30px);
+  height: var(--im-message-avatar-size, 30px);
+  border-radius: var(--im-message-avatar-radius, 50%);
+  overflow: hidden;
+}
+
+.im-message-avatar.is-user {
+  /* 当前用户消息头像 */
+}
+
+.im-message-avatar.is-assistant {
+  /* 单聊好友消息头像 */
+}
+
+.im-message-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -2040,6 +2238,19 @@
   color: #888 !important;
   font-size: 12px !important;
 }
+
+/* 单聊每条实际消息的隐藏头像钩子；没有设置开关，由 Theme CSS 自行决定是否显示。 */
+.im-message-avatar {
+  display: none;
+  width: var(--im-message-avatar-size, 30px);
+  height: var(--im-message-avatar-size, 30px);
+  border-radius: var(--im-message-avatar-radius, 50%);
+  overflow: hidden;
+}
+
+.im-message-avatar.is-user { /* 当前用户消息头像 */ }
+.im-message-avatar.is-assistant { /* 单聊好友消息头像 */ }
+.im-message-avatar img { width: 100%; height: 100%; object-fit: cover; }
 
 /* 单聊时间戳：居中分隔时间、气泡内时间和外置时间 */
 .chat-timestamp {
@@ -2878,6 +3089,7 @@
         }
 
         function getCurrentFriendThemeCss(friend, type) {
+            if (type === 'home') return themeState.imessageHomeCssEnabled ? (themeState.imessageHomeCss || '') : '';
             if (type === 'group') return themeState.imessageGroupCssEnabled ? (themeState.imessageGroupCss || '') : '';
             if (!friend) return '';
             if (type === 'bubble') return friend.customCssEnabled ? (friend.customCss || '') : '';
@@ -2962,6 +3174,7 @@
             updatePresetSelect('chat', chatThemeChatSelect, getCurrentFriendThemeCss(friend, 'chat'));
             updatePresetSelect('status', chatThemeStatusSelect, getCurrentFriendThemeCss(friend, 'status'));
             renderThemePresetList('bubble', themeBubblePresetList, chatThemeBubbleSelect, themeBubbleCssInput);
+            renderThemePresetList('home', themeHomePresetList, null, themeHomeCssInput);
             renderThemePresetList('chat', themeChatPresetList, chatThemeChatSelect, themeChatCssInput);
             renderThemePresetList('group', themeGroupPresetList, null, themeGroupCssInput);
             renderThemePresetList('status', themeStatusPresetList, chatThemeStatusSelect, themeStatusCssInput);
@@ -2971,7 +3184,8 @@
             if (saveBtn) {
                 saveBtn.addEventListener('click', async () => {
                     let cssInput;
-                    if (type === 'bubble') cssInput = themeBubbleCssInput;
+                    if (type === 'home') cssInput = themeHomeCssInput;
+                    else if (type === 'bubble') cssInput = themeBubbleCssInput;
                     else if (type === 'chat') cssInput = themeChatCssInput;
                     else if (type === 'group') cssInput = themeGroupCssInput;
                     else if (type === 'status') cssInput = themeStatusCssInput;
@@ -3013,6 +3227,7 @@
             }
         }
 
+        setupPresetLogic('home', themeHomeSaveBtn, themeHomePresetName, null, themeHomePresetList, themeHomeCssInput);
         setupPresetLogic('bubble', themeBubbleSaveBtn, themeBubblePresetName, chatThemeBubbleSelect, themeBubblePresetList, themeBubbleCssInput);
         setupPresetLogic('chat', themeChatSaveBtn, themeChatPresetName, chatThemeChatSelect, themeChatPresetList, themeChatCssInput);
         setupPresetLogic('group', themeGroupSaveBtn, themeGroupPresetName, null, themeGroupPresetList, themeGroupCssInput);
@@ -6535,7 +6750,9 @@
             const storageHealthLastSave = document.getElementById('storage-health-last-save');
             const storageHealthWarning = document.getElementById('storage-health-warning');
             const storageHealthCompaction = document.getElementById('storage-health-compaction');
+            const storageHealthImageCompression = document.getElementById('storage-health-image-compression');
             const storageCleanCacheBtn = document.getElementById('storage-clean-cache-btn');
+            const storageCompressImagesBtn = document.getElementById('storage-compress-images-btn');
             const storageRetryBtn = document.getElementById('storage-retry-btn');
             const storageTotalUsage = document.getElementById('storage-total-usage');
             const storageSummaryDescription = document.getElementById('storage-summary-description');
@@ -6717,6 +6934,12 @@
                             ? `最近自动优化：${formatDateForUi(compacted.compactedAt)}，预计释放 ${formatBytesForUi(compacted.estimatedBytesFreed)}`
                             : '尚未执行存储优化';
                 }
+                if (storageHealthImageCompression) {
+                    const compressed = health.lastImageCompression;
+                    storageHealthImageCompression.textContent = compressed?.compressedAt
+                        ? `最近图片压缩：${formatDateForUi(compressed.compressedAt)}，压缩 ${Number(compressed.compressed) || 0} 张，释放 ${formatBytesForUi(compressed.bytesFreed)}`
+                        : '尚未执行图片压缩';
+                }
             }
 
             storageCleanCacheBtn?.addEventListener('click', async () => {
@@ -6734,6 +6957,48 @@
                     showToast(error?.message || '存储优化中止，原数据仍被保留');
                 } finally {
                     setBusy(storageCleanCacheBtn, false);
+                    await refreshStorageHealth();
+                }
+            });
+
+            storageCompressImagesBtn?.addEventListener('click', async () => {
+                setBusy(storageCompressImagesBtn, true);
+                showOperation('正在扫描图片资源...');
+                try {
+                    const summary = await window.appStorage.inspectImageCompression({
+                        scope: 'all',
+                        profile: 'balanced'
+                    });
+                    hideOperation();
+                    if (!summary.eligible) {
+                        showToast('图片已经足够精简');
+                        return;
+                    }
+                    const confirmed = confirm(
+                        `找到 ${summary.eligible} 张可压缩图片，当前共 ${formatBytesForUi(summary.bytes)}。\n\n`
+                        + '将按图片用途限制尺寸，并以约 82% 质量转换为 WebP；只有明显变小的图片才会替换。GIF、SVG、音频、字体和内置素材不会处理。\n\n'
+                        + '压缩不可恢复，重要数据建议先导出备份。继续吗？'
+                    );
+                    if (!confirmed) return;
+                    showOperation('正在准备压缩图片...');
+                    const result = await window.appStorage.compressImageAssets({
+                        scope: 'all',
+                        profile: 'balanced',
+                        progressCallback: updateOperation
+                    });
+                    hideOperation();
+                    showToast(
+                        `图片压缩完成：压缩 ${result.compressed} 张，跳过 ${result.skipped} 张`
+                        + `${result.failed ? `，失败 ${result.failed} 张` : ''}，`
+                        + `${formatBytesForUi(result.bytesBefore)} → ${formatBytesForUi(result.bytesAfter)}，`
+                        + `释放 ${formatBytesForUi(result.bytesFreed)}`
+                    );
+                } catch (error) {
+                    console.error('Image compression failed:', error);
+                    hideOperation();
+                    showToast(error?.message || '图片压缩中止，原图片仍被保留');
+                } finally {
+                    setBusy(storageCompressImagesBtn, false);
                     await refreshStorageHealth();
                 }
             });

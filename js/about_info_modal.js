@@ -13,6 +13,39 @@
     const confirmButton = document.getElementById('about-info-modal-confirm');
     const CHANGELOG_ENTRIES = [
         {
+            id: '2026-08-15',
+            date: '2026年8月15日',
+            summary: 'X、数据管理、聊天与线上生图功能更新。',
+            sections: [
+                {
+                    title: 'X',
+                    items: [
+                        '新增切换账号功能。',
+                        '优化运行性能。'
+                    ]
+                },
+                {
+                    title: '数据管理',
+                    items: [
+                        '新增图片压缩功能。'
+                    ]
+                },
+                {
+                    title: '聊天',
+                    items: [
+                        '新增自定义 Home 界面 CSS。',
+                        '新增转发聊天记录功能。'
+                    ]
+                },
+                {
+                    title: '线上生图',
+                    items: [
+                        '新增单独重 Roll 功能。'
+                    ]
+                }
+            ]
+        },
+        {
             id: '2026-08-13',
             date: '2026年8月13日',
             summary: '单聊线下生图、线下聊天 TXT 导出、聊天记忆优化与自动锁脸修复。',
@@ -242,7 +275,7 @@
     const AUTO_CHANGELOG_DELAY_MS = 250;
     const ACKNOWLEDGEMENT_DELAY_MS = 3000;
     // Version the key so accounts that saw an earlier release receive this one once.
-    const CHANGELOG_NOTICE_STORAGE_PREFIX = 'u2_changelog_notice_seen:20260813-v1:';
+    const CHANGELOG_NOTICE_STORAGE_PREFIX = 'u2_changelog_notice_seen:20260815-v1:';
     let returnFocus = null;
     let previousBodyOverflow = '';
     let activeChangelogTrigger = null;
