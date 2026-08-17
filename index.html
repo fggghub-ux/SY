@@ -154,7 +154,32 @@
             }
         }, true);
     </script>
-    <div id="u2-login-screen" class="u2-login-screen is-checking" aria-hidden="true" inert>
+   <style>
+  /* 强制永久隐藏登录界面 */
+  #u2-login-screen {
+    display: none !important;
+  }
+</style>
+<script>
+  // 强制标记登录状态，模拟已授权
+  (function() {
+    window.__u2_skip_login = true;
+    sessionStorage.setItem('u2_logged_in', 'true');
+    localStorage.setItem('u2_user', 'local_user');
+
+    // 等页面加载完成后，手动触发移除启动保护屏
+    document.addEventListener('DOMContentLoaded', function() {
+      if (typeof window.markAuthGateSettled === 'function') window.markAuthGateSettled();
+      if (typeof window.markAppShellReady === 'function') window.markAppShellReady();
+      if (typeof window.removeSplashScreen === 'function') window.removeSplashScreen();
+      
+      // 保险起见，强行移除启动屏
+      var splash = document.getElementById('app-splash-screen');
+      if (splash) splash.remove();
+    });
+  })();
+</script>
+     <div id="u2-login-screen" class="u2-login-screen is-checking" aria-hidden="true" inert>
         <div class="u2-login-shell">
             <main class="u2-login-panel" aria-labelledby="u2-login-title">
                 <section class="u2-login-brand">
