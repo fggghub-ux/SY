@@ -1042,6 +1042,256 @@ button.group-private-chat-detail-bubble {
     white-space: nowrap;
 }
 
+/* 5. Home Tab Skin (Instagram style) — gated by #imessage-view[data-im-active-surface="home"], set by JS on tab switch (2_core.js setActiveThemeSurface). Chats/Moments share the same .line-header DOM node, so this attribute gate (not :has()) is what actually keeps them unaffected. */
+#imessage-view[data-im-active-surface="home"] {
+    --ins-pink: #ff3c7d;
+    --ins-blue: #169cff;
+    --ins-muted: #8e8e93;
+}
+
+#imessage-view[data-im-active-surface="home"] .line-header {
+    position: relative;
+    height: 62px;
+    min-height: 62px;
+    padding: 0;
+    background: #ffffff;
+    border-bottom: 1px solid #f2f2f2;
+    box-shadow: none;
+    display: flex !important;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 16px;
+}
+
+#imessage-view[data-im-active-surface="home"] .line-header > :first-child {
+    position: absolute !important;
+    top: 0;
+    bottom: 0;
+    left: 6px;
+    z-index: 20;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: auto;
+}
+
+#imessage-view[data-im-active-surface="home"] .line-header > :not(:first-child) {
+    position: relative !important;
+    z-index: 10;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    transform: translateX(-14px);
+}
+
+#imessage-view[data-im-active-surface="home"] .line-header .line-search-bar,
+#imessage-view[data-im-active-surface="home"] .line-header input,
+#imessage-view[data-im-active-surface="home"] .line-header [class*="search"],
+#imessage-view[data-im-active-surface="home"] .line-search-bar {
+    display: none !important;
+}
+
+#imessage-view[data-im-active-surface="home"] .line-header::before {
+    content: "Instagram";
+    position: absolute;
+    top: 17px;
+    left: 38px;
+    z-index: 5;
+    color: #111111;
+    font-family: "Brush Script MT", "Segoe Script", cursive;
+    font-size: 31px;
+    font-weight: 700;
+    line-height: 1;
+    pointer-events: none;
+}
+
+#imessage-view[data-im-active-surface="home"] .line-profile {
+    display: grid;
+    grid-template-columns: 60px minmax(0, 1fr);
+    grid-template-rows: 28px 24px auto;
+    column-gap: 11px;
+    align-items: center;
+    margin: 13px 14px 0;
+    margin-top: 22px !important;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    position: relative;
+}
+
+#imessage-view[data-im-active-surface="home"] .line-profile > :nth-child(1) {
+    grid-row: 1;
+    grid-column: 2;
+    align-self: end;
+    position: relative;
+    top: 15px;
+    overflow: hidden;
+    color: #111111;
+    font-size: 16px;
+    font-weight: 750;
+    line-height: 20px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#imessage-view[data-im-active-surface="home"] .line-profile > :nth-child(2) {
+    grid-row: 1 / 3;
+    grid-column: 1;
+    width: 58px !important;
+    height: 58px !important;
+    box-sizing: border-box;
+    overflow: hidden;
+    border: 2px solid #111111 !important;
+    border-radius: 50%;
+}
+
+#imessage-view[data-im-active-surface="home"] .line-profile > :nth-child(2) img,
+#imessage-view[data-im-active-surface="home"] .line-profile > :nth-child(2).line-avatar {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover;
+    border: 0 !important;
+    border-radius: 50%;
+}
+
+#imessage-view[data-im-active-surface="home"] .line-profile > :nth-child(3) {
+    grid-row: 2;
+    grid-column: 2;
+    align-self: start;
+    position: relative;
+    top: 15px;
+    overflow: hidden;
+    color: var(--ins-muted);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 17px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#imessage-view[data-im-active-surface="home"] .line-profile > :nth-child(n + 4),
+#imessage-view[data-im-active-surface="home"] .line-profile button,
+#imessage-view[data-im-active-surface="home"] .line-profile [role="button"],
+#imessage-view[data-im-active-surface="home"] .line-profile [class*="action"],
+#imessage-view[data-im-active-surface="home"] .line-profile [class*="count"] {
+    display: none !important;
+}
+
+#imessage-view[data-im-active-surface="home"] .line-profile::before {
+    content: "Follow";
+    position: absolute;
+    top: 12px;
+    right: 0;
+    z-index: 3;
+    padding: 0 13px;
+    height: 28px;
+    box-sizing: border-box;
+    background: #111111;
+    border-radius: 999px;
+    color: #ffffff;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 28px;
+}
+
+#imessage-view[data-im-active-surface="home"] .line-profile::after {
+    content: "";
+    grid-row: 3;
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: 100%;
+    aspect-ratio: 1.72 / 1;
+    margin: 13px 0 12px;
+    margin-bottom: 0 !important;
+/* 这里换图片 */
+    background: url("https://z.wiki/u/qDgK9VQ07") center / cover no-repeat;
+    border-radius: 14px;
+}
+
+#imessage-view[data-im-active-surface="home"] .line-service-title,
+#imessage-view[data-im-active-surface="home"] .line-section-title,
+#imessage-view[data-im-active-surface="home"] [class*="service-title"] {
+    display: none !important;
+}
+
+#imessage-view[data-im-active-surface="home"] *:has(> .line-service-item) {
+    display: flex !important;
+    align-items: center;
+    gap: 22px;
+    margin: 0 14px 16px;
+    margin-top: -10px !important;
+    padding: 0;
+    background: transparent;
+    border: 0;
+}
+
+#imessage-view[data-im-active-surface="home"] .line-service-item {
+    display: block;
+    flex: 0 0 27px;
+    width: 27px;
+    min-width: 27px;
+    height: 29px;
+    min-height: 29px;
+    padding: 0;
+    overflow: visible;
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+}
+
+#imessage-view[data-im-active-surface="home"] .line-service-item:nth-child(4) {
+    margin-left: auto;
+}
+
+#imessage-view[data-im-active-surface="home"] .line-service-item > * {
+    display: none !important;
+}
+
+#imessage-view[data-im-active-surface="home"] .line-service-item::before {
+    content: "";
+    display: block;
+    width: 27px;
+    height: 27px;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: contain;
+    filter: grayscale(1) brightness(0);
+}
+
+#imessage-view[data-im-active-surface="home"] .line-service-item:nth-child(1)::before {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ff3c7d' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z'/%3E%3C/svg%3E");
+}
+
+#imessage-view[data-im-active-surface="home"] .line-service-item:nth-child(2)::before {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23111' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z'/%3E%3C/svg%3E");
+}
+
+#imessage-view[data-im-active-surface="home"] .line-service-item:nth-child(3)::before {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23111' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m22 2-7 20-4-9-9-4Z'/%3E%3Cpath d='M22 2 11 13'/%3E%3C/svg%3E");
+}
+
+#imessage-view[data-im-active-surface="home"] .line-service-item:nth-child(4)::before {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23169cff' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 21 12 16 5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z'/%3E%3C/svg%3E");
+}
+
+#imessage-view[data-im-active-surface="home"] .line-content {
+    color: #111111;
+    padding-top: 50px !important;
+}
+
+#imessage-view[data-im-active-surface="home"] .line-list-item {
+    background: #ffffff;
+    border-color: #f2f2f7;
+}
+
+#imessage-view[data-im-active-surface="home"] .line-bottom-nav {
+    background: rgba(255, 255, 255, 0.92);
+}
+
+
 /* iMessage Game / Anonymous Q&A */
 .app-view.im-game-view,
 .app-view.im-anonymous-qa-view {
