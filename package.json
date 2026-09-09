@@ -1,5 +1,5 @@
 {
-  "scripts": {
+  "scripts": { 
     "build": "node tools/build-obfuscate.mjs",
     "auth:admin": "node tools/auth-admin-server.mjs",
     "test": "node --test test/*.test.mjs",
