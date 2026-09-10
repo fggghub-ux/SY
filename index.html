@@ -71,10 +71,10 @@
     <link rel="stylesheet" href="css/netflix.css?v=20260811-character-relations-v3">
 </head>
 <body>
-    <!-- 启动保护屏：仿 iOS 开机白底带 u2phone 标识 -->
+    <!-- 启动保护屏：仿 iOS 开机白底带 JW 标识 -->
     <div id="app-splash-screen" style="position: fixed; inset: 0; z-index: 9999998; background: #ffffff; display: flex; flex-direction: column; justify-content: center; align-items: center; transition: opacity 0.22s ease;">
         <!-- Logo 文字 -->
-        <div style="font-size: 32px; font-weight: 800; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; letter-spacing: 1px; color: #000; margin-bottom: 60px; margin-top: -40px;">u2phone</div>
+        <div style="font-size: 32px; font-weight: 800; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; letter-spacing: 1px; color: #000; margin-bottom: 60px; margin-top: -40px;">JW</div>
         <!-- iOS 风格进度条 -->
         <div style="width: 160px; height: 4px; background: #f2f2f7; border-radius: 2px; overflow: hidden;">
             <div style="height: 100%; background: #000; border-radius: 2px; animation: splash-progress 3s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;"></div>
@@ -154,32 +154,7 @@
             }
         }, true);
     </script>
-   <style>
-  /* 强制永久隐藏登录界面 */
-  #u2-login-screen {
-    display: none !important;
-  }
-</style>
-<script>
-  // 强制标记登录状态，模拟已授权
-  (function() {
-    window.__u2_skip_login = true;
-    sessionStorage.setItem('u2_logged_in', 'true');
-    localStorage.setItem('u2_user', 'local_user');
-
-    // 等页面加载完成后，手动触发移除启动保护屏
-    document.addEventListener('DOMContentLoaded', function() {
-      if (typeof window.markAuthGateSettled === 'function') window.markAuthGateSettled();
-      if (typeof window.markAppShellReady === 'function') window.markAppShellReady();
-      if (typeof window.removeSplashScreen === 'function') window.removeSplashScreen();
-      
-      // 保险起见，强行移除启动屏
-      var splash = document.getElementById('app-splash-screen');
-      if (splash) splash.remove();
-    });
-  })();
-</script>
-     <div id="u2-login-screen" class="u2-login-screen is-checking" aria-hidden="true" inert>
+    <div id="u2-login-screen" class="u2-login-screen is-checking" aria-hidden="true" inert>
         <div class="u2-login-shell">
             <main class="u2-login-panel" aria-labelledby="u2-login-title">
                 <section class="u2-login-brand">
@@ -224,7 +199,7 @@
                     </div>
                     <div class="u2-login-notice u2-login-register-only" id="u2-login-notice-row">
                         <input id="u2-login-notice-accepted" name="noticeAccepted" type="checkbox" aria-describedby="u2-login-error">
-                        <label for="u2-login-notice-accepted">我已知晓《</label><button type="button" id="u2-login-notice-link">u2phone食用须知</button><span>》</span>
+                        <label for="u2-login-notice-accepted">我已知晓《</label><button type="button" id="u2-login-notice-link">JW入住声明</button><span>》</span>
                     </div>
                     <div class="u2-login-error" id="u2-login-error" role="status" aria-live="polite"></div>
                     <button class="u2-login-submit" id="u2-login-submit" type="submit">
@@ -253,20 +228,20 @@
                             </div>
                             <div class="custom-widget-stats">
                                 <div class="custom-widget-stat-item">
-                                    <div class="custom-widget-stat-num" contenteditable="true" spellcheck="false">0</div>
+                                    <div class="custom-widget-stat-num" contenteditable="true" spellcheck="false">19</div>
                                     <div class="custom-widget-stat-label">Posts</div>
                                 </div>
                                 <div class="custom-widget-stat-item">
-                                    <div class="custom-widget-stat-num" contenteditable="true" spellcheck="false">1314</div>
+                                    <div class="custom-widget-stat-num" contenteditable="true" spellcheck="false">7119.1K</div>
                                     <div class="custom-widget-stat-label">Followers</div>
                                 </div>
                                 <div class="custom-widget-stat-item">
-                                    <div class="custom-widget-stat-num" contenteditable="true" spellcheck="false">520</div>
+                                    <div class="custom-widget-stat-num" contenteditable="true" spellcheck="false">8</div>
                                     <div class="custom-widget-stat-label">Following</div>
                                 </div>
                             </div>
                         </div>
-                        <div class="custom-widget-name" id="custom-name-desktop" contenteditable="true" spellcheck="false">name @iisonyoung</div>
+                        <div class="custom-widget-name" id="custom-name-desktop" contenteditable="true" spellcheck="false">i 🤍uuu so..@kendall</div>
                         <div class="custom-widget-edit-btn" style="border-radius: 20px;">Edit Profile</div>
                         <div class="custom-widget-bottom" style="display: flex; justify-content: flex-start; gap: 15px;">
                             <div class="custom-widget-add-icon" style="width: 40px; height: 40px;"><i class="fas fa-plus"></i></div>
@@ -280,11 +255,11 @@
 
                     <!-- Apps and Pet Widget (Bottom) -->
                     <div class="app-item" id="app-pay-btn" style="cursor: pointer;" onclick="document.getElementById('pay-view').classList.add('active'); document.getElementById('pay-view').style.display='flex';">
-                        <div class="app-icon icon-placeholder" id="app-icon-1" style="background: #ffffff; color: #1c1c1e; border: 1px solid #e5e5ea; display: flex; justify-content: center; align-items: center; font-size: 28px;"><i class="fas fa-wallet"></i></div>
+                        <div class="app-icon icon-placeholder" id="app-icon-1" style="border: 1px solid #e5e5ea;"><img src="assets/app-icons/pay.jpg" alt="Pay"></div>
                         <span class="app-name" data-u2-i18n="home.app.pay">Pay</span>
                     </div>
                     <div class="app-item tiktok-app" id="app-tiktok-btn" style="cursor: pointer;">
-                        <div class="app-icon icon-placeholder" id="app-icon-2" style="background: #ffffff; color: #1c1c1e; border: 1px solid #e5e5ea; display: flex; justify-content: center; align-items: center; font-size: 30px;"><i class="fab fa-tiktok"></i></div>
+                        <div class="app-icon icon-placeholder" id="app-icon-2" style="border: 1px solid #e5e5ea;"><img src="assets/app-icons/tiktok.jpg" alt="TikTok"></div>
                         <span class="app-name" data-u2-i18n="home.app.tiktok">TikTok</span>
                     </div>
                     
@@ -296,21 +271,21 @@
                             <i class="fas fa-image" id="pet-icon-desktop" style="font-size: 30px; color: #ccc;"></i>
                             <input type="file" id="pet-upload-desktop" accept="image/*" style="display:none;">
                         </div>
-                        <div class="pet-widget-bubble" id="pet-bubble-desktop" contenteditable="true" spellcheck="false">oxo</div>
+                        <div class="pet-widget-bubble" id="pet-bubble-desktop" contenteditable="true" spellcheck="false">irrelevant</div>
                         <div class="pet-widget-music-icon"><i class="fas fa-music"></i></div>
                         <div class="pet-widget-plus-btn"><i class="fas fa-plus"></i></div>
                     </div>
 
                     <!-- More Apps (2 slots) -->
                     <div class="app-item bstage-app" id="app-bstage-btn" style="cursor: pointer;">
-                        <div class="app-icon icon-placeholder" id="app-icon-3" style="background: #ffffff; color: #1c1c1e; border: 1px solid #e5e5ea; display: flex; justify-content: center; align-items: center; font-size: 26px;">
-                            <i class="fas fa-layer-group"></i>
+                        <div class="app-icon icon-placeholder" id="app-icon-3" style="border: 1px solid #e5e5ea;">
+                            <img src="assets/app-icons/bstage.jpg" alt="b.stage">
                         </div>
                         <span class="app-name" data-u2-i18n="home.app.bstage">b.stage</span>
                     </div>
                     <div class="app-item x-app" id="app-x-btn" style="cursor: pointer;">
-                        <div class="app-icon icon-placeholder" id="app-icon-4" style="background: #ffffff; color: #1c1c1e; border: 1px solid #e5e5ea; display: flex; justify-content: center; align-items: center; font-size: 26px;">
-                            <i class="fa-brands fa-x-twitter"></i>
+                        <div class="app-icon icon-placeholder" id="app-icon-4" style="border: 1px solid #e5e5ea;">
+                            <img src="assets/app-icons/x.jpg" alt="X">
                         </div>
                         <span class="app-name" data-u2-i18n="home.app.x">X</span>
                     </div>
@@ -323,8 +298,8 @@
                             <input type="file" id="notification-avatar-upload-desktop-1" accept="image/*" style="display:none;">
                         </div>
                         <div class="notification-widget-content">
-                            <div class="notification-widget-title" id="notification-title-desktop-1" contenteditable="true" spellcheck="false">u2phone</div>
-                            <div class="notification-widget-desc" id="notification-desc-desktop-1" contenteditable="true" spellcheck="false">I was with you in a happy, translucent, endless dream. In contrast to my usual dreams.</div>
+                            <div class="notification-widget-title" id="notification-title-desktop-1" contenteditable="true" spellcheck="false">Entanglement</div>
+                            <div class="notification-widget-desc" id="notification-desc-desktop-1" contenteditable="true" spellcheck="false">If it’s not mine, it’s not special.</div>
                         </div>
                     </div>
                 </div>
@@ -358,12 +333,12 @@
                             
                             <!-- 右侧文本与控制区 -->
                             <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; padding-left: 10px; padding-right: 15px;">
-                                <div class="home-widget-music-title music-title-edit" contenteditable="false" spellcheck="false" style="font-size: 18px; font-weight: 700; color: #111; text-align: center; outline: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">oode...</div>
+                                <div class="home-widget-music-title music-title-edit" contenteditable="false" spellcheck="false" style="font-size: 18px; font-weight: 700; color: #111; text-align: center; outline: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">She's A 10 But</div>
                                 
                                 <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 3px; text-align: center;">
-                                    <div class="music-lyric1-edit" contenteditable="false" spellcheck="false" style="font-size: 9px; color: #666; outline: none;">u2phone</div>
-                                    <div class="music-lyric2-edit" contenteditable="false" spellcheck="false" style="font-size: 10px; font-weight: 700; color: #111; outline: none;">sonokoiomoiiyo</div>
-                                    <div class="music-lyric3-edit" contenteditable="false" spellcheck="false" style="font-size: 9px; color: #666; outline: none;">The rain of destiny</div>
+                                    <div class="music-lyric1-edit" contenteditable="false" spellcheck="false" style="font-size: 9px; color: #666; outline: none;">With no makeup she a ten</div>
+                                    <div class="music-lyric2-edit" contenteditable="false" spellcheck="false" style="font-size: 10px; font-weight: 700; color: #111; outline: none;">And she the best with that head</div>
+                                    <div class="music-lyric3-edit" contenteditable="false" spellcheck="false" style="font-size: 9px; color: #666; outline: none;">Even better than Karrine</div>
                                 </div>
                                 
                                 <!-- 控制按钮 -->
@@ -383,12 +358,12 @@
                     <!-- App 1 & App 2 (Left side of Row 3) -->
                     <div class="app-item shopping-app" id="app-shopping-btn" style="cursor: pointer;">
                         <div class="app-icon icon-placeholder shopping-home-icon" id="app-icon-5">
-                            <i class="fas fa-shopping-bag"></i>
+                            <img src="assets/app-icons/shop.jpg" alt="Shop">
                         </div>
                         <span class="app-name" data-u2-i18n="home.app.shop">Shop</span>
                     </div>
                     <div class="app-item library-app-item" id="app-phone-btn" style="cursor: pointer;">
-                        <div class="app-icon icon-placeholder library-home-icon" id="app-icon-6"><i class="fas fa-book-open"></i></div>
+                        <div class="app-icon icon-placeholder library-home-icon" id="app-icon-6"><img src="assets/app-icons/library.jpg" alt="Library"></div>
                         <span class="app-name" data-u2-i18n="home.app.library">Library</span>
                     </div>
 
@@ -396,14 +371,14 @@
                     <div class="couple-widget" id="couple-widget-desktop-2" style="grid-row: span 2;">
                         <div class="delete-widget-btn"><i class="fas fa-times"></i></div>
                         <div class="couple-avatar-container">
-                            <div class="couple-bubble" contenteditable="true" spellcheck="false">ㅠㅠ</div>
+                            <div class="couple-bubble" contenteditable="true" spellcheck="false">-.-</div>
                             <div class="couple-img-wrapper">
                                 <img src="" style="display: none;">
                                 <i class="fas fa-image"></i>
                             </div>
                         </div>
                         <div class="couple-avatar-container">
-                            <div class="couple-bubble" contenteditable="true" spellcheck="false">ㅎㅎ</div>
+                            <div class="couple-bubble" contenteditable="true" spellcheck="false">TT</div>
                             <div class="couple-img-wrapper">
                                 <img src="" style="display: none;">
                                 <i class="fas fa-image"></i>
@@ -413,14 +388,14 @@
 
                     <!-- App 3 & App 4 (Left side of Row 4) -->
                     <div class="app-item netflix-app" id="app-netflix-btn" style="cursor: pointer;" onclick="if(window.netflixApp && typeof window.netflixApp.open === 'function') window.netflixApp.open(); else { const v = document.getElementById('netflix-view'); if(v) { v.style.display='flex'; v.classList.add('active'); } }">
-                        <div class="app-icon icon-placeholder" id="app-icon-7" style="background: #ffffff; color: #1c1c1e; border: 1px solid #e5e5ea; display: flex; justify-content: center; align-items: center; font-size: 32px; font-weight: 900; font-family: Arial, sans-serif; letter-spacing: -1px;" onclick="event.stopPropagation(); if(window.netflixApp && typeof window.netflixApp.open === 'function') window.netflixApp.open(); else { const v = document.getElementById('netflix-view'); if(v) { v.style.display='flex'; v.classList.add('active'); } }">
-                            N
+                        <div class="app-icon icon-placeholder" id="app-icon-7" style="border: 1px solid #e5e5ea;" onclick="event.stopPropagation(); if(window.netflixApp && typeof window.netflixApp.open === 'function') window.netflixApp.open(); else { const v = document.getElementById('netflix-view'); if(v) { v.style.display='flex'; v.classList.add('active'); } }">
+                            <img src="assets/app-icons/netflix.jpg" alt="Netflix">
                         </div>
                         <span class="app-name" data-u2-i18n="home.app.netflix">Netflix</span>
                     </div>
                     <div class="app-item loves-app" id="app-loves-btn" style="cursor: pointer;" onclick="if(window.lovesApp && typeof window.lovesApp.open === 'function') window.lovesApp.open(); else { const v = document.getElementById('loves-view'); if(v) { v.style.display='flex'; v.classList.add('active'); } }">
-                        <div class="app-icon icon-placeholder" id="app-icon-8" style="background: #ffffff; color: #1c1c1e; border: 1px solid #e5e5ea; display: flex; justify-content: center; align-items: center; font-size: 28px;" onclick="event.stopPropagation(); if(window.lovesApp && typeof window.lovesApp.open === 'function') window.lovesApp.open(); else { const v = document.getElementById('loves-view'); if(v) { v.style.display='flex'; v.classList.add('active'); } }">
-                            <i class="fas fa-heart"></i>
+                        <div class="app-icon icon-placeholder" id="app-icon-8" style="border: 1px solid #e5e5ea;" onclick="event.stopPropagation(); if(window.lovesApp && typeof window.lovesApp.open === 'function') window.lovesApp.open(); else { const v = document.getElementById('loves-view'); if(v) { v.style.display='flex'; v.classList.add('active'); } }">
+                            <img src="assets/app-icons/loves.jpg" alt="Loves">
                         </div>
                         <span class="app-name" data-u2-i18n="home.app.loves">Loves</span>
                     </div>
@@ -463,20 +438,20 @@
         <div class="dock-container">
             <div class="dock" id="dock">
                 <div class="app-item" id="dock-icon-settings" style="cursor: pointer;">
-                    <div class="app-icon" style="background: #ffffff; font-size: 32px; color: #1c1c1e; border: 1px solid #e5e5ea; display: flex; justify-content: center; align-items: center;">
-                        <i class="fas fa-cog"></i>
+                    <div class="app-icon icon-placeholder" style="border: 1px solid #e5e5ea;">
+                        <img src="assets/app-icons/settings.jpg" alt="设置">
                     </div>
                     <span class="app-name">设置</span>
                 </div>
                 <div class="app-item imessage-app" id="dock-icon-imessage" style="cursor: pointer;" onclick="document.getElementById('imessage-view').style.display='flex'">
-                    <div class="app-icon" style="background: #ffffff; font-size: 32px; color: #1c1c1e; border: 1px solid #e5e5ea; display: flex; justify-content: center; align-items: center;">
-                        <i class="fas fa-comment"></i>
+                    <div class="app-icon icon-placeholder" style="border: 1px solid #e5e5ea;">
+                        <img src="assets/app-icons/imessage.jpg" alt="信息">
                     </div>
                     <span class="app-name">信息</span>
                 </div>
                 <div class="app-item youtube-app" id="dock-icon-youtube" style="cursor: pointer;">
-                    <div class="app-icon" style="background: #ffffff; color: #1c1c1e; font-size: 38px; border: 1px solid #e5e5ea; display: flex; justify-content: center; align-items: center;">
-                        <i class="fab fa-youtube"></i>
+                    <div class="app-icon icon-placeholder" style="border: 1px solid #e5e5ea;">
+                        <img src="assets/app-icons/youtube.jpg" alt="YouTube">
                     </div>
                         <span class="app-name" data-u2-i18n="home.app.youtube">YouTube</span>
                 </div>
@@ -2576,33 +2551,33 @@
                 <div class="settings-group fully-rounded">
                     <div class="settings-item" id="api-config-btn">
                         <div class="settings-icon" style="background-color: #5856d6;"><i class="fas fa-plug"></i></div>
-                        <div class="settings-text">API 配置</div>
+                        <div class="settings-text">API Configuration</div>
                         <i class="fas fa-chevron-right arrow"></i>
                     </div>
                     <div class="settings-item" id="vector-memory-config-btn">
                         <div class="settings-icon" style="background-color: #5856d6;"><i class="fas fa-brain"></i></div>
-                        <div class="settings-text">向量记忆</div>
-                        <span id="vector-memory-config-status" style="margin-left:auto; color:#8e8e93; font-size:14px;">关闭</span>
+                        <div class="settings-text">Vector Memory</div>
+                        <span id="vector-memory-config-status" style="margin-left:auto; color:#8e8e93; font-size:14px;">Close</span>
                         <i class="fas fa-chevron-right arrow"></i>
                     </div>
                     <div class="settings-item" id="vision-config-btn">
                         <div class="settings-icon" style="background-color: #34aadc;"><i class="fas fa-eye"></i></div>
-                        <div class="settings-text">识图配置</div>
+                        <div class="settings-text">Image Recognition</div>
                         <i class="fas fa-chevron-right arrow"></i>
                     </div>
                     <div class="settings-item" id="image-generation-config-btn">
                         <div class="settings-icon" style="background-color: #af52de;"><i class="fas fa-wand-magic-sparkles"></i></div>
-                        <div class="settings-text">生图配置</div>
+                        <div class="settings-text">Image Generation</div>
                         <i class="fas fa-chevron-right arrow"></i>
                     </div>
                     <div class="settings-item" id="tts-config-btn">
                         <div class="settings-icon" style="background-color: #ff9500;"><i class="fas fa-volume-up"></i></div>
-                        <div class="settings-text">TTS 配置</div>
+                        <div class="settings-text">TTS Configuration</div>
                         <i class="fas fa-chevron-right arrow"></i>
                     </div>
                     <div class="settings-item" id="world-book-main-btn">
                         <div class="settings-icon" style="background-color: #1c1c1e;"><i class="fas fa-book"></i></div>
-                        <div class="settings-text">世界书</div>
+                        <div class="settings-text">Word Book</div>
                         <i class="fas fa-chevron-right arrow"></i>
                     </div>
                 </div>
@@ -2612,31 +2587,31 @@
                     <div class="settings-item" style="justify-content: space-between; cursor: default;">
                         <div style="display: flex; align-items: center; min-width: 0;">
                             <div class="settings-icon" style="background-color: #34c759;"><i class="fas fa-language"></i></div>
-                            <div class="settings-text">全局翻译</div>
+                            <div class="settings-text">Translation</div>
                         </div>
                         <label class="toggle-switch">
-                            <input type="checkbox" id="global-ui-translation-toggle" aria-label="全局翻译">
+                            <input type="checkbox" id="global-ui-translation-toggle" aria-label="Global Translation">
                             <span class="slider"></span>
                         </label>
                     </div>
                     <div class="settings-item" id="theme-config-btn">
                         <div class="settings-icon" style="background-color: #ff2d55;"><i class="fas fa-paint-brush"></i></div>
-                        <div class="settings-text">主题美化</div>
+                        <div class="settings-text">App Icon</div>
                         <i class="fas fa-chevron-right arrow"></i>
                     </div>
                     <button class="settings-item theme-font-entry-btn" id="theme-font-btn" type="button">
                         <div class="settings-icon" style="background-color: #5856d6;"><i class="fas fa-font"></i></div>
-                        <div class="settings-text">字体</div>
+                        <div class="settings-text">Fonts</div>
                         <i class="fas fa-chevron-right arrow"></i>
                     </button>
                     <div class="settings-item" id="home-widget-config-btn" onclick="window.openHomeWidgetPanelFromSettings && window.openHomeWidgetPanelFromSettings()">
                         <div class="settings-icon" style="background-color: #5ac8fa;"><i class="fas fa-layer-group"></i></div>
-                        <div class="settings-text">小组件</div>
+                        <div class="settings-text">Widgets</div>
                         <i class="fas fa-chevron-right arrow"></i>
                     </div>
                     <div class="settings-item" id="assistive-ball-config-btn">
                         <div class="settings-icon" style="background-color: #111111;"><i class="fas fa-circle-dot"></i></div>
-                        <div class="settings-text">悬浮球</div>
+                        <div class="settings-text">Floating Ball</div>
                         <i class="fas fa-chevron-right arrow"></i>
                     </div>
                 </div>
@@ -2645,12 +2620,12 @@
                 <div class="settings-group fully-rounded">
                     <div class="settings-item" id="about-device-btn">
                         <div class="settings-icon" style="background-color: #8e8e93;"><i class="fas fa-mobile-screen-button"></i></div>
-                        <div class="settings-text">关于本机</div>
+                        <div class="settings-text">About This Device</div>
                         <i class="fas fa-chevron-right arrow"></i>
                     </div>
                     <div class="settings-item" id="data-management-btn" style="border-bottom: none;">
                         <div class="settings-icon" style="background-color: #34c759;"><i class="fas fa-database"></i></div>
-                        <div class="settings-text">数据管理</div>
+                        <div class="settings-text">Data Management</div>
                         <i class="fas fa-chevron-right arrow"></i>
                     </div>
                 </div>
@@ -2661,17 +2636,17 @@
         <div class="bottom-sheet-overlay detail-sheet-overlay" id="about-device-sheet">
             <div class="bottom-sheet" style="height: auto; max-height: 70%; display: flex; flex-direction: column;">
                 <div class="sheet-handle"></div>
-                <div class="sheet-title">关于本机</div>
+                <div class="sheet-title">About This Device</div>
 
                 <div class="detail-sheet-content" style="padding: 24px 20px 20px;">
                     <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 12px 0 28px;">
-                        <div id="about-device-app-name" style="font-size: 28px; font-weight: 700; color: #000; line-height: 1.2;">u2phone</div>
+                        <div id="about-device-app-name" style="font-size: 28px; font-weight: 700; color: #000; line-height: 1.2;">JW</div>
                         <div id="about-device-version" style="margin-top: 10px; font-size: 15px; color: #8e8e93; line-height: 1.4;">1.0.0</div>
                     </div>
 
-                    <div class="sheet-action" id="about-device-disclaimer-btn" style="margin-top: 0; margin-bottom: 12px;">免责声明</div>
-                    <div class="sheet-action" id="about-device-changelog-btn" style="margin-top: 0; margin-bottom: 12px;">更新日志</div>
-                    <div class="sheet-action" id="about-device-close-btn" style="margin-top: 0;">关闭</div>
+                    <div class="sheet-action" id="about-device-disclaimer-btn" style="margin-top: 0; margin-bottom: 12px;">Gravity</div>
+                    <div class="sheet-action" id="about-device-changelog-btn" style="margin-top: 0; margin-bottom: 12px;">Desire</div>
+                    <div class="sheet-action" id="about-device-close-btn" style="margin-top: 0;">Close</div>
                 </div>
             </div>
         </div>
@@ -2765,7 +2740,7 @@
                 <button type="button" class="data-management-back" id="data-management-close-btn" aria-label="返回数据管理上一页">
                     <i class="fas fa-chevron-left" aria-hidden="true"></i>
                 </button>
-                <h2>数据管理</h2>
+                <h2>Data Management</h2>
                 <span class="data-management-header-spacer" aria-hidden="true"></span>
             </header>
 
@@ -3101,7 +3076,7 @@
         <div class="bottom-sheet-overlay detail-sheet-overlay" id="vector-memory-config-sheet" style="z-index: 505;">
             <div class="bottom-sheet vector-memory-config-sheet">
                 <div class="sheet-handle"></div>
-                <div class="sheet-title">向量记忆</div>
+                <div class="sheet-title">Vector Memory</div>
                 <div class="detail-sheet-content vector-memory-config-content">
                     <div class="form-group fully-rounded vector-memory-api-config">
                         <div class="form-item" style="justify-content: space-between;">
@@ -3150,8 +3125,8 @@
                         </div>
                     </div>
                 </div>
-                <div class="sheet-action confirm-action vector-memory-config-save" id="confirm-vector-memory-config-btn">保存</div>
-                <div class="sheet-action vector-memory-config-close" id="close-vector-memory-config-btn">取消</div>
+                <div class="sheet-action confirm-action vector-memory-config-save" id="confirm-vector-memory-config-btn">Save</div>
+                <div class="sheet-action vector-memory-config-close" id="close-vector-memory-config-btn">Cancel</div>
             </div>
         </div>
 
@@ -3159,7 +3134,7 @@
         <div class="bottom-sheet-overlay detail-sheet-overlay" id="vision-config-sheet" style="z-index: 505;">
             <div class="bottom-sheet" style="max-height: 85%;">
                 <div class="sheet-handle"></div>
-                <div class="sheet-title">识图配置</div>
+                <div class="sheet-title">Image Recognition</div>
                 <div class="detail-sheet-content" style="padding-bottom: 20px;">
                     <div class="form-group fully-rounded" style="margin-bottom: 20px;">
                         <div class="form-item">
@@ -3216,7 +3191,7 @@
         <div class="bottom-sheet-overlay detail-sheet-overlay" id="image-generation-config-sheet" style="z-index: 505;">
             <div class="bottom-sheet" style="max-height: 85%;">
                 <div class="sheet-handle"></div>
-                <div class="sheet-title">生图配置</div>
+                <div class="sheet-title">Image Generation</div>
                 <div class="detail-sheet-content" style="padding-bottom: 20px;">
                     <div class="form-group fully-rounded" style="margin-bottom: 20px;">
                         <div class="form-item">
@@ -3279,7 +3254,7 @@
         <div class="bottom-sheet-overlay detail-sheet-overlay" id="tts-config-sheet" style="z-index: 505;">
             <div class="bottom-sheet" style="max-height: 85%;">
                 <div class="sheet-handle"></div>
-                <div class="sheet-title">TTS 配置</div>
+                <div class="sheet-title">TTS Configuration</div>
 
                 <div class="detail-sheet-content" style="padding-bottom: 20px;">
                     <div class="form-group fully-rounded" style="margin-bottom: 20px;">
@@ -3368,7 +3343,7 @@
         <div class="bottom-sheet-overlay detail-sheet-overlay" id="assistive-ball-settings-sheet" style="z-index: 560;">
             <div class="bottom-sheet" style="height: auto; max-height: 78%; overflow-y: auto;">
                 <div class="sheet-handle"></div>
-                <div class="sheet-title">悬浮球设置</div>
+                <div class="sheet-title">Floating Ball</div>
                 <div class="settings-group fully-rounded" style="margin: 0 16px 20px;">
                     <div class="form-item" style="justify-content: space-between; border-bottom: none;">
                         <label style="width: auto; white-space: nowrap; flex: 1; margin-right: 10px; color: #000; font-size: 16px;">显示悬浮球</label>
@@ -3413,7 +3388,7 @@
         <div class="bottom-sheet-overlay detail-sheet-overlay" id="desktop-theme-config-sheet" style="z-index: 500;">
             <div class="bottom-sheet" style="max-height: 85%; height: 80%; display: flex; flex-direction: column;">
                 <div class="sheet-handle"></div>
-                <div class="sheet-title">主题美化</div>
+                <div class="sheet-title">App Icon</div>
                 
                 <div class="detail-sheet-content" style="padding-bottom: 30px; overflow-y: auto; flex: 1;">
                     <div style="display: flex; margin: 0 16px 20px; padding: 10px; gap: 10px; background: #ffffff; border: 1px solid rgba(60, 60, 67, 0.08); border-radius: 16px; box-shadow: 0 3px 12px rgba(0, 0, 0, 0.04);">
@@ -3637,7 +3612,7 @@
                 <div class="theme-font-sheet-handle" aria-hidden="true"></div>
                 <header class="theme-font-modal-header">
                     <div>
-                        <div class="theme-font-modal-title" id="theme-font-modal-title">字体</div>
+                        <div class="theme-font-modal-title" id="theme-font-modal-title">Fonts</div>
                         <div class="theme-font-modal-subtitle">统一设置界面文字与字号</div>
                     </div>
                     <button class="theme-font-modal-icon-btn" id="theme-font-close-btn" type="button" aria-label="关闭字体设置">
@@ -4680,7 +4655,7 @@
                 </button>
                 <div class="pay-heading">
                     <span>PAY</span>
-                    <h1>我的资产</h1>
+                    <h1>ASSETS</h1>
                 </div>
                 <div class="pay-header-mark" aria-hidden="true">WALLET</div>
             </div>
@@ -4694,36 +4669,36 @@
                     <div class="pay-total-card" id="pay-main-card">
                         <div class="pay-card-topline">
                             <div>
-                                <div class="pay-card-eyebrow">当前账户 · CURRENT</div>
-                                <div class="pay-card-title" id="pay-main-card-title"><i class="fas fa-university"></i> 招商银行</div>
-                                <div class="pay-card-type" id="pay-main-card-type">储蓄卡</div>
+                                <div class="pay-card-eyebrow"> </div>
+                                <div class="pay-card-title" id="pay-main-card-title"><i class="fas fa-university"></i> AMERICAN EXPRESS</div>
+                                <div class="pay-card-type" id="pay-main-card-type"> </div>
                             </div>
-                            <div class="pay-card-logo" id="pay-main-card-logo">银联</div>
+                            <div class="pay-card-logo" id="pay-main-card-logo">27</div>
                         </div>
                         <div class="pay-balance-block">
-                            <span>可用余额</span>
-                            <div class="pay-card-amount"><small>¥</small><span id="pay-total-amount">0.00</span></div>
+                            <span> </span>
+                            <div class="pay-card-amount"><small>$</small><span id="pay-total-amount">0.00</span></div>
                         </div>
-                        <div class="pay-card-number" id="pay-main-card-number">**** **** **** 8888</div>
+                        <div class="pay-card-number" id="pay-main-card-number">**** **** **** 9898</div>
                     </div>
 
                     <!-- 快捷功能区 -->
                     <div class="pay-quick-actions" aria-label="快捷操作">
                         <button type="button" class="pay-action-btn" id="pay-action-scan">
                             <span class="pay-action-icon"><i class="fas fa-qrcode"></i></span>
-                            <span class="pay-action-copy"><strong>收付款</strong><small>PAY</small></span>
+                            <span class="pay-action-copy"><strong>Payment</strong><small>PAY</small></span>
                         </button>
                         <button type="button" class="pay-action-btn" id="pay-action-cards">
                             <span class="pay-action-icon"><i class="fas fa-credit-card"></i></span>
-                            <span class="pay-action-copy"><strong>卡包</strong><small>CARDS</small></span>
+                            <span class="pay-action-copy"><strong>Wallet</strong><small>CARDS</small></span>
                         </button>
                         <button type="button" class="pay-action-btn" id="pay-action-family">
                             <span class="pay-action-icon"><i class="fas fa-users"></i></span>
-                            <span class="pay-action-copy"><strong>亲属卡</strong><small>FAMILY</small></span>
+                            <span class="pay-action-copy"><strong>Family</strong><small>FAMILY</small></span>
                         </button>
                         <button type="button" class="pay-action-btn" id="pay-action-transfer-in">
                             <span class="pay-action-icon"><i class="fas fa-arrow-down"></i></span>
-                            <span class="pay-action-copy"><strong>转入</strong><small>ADD MONEY</small></span>
+                            <span class="pay-action-copy"><strong>Transfer</strong><small>MONEY</small></span>
                         </button>
                     </div>
 
@@ -4732,21 +4707,21 @@
                         <div class="pay-section-header">
                             <div>
                                 <span class="pay-section-kicker">RECENT</span>
-                                <h3 class="pay-section-title">最近账单</h3>
+                                <h3 class="pay-section-title">RECENT BILLS</h3>
                             </div>
-                            <span class="pay-section-more">交易明细</span>
+                            <span class="pay-section-more">TRANSACTION</span>
                         </div>
                         
                         <!-- 新增：账单筛选按钮 -->
                         <div class="pay-bill-filters">
-                            <button type="button" class="pay-filter-btn active" data-filter="all">全部</button>
-                            <button type="button" class="pay-filter-btn" data-filter="income">收入</button>
-                            <button type="button" class="pay-filter-btn" data-filter="expense">支出</button>
+                            <button type="button" class="pay-filter-btn active" data-filter="all">All</button>
+                            <button type="button" class="pay-filter-btn" data-filter="income">Income</button>
+                            <button type="button" class="pay-filter-btn" data-filter="expense">Expenses</button>
                         </div>
 
                         <div class="pay-bill-list" id="pay-bill-list">
                             <!-- 账单条目将通过 JS 动态注入 -->
-                            <div class="pay-empty-state">暂无交易记录</div>
+                            <div class="pay-empty-state">No Transaction Yet</div>
                         </div>
                     </div>
                 </div>
@@ -4756,7 +4731,7 @@
             <div class="pay-modal-overlay" id="pay-scan-modal">
                 <div class="pay-scan-container">
                     <div class="pay-scan-header">
-                        <div><small>QUICK PAY</small><span>向商家付款</span></div>
+                        <div><small>QUICK PAY</small><span>Show payment</span></div>
                         <button type="button" id="pay-scan-close" aria-label="关闭收付款"><i class="fas fa-times"></i></button>
                     </div>
                     <div class="pay-scan-barcode"></div>
@@ -4764,7 +4739,7 @@
                         <i class="fas fa-qrcode"></i>
                     </div>
                     <div class="pay-scan-refresh">
-                        <i class="fas fa-sync-alt"></i> 每分钟自动刷新
+                        <i class="fas fa-sync-alt"></i> refresh every minute
                     </div>
                 </div>
             </div>
@@ -4773,20 +4748,20 @@
             <div class="pay-modal-overlay" id="pay-transfer-in-modal" aria-hidden="true">
                 <form class="pay-transfer-in-container" id="pay-transfer-in-form">
                     <div class="pay-transfer-in-header">
-                        <div><small>ADD MONEY</small><span>转入账户</span></div>
+                        <div><small>ADD MONEY</small><span>TRANSFER-IN</span></div>
                         <button type="button" id="pay-transfer-in-close" aria-label="关闭转入"><i class="fas fa-times"></i></button>
                     </div>
-                    <label class="pay-transfer-in-target" for="pay-transfer-in-target">转入至
+                    <label class="pay-transfer-in-target" for="pay-transfer-in-target">Transfer in
                         <select id="pay-transfer-in-target" aria-label="选择转入银行卡"></select>
                     </label>
                     <label class="pay-transfer-in-field" for="pay-transfer-in-amount">
-                        <span>转入金额</span>
-                        <div><small>¥</small><input id="pay-transfer-in-amount" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="请输入金额" autocomplete="off" required></div>
+                        <span>transfer amount</span>
+                        <div><small>$</small><input id="pay-transfer-in-amount" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="Enter amount" autocomplete="off" required></div>
                     </label>
-                    <p class="pay-transfer-in-hint">仅可转入银行卡，亲属卡不支持转入。</p>
+                    <p class="pay-transfer-in-hint">Bank card deposits only</p>
                     <div class="pay-transfer-in-actions">
-                        <button type="button" id="pay-transfer-in-cancel">取消</button>
-                        <button type="submit">确认转入</button>
+                        <button type="button" id="pay-transfer-in-cancel">cancel</button>
+                        <button type="submit">confirm</button>
                     </div>
                 </form>
             </div>
@@ -4795,14 +4770,14 @@
             <div class="bottom-sheet-overlay detail-sheet-overlay" id="pay-cards-sheet">
                 <div class="bottom-sheet pay-sheet">
                     <div class="sheet-handle"></div>
-                    <div class="pay-sheet-heading"><span>CARDS</span><h2>我的卡包</h2></div>
+                    <div class="pay-sheet-heading"><span>CARDS</span><h2>MY WALLET</h2></div>
                     <div class="detail-sheet-content pay-sheet-content">
                         <div id="pay-bank-list">
                             <!-- 银行卡列表动态渲染 -->
                         </div>
                         
                         <button type="button" class="pay-sheet-add">
-                            <i class="fas fa-plus"></i> 添加银行卡
+                            <i class="fas fa-plus"></i> Add Bank Card
                         </button>
                     </div>
                 </div>
@@ -4812,14 +4787,14 @@
             <div class="bottom-sheet-overlay detail-sheet-overlay" id="pay-family-sheet">
                 <div class="bottom-sheet pay-sheet">
                     <div class="sheet-handle"></div>
-                    <div class="pay-sheet-heading"><span>FAMILY</span><h2>亲属卡</h2></div>
+                    <div class="pay-sheet-heading"><span>FAMILY</span><h2>FAMILY</h2></div>
                     <div class="detail-sheet-content pay-sheet-content">
                         <div id="pay-family-list">
                             <!-- 亲属卡列表动态渲染 -->
                         </div>
                         
                         <button type="button" class="pay-sheet-add">
-                            <i class="fas fa-plus"></i> 赠送亲属卡
+                            <i class="fas fa-plus"></i> Gift a family card
                         </button>
                     </div>
                 </div>
@@ -4948,12 +4923,12 @@
                                     <div class="settings-text">默认语言</div>
                                     <select id="chat-language-select" style="border: none; background: transparent; color: #8e8e93; font-size: 16px; outline: none; text-align: right; direction: rtl; appearance: none; -webkit-appearance: none; padding-right: 5px;">
                                         <option value="zh">中文</option>
-                                        <option value="ko">韩语</option>
-                                        <option value="ja">日语</option>
                                         <option value="en">英语</option>
-                                        <option value="fr">法语</option>
-                                        <option value="yue">粤语</option>
                                         <option value="ru">俄语</option>
+                                        <option value="yue">粤语</option>
+                                        <option value="it">意大利语</option>
+                                        <option value="es">西班牙语</option>
+                                        <option value="ar">阿拉伯语</option>
                                         <option value="__custom__">自定义</option>
                                     </select>
                                     <i class="fas fa-chevron-right arrow"></i>
@@ -5530,11 +5505,11 @@
 
                             <div class="x-feed-panel active" data-feed-panel="recommend">
                             <article class="x-feed-card" data-post-id="island" tabindex="0">
-                                <div class="x-feed-avatar x-avatar">林屿</div>
+                                <div class="x-feed-avatar x-avatar">Daniel</div>
                                 <div class="x-feed-body">
                                     <div class="x-feed-meta">
-                                        <strong>林屿 Island</strong>
-                                        <span>@island · 12m</span>
+                                        <strong>Daniel Kehoe</strong>
+                                        <span>@Kehoe · 12m</span>
                                     </div>
                                     <p>首页信息流先按微博的阅读节奏排，保留热搜、转评赞和图文密度，但整体收进 X 的黑白系统里。</p>
                                     <div class="x-media-grid">
@@ -5543,9 +5518,9 @@
                                         <div></div>
                                     </div>
                                     <div class="x-feed-actions">
-                                        <span><i class="far fa-comment"></i> 128</span>
-                                        <span><i class="fas fa-retweet"></i> 46</span>
-                                        <span><i class="far fa-heart"></i> 3.2K</span>
+                                        <span><i class="far fa-comment"></i> 118</span>
+                                        <span><i class="fas fa-retweet"></i> 41</span>
+                                        <span><i class="far fa-heart"></i> 7.1K</span>
                                         <span><i class="far fa-bookmark"></i></span>
                                     </div>
                                 </div>
@@ -5558,11 +5533,11 @@
                                         <strong>超话精选</strong>
                                         <span>@super · 28m</span>
                                     </div>
-                                    <p>今日签到人数上涨 24%，热门讨论集中在舞台妆造、路透图和饭制剪辑。</p>
+                                    <p>今日签到人数上涨 24%，热门讨论集中在企业项目动向、品牌活动和近期展览动态。</p>
                                     <div class="x-topic-panel">
                                         <div>
                                             <span>正在热议</span>
-                                            <strong>年度舞台名场面</strong>
+                                            <strong>本季高定时装</strong>
                                         </div>
                                         <i class="fas fa-arrow-trend-up"></i>
                                     </div>
@@ -6019,7 +5994,7 @@
                 <!-- Main Container for Tabs -->
                 <div class="tk-main-content">
                     
-                    <!-- 1. 首页 (Home Tab) -->
+                    <!-- 1. Home (Home Tab) -->
                     <div class="tk-tab-content active" id="tk-home-tab">
                         <!-- Top Bar -->
                         <div class="tk-home-topbar">
@@ -6027,8 +6002,8 @@
                                 <i class="fas fa-chevron-left" style="color: #111;"></i>
                             </div>
                             <div class="tk-topbar-center">
-                                <div class="tk-topbar-tab" style="color: #111;">关注</div>
-                                <div class="tk-topbar-tab active" style="color: #111;">推荐</div>
+                                <div class="tk-topbar-tab" style="color: #111;">Following</div>
+                                <div class="tk-topbar-tab active" style="color: #111;">For You</div>
                             </div>
                             <div class="tk-topbar-right">
                                 <i class="fas fa-search" style="color: #111;"></i>
@@ -6041,9 +6016,9 @@
                             <div class="tk-empty-feed">
                                 <div class="tk-magic-btn-large" id="tk-api-generate-btn">
                                     <i class="fas fa-magic"></i>
-                                    <span>生成内容</span>
+                                    <span>Generate Content</span>
                                 </div>
-                                <p style="color: #999; font-size: 13px; margin-top: 10px;">点击魔法棒生成 TikTok 视频流</p>
+                                <p style="color: #999; font-size: 13px; margin-top: 10px;">Click to Generate TikTok Video</p>
                             </div>
                         </div>
 
@@ -6063,10 +6038,10 @@
                             <!-- Main Content Wrapper -->
                             <div id="wt-main-content" style="display: flex; flex-direction: column; width: 100%; border-radius: 24px; overflow: hidden;">
                                 <div id="wt-chat-container" style="overflow-y: auto; padding: 5px 12px; display: flex; flex-direction: column; gap: 8px; height: 75px;">
-                                    <div style="text-align: center; color: rgba(0,0,0,0.5); font-size: 10px; margin-top: 5px;">点击对方头像可以进行互动</div>
+                                    <div style="text-align: center; color: rgba(0,0,0,0.5); font-size: 10px; margin-top: 5px;">Tap the avatar to interact</div>
                                 </div>
                                 <div style="padding: 10px 12px; border-top: 1px solid rgba(255, 255, 255, 0.4); display: flex; gap: 8px; align-items: center;">
-                                    <input type="text" id="wt-chat-input" placeholder="说点什么..." style="flex: 1; background: rgba(0, 0, 0, 0.05); border: none; border-radius: 16px; padding: 8px 12px; color: #111; font-size: 12px; outline: none;">
+                                    <input type="text" id="wt-chat-input" placeholder="Say something..." style="flex: 1; background: rgba(0, 0, 0, 0.05); border: none; border-radius: 16px; padding: 8px 12px; color: #111; font-size: 12px; outline: none;">
                                     <div id="wt-magic-btn" style="width: 32px; height: 32px; border-radius: 50%; background: #333; display: flex; justify-content: center; align-items: center; cursor: pointer; flex-shrink: 0;" title="让 AI 回复当前视频" onclick="if(window.tkTriggerWtApi) window.tkTriggerWtApi(event)">
                                         <i class="fas fa-magic" style="color: white; font-size: 14px;"></i>
                                     </div>
@@ -6078,14 +6053,14 @@
 
                             <!-- Exit Options Overlay -->
                             <div id="wt-exit-menu" style="display: none; flex-direction: column; padding: 15px; gap: 10px; background: rgba(255,255,255,0.8); height: 120px; box-sizing: border-box; justify-content: center; border-radius: 24px;">
-                                <div id="wt-exit-summary-btn" style="background: #111; color: #fff; text-align: center; padding: 10px; border-radius: 16px; font-size: 13px; cursor: pointer; font-weight: 500;">总结并退出</div>
-                                <div id="wt-exit-direct-btn" style="background: rgba(0,0,0,0.05); color: #ff3b30; text-align: center; padding: 10px; border-radius: 16px; font-size: 13px; cursor: pointer; font-weight: 500;">直接退出</div>
+                                <div id="wt-exit-summary-btn" style="background: #111; color: #fff; text-align: center; padding: 10px; border-radius: 16px; font-size: 13px; cursor: pointer; font-weight: 500;">Summarize</div>
+                                <div id="wt-exit-direct-btn" style="background: rgba(0,0,0,0.05); color: #ff3b30; text-align: center; padding: 10px; border-radius: 16px; font-size: 13px; cursor: pointer; font-weight: 500;">Exit Directly</div>
                             </div>
                             
                             <!-- Loading Overlay -->
                             <div id="wt-loading-overlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.9); z-index: 10; justify-content: center; align-items: center; flex-direction: column; border-radius: 24px;">
                                 <i class="fas fa-spinner fa-spin" style="color: #111; font-size: 20px; margin-bottom: 8px;"></i>
-                                <span style="color: #333; font-size: 11px;" id="wt-loading-text">正在总结...</span>
+                                <span style="color: #333; font-size: 11px;" id="wt-loading-text">Summarizing....</span>
                             </div>
                         </div>
 
@@ -6093,7 +6068,7 @@
                         <div id="wt-history-overlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 2000; align-items: flex-end; justify-content: center;">
                             <div id="wt-history-sheet" style="width: 100%; height: 60%; background: #fff; border-radius: 20px 20px 0 0; display: flex; flex-direction: column;">
                                 <div style="padding: 15px; text-align: center; font-weight: bold; border-bottom: 1px solid #eee; position: relative;">
-                                    全部聊天记录
+                                    All HISTORY
                                     <i class="fas fa-times" id="wt-history-close" style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); color: #999; cursor: pointer;"></i>
                                 </div>
                                 <div id="wt-history-content" style="flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px;">
@@ -6111,7 +6086,7 @@
                             <div class="tk-header-left" id="tk-chat-add-btn">
                                 <i class="fas fa-user-plus" style="color: #111;"></i>
                             </div>
-                            <div class="tk-header-center" style="font-size: 16px; font-weight: 600; color: #111;">消息</div>
+                            <div class="tk-header-center" style="font-size: 16px; font-weight: 600; color: #111;">Inbox</div>
                             <div class="tk-header-right" id="tk-chat-generate-dms-btn">
                                 <i class="fas fa-search" style="color: #111;"></i>
                             </div>
@@ -6132,26 +6107,26 @@
                                 <div class="tk-activity-item">
                                     <div class="tk-activity-icon" style="background: #f0f0f0; color: #333;"><i class="fas fa-users"></i></div>
                                     <div class="tk-activity-text">
-                                        <div class="tk-activity-title">新粉丝</div>
-                                        <div class="tk-activity-desc">暂无新粉丝</div>
+                                        <div class="tk-activity-title">New Followers</div>
+                                        <div class="tk-activity-desc">No new followers yet</div>
                                     </div>
                                 </div>
                                 <div class="tk-activity-item">
                                     <div class="tk-activity-icon" style="background: #f0f0f0; color: #333;"><i class="fas fa-heart"></i></div>
                                     <div class="tk-activity-text">
-                                        <div class="tk-activity-title">点赞与收藏</div>
-                                        <div class="tk-activity-desc">互动消息</div>
+                                        <div class="tk-activity-title">Activity</div>
+                                        <div class="tk-activity-desc">Interactions</div>
                                     </div>
                                 </div>
                                 <div class="tk-activity-item">
                                     <div class="tk-activity-icon" style="background: #f0f0f0; color: #333;"><i class="fas fa-comment-dots"></i></div>
                                     <div class="tk-activity-text">
-                                        <div class="tk-activity-title">评论和@</div>
-                                        <div class="tk-activity-desc">互动消息</div>
+                                        <div class="tk-activity-title">Comments</div>
+                                        <div class="tk-activity-desc">Interactions</div>
                                     </div>
                                 </div>
                                 
-                                <div class="tk-chat-section-title">消息记录</div>
+                                <div class="tk-chat-section-title">Message History</div>
                                 <div id="tk-chat-dms-container">
                                     <!-- DM list injected here -->
                                 </div>
@@ -6178,7 +6153,7 @@
                             <!-- Avatar Section -->
                             <div class="tk-profile-avatar-section">
                                 <div class="tk-avatar-wrapper" id="tk-profile-avatar-btn">
-                                    <div class="tk-follow-bubble" id="tk-profile-status-bubble" style="display: none;">思考中...</div>
+                                    <div class="tk-follow-bubble" id="tk-profile-status-bubble" style="display: none;">No Signa...</div>
                                     <img src="" alt="" id="tk-profile-avatar-img" style="display: none;">
                                     <i class="fas fa-user" id="tk-profile-avatar-icon"></i>
                                     <div class="tk-avatar-plus"><i class="fas fa-plus"></i></div>
@@ -6189,35 +6164,35 @@
                             <!-- Name & Handle -->
                             <div class="tk-profile-name-section">
                                 <div class="tk-profile-name" id="tk-profile-name">User</div>
-                                <div class="tk-profile-handle" id="tk-profile-handle">@user123</div>
+                                <div class="tk-profile-handle" id="tk-profile-handle">@user</div>
                             </div>
 
                             <!-- Stats -->
                             <div class="tk-profile-stats">
                                 <div class="tk-stat-item">
                                     <div class="tk-stat-num" id="tk-stat-following">0</div>
-                                    <div class="tk-stat-label">关注中</div>
+                                    <div class="tk-stat-label">Following</div>
                                 </div>
                                 <div class="tk-stat-item">
                                     <div class="tk-stat-num" id="tk-stat-followers">0</div>
-                                    <div class="tk-stat-label">粉丝</div>
+                                    <div class="tk-stat-label">Followers</div>
                                 </div>
                                 <div class="tk-stat-item">
                                     <div class="tk-stat-num" id="tk-stat-likes">0</div>
-                                    <div class="tk-stat-label">赞</div>
+                                    <div class="tk-stat-label">Likes</div>
                                 </div>
                             </div>
 
                         <!-- Actions -->
                         <div class="tk-profile-actions-row">
-                            <div class="tk-btn-secondary" id="tk-profile-edit-btn">编辑</div>
+                            <div class="tk-btn-secondary" id="tk-profile-edit-btn">Edit</div>
                             <div class="tk-btn-icon"><i class="fas fa-caret-down"></i></div>
                         </div>
 
                         <!-- Bio Bubble -->
                         <div class="tk-profile-bio-container">
                             <div class="tk-profile-bio-bubble" id="tk-profile-bio">
-                                点击添加个人简介
+                                Add bio
                             </div>
                         </div>
 
@@ -6234,7 +6209,7 @@
                             <div class="tk-profile-grid" id="tk-profile-grid">
                                 <!-- Grid items injected here -->
                                 <div style="grid-column: span 3; padding: 40px 0; text-align: center; color: #999; font-size: 13px;">
-                                    暂无内容
+                                    No content yet
                                 </div>
                             </div>
                         </div>
@@ -6248,15 +6223,15 @@
                         <div class="tk-nav-indicator" id="tk-nav-indicator"></div>
                         <div class="tk-nav-item active" data-target="tk-home-tab">
                             <i class="fas fa-home"></i>
-                            <span>首页</span>
+                            <span>Home</span>
                         </div>
                         <div class="tk-nav-item" data-target="tk-chat-tab">
                             <i class="fas fa-comment-dots"></i>
-                            <span>消息</span>
+                            <span>Inbox</span>
                         </div>
                         <div class="tk-nav-item" data-target="tk-profile-tab">
                             <i class="fas fa-user"></i>
-                            <span>我</span>
+                            <span>Profile</span>
                         </div>
                     </div>
                 </div>
@@ -6265,14 +6240,14 @@
                 <div class="bottom-sheet-overlay detail-sheet-overlay" id="tk-video-detail-sheet" style="">
                     <div class="bottom-sheet" style="height: 80%; border-radius: 16px 16px 0 0;">
                         <div class="sheet-handle"></div>
-                        <div class="sheet-title" id="tk-comments-title">评论 (0)</div>
+                        <div class="sheet-title" id="tk-comments-title">COMMENTS (0)</div>
                         <div class="detail-sheet-content" style="padding: 0; display: flex; flex-direction: column; height: calc(100% - 40px);">
                             <div class="tk-comments-list" id="tk-comments-list" style="flex: 1; overflow-y: auto; padding: 10px 16px;">
                                 <!-- Comments injected here -->
                             </div>
                             <div class="tk-comment-input-area" style="padding: 10px 16px; border-top: 1px solid #f0f0f0; display: flex; align-items: center; gap: 10px; background: #fff;">
                                 <div class="tk-avatar-small"><i class="fas fa-user"></i></div>
-                                <input type="text" id="tk-comment-input" placeholder="留下你的精彩评论" style="flex: 1; background: #f5f5f5; border: none; padding: 10px 15px; border-radius: 20px; font-size: 14px; outline: none;">
+                                <input type="text" id="tk-comment-input" placeholder="Add comment..." style="flex: 1; background: #f5f5f5; border: none; padding: 10px 15px; border-radius: 20px; font-size: 14px; outline: none;">
                                 <i class="fas fa-paper-plane" id="tk-comment-send-btn" style="color: #333; font-size: 18px; padding: 5px;"></i>
                             </div>
                         </div>
@@ -6283,7 +6258,7 @@
             <div class="bottom-sheet-overlay detail-sheet-overlay" id="tk-create-action-sheet" style="">
                 <div class="bottom-sheet" style="height: auto; padding-bottom: 30px;">
                     <div class="sheet-handle"></div>
-                    <div class="sheet-title">开始创作</div>
+                    <div class="sheet-title">CREATING</div>
                     
                     <div class="detail-sheet-content" style="padding: 10px 16px;">
                         <div style="display: flex; gap: 15px; margin-bottom: 20px;">
@@ -6291,17 +6266,17 @@
                                 <div style="width: 50px; height: 50px; border-radius: 50%; background: #ff4b4b; color: white; display: flex; justify-content: center; align-items: center; font-size: 20px;">
                                     <i class="fas fa-video"></i>
                                 </div>
-                                <span style="font-size: 14px; font-weight: 500;">发视频</span>
+                                <span style="font-size: 14px; font-weight: 500;">Video</span>
                             </div>
                             
-                            <div style="flex: 1; background: #f0f0f0; border-radius: 16px; padding: 20px 10px; display: flex; flex-direction: column; align-items: center; gap: 10px; cursor: pointer;" onclick="window.showToast('正在打开相册...'); window.closeView(document.getElementById('tk-create-action-sheet'));">
+                            <div style="flex: 1; background: #f0f0f0; border-radius: 16px; padding: 20px 10px; display: flex; flex-direction: column; align-items: center; gap: 10px; cursor: pointer;" onclick="window.showToast('Opening gallery...'); window.closeView(document.getElementById('tk-create-action-sheet'));">
                                 <div style="width: 50px; height: 50px; border-radius: 50%; background: #25d366; color: white; display: flex; justify-content: center; align-items: center; font-size: 20px;">
                                     <i class="fas fa-images"></i>
                                 </div>
-                                <span style="font-size: 14px; font-weight: 500;">发图文</span>
+                                <span style="font-size: 14px; font-weight: 500;">Photos</span>
                             </div>
                         </div>
-                        <div class="sheet-action" style="margin: 0; background: #f0f0f0; color: #111;" onclick="window.closeView(document.getElementById('tk-create-action-sheet'));">取消</div>
+                        <div class="sheet-action" style="margin: 0; background: #f0f0f0; color: #111;" onclick="window.closeView(document.getElementById('tk-create-action-sheet'));">cancel</div>
                     </div>
                 </div>
             </div>
@@ -6318,7 +6293,7 @@
                         <div style="padding: 10px 20px 20px; display: flex; align-items: center; gap: 15px; border-bottom: 1px solid #f0f0f0;">
                             <div class="tk-hashtag-icon-large" style="width: 60px; height: 60px; font-size: 24px;"><i class="fas fa-hashtag"></i></div>
                             <div>
-                                <div class="tk-hashtag-views" style="font-size: 13px; color: #888;">1.2亿 次观看</div>
+                                <div class="tk-hashtag-views" style="font-size: 13px; color: #888;">120M Views</div>
                             </div>
                         </div>
                         <div class="tk-profile-scrollable" style="flex: 1; position: relative;">
@@ -6334,7 +6309,7 @@
             <div class="bottom-sheet-overlay detail-sheet-overlay" id="tk-music-view" style="">
                 <div class="bottom-sheet" style="height: 85%; border-radius: 16px 16px 0 0; background: #ffffff;">
                     <div class="sheet-handle"></div>
-                    <div class="sheet-title" id="tk-music-title" style="text-align: left; padding-left: 20px; font-size: 18px; font-weight: 700;">原声 - Music</div>
+                    <div class="sheet-title" id="tk-music-title" style="text-align: left; padding-left: 20px; font-size: 18px; font-weight: 700;">OS - Music</div>
                     <div style="position: absolute; top: 15px; right: 20px; font-size: 18px; color: #111; cursor: pointer;">
                         <i class="fas fa-share"></i>
                     </div>
@@ -6342,13 +6317,13 @@
                         <div style="padding: 10px 20px 20px; display: flex; align-items: center; gap: 15px; border-bottom: 1px solid #f0f0f0;">
                             <div class="tk-hashtag-icon-large" style="width: 60px; height: 60px; font-size: 24px; border-radius: 8px;"><i class="fas fa-music"></i></div>
                             <div>
-                                <div class="tk-hashtag-views" style="font-size: 13px; color: #888;">包含 1.5万 个视频</div>
-                                <div class="tk-btn-secondary" style="padding: 4px 12px; margin-top: 5px; font-size: 12px; display: inline-block;">收藏音乐</div>
+                                <div class="tk-hashtag-views" style="font-size: 13px; color: #888;">Contains 15K Videos</div>
+                                <div class="tk-btn-secondary" style="padding: 4px 12px; margin-top: 5px; font-size: 12px; display: inline-block;">save music</div>
                             </div>
                         </div>
                         <div class="tk-profile-scrollable" style="flex: 1; position: relative;">
                             <div class="tk-profile-grid" id="tk-music-grid">
-                                <div style="grid-column: span 3; padding: 40px 0; text-align: center; color: #999; font-size: 13px;">暂无相关视频</div>
+                                <div style="grid-column: span 3; padding: 40px 0; text-align: center; color: #999; font-size: 13px;">No Related Videos Yet</div>
                             </div>
                         </div>
                     </div>
@@ -6359,7 +6334,7 @@
             <div class="bottom-sheet-overlay detail-sheet-overlay" id="tk-edit-single-video-sheet" style="">
                 <div class="bottom-sheet" style="height: auto; padding-bottom: 30px;">
                     <div class="sheet-handle"></div>
-                    <div class="sheet-title">编辑视频</div>
+                    <div class="sheet-title">EDIT VIDEO</div>
                     <div class="detail-sheet-content">
                         <div class="edit-avatar-section" style="margin-top: 0; margin-bottom: 15px;">
                             <div class="yt-edit-banner-wrapper" id="tk-edit-video-bg-btn" style="width: 100%; aspect-ratio: 9/16; max-height: 200px; background-color: #e5e5e5; border-radius: 12px; display: flex; justify-content: center; align-items: center; cursor: pointer; overflow: hidden; position: relative;">
@@ -6369,7 +6344,7 @@
                                 </div>
                                 <input type="file" id="tk-edit-video-bg-upload" accept="image/*" style="display:none;">
                             </div>
-                            <div id="reset-tk-video-bg-btn" style="text-align: center; color: #ff3b30; font-size: 13px; margin-top: 10px; cursor: pointer;">清除背景图片</div>
+                            <div id="reset-tk-video-bg-btn" style="text-align: center; color: #ff3b30; font-size: 13px; margin-top: 10px; cursor: pointer;">Clear  image</div>
                         </div>
 
                         <div class="form-group fully-rounded tall-input-group" style="margin: 20px 16px;">
@@ -6384,7 +6359,7 @@
                             </div>
                         </div>
                         
-                        <div class="sheet-action confirm-action" id="tk-confirm-edit-video-btn" style="background-color: #333; color: #fff;">保存修改</div>
+                        <div class="sheet-action confirm-action" id="tk-confirm-edit-video-btn" style="background-color: #333; color: #fff;">Save Changes</div>
                     </div>
                 </div>
             </div>
@@ -6393,7 +6368,7 @@
             <div class="bottom-sheet-overlay detail-sheet-overlay" id="tk-edit-profile-sheet" style="">
                 <div class="bottom-sheet">
                     <div class="sheet-handle"></div>
-                    <div class="sheet-title">编辑资料</div>
+                    <div class="sheet-title">EDIT PROFILE</div>
                     <div class="detail-sheet-content">
                         <div class="form-group fully-rounded">
                             <div class="form-item">
@@ -6433,7 +6408,7 @@
                                 <textarea id="tk-edit-persona" class="tall-input" placeholder="AI 角色核心人设 (不公开展示)..."></textarea>
                             </div>
                         </div>
-                        <div class="sheet-action confirm-action" id="tk-save-profile-btn" style="background-color: #333; color: #fff;">保存</div>
+                        <div class="sheet-action confirm-action" id="tk-save-profile-btn" style="background-color: #333; color: #fff;">save</div>
                     </div>
                 </div>
             </div>
@@ -6442,7 +6417,7 @@
                 <div class="bottom-sheet-overlay detail-sheet-overlay" id="tk-edit-char-sheet" style="">
                     <div class="bottom-sheet">
                         <div class="sheet-handle"></div>
-                        <div class="sheet-title" id="tk-char-sheet-title">添加新角色</div>
+                        <div class="sheet-title" id="tk-char-sheet-title">ADD NEW CHARACTER</div>
                         <div class="detail-sheet-content">
                             <!-- Avatar Upload -->
                             <div class="edit-avatar-section" style="margin-top: 5px; margin-bottom: 15px;">
@@ -6497,8 +6472,8 @@
                                     <textarea id="tk-char-persona" class="tall-input" placeholder="AI 角色核心人设 (不公开展示)..."></textarea>
                                 </div>
                             </div>
-                            <div class="sheet-action confirm-action" id="tk-save-char-btn" style="background-color: #333; color: #fff;">保存角色</div>
-                            <div class="sheet-action" id="tk-delete-char-btn" style="color: #ff3b30; display: none;">删除角色</div>
+                            <div class="sheet-action confirm-action" id="tk-save-char-btn" style="background-color: #333; color: #fff;">Save</div>
+                            <div class="sheet-action" id="tk-delete-char-btn" style="color: #ff3b30; display: none;">Delete</div>
                         </div>
                     </div>
                 </div>
@@ -6507,12 +6482,12 @@
             <div class="bottom-sheet-overlay detail-sheet-overlay" id="tk-import-char-sheet" style="">
                 <div class="bottom-sheet">
                         <div class="sheet-handle"></div>
-                        <div class="sheet-title">从应用导入角色</div>
+                        <div class="sheet-title">IMPORT CHARACTER</div>
                         <div class="detail-sheet-content">
                             <div class="tk-import-list" id="tk-import-list" style="padding: 15px; display: flex; flex-direction: column; gap: 10px;">
                                 <!-- iMessage friends injected here -->
                             </div>
-                            <div class="sheet-action confirm-action" id="tk-close-import-btn" style="margin: 15px;">取消</div>
+                            <div class="sheet-action confirm-action" id="tk-close-import-btn" style="margin: 15px;">cancel</div>
                         </div>
                     </div>
                 </div>
@@ -6522,7 +6497,7 @@
 <div class="bottom-sheet-overlay detail-sheet-overlay" id="tk-upload-video-sheet">
                 <div class="bottom-sheet" style="height: auto; padding-bottom: 30px;">
                     <div class="sheet-handle"></div>
-                    <div class="sheet-title">发布视频</div>
+                    <div class="sheet-title">Post a video</div>
                     <div class="detail-sheet-content">
                         <!-- Cover Upload -->
                         <div class="edit-avatar-section" style="margin-top: 0; margin-bottom: 15px;">
@@ -6547,7 +6522,7 @@
                                 <textarea id="tk-upload-scene-input" class="tall-input" placeholder="输入画面内容/情境描述 (供 AI 读取互动用)..."></textarea>
                             </div>
                         </div>
-                        <div class="sheet-action confirm-action" id="tk-confirm-upload-btn" style="background-color: #ff4b4b; color: #fff;">发布</div>
+                        <div class="sheet-action confirm-action" id="tk-confirm-upload-btn" style="background-color: #ff4b4b; color: #fff;">Post</div>
                     </div>
                 </div>
             </div>
@@ -6569,7 +6544,7 @@
                         
                         <div style="display: flex; flex-direction: column; justify-content: center; gap: 2px;">
                             <div id="tk-dm-chat-title" style="font-size: 15px; font-weight: 600; color: #111;">Name</div>
-                            <div style="font-size: 11px; color: #8e8e93; font-weight: normal;">在线</div>
+                            <div style="font-size: 11px; color: #8e8e93; font-weight: normal;">online</div>
                         </div>
                     </div>
                     
@@ -6590,7 +6565,7 @@
                 <div class="tk-dm-input-area" style="padding: 10px 15px 15px; background: #fff; border-top: 1px solid #f0f0f0; display: flex; align-items: center; gap: 10px; position: absolute; bottom: 0; left: 0; width: 100%; box-sizing: border-box; z-index: 100;">
                     <div class="tk-dm-camera-btn" style="width: 32px; height: 32px; border-radius: 50%; display: flex; justify-content: center; align-items: center; color: #111; font-size: 20px; cursor: pointer;"><i class="fas fa-camera"></i></div>
                     <div class="tk-dm-input-shell" style="flex: 1; display: flex; align-items: center; background: #f1f1f2; border-radius: 20px; padding: 5px 15px; position: relative;">
-                        <input type="text" class="tk-dm-message-input" id="tk-dm-chat-input" placeholder="发送消息..." style="flex: 1; background: transparent; border: none; padding: 8px 0; font-size: 15px; outline: none; color: #111;">
+                        <input type="text" class="tk-dm-message-input" id="tk-dm-chat-input" placeholder="Message..." style="flex: 1; background: transparent; border: none; padding: 8px 0; font-size: 15px; outline: none; color: #111;">
                         <i class="far fa-smile tk-dm-emoji-btn" style="color: #111; font-size: 20px; cursor: pointer; margin-left: 10px;"></i>
                     </div>
                     
@@ -6635,7 +6610,7 @@
                         </div>
                         <div class="tk-action-item" id="tk-fs-video-share-btn">
                             <i class="fas fa-share" style="transform: scaleX(-1); color: #fff; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));"></i>
-                            <span style="color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.5);">分享</span>
+                            <span style="color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.5);">Share</span>
                         </div>
                         <div class="tk-music-disc">
                             <i class="fas fa-music"></i>
@@ -6688,29 +6663,29 @@
                     <div class="tk-profile-stats">
                         <div class="tk-stat-item">
                             <div class="tk-stat-num" id="tk-sub-stat-following">0</div>
-                            <div class="tk-stat-label">关注中</div>
+                            <div class="tk-stat-label">Following</div>
                         </div>
                         <div class="tk-stat-item">
                             <div class="tk-stat-num" id="tk-sub-stat-followers">0</div>
-                            <div class="tk-stat-label">粉丝</div>
+                            <div class="tk-stat-label">Followers</div>
                         </div>
                         <div class="tk-stat-item">
                             <div class="tk-stat-num" id="tk-sub-stat-likes">0</div>
-                            <div class="tk-stat-label">赞</div>
+                            <div class="tk-stat-label">Likes</div>
                         </div>
                     </div>
 
                     <!-- Actions -->
                     <div class="tk-profile-actions-row">
-                        <div class="tk-btn-primary" id="tk-sub-profile-follow-btn">关注</div>
-                        <div class="tk-btn-secondary" id="tk-sub-profile-msg-btn">讯息</div>
+                        <div class="tk-btn-primary" id="tk-sub-profile-follow-btn">Follow</div>
+                        <div class="tk-btn-secondary" id="tk-sub-profile-msg-btn">Message</div>
                         <div class="tk-btn-icon" id="tk-sub-profile-edit-trigger"><i class="fas fa-caret-down"></i></div>
                     </div>
 
                     <!-- Bio Bubble -->
                     <div class="tk-profile-bio-container">
                         <div class="tk-profile-bio-bubble" id="tk-sub-profile-bio">
-                            暂无简介
+                            No introduction yet
                         </div>
                     </div>
 
@@ -6723,7 +6698,7 @@
 
                     <!-- Profile Grid Content -->
                     <div class="tk-profile-grid" id="tk-sub-profile-grid">
-                        <div style="grid-column: span 3; padding: 40px 0; text-align: center; color: #999; font-size: 13px;">暂无内容</div>
+                        <div style="grid-column: span 3; padding: 40px 0; text-align: center; color: #999; font-size: 13px;">No content yet</div>
                     </div>
                 </div>
             </div>
@@ -6733,7 +6708,7 @@
                     <div class="sheet-handle"></div>
                     
                     <!-- Send to friends row -->
-                    <div class="tk-share-section-title">转发给朋友</div>
+                    <div class="tk-share-section-title">FORWARD TO FRIENDS</div>
                     <div class="tk-share-friends-row" id="tk-share-list">
                         <!-- Friends injected here horizontally -->
                     </div>
@@ -6743,29 +6718,29 @@
                         <!-- Actions injected here dynamically in JS -->
                     </div>
                     
-                    <div class="sheet-action" id="tk-close-share-btn" style="margin: 15px; background: #f1f1f2; color: #111; font-weight: 500;">取消</div>
+                    <div class="sheet-action" id="tk-close-share-btn" style="margin: 15px; background: #f1f1f2; color: #111; font-weight: 500;">cancel</div>
                 </div>
             </div>
 
             <div class="bottom-sheet-overlay detail-sheet-overlay" id="tk-dm-chat-settings-sheet">
                 <div class="bottom-sheet" style="height: auto; padding-bottom: 20px; border-radius: 16px 16px 0 0; background: #ffffff;">
                     <div class="sheet-handle"></div>
-                    <div class="sheet-title">聊天设置</div>
+                    <div class="sheet-title">CHAT SETTINGS</div>
                     <div class="settings-group fully-rounded" style="margin: 0 16px 12px;">
                         <div class="settings-item" id="tk-dm-clear-chat-btn" style="border-bottom: 1px solid var(--separator-color); cursor: pointer;">
                             <div class="settings-icon" style="background-color: #ff9500;"><i class="fas fa-trash-alt"></i></div>
-                            <div class="settings-text">清空聊天记录</div>
+                            <div class="settings-text">Clear chat history</div>
                         </div>
                         <div class="settings-item" id="tk-dm-block-friend-btn" style="border-bottom: 1px solid var(--separator-color); cursor: pointer;">
                             <div class="settings-icon" style="background-color: #ff3b30;"><i class="fas fa-ban"></i></div>
-                            <div class="settings-text" style="color: #ff3b30;">拉黑</div>
+                            <div class="settings-text" style="color: #ff3b30;">Block</div>
                         </div>
                         <div class="settings-item" id="tk-dm-delete-friend-btn" style="border-bottom: none; cursor: pointer;">
                             <div class="settings-icon" style="background-color: #ff3b30;"><i class="fas fa-user-times"></i></div>
-                            <div class="settings-text" style="color: #ff3b30;">删除私信</div>
+                            <div class="settings-text" style="color: #ff3b30;">Delete messages</div>
                         </div>
                     </div>
-                    <div class="sheet-action" onclick="window.closeView(document.getElementById('tk-dm-chat-settings-sheet'))" style="margin: 15px; background: #f1f1f2; color: #111; font-weight: 500;">取消</div>
+                    <div class="sheet-action" onclick="window.closeView(document.getElementById('tk-dm-chat-settings-sheet'))" style="margin: 15px; background: #f1f1f2; color: #111; font-weight: 500;">cancel</div>
                 </div>
             </div>
 
@@ -6789,13 +6764,13 @@
                         <section class="shopping-panel active" data-tab="food">
                             <div class="shopping-hero shopping-hero-food">
                                 <div>
-                                    <div class="shopping-kicker">Fresh picks</div>
-                                    <h2>Today, delivered warm.</h2>
-                                    <p>Curated meals, desserts, and drinks for quick orders.</p>
+                                    <div class="shopping-kicker">LVMHResults</div>
+                                    <h2>Timely Decision Making</h2>
+                                    <p>Opportunities are fleeting, knowing when to decide quickly is a highly important skill.</p>
                                 </div>
                                 <div class="shopping-hero-badge">
-                                    <i class="fas fa-bowl-food"></i>
-                                    <span>Food</span>
+                                    <i class="fas fa-spa"></i>
+                                    <span>Value</span>
                                 </div>
                             </div>
 
@@ -6807,17 +6782,17 @@
                                 <article class="shopping-food-card">
                                     <div class="shopping-food-media food-media-rose"><i class="fas fa-mug-hot"></i></div>
                                     <div class="shopping-food-copy">
-                                        <div class="shopping-card-topline"><strong>Berry latte set</strong><span>¥32</span></div>
-                                        <p>Warm drink with a small pastry pairing.</p>
+                                        <div class="shopping-card-topline"><strong>Espresson</strong><span>$32</span></div>
+                                        <p>A rich, velvety espresso crafted for the perfect moment.</p>
                                         <div class="shopping-tags"><span>30 min</span><span>4.9</span></div>
                                     </div>
                                 </article>
                                 <article class="shopping-food-card">
-                                    <div class="shopping-food-media food-media-gold"><i class="fas fa-burger"></i></div>
+                                    <div class="shopping-food-media food-media-gold"><i class="fas fa-wine-glass"></i></div>
                                     <div class="shopping-food-copy">
-                                        <div class="shopping-card-topline"><strong>Midnight burger</strong><span>¥46</span></div>
-                                        <p>Charcoal bun, grilled beef, and crispy fries.</p>
-                                        <div class="shopping-tags"><span>Hot</span><span>Free delivery</span></div>
+                                        <div class="shopping-card-topline"><strong>Per Se Menu</strong><span>$780</span></div>
+                                        <p>Led by Thomas Keller, a nine-course French tasting menu.</p>
+                                        <div class="shopping-tags"><span>Michelin</span><span>Fine Dining</span></div>
                                     </div>
                                 </article>
                             </div>
@@ -6826,13 +6801,13 @@
                         <section class="shopping-panel" data-tab="mall">
                             <div class="shopping-hero shopping-hero-mall">
                                 <div>
-                                    <div class="shopping-kicker">Mall edit</div>
-                                    <h2>Objects with a quiet edge.</h2>
-                                    <p>Daily essentials, fashion pieces, and home goods.</p>
+                                    <div class="shopping-kicker">LVNHvKering</div>
+                                    <h2>The Best Investment</h2>
+                                    <p>In any circumstances, investing in your own mind is the wisest choice.</p>
                                 </div>
                                 <div class="shopping-hero-badge">
                                     <i class="fas fa-bag-shopping"></i>
-                                    <span>Mall</span>
+                                    <span>Wealth</span>
                                 </div>
                             </div>
 
@@ -6842,24 +6817,24 @@
                             </div>
                             <div class="shopping-product-grid" id="shopping-product-grid-container">
                                 <article class="shopping-product-card">
-                                    <div class="shopping-product-media product-media-ivory"><i class="fas fa-shirt"></i></div>
-                                    <strong>Soft cotton tee</strong>
-                                    <span>¥129 · Ivory</span>
+                                    <div class="shopping-product-media product-media-ivory"><i class="fas fa-wine-glass"></i></div>
+                                    <strong>Romanée-Conti</strong>
+                                    <span>$558000 · DOMAINE</span>
                                 </article>
                                 <article class="shopping-product-card">
-                                    <div class="shopping-product-media product-media-charcoal"><i class="fas fa-headphones"></i></div>
-                                    <strong>Noise buds</strong>
-                                    <span>¥299 · Charcoal</span>
+                                    <div class="shopping-product-media product-media-charcoal"><i class="fas fa-ring"></i></div>
+                                    <strong>Serpenti Viper Bracelet</strong>
+                                    <span>$57200 · BYLGARL</span>
                                 </article>
                                 <article class="shopping-product-card">
-                                    <div class="shopping-product-media product-media-stone"><i class="fas fa-camera-retro"></i></div>
-                                    <strong>Pocket camera</strong>
-                                    <span>¥699 · Stone</span>
+                                    <div class="shopping-product-media product-media-stone"><i class="fas fa-suitcase"></i></div>
+                                    <strong>Hermes Birkin</strong>
+                                    <span>$20600 · HERMÈS</span>
                                 </article>
                                 <article class="shopping-product-card">
-                                    <div class="shopping-product-media product-media-moss"><i class="fas fa-seedling"></i></div>
-                                    <strong>Desk planter</strong>
-                                    <span>¥59 · Moss</span>
+                                    <div class="shopping-product-media product-media-moss"><i class="fas fa-clover"></i></div>
+                                    <strong>Vintage Alhambra</strong>
+                                    <span>$29100 · VCA</span>
                                 </article>
                             </div>
                         </section>
@@ -6878,9 +6853,9 @@
                                 <div style="font-size: 24px; font-weight: 800; margin-bottom: 20px;">Shopping Cart</div>
                                 <div id="shopping-cart-list" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; padding-bottom: 20px;"></div>
                                 <div style="border-top: 1px solid rgba(17,17,17,0.1); padding-top: 15px; margin-top: 10px;">
-                                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px;"><span>Subtotal</span><strong id="shopping-cart-subtotal">¥0</strong></div>
-                                    <div style="display: flex; justify-content: space-between; margin-bottom: 15px; font-size: 14px;"><span>Delivery</span><strong>¥5</strong></div>
-                                    <div style="display: flex; justify-content: space-between; margin-bottom: 20px; font-size: 18px;"><strong>Total</strong><strong id="shopping-cart-total">¥5</strong></div>
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px;"><span>Subtotal</span><strong id="shopping-cart-subtotal">$0</strong></div>
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 15px; font-size: 14px;"><span>Delivery</span><strong>$5</strong></div>
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 20px; font-size: 18px;"><strong>Total</strong><strong id="shopping-cart-total">$5</strong></div>
                                     <button type="button" id="shopping-checkout-btn" style="width: 100%; padding: 16px; background: #111; color: #fff; border-radius: 12px; font-size: 16px; font-weight: 700; border: none; cursor: pointer;">Checkout</button>
                                 </div>
                             </div>
@@ -6916,13 +6891,13 @@
                 <div class="bottom-sheet-overlay detail-sheet-overlay" id="shopping-settings-sheet" style="z-index: 1250;">
                     <div class="bottom-sheet" style="max-height: 85%; height: auto; display: flex; flex-direction: column;">
                         <div class="sheet-handle"></div>
-                        <div class="sheet-title">Shop 设置</div>
+                        <div class="sheet-title">SHOP SETTINGS</div>
                         <div class="detail-sheet-content" style="padding: 16px;">
                             <div class="settings-group fully-rounded" style="margin: 0;">
                                 <div class="settings-item" id="shopping-bind-wb-btn" style="border-bottom: none;">
                                     <div class="settings-icon" style="background-color: #1c1c1e;"><i class="fas fa-book"></i></div>
                                     <div class="settings-text">挂载世界书</div>
-                                    <div id="shopping-bound-wb-name" style="font-size: 13px; color: #8e8e93; margin-right: 6px;">未绑定</div>
+                                    <div id="shopping-bound-wb-name" style="font-size: 13px; color: #8e8e93; margin-right: 6px;">Not Mounted</div>
                                     <i class="fas fa-chevron-right arrow"></i>
                                 </div>
                             </div>
@@ -6934,13 +6909,13 @@
                 <div class="bottom-sheet-overlay detail-sheet-overlay" id="shopping-search-sheet" style="z-index: 1250;">
                     <div class="bottom-sheet" style="height: auto; max-height: 80%; display: flex; flex-direction: column; background: #ffffff; padding-bottom: max(20px, env(safe-area-inset-bottom, 0px));">
                         <div class="sheet-handle"></div>
-                        <div class="sheet-title">搜索商品</div>
+                        <div class="sheet-title">SEARCH PRODUCTS</div>
                         
                         <div class="detail-sheet-content" style="padding: 16px; overflow-y: auto;">
-                            <textarea id="shopping-search-input" placeholder="输入你想搜索的内容，AI将生成相关商品..." style="width: 100%; height: 120px; border: none; background: #fff; border-radius: 12px; padding: 16px; font-size: 15px; resize: none; outline: none; margin-bottom: 20px; box-sizing: border-box; "></textarea>
+                            <textarea id="shopping-search-input" placeholder="Assets bring cash inflows; liabilities cause cash outflows." style="width: 100%; height: 120px; border: none; background: #fff; border-radius: 12px; padding: 16px; font-size: 15px; resize: none; outline: none; margin-bottom: 20px; box-sizing: border-box; "></textarea>
                             
                             <button type="button" id="shopping-search-confirm-btn" style="width: 100%; padding: 16px; background: #111; color: #fff; border-radius: 12px; font-size: 16px; font-weight: 700; border: none; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 8px;">
-                                <i class="fas fa-magic"></i> 确认生成
+                                <i class="fas fa-magic"></i> Generate
                             </button>
                         </div>
                     </div>
@@ -6963,10 +6938,10 @@
                 <div class="bottom-sheet-overlay detail-sheet-overlay" id="shopping-qa-sheet" style="z-index: 1150;">
                     <div class="bottom-sheet" style="height: 80%; display: flex; flex-direction: column; background: #ffffff; padding-bottom: max(20px, env(safe-area-inset-bottom, 0px));">
                         <div class="sheet-handle"></div>
-                        <div class="sheet-title" id="shopping-qa-sheet-title">问大家 (Q&A)</div>
+                        <div class="sheet-title" id="shopping-qa-sheet-title">Q&A</div>
                         <div class="detail-sheet-content" style="flex: 1; padding: 16px; overflow-y: auto;">
                             <div id="shopping-qa-container" style="background: #fff; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
-                                <div style="text-align: center; color: #8e8e93; font-size: 14px; padding: 20px 0;">暂无问答数据</div>
+                                <div style="text-align: center; color: #8e8e93; font-size: 14px; padding: 20px 0;">no answers yet</div>
                             </div>
                         </div>
                     </div>
@@ -6982,7 +6957,7 @@
                             </div>
                             <div style="background: #fff; border-radius: 16px; padding: 20px 16px; margin-bottom: 15px;">
                                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
-                                    <div id="shopping-detail-price" style="font-size: 26px; font-weight: 800; color: #111;">¥0</div>
+                                    <div id="shopping-detail-price" style="font-size: 26px; font-weight: 800; color: #111;">$0</div>
                                 </div>
                                 <div id="shopping-detail-name" style="font-size: 20px; font-weight: 800; color: #111; margin-bottom: 10px;">Item Name</div>
                                 <p id="shopping-detail-desc" style="font-size: 14px; color: #73706a; line-height: 1.5; margin: 0;">Description</p>
@@ -7057,12 +7032,12 @@
                 <div class="bottom-sheet-overlay detail-sheet-overlay" id="shopping-checkout-sheet" style="z-index: 1100;">
                     <div class="bottom-sheet" style="height: auto; max-height: 80%; display: flex; flex-direction: column; background: #ffffff; padding-bottom: max(20px, env(safe-area-inset-bottom, 0px));">
                         <div class="sheet-handle"></div>
-                        <div class="sheet-title">结算</div>
+                        <div class="sheet-title">CHECKOUT</div>
                         
                         <div class="detail-sheet-content" style="padding: 16px; overflow-y: auto;">
                             <!-- Payment Method Selection -->
                             <div style="background: #fff; border-radius: 16px; padding: 16px; margin-bottom: 16px;">
-                                <div style="font-size: 16px; font-weight: 700; color: #111; margin-bottom: 12px;">支付方式</div>
+                                <div style="font-size: 16px; font-weight: 700; color: #111; margin-bottom: 12px;">PAYMENT</div>
                                 
                                 <div style="display: flex; flex-direction: column; gap: 10px;">
                                     <!-- Pay 支付 -->
@@ -7072,10 +7047,10 @@
                                             <div style="width: 32px; height: 32px; border-radius: 8px; background: #007aff; display: flex; justify-content: center; align-items: center; color: #fff;"><i class="fas fa-wallet"></i></div>
                                             <div style="display: flex; flex-direction: column;">
                                                 <span style="font-weight: 600; font-size: 15px;">Pay</span>
-                                                <span id="shopping-checkout-pay-desc" style="font-size: 12px; color: #8e8e93;">钱包余额</span>
+                                                <span id="shopping-checkout-pay-desc" style="font-size: 12px; color: #8e8e93;">TOTAL BALANCE</span>
                                             </div>
                                         </div>
-                                        <div id="shopping-checkout-pay-select" style="font-size: 12px; font-weight: 600; color: #007aff; padding: 4px 8px; background: #e5f1ff; border-radius: 6px;">更改</div>
+                                        <div id="shopping-checkout-pay-select" style="font-size: 12px; font-weight: 600; color: #007aff; padding: 4px 8px; background: #e5f1ff; border-radius: 6px;">change</div>
                                     </label>
 
                                     <!-- 代付 -->
@@ -7084,16 +7059,16 @@
                                             <input type="radio" name="shopping-payment-method" value="friend" style="accent-color: #111; width: 18px; height: 18px;">
                                             <div style="width: 32px; height: 32px; border-radius: 8px; background: #34c759; display: flex; justify-content: center; align-items: center; color: #fff;"><i class="fas fa-user-friends"></i></div>
                                             <div style="display: flex; flex-direction: column;">
-                                                <span style="font-weight: 600; font-size: 15px;">找人代付</span>
-                                                <span id="shopping-checkout-friend-desc" style="font-size: 12px; color: #8e8e93;">选择好友</span>
+                                                <span style="font-weight: 600; font-size: 15px;">For me</span>
+                                                <span id="shopping-checkout-friend-desc" style="font-size: 12px; color: #8e8e93;">Select a payer</span>
                                             </div>
                                         </div>
-                                        <div id="shopping-checkout-friend-select" style="font-size: 12px; font-weight: 600; color: #34c759; padding: 4px 8px; background: #e8f5e9; border-radius: 6px;">选择</div>
+                                        <div id="shopping-checkout-friend-select" style="font-size: 12px; font-weight: 600; color: #34c759; padding: 4px 8px; background: #e8f5e9; border-radius: 6px;">select</div>
                                     </label>
                                 </div>
                             </div>
 
-                            <button type="button" id="shopping-confirm-payment-btn" style="width: 100%; padding: 16px; background: #111; color: #fff; border-radius: 12px; font-size: 16px; font-weight: 700; border: none; cursor: pointer;">确认支付</button>
+                            <button type="button" id="shopping-confirm-payment-btn" style="width: 100%; padding: 16px; background: #111; color: #fff; border-radius: 12px; font-size: 16px; font-weight: 700; border: none; cursor: pointer;">Payment</button>
                         </div>
                     </div>
                 </div>
@@ -7102,14 +7077,14 @@
                 <div class="bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay" id="shopping-card-selection-modal" style="z-index: 1200;">
                     <div class="wb-centered-modal-card" style=" border-radius: 16px; background: #f7f7f5; overflow: hidden; display: flex; flex-direction: column; max-height: 70%; border: 1px solid rgba(17,17,17,0.09);">
                         <div class="wb-centered-modal-header" style="position: relative; flex-shrink: 0; background: transparent; border-bottom: none; padding-bottom: 0;">
-                            <div class="wb-centered-modal-title" style="font-weight: 800; color: #111;">选择支付方式</div>
+                            <div class="wb-centered-modal-title" style="font-weight: 800; color: #111;">Payment</div>
                             <div class="wb-centered-modal-close" style="position: absolute; right: 16px; top: 16px; font-size: 18px; color: #111; cursor: pointer;" onclick="document.getElementById('shopping-card-selection-modal').style.display='none'; document.getElementById('shopping-card-selection-modal').classList.remove('active');">
                                 <i class="fas fa-times"></i>
                             </div>
                         </div>
                         <div style="background: transparent; padding: 10px 16px; text-align: center;">
-                            <div style="font-size: 13px; color: #73706a; font-weight: 600;">账户总余额</div>
-                            <div id="shopping-card-selection-balance" style="font-size: 28px; font-weight: 800; color: #a97642; margin-top: 4px;">¥0.00</div>
+                            <div style="font-size: 13px; color: #73706a; font-weight: 600;">BALANCE</div>
+                            <div id="shopping-card-selection-balance" style="font-size: 28px; font-weight: 800; color: #a97642; margin-top: 4px;">$0.00</div>
                         </div>
                         <div class="wb-centered-modal-body" style="padding: 16px; background: transparent; flex: 1; overflow-y: auto;">
                             <div id="shopping-card-list" style="display: flex; flex-direction: column; gap: 10px;">
@@ -7123,7 +7098,7 @@
                 <div class="bottom-sheet-overlay detail-sheet-overlay wb-centered-modal-overlay" id="shopping-char-selection-modal" style="z-index: 1200;">
                     <div class="wb-centered-modal-card" style=" border-radius: 16px; background: #f7f7f5; overflow: hidden; display: flex; flex-direction: column; max-height: 70%; border: 1px solid rgba(17,17,17,0.09);">
                         <div class="wb-centered-modal-header" style="position: relative; flex-shrink: 0; background: transparent; border-bottom: none; padding-bottom: 0;">
-                            <div class="wb-centered-modal-title" style="font-weight: 800; color: #111;">选择代付人</div>
+                            <div class="wb-centered-modal-title" style="font-weight: 800; color: #111;">Select a payer</div>
                             <div class="wb-centered-modal-close" style="position: absolute; right: 16px; top: 16px; font-size: 18px; color: #111; cursor: pointer;" onclick="document.getElementById('shopping-char-selection-modal').style.display='none'; document.getElementById('shopping-char-selection-modal').classList.remove('active');">
                                 <i class="fas fa-times"></i>
                             </div>
@@ -7172,15 +7147,15 @@
                             <div style="background: #fff; padding: 20px 16px; border-radius: 16px; margin-bottom: 12px; margin-top: -8px;">
                                 <div id="shopping-food-detail-name" style="font-size: 22px; font-weight: 800; color: #111; margin-bottom: 8px;">Berry latte set</div>
                                 <div style="display: flex; gap: 10px; margin-bottom: 15px; font-size: 12px; color: #8e8e93;">
-                                    <span>月售 800+</span>
-                                    <span>好评度 99%</span>
+                                    <span>800+ Sold</span>
+                                    <span>99% Positive</span>
                                 </div>
                                 <div style="display: flex; justify-content: space-between; align-items: flex-end;">
                                     <div id="shopping-food-detail-price" style="font-size: 26px; font-weight: 800; color: #111;">
-                                        <span style="font-size: 16px;">¥</span>32
+                                        <span style="font-size: 16px;">$</span>32
                                     </div>
                                     <div style="display: flex; align-items: center; gap: 8px; background: #f7f7f5; padding: 4px 10px; border-radius: 12px; color: #111; font-size: 12px; font-weight: 600;">
-                                        <i class="fas fa-star"></i> 店长推荐
+                                        <i class="fas fa-star"></i> Recommend
                                     </div>
                                 </div>
                                 <p id="shopping-food-detail-desc" style="font-size: 14px; color: #666; line-height: 1.5; margin: 15px 0 0; padding-top: 15px; border-top: 1px solid #f0f0f0;">Warm drink with a small pastry pairing.</p>
@@ -7189,8 +7164,8 @@
                             <!-- 外卖评价区 -->
                             <div style="background: #fff; padding: 16px; border-radius: 16px; margin: 0 12px 12px;">
                                 <div id="shopping-food-reviews-trigger" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; cursor: pointer;">
-                                    <div style="font-size: 15px; font-weight: 700; color: #111;" id="shopping-food-reviews-title">外卖评价 (458)</div>
-                                    <div style="font-size: 13px; color: #8e8e93; display: flex; align-items: center;">好评率 99% <i class="fas fa-chevron-right" style="font-size: 10px; margin-left: 4px;"></i></div>
+                                    <div style="font-size: 15px; font-weight: 700; color: #111;" id="shopping-food-reviews-title">Delivery Reviews (458)</div>
+                                    <div style="font-size: 13px; color: #8e8e93; display: flex; align-items: center;">no reviews yet<i class="fas fa-chevron-right" style="font-size: 10px; margin-left: 4px;"></i></div>
                                 </div>
                                 <div style="display: flex; gap: 8px; margin-bottom: 12px; overflow-x: auto; scrollbar-width: none;">
                                     <span style="background: #f7f7f5; padding: 4px 10px; border-radius: 12px; font-size: 12px; color: #111; white-space: nowrap;">Taste(201)</span>
@@ -7204,7 +7179,7 @@
 
                             <!-- 商家配送信息 -->
                             <div style="background: #fff; padding: 16px; border-radius: 16px; margin: 0 12px 12px;">
-                                <div style="font-size: 15px; font-weight: 700; color: #111; margin-bottom: 12px;">门店与配送</div>
+                                <div style="font-size: 15px; font-weight: 700; color: #111; margin-bottom: 12px;">Store & Delivery</div>
                                 <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
                                     <i class="fas fa-store" style="color: #8e8e93; font-size: 16px;"></i>
                                     <div style="flex: 1; font-size: 14px; color: #333;">Premium Cafe Bakery</div>
@@ -7228,8 +7203,8 @@
                             </div>
 
                             <div style="flex: 1; display: flex; flex-direction: column;">
-                                <div style="font-size: 18px; font-weight: 800; color: #111;" id="shopping-food-bottom-price">¥0</div>
-                                <div style="font-size: 11px; color: #8e8e93;">Delivery ¥5</div>
+                                <div style="font-size: 18px; font-weight: 800; color: #111;" id="shopping-food-bottom-price">$0</div>
+                                <div style="font-size: 11px; color: #8e8e93;">Delivery $5</div>
                             </div>
 
                             <button type="button" id="shopping-food-add-to-cart-btn" style="padding: 12px 24px; background: #111; color: #fff; border: none; border-radius: 999px; font-size: 15px; font-weight: 700; cursor: pointer;">Add to cart</button>
@@ -7253,18 +7228,18 @@
                     </button>
                     <div class="loves-heading">
                         <span>LOVES</span>
-                        <h1>恋人空间</h1>
+                        <h1>ONLYYOU</h1>
                     </div>
                     <div class="loves-header-mark" aria-hidden="true">SHARED LIFE</div>
                 </header>
                 <div class="loves-content">
                     <div class="loves-intro">
                         <span>TOGETHER</span>
-                        <h2>和重要的人，共享生活片段。</h2>
-                        <p>邀请好友建立专属空间，记录动态、日程与共同目标。</p>
+                        <h2>Dedicated to Your Romance</h2>
+                        <p>I could see the East River from here, but my mind was nowhere near California anymore.</p>
                     </div>
                     <div class="loves-list-heading">
-                        <h3>我的关系</h3>
+                        <h3>RELYON</h3>
                         <span>RELATIONSHIPS</span>
                     </div>
                     <div class="loves-board" id="loves-board" aria-live="polite">
@@ -7335,8 +7310,8 @@
                             </div>
                             <div id="lovers-moments-empty" class="lovers-panel-empty">
                                 <i class="far fa-comment-dots"></i>
-                                <strong>还没有动态</strong>
-                                <span>记录今天发生的小事吧</span>
+                                <strong> </strong>
+                                <span>Then I must have drowned long ago.Because if your eyes are an ocean, I was born to sink.</span>
                             </div>
                         </div>
                         <!-- 设备面板 -->
@@ -7426,13 +7401,13 @@
                             </div>
                         </div>
                         <div class="lovers-savings-goal-row">
-                            <span id="lovers-savings-goal">目标 ¥5,200.00</span>
+                            <span id="lovers-savings-goal">目标 ¥88,888.00</span>
                             <span id="lovers-savings-percent">0%</span>
                         </div>
                         <div class="lovers-savings-progress-track">
                             <div id="lovers-savings-progress" class="lovers-savings-progress-fill"></div>
                         </div>
-                        <div id="lovers-savings-left" class="lovers-savings-left">还差 ¥5,200.00</div>
+                        <div id="lovers-savings-left" class="lovers-savings-left">还差 ¥88,888.00</div>
                     </section>
 
                     <section class="lovers-savings-split">
@@ -7793,7 +7768,7 @@
                                     <div style="font-size: 16px; font-weight: 600;">招商银行储蓄卡</div>
                                     <i class="fab fa-cc-visa" style="font-size: 24px;"></i>
                                 </div>
-                                <div style="font-size: 20px; font-family: monospace; letter-spacing: 2px;">**** **** **** 8888</div>
+                                <div style="font-size: 20px; font-family: monospace; letter-spacing: 2px;">**** **** **** 1995</div>
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px;">
                                     <div style="font-size: 12px; opacity: 0.9;">活期余额</div>
                                     <div style="font-size: 16px; font-weight: 600;">¥ 12,050.00</div>
@@ -7806,7 +7781,7 @@
                                     <div style="font-size: 16px; font-weight: 600;">工商银行信用卡</div>
                                     <i class="fab fa-cc-mastercard" style="font-size: 24px;"></i>
                                 </div>
-                                <div style="font-size: 20px; font-family: monospace; letter-spacing: 2px;">**** **** **** 1234</div>
+                                <div style="font-size: 20px; font-family: monospace; letter-spacing: 2px;">**** **** **** 0113</div>
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px;">
                                     <div style="font-size: 12px; opacity: 0.9;">可用额度</div>
                                     <div style="font-size: 16px; font-weight: 600;">¥ 38,500.00</div>
@@ -8335,26 +8310,20 @@
     <section class="about-info-modal-card" role="dialog" aria-modal="true" aria-labelledby="about-info-modal-title">
         <header class="about-info-modal-header">
             <button type="button" class="about-info-modal-back" id="about-info-modal-back" aria-label="返回更新日志列表" title="返回更新日志列表" hidden><i class="fas fa-chevron-left" aria-hidden="true"></i></button>
-            <h2 id="about-info-modal-title">免责声明</h2>
+            <h2 id="about-info-modal-title">Gravity</h2>
             <button type="button" class="about-info-modal-close" id="about-info-modal-close" aria-label="关闭"><i class="fas fa-times"></i></button>
         </header>
         <div class="about-info-modal-body">
             <div id="about-disclaimer-content" class="about-info-panel">
                 <section class="about-author-block">
-                    <span>作者</span>
-                    <strong>iisonyoung</strong>
-                    <p>小红书号：49713923588</p>
+                    <strong>«Свидание с тишиной»</strong>
                 </section>
                 <section class="about-notice-block">
-                    <h3>使用须知</h3>
-                    <ol>
-                        <li>本作品默认用户已成年，仅面向年满 18 周岁的玩家。</li>
-                        <li>内容仅供个人娱乐与交流，不构成现实建议；AI 生成内容可能存在虚构或错误。</li>
-                        <li>第三方 API、网络服务及其内容由对应服务提供方负责。用户应自行保管密钥并承担使用风险。</li>
-                        <li>应用数据主要保存在本机，请自行备份重要数据。</li>
-                        <li>禁止二次上传、二传、倒卖、分享或出售下载链接或访问链接、改包分发、镜像传播、冒充作者及其他未经许可的商业使用。</li>
-                        <li>第三方名称、图标和素材权利归原权利人所有，如有问题可联系作者处理。</li>
-                    </ol>
+                    <ul>
+                        <li>— Знаешь, я никогда не думал, что приду к тебе снова спустя столько времени. Я безумно скучал по тебе, но не знаю, почему я так долго опасался тебя. Возможно просто боялся взглянуть на тебя после того, что произошло</li>
+                        <li>Сигарета в между пальцев при каждой затяжке загоралась слабым алым цветном. Вокруг было очень тихо и только голос мужчины, будто лезвие, разрезал эту тишину. Слабый прохладный ветер ласкал его лицо и волосы, словно стараясь утешить. Он шумно выдохнул, и грудь покинула полупрозрачная вуаль дыма</li>
+                        <li>Капли надвигающегося дождя начали тихонько мочить волосы и одежду. Усталые глаза взглянули на небо</li>
+                   </ul>
                 </section>
             </div>
             <div id="about-changelog-content" class="about-info-panel" hidden>
@@ -8369,7 +8338,7 @@
             </div>
         </div>
         <footer class="about-info-modal-footer">
-            <button type="button" id="about-info-modal-confirm">知道了</button>
+            <button type="button" id="about-info-modal-confirm">u</button>
         </footer>
     </section>
 </div>
@@ -8447,11 +8416,5 @@
     <script src="js/home_widget_panel_enhance.js"></script>
     <!-- 引入主逻辑脚本 -->
     <script src="script.js?v=20260725-modal-owner-v1&home-swipe=20260801-scrollend-v2&performance=20260801-v1&splash-notice-handshake=20260813-v1"></script>
-    <script>
-    document.querySelectorAll('.bottom-sheet-overlay, .detail-sheet-overlay').forEach(e => e.style.display='none');
-    document.getElementById('app').style.pointerEvents = 'auto';
-    </script>
-    </body>
-</html>
 </body>
 </html>
