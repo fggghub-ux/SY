@@ -497,7 +497,7 @@
         if (aboutDeviceBtn && aboutDeviceSheet) {
             aboutDeviceBtn.addEventListener('click', () => {
                 const appNameEl = document.getElementById('about-device-app-name');
-                if (appNameEl) appNameEl.textContent = 'u2phone';
+                if (appNameEl) appNameEl.textContent = 'JW';
                 openView(aboutDeviceSheet);
             });
         }
@@ -4733,7 +4733,7 @@
             if (status) {
                 status.textContent = config.enabled
                     ? (config.apiKey && config.model && (config.provider !== 'openai-compatible' || config.endpoint) ? '已启用' : '待配置')
-                    : '关闭';
+                    : 'Close';
             }
             const runtimeStatus = window.imVectorMemory?.getStatus?.();
             if (UI.inputs.vectorMemoryIndexStatus) {
